@@ -1,5 +1,6 @@
 // Depolar — inverse polar coordinate transform (polar to Cartesian)
-// Reverses the polar transform: maps (angle, radius) back to (x, y).
+// Matches IM Polar convention: pixel-center coords, atan2(dx, dy) for angle.
+// Maps Cartesian output -> polar source coordinates.
 
 struct Params {
   width: u32,
@@ -19,22 +20,25 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let y = gid.y;
   if (x >= params.width || y >= params.height) { return; }
 
-  let cx = f32(params.width) * 0.5;
-  let cy = f32(params.height) * 0.5;
-  let max_radius = sqrt(cx * cx + cy * cy);
+  let wf = f32(params.width);
+  let hf = f32(params.height);
+  let cx = wf * 0.5;
+  let cy = hf * 0.5;
+  let max_radius = min(cx, cy);
 
-  // Source pixel (x, y) is in Cartesian space
-  let dx = f32(x) - cx;
-  let dy = f32(y) - cy;
+  // Pixel-center convention
+  let dx = f32(x) + 0.5 - cx;
+  let dy = f32(y) + 0.5 - cy;
   let radius = sqrt(dx * dx + dy * dy);
-  var angle = atan2(dy, dx);
-  if (angle < 0.0) {
-    angle += 2.0 * PI;
-  }
 
-  // Map to polar image coordinates
-  let sx = angle / (2.0 * PI) * f32(params.width);
-  let sy = radius / max_radius * f32(params.height);
+  // IM convention: atan2(horizontal, vertical) — matches CPU atan2(ii, jj)
+  var angle = atan2(dx, dy);
+
+  // Normalize angle to [-0.5, 0.5) turns and map to x-coordinate
+  var xx = angle / (2.0 * PI);
+  xx = xx - round(xx);
+  let sx = xx * wf + cx - 0.5;
+  let sy = radius * (hf / max_radius) - 0.5;
 
   output[x + y * params.width] = pack(sample_bilinear(sx, sy));
 }

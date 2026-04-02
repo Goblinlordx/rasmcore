@@ -1728,12 +1728,8 @@ fn parity_distort_wave() {
 #[test]
 fn parity_distort_polar_depolar_roundtrip() {
     // Apply polar then depolar — should recover original within tolerance.
-    //
-    // Known issue: polar uses raw integer coords while depolar uses IM pixel-center
-    // convention (+0.5 offset), causing a systematic coordinate mismatch in the
-    // roundtrip. Combined with EWA sampling differences and edge clamping at the
-    // inscribed circle boundary, the roundtrip MAE is higher than ideal.
-    // Center-region comparison with a relaxed threshold documents this gap.
+    // Both now use IM pixel-center convention. Two EWA interpolation passes
+    // accumulate some error, but center region should be well within MAE < 3.0.
     let data = load_fixture("gradient_64x64_8bit.png");
     let decoded = decoder::decode(&data).unwrap();
     let info = &decoded.info;
@@ -1766,11 +1762,8 @@ fn parity_distort_polar_depolar_roundtrip() {
     }
     let mae = sum_diff / count as f64;
     eprintln!("polar/depolar roundtrip center-region MAE: {mae:.3}");
-    // Relaxed threshold due to pixel-center convention mismatch between
-    // polar (no offset) and depolar (IM +0.5 offset). Ideally < 3.0 once
-    // both use the same convention.
     assert!(
-        mae < 50.0,
+        mae < 3.0,
         "polar/depolar roundtrip MAE too high: {mae:.3}"
     );
 }

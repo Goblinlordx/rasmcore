@@ -507,9 +507,14 @@ mod distortion_effect_tests {
             }
         }
         let mae = total_diff as f64 / count as f64;
+        eprintln!("polar->depolar roundtrip center MAE: {mae:.2}");
+        // Cross-pattern is adversarial for interpolation (sharp edges cause
+        // aliasing between EWA and bilinear sampling modes). Smooth images
+        // achieve MAE < 0.3 (see parity.rs gradient test). Threshold is
+        // relaxed for this synthetic pattern.
         assert!(
-            mae < 30.0,
-            "polar->depolar roundtrip MAE = {mae:.1}, expected < 30"
+            mae < 6.0,
+            "polar->depolar roundtrip MAE = {mae:.1}, expected < 6.0"
         );
     }
 
@@ -873,6 +878,73 @@ mod distortion_effect_tests {
         // f32 Jacobian → f64 cast introduces ~1e-7 error that shifts LUT
         // bin selection near boundaries. See ewa.rs "Known residuals" docs.
         assert!(mae < 3.0, "polar IM parity MAE = {mae:.2} > 3.0");
+    }
+
+    #[test]
+    fn im_parity_depolar() {
+        let has_magick = std::process::Command::new("magick")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if !has_magick {
+            eprintln!("SKIP: ImageMagick not available");
+            return;
+        }
+
+        let (w, h) = (64u32, 64u32);
+        let (png_path, pixels) = make_distortion_test_image(w, h);
+        let max_radius = (w.min(h) / 2) as f64;
+
+        let info = rgb_info(w, h);
+        // IM's -distort DePolar produces polar output from Cartesian source
+        // — this matches our `polar` function.
+        let our_result = polar(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+        )
+        .unwrap();
+
+        let im_raw = std::env::temp_dir().join("depolar_parity_im.rgb");
+        let result = std::process::Command::new("magick")
+            .args([
+                png_path.to_str().unwrap(),
+                "-background",
+                "black",
+                "-virtual-pixel",
+                "Background",
+                "-distort",
+                "DePolar",
+                &format!("{max_radius}"),
+                "-depth",
+                "8",
+                &format!("rgb:{}", im_raw.to_str().unwrap()),
+            ])
+            .output()
+            .unwrap();
+
+        if !result.status.success() {
+            eprintln!("SKIP: magick depolar failed");
+            return;
+        }
+
+        let expected_len = (w * h * 3) as usize;
+        let im_data = std::fs::read(&im_raw).unwrap();
+        if im_data.len() != expected_len {
+            eprintln!("SKIP: IM depolar output size mismatch");
+            return;
+        }
+
+        let mae: f64 = our_result
+            .iter()
+            .zip(im_data.iter())
+            .map(|(&a, &b)| (a as f64 - b as f64).abs())
+            .sum::<f64>()
+            / expected_len as f64;
+
+        eprintln!("depolar IM parity MAE (our polar vs IM DePolar): {mae:.2}");
+        assert!(mae < 3.0, "depolar IM parity MAE = {mae:.2} > 3.0");
     }
 
     #[test]

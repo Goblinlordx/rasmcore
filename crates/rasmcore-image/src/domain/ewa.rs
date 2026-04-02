@@ -537,24 +537,26 @@ pub const JACOBIAN_IDENTITY: Jacobian = [[1.0, 0.0], [0.0, 1.0]];
 ///   ... simplified via chain rule
 #[inline]
 pub fn jacobian_polar(ox: f32, oy: f32, w: f32, h: f32, max_r: f32) -> Jacobian {
-    // IM pixel-center convention: angle = (ox+0.5)/w * 2π, radius = (oy+0.5)/h * max_r
+    // IM pixel-center: angle = (ox+0.5-w/2)/w * 2π, radius = (oy+0.5)/h * max_r
     let two_pi = std::f64::consts::TAU;
-    let angle = (ox as f64 + 0.5) / w as f64 * two_pi;
-    let radius = (oy as f64 + 0.5) / h as f64 * max_r as f64;
+    let wf = w as f64;
+    let hf = h as f64;
+    let angle = (ox as f64 + 0.5 - wf * 0.5) / wf * two_pi;
+    let radius = (oy as f64 + 0.5) / hf * max_r as f64;
     let cos_a = angle.cos();
     let sin_a = angle.sin();
-    let da_dx = two_pi / w as f64;
-    let dr_dy = max_r as f64 / h as f64;
+    let da_dx = two_pi / wf;
+    let dr_dy = max_r as f64 / hf;
 
     // sx = cx + radius * sin(angle) - 0.5
     // dsx/dox = radius * cos(angle) * da_dx
     // dsx/doy = sin(angle) * dr_dy
-    // sy = cy - radius * cos(angle) - 0.5
-    // dsy/dox = radius * sin(angle) * da_dx
-    // dsy/doy = -cos(angle) * dr_dy
+    // sy = cy + radius * cos(angle) - 0.5
+    // dsy/dox = -radius * sin(angle) * da_dx
+    // dsy/doy = cos(angle) * dr_dy
     [
         [(radius * cos_a * da_dx) as f32, (sin_a * dr_dy) as f32],
-        [(radius * sin_a * da_dx) as f32, (-cos_a * dr_dy) as f32],
+        [(-radius * sin_a * da_dx) as f32, (cos_a * dr_dy) as f32],
     ]
 }
 

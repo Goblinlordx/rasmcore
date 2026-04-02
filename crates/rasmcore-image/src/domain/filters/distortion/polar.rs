@@ -47,16 +47,17 @@ pub fn polar(
     apply_distortion(
         request, upstream, info,
         DistortionOverlap::FullImage,
-        DistortionSampling::Ewa,
+        DistortionSampling::Bilinear,
         &|xf, yf| {
             // IM pixel-center convention: d.x = i + 0.5
             let dx = xf as f64 + 0.5;
             let dy = yf as f64 + 0.5;
-            let angle = dx / wf * two_pi;
+            // Invert depolar's angle mapping: angle = (dx - w/2) / w * 2π
+            let angle = (dx - cx) / wf * two_pi;
             let radius = dy / hf * max_radius;
-            // Map polar (angle, radius) → Cartesian source, then undo pixel-center
+            // Invert depolar's atan2(ii, jj): ii = r*sin(a), jj = r*cos(a)
             let sx = (cx + radius * angle.sin() - 0.5) as f32;
-            let sy = (cy - radius * angle.cos() - 0.5) as f32;
+            let sy = (cy + radius * angle.cos() - 0.5) as f32;
             (sx, sy)
         },
         &|xf, yf| {
