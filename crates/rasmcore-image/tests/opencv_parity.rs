@@ -13,6 +13,7 @@
 //! Fixtures stored as raw grayscale bytes in tests/fixtures/opencv/.
 
 use rasmcore_image::domain::filters;
+use rasmcore_image::domain::filter_traits::CpuFilter;
 use rasmcore_image::domain::types::{ColorSpace, ImageInfo, PixelFormat};
 use rasmcore_pipeline::Rect;
 
@@ -143,7 +144,7 @@ fn bilateral_all_images_match_opencv() {
     for name in TEST_IMAGES {
         let input = load_fixture(&format!("{name}_gray.raw"));
         let reference = load_fixture(&format!("{name}_bilateral.raw"));
-        let ours = filters::bilateral(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(input.to_vec()), &info, &filters::BilateralParams { diameter: 9, sigma_color: 75.0, sigma_space: 75.0 }).unwrap();
+        let ours = filters::BilateralParams { diameter: 9, sigma_color: 75.0, sigma_space: 75.0 }.compute(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(input.to_vec()), &info).unwrap();
 
         let e = mae(&ours, &reference);
         let m = max_error(&ours, &reference);
@@ -177,7 +178,7 @@ fn guided_all_images_match_opencv() {
     for name in TEST_IMAGES {
         let input = load_fixture(&format!("{name}_gray.raw"));
         let reference = load_fixture(&format!("{name}_guided.raw"));
-        let ours = filters::guided_filter(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(input.to_vec()), &info, &filters::GuidedFilterParams { radius: 4, epsilon: 0.01 }).unwrap();
+        let ours = filters::GuidedFilterParams { radius: 4, epsilon: 0.01 }.compute(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(input.to_vec()), &info).unwrap();
 
         let e = mae(&ours, &reference);
         let m = max_error(&ours, &reference);
@@ -1096,14 +1097,13 @@ fn bokeh_disc_r3_all_images_match_opencv() {
         let reference = load_fixture(&format!("{name}_bokeh_disc_3.raw"));
         let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
         let mut u = |_: rasmcore_pipeline::Rect| Ok(input.clone());
-        let ours = filters::bokeh_blur(
+        let ours = filters::BokehBlurParams {
+                radius: 3,
+                shape: 0,
+            }.compute(
             r,
             &mut u,
             &info,
-            &filters::BokehBlurParams {
-                radius: 3,
-                shape: 0,
-            },
         )
         .unwrap();
 
@@ -1124,14 +1124,13 @@ fn bokeh_disc_r7_all_images_match_opencv() {
         let reference = load_fixture(&format!("{name}_bokeh_disc_7.raw"));
         let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
         let mut u = |_: rasmcore_pipeline::Rect| Ok(input.clone());
-        let ours = filters::bokeh_blur(
+        let ours = filters::BokehBlurParams {
+                radius: 7,
+                shape: 0,
+            }.compute(
             r,
             &mut u,
             &info,
-            &filters::BokehBlurParams {
-                radius: 7,
-                shape: 0,
-            },
         )
         .unwrap();
 
@@ -1152,14 +1151,13 @@ fn bokeh_hex_r3_all_images_match_opencv() {
         let reference = load_fixture(&format!("{name}_bokeh_hex_3.raw"));
         let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
         let mut u = |_: rasmcore_pipeline::Rect| Ok(input.clone());
-        let ours = filters::bokeh_blur(
+        let ours = filters::BokehBlurParams {
+                radius: 3,
+                shape: 1,
+            }.compute(
             r,
             &mut u,
             &info,
-            &filters::BokehBlurParams {
-                radius: 3,
-                shape: 1,
-            },
         )
         .unwrap();
 
@@ -1180,14 +1178,13 @@ fn bokeh_hex_r7_all_images_match_opencv() {
         let reference = load_fixture(&format!("{name}_bokeh_hex_7.raw"));
         let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
         let mut u = |_: rasmcore_pipeline::Rect| Ok(input.clone());
-        let ours = filters::bokeh_blur(
+        let ours = filters::BokehBlurParams {
+                radius: 7,
+                shape: 1,
+            }.compute(
             r,
             &mut u,
             &info,
-            &filters::BokehBlurParams {
-                radius: 7,
-                shape: 1,
-            },
         )
         .unwrap();
 

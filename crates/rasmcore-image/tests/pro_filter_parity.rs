@@ -14,6 +14,7 @@ use rasmcore_image::domain::color_grading;
 use rasmcore_image::domain::content_aware;
 use rasmcore_image::domain::filters;
 use rasmcore_image::domain::types::*;
+use rasmcore_pipeline::Rect;
 use std::path::Path;
 use std::process::Command;
 
@@ -503,7 +504,8 @@ fn parity_smart_crop_registered() {
     }
     let info = info_rgb8(w, h);
 
-    let result = filters::smart_crop_registered(&pixels, &info, 64, 64).unwrap();
+    let r = Rect::new(0, 0, info.width, info.height);
+    let result = filters::smart_crop_registered(r, &mut |_| Ok(pixels.to_vec()), &info, &filters::SmartCropParams { target_width: 64, target_height: 64 }).unwrap();
     assert_eq!(
         result.len(),
         64 * 64 * 3,
@@ -683,7 +685,8 @@ fn parity_vibrance() {
     let pixels = make_gradient_rgb(w, h);
     let info = info_rgb8(w, h);
 
-    let ours = rasmcore_image::domain::filters::vibrance(&pixels, &info, 40.0).unwrap();
+    let r = Rect::new(0, 0, info.width, info.height);
+    let ours = rasmcore_image::domain::filters::vibrance(r, &mut |_| Ok(pixels.to_vec()), &info, &filters::VibranceParams { amount: 40.0 }).unwrap();
 
     let script = format!(
         r#"
@@ -739,8 +742,10 @@ fn parity_channel_mixer() {
     let pixels = make_gradient_rgb(w, h);
     let info = info_rgb8(w, h);
 
+    let r = Rect::new(0, 0, info.width, info.height);
     let ours = rasmcore_image::domain::filters::channel_mixer(
-        &pixels, &info, 0.8, 0.1, 0.1, 0.1, 0.8, 0.1, 0.1, 0.1, 0.8,
+        r, &mut |_| Ok(pixels.to_vec()), &info,
+        &filters::ChannelMixerParams { rr: 0.8, rg: 0.1, rb: 0.1, gr: 0.1, gg: 0.8, gb: 0.1, br: 0.1, bg: 0.1, bb: 0.8 },
     )
     .unwrap();
 
@@ -764,11 +769,13 @@ fn parity_sparse_color_shepard() {
     let info = info_rgb8(w, h);
 
     // Red at (0,0), Blue at (31,31)
+    let r = Rect::new(0, 0, info.width, info.height);
     let ours = rasmcore_image::domain::filters::sparse_color(
-        &pixels,
+        r,
+        &mut |_| Ok(pixels.to_vec()),
         &info,
         "0,0:FF0000;31,31:0000FF".to_string(),
-        2.0,
+        &filters::SparseColorParams { points: String::new(), power: 2.0 },
     )
     .unwrap();
 
@@ -812,8 +819,9 @@ fn parity_modulate_hsl() {
     let info = info_rgb8(w, h);
 
     // brightness=80%, saturation=120%, hue=30 degrees
+    let r = Rect::new(0, 0, info.width, info.height);
     let ours =
-        rasmcore_image::domain::filters::modulate(&pixels, &info, 80.0, 120.0, 30.0).unwrap();
+        rasmcore_image::domain::filters::modulate(r, &mut |_| Ok(pixels.to_vec()), &info, &filters::ModulateParams { brightness: 80.0, saturation: 120.0, hue: 30.0 }).unwrap();
 
     let script = format!(
         r#"

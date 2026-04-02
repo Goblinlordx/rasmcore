@@ -7,6 +7,8 @@
 //! difference, not a correctness bug. Both are valid disc approximations.
 
 use rasmcore_image::domain::types::*;
+use rasmcore_image::domain::filter_traits::CpuFilter;
+use rasmcore_pipeline::Rect;
 use std::process::Command;
 
 fn has_tool(name: &str) -> bool {
@@ -72,7 +74,7 @@ fn lens_blur_disc_vs_imagemagick_disk_convolve() {
 
     // Our lens_blur disc mode
     let our_output =
-        rasmcore_image::domain::filters::lens_blur(&pixels, &info, radius, 0, 0.0).unwrap();
+        rasmcore_image::domain::filters::LensBlurParams { radius, blade_count: 0, rotation: 0.0 }.compute(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info).unwrap();
 
     // ImageMagick disc convolution
     let tmp = std::env::temp_dir().join("rasmcore_lens_blur_parity");
@@ -161,7 +163,7 @@ fn lens_blur_identity_vs_imagemagick() {
     let (pixels, info) = make_gradient(32, 32);
 
     // Our lens_blur with radius 0 = identity
-    let our_output = rasmcore_image::domain::filters::lens_blur(&pixels, &info, 0, 0, 0.0).unwrap();
+    let our_output = rasmcore_image::domain::filters::LensBlurParams { radius: 0, blade_count: 0, rotation: 0.0 }.compute(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info).unwrap();
 
     assert_eq!(
         our_output, pixels,
@@ -190,7 +192,7 @@ fn tilt_shift_center_band_sharp_vs_imagemagick_compose() {
 
     // Our tilt-shift: center band should be exact input
     let our_output =
-        rasmcore_image::domain::filters::tilt_shift(&pixels, &info, 0.5, 0.3, 10.0, 0.0).unwrap();
+        rasmcore_image::domain::filters::TiltShiftParams { focus_position: 0.5, band_size: 0.3, blur_radius: 10.0, angle: 0.0 }.compute(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info).unwrap();
 
     // IM composed tilt-shift:
     // 1. Create blurred version

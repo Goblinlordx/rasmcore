@@ -12,6 +12,7 @@
 //!   tests/fixtures/.venv/bin/pip install numpy Pillow opencv-python-headless
 
 use rasmcore_image::domain::filters;
+use rasmcore_image::domain::filter_traits::CpuFilter;
 use rasmcore_image::domain::pipeline::Rect;
 use rasmcore_image::domain::types::*;
 use std::path::Path;
@@ -226,11 +227,10 @@ fn exact_median_against_pillow() {
     pixels[5 * 16 + 5] = 0;
     pixels[10 * 16 + 10] = 255;
     let info = info_gray8(w, h);
-    let ours = filters::median(
+    let ours = filters::MedianParams { radius: 1 }.compute(
         Rect::new(0, 0, info.width, info.height),
         &mut |_| Ok(pixels.to_vec()),
         &info,
-        &filters::MedianParams { radius: 1 },
     ).unwrap();
     let script = format!(
         "import sys\nfrom PIL import Image,ImageFilter\nimport warnings\nwarnings.filterwarnings('ignore')\n\
@@ -1738,11 +1738,10 @@ fn high_pass_vs_numpy_multi_radius() {
     let python = venv_python();
 
     for radius in [1.0f32, 4.0, 10.0, 25.0] {
-        let ours = filters::high_pass(
+        let ours = filters::HighPassParams { radius }.compute(
             Rect::new(0, 0, w, h),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &filters::HighPassParams { radius },
         )
         .unwrap();
 
@@ -2984,7 +2983,10 @@ fn close_motion_blur_against_opencv_filter2d() {
     let info = info_rgb8(w, h);
     let length = 5u32;
     let r = Rect::new(0, 0, w, h);
-    let ours = filters::motion_blur(
+    let ours = filters::MotionBlurParams {
+        length,
+        angle_degrees: 0.0,
+    }.compute(
         r,
         &mut |req| {
             let mut p = Vec::with_capacity((req.width * req.height * 3) as usize);
@@ -2998,10 +3000,6 @@ fn close_motion_blur_against_opencv_filter2d() {
             Ok(p)
         },
         &info,
-        &filters::MotionBlurParams {
-            length,
-            angle_degrees: 0.0,
-        },
     )
     .unwrap();
 
@@ -3056,7 +3054,7 @@ fn close_gaussian_blur_cv_against_opencv() {
     let info = info_rgb8(w, h);
     let sigma = 1.5f32;
     let r = Rect::new(0, 0, w, h);
-    let ours = filters::gaussian_blur_cv(
+    let ours = filters::GaussianBlurCvParams { sigma }.compute(
         r,
         &mut |req| {
             let mut p = Vec::with_capacity((req.width * req.height * 3) as usize);
@@ -3070,7 +3068,6 @@ fn close_gaussian_blur_cv_against_opencv() {
             Ok(p)
         },
         &info,
-        &filters::GaussianBlurCvParams { sigma },
     )
     .unwrap();
 

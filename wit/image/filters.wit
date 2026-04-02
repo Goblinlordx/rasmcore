@@ -525,34 +525,9 @@ interface filters {
         shape: u32,
     }
 
-    record guided-filter-config {
-        radius: u32,
-        epsilon: f32,
-    }
-
-    record lens-blur-config {
-        radius: u32,
-        blade-count: u32,
-        rotation: f32,
-    }
-
-    record kuwahara-config {
-        radius: u32,
-    }
-
-    record sharpen-config {
-        amount: f32,
-    }
-
     record displacement-map-config {
         map-x: list<f32>,
         map-y: list<f32>,
-    }
-
-    record zoom-blur-config {
-        center-x: f32,
-        center-y: f32,
-        factor: f32,
     }
 
     record convolve-config {
@@ -560,66 +535,6 @@ interface filters {
         kh: u32,
         divisor: f32,
         kernel: list<f32>,
-    }
-
-    record smart-sharpen-config {
-        amount: f32,
-        radius: u32,
-        threshold: f32,
-    }
-
-    record high-pass-config {
-        radius: f32,
-    }
-
-    record rank-filter-config {
-        radius: u32,
-        rank: f32,
-    }
-
-    record box-blur-config {
-        radius: u32,
-    }
-
-    record bokeh-blur-config {
-        radius: u32,
-        shape: u32,
-    }
-
-    record gaussian-blur-cv-config {
-        sigma: f32,
-    }
-
-    record tilt-shift-config {
-        focus-position: f32,
-        band-size: f32,
-        blur-radius: f32,
-        angle: f32,
-    }
-
-    record motion-blur-config {
-        length: u32,
-        angle-degrees: f32,
-    }
-
-    record median-config {
-        radius: u32,
-    }
-
-    record blur-config {
-        radius: f32,
-    }
-
-    record bilateral-config {
-        diameter: u32,
-        sigma-color: f32,
-        sigma-space: f32,
-    }
-
-    record spin-blur-config {
-        center-x: f32,
-        center-y: f32,
-        angle: f32,
     }
 
     record seam-carve-width-config {
@@ -833,26 +748,26 @@ interface filters {
     morph-open: func(pixels: buffer, info: image-info, config: morph-open-config) -> result<buffer, rasmcore-error>;
     skeletonize: func(pixels: buffer, info: image-info, config: skeletonize-config) -> result<buffer, rasmcore-error>;
     dilate: func(pixels: buffer, info: image-info, config: dilate-config) -> result<buffer, rasmcore-error>;
-    guided-filter: func(pixels: buffer, info: image-info, config: guided-filter-config) -> result<buffer, rasmcore-error>;
-    lens-blur: func(pixels: buffer, info: image-info, config: lens-blur-config) -> result<buffer, rasmcore-error>;
-    kuwahara: func(pixels: buffer, info: image-info, config: kuwahara-config) -> result<buffer, rasmcore-error>;
-    sharpen: func(pixels: buffer, info: image-info, config: sharpen-config) -> result<buffer, rasmcore-error>;
+    guided-filter: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    lens-blur: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    kuwahara: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    sharpen: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     displacement-map: func(pixels: buffer, info: image-info, config: displacement-map-config) -> result<buffer, rasmcore-error>;
-    zoom-blur: func(pixels: buffer, info: image-info, config: zoom-blur-config) -> result<buffer, rasmcore-error>;
+    zoom-blur: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     convolve: func(pixels: buffer, info: image-info, config: convolve-config) -> result<buffer, rasmcore-error>;
-    smart-sharpen: func(pixels: buffer, info: image-info, config: smart-sharpen-config) -> result<buffer, rasmcore-error>;
-    high-pass: func(pixels: buffer, info: image-info, config: high-pass-config) -> result<buffer, rasmcore-error>;
-    rank-filter: func(pixels: buffer, info: image-info, config: rank-filter-config) -> result<buffer, rasmcore-error>;
-    box-blur: func(pixels: buffer, info: image-info, config: box-blur-config) -> result<buffer, rasmcore-error>;
-    bokeh-blur: func(pixels: buffer, info: image-info, config: bokeh-blur-config) -> result<buffer, rasmcore-error>;
+    smart-sharpen: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    high-pass: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    rank-filter: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    box-blur: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    bokeh-blur: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     average-blur: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    gaussian-blur-cv: func(pixels: buffer, info: image-info, config: gaussian-blur-cv-config) -> result<buffer, rasmcore-error>;
-    tilt-shift: func(pixels: buffer, info: image-info, config: tilt-shift-config) -> result<buffer, rasmcore-error>;
-    motion-blur: func(pixels: buffer, info: image-info, config: motion-blur-config) -> result<buffer, rasmcore-error>;
-    median: func(pixels: buffer, info: image-info, config: median-config) -> result<buffer, rasmcore-error>;
-    blur: func(pixels: buffer, info: image-info, config: blur-config) -> result<buffer, rasmcore-error>;
-    bilateral: func(pixels: buffer, info: image-info, config: bilateral-config) -> result<buffer, rasmcore-error>;
-    spin-blur: func(pixels: buffer, info: image-info, config: spin-blur-config) -> result<buffer, rasmcore-error>;
+    gaussian-blur-cv: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    tilt-shift: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    motion-blur: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    median: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    blur: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    bilateral: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    spin-blur: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     unpremultiply: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     premultiply: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     seam-carve-width: func(pixels: buffer, info: image-info, config: seam-carve-width-config) -> result<buffer, rasmcore-error>;

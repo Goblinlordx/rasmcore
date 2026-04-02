@@ -1,6 +1,8 @@
 //! Tests for color filters
 
 use crate::domain::filters::common::*;
+#[allow(unused_imports)]
+use crate::domain::filter_traits::CpuFilter;
 
 #[cfg(test)]
 mod color_manipulation_tests {
@@ -553,15 +555,14 @@ mod color_manipulation_tests {
     fn spin_blur_angle_zero_is_identity() {
         let pixels = solid_rgb(8, 8, 100, 150, 200);
         let info = info_rgb8(8, 8);
-        let result = spin_blur(
-            Rect::new(0, 0, info.width, info.height),
-            &mut |_| Ok(pixels.to_vec()),
-            &info,
-            &SpinBlurParams {
+        let result = SpinBlurParams {
                 center_x: 0.5,
                 center_y: 0.5,
                 angle: 0.0,
-            },
+            }.compute(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
         )
         .unwrap();
         assert_eq!(result, pixels);
@@ -580,15 +581,14 @@ mod color_manipulation_tests {
             }
         }
         let info = info_rgb8(32, 32);
-        let result = spin_blur(
-            Rect::new(0, 0, info.width, info.height),
-            &mut |_| Ok(pixels.to_vec()),
-            &info,
-            &SpinBlurParams {
+        let result = SpinBlurParams {
                 center_x: 0.5,
                 center_y: 0.5,
                 angle: 30.0,
-            },
+            }.compute(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
         )
         .unwrap();
         assert_ne!(result, pixels, "spin blur should modify pixels");
@@ -603,15 +603,14 @@ mod color_manipulation_tests {
         pixels[center + 1] = 0;
         pixels[center + 2] = 0;
         let info = info_rgb8(16, 16);
-        let result = spin_blur(
-            Rect::new(0, 0, info.width, info.height),
-            &mut |_| Ok(pixels.to_vec()),
-            &info,
-            &SpinBlurParams {
+        let result = SpinBlurParams {
                 center_x: 0.5,
                 center_y: 0.5,
                 angle: 45.0,
-            },
+            }.compute(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
         )
         .unwrap();
         // Center pixel should be close to original (radius ≈ 0, no arc blur)

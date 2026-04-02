@@ -7,7 +7,9 @@
 //! rounding direction.
 
 use rasmcore_image::domain::filters;
+use rasmcore_image::domain::filter_traits::CpuFilter;
 use rasmcore_image::domain::types::{ColorSpace, ImageInfo, PixelFormat};
+use rasmcore_pipeline::Rect;
 
 fn load_fixture(name: &str) -> Vec<u8> {
     let path = format!(
@@ -47,7 +49,7 @@ fn clahe_with_intermediates(pixels: &[u8], w: usize, h: usize) -> (Vec<u8>, Vec<
         color_space: ColorSpace::Srgb,
     };
     // Get u8 output
-    let result = filters::clahe(pixels, &info, 2.0, 8).unwrap();
+    let result = { let r = Rect::new(0, 0, info.width, info.height); filters::clahe(r, &mut |_| Ok(pixels.to_vec()), &info, &filters::ClaheParams { clip_limit: 2.0, tile_grid: 8 }) }.unwrap();
 
     // For the pre-rounding values, we need to re-run the interpolation
     // and capture the float. Since we can't easily extract this from the
@@ -87,7 +89,7 @@ fn clahe_differences_are_at_half_integers() {
     for name in &images {
         let input = load_fixture(&format!("{name}_gray.raw"));
         let reference = load_fixture(&format!("{name}_clahe.raw"));
-        let ours = filters::clahe(&input, &info, 2.0, 8).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height); let ours = filters::clahe(r, &mut |_| Ok(input.to_vec()), &info, &filters::ClaheParams { clip_limit: 2.0, tile_grid: 8 }).unwrap();
 
         for i in 0..ours.len() {
             let diff = (ours[i] as i16 - reference[i] as i16).abs();
@@ -147,7 +149,7 @@ fn guided_differences_are_at_half_integers() {
     for name in &images {
         let input = load_fixture(&format!("{name}_gray.raw"));
         let reference = load_fixture(&format!("{name}_guided.raw"));
-        let ours = filters::guided_filter(&input, &info, 4, 0.01).unwrap();
+        let r = Rect::new(0, 0, info.width, info.height); let ours = filters::GuidedFilterParams { radius: 4, epsilon: 0.01 }.compute(r, &mut |_| Ok(input.to_vec()), &info).unwrap();
 
         for i in 0..ours.len() {
             let diff = (ours[i] as i16 - reference[i] as i16).abs();

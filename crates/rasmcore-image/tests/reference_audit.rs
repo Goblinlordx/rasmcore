@@ -11,6 +11,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use rasmcore_image::domain::color_spaces;
+use rasmcore_image::domain::filter_traits::CpuFilter;
 use rasmcore_image::domain::pipeline::Rect;
 use rasmcore_image::domain::types::*;
 
@@ -385,7 +386,7 @@ fn algorithm_blur() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::blur(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::BlurParams { radius: 3.0 }).unwrap() },
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::BlurParams { radius: 3.0 }.compute(r, &mut |_| Ok(px.to_vec()), info).unwrap() },
         &["-blur", "0x3"],
         "blur_3",
     ) {
@@ -401,7 +402,7 @@ fn algorithm_median() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::median(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::MedianParams { radius: 1 }).unwrap() },
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::MedianParams { radius: 1 }.compute(r, &mut |_| Ok(px.to_vec()), info).unwrap() },
         &["-median", "1"],
         "median_1",
     ) {
@@ -1633,7 +1634,7 @@ fn parity_blur_multi_radius() {
         if let Some(error) = check_parity_rgb(
             64,
             64,
-            |px, info| { let rect = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::blur(rect, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::BlurParams { radius: *r }).unwrap() },
+            |px, info| { let rect = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::BlurParams { radius: *r }.compute(rect, &mut |_| Ok(px.to_vec()), info).unwrap() },
             &["-blur", im_sigma],
             &format!("blur_r{r}"),
         ) {
@@ -1665,7 +1666,7 @@ fn parity_motion_blur_multi() {
             |px, info| {
                 let r = Rect::new(0, 0, info.width, info.height);
                 let mut u = |_: Rect| Ok(px.to_vec());
-                rasmcore_image::domain::filters::motion_blur(r, &mut u, info, &rasmcore_image::domain::filters::MotionBlurParams { length: *len, angle_degrees: *angle }).unwrap()
+                rasmcore_image::domain::filters::MotionBlurParams { length: *len, angle_degrees: *angle }.compute(r, &mut u, info).unwrap()
             },
             &["-motion-blur", &format!("{angle}x{len}+0")],
             &format!("motion_blur_l{len}_a{angle}"),
@@ -1687,7 +1688,7 @@ fn parity_median_multi_radius() {
         if let Some(error) = check_parity_rgb(
             64,
             64,
-            |px, info| { let rect = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::median(rect, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::MedianParams { radius: *r }).unwrap() },
+            |px, info| { let rect = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::MedianParams { radius: *r }.compute(rect, &mut |_| Ok(px.to_vec()), info).unwrap() },
             &["-median", im_r],
             &format!("median_r{r}"),
         ) {
@@ -2068,7 +2069,7 @@ fn algorithm_kuwahara() {
     if let Some(error) = check_parity_rgb(
         256,
         256,
-        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::kuwahara(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::KuwaharaParams { radius: 3 }).unwrap() },
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::KuwaharaParams { radius: 3 }.compute(r, &mut |_| Ok(px.to_vec()), info).unwrap() },
         &["-kuwahara", "3"],
         "kuwahara_3",
     ) {
@@ -2084,7 +2085,7 @@ fn close_rank_minimum() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::rank_filter(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::RankFilterParams { radius: 2, rank: 0.0 }).unwrap() },
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::RankFilterParams { radius: 2, rank: 0.0 }.compute(r, &mut |_| Ok(px.to_vec()), info).unwrap() },
         &["-statistic", "Minimum", "5x5"],
         "rank_min_r2",
     ) {
@@ -2100,7 +2101,7 @@ fn close_rank_maximum() {
     if let Some(error) = check_parity_rgb(
         64,
         64,
-        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::rank_filter(r, &mut |_| Ok(px.to_vec()), info, &rasmcore_image::domain::filters::RankFilterParams { radius: 2, rank: 1.0 }).unwrap() },
+        |px, info| { let r = Rect::new(0, 0, info.width, info.height); rasmcore_image::domain::filters::RankFilterParams { radius: 2, rank: 1.0 }.compute(r, &mut |_| Ok(px.to_vec()), info).unwrap() },
         &["-statistic", "Maximum", "5x5"],
         "rank_max_r2",
     ) {
@@ -2195,15 +2196,14 @@ fn close_spin_blur() {
         |px, info| {
             let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
             let mut u = |_: rasmcore_pipeline::Rect| Ok(px.to_vec());
-            rasmcore_image::domain::filters::spin_blur(
+            rasmcore_image::domain::filters::SpinBlurParams {
+                center_x: 0.5,
+                center_y: 0.5,
+                angle: 10.0,
+            }.compute(
                 r,
                 &mut u,
                 info,
-                &rasmcore_image::domain::filters::SpinBlurParams {
-                    center_x: 0.5,
-                    center_y: 0.5,
-                    angle: 10.0,
-                },
             )
             .unwrap()
         },
@@ -2232,7 +2232,7 @@ fn algorithm_motion_blur() {
         |px, info| {
             let r = Rect::new(0, 0, info.width, info.height);
             let mut u = |_: Rect| Ok(px.to_vec());
-            rasmcore_image::domain::filters::motion_blur(r, &mut u, info, &rasmcore_image::domain::filters::MotionBlurParams { length: 5, angle_degrees: 0.0 }).unwrap()
+            rasmcore_image::domain::filters::MotionBlurParams { length: 5, angle_degrees: 0.0 }.compute(r, &mut u, info).unwrap()
         },
         &["-motion-blur", "0x5+0"],
         "motion_blur_5_0deg",
@@ -2305,11 +2305,10 @@ fn algorithm_gaussian_blur_cv() {
         |px, info| {
             let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
             let mut u = |_: rasmcore_pipeline::Rect| Ok(px.to_vec());
-            rasmcore_image::domain::filters::gaussian_blur_cv(
+            rasmcore_image::domain::filters::GaussianBlurCvParams { sigma: 2.0 }.compute(
                 r,
                 &mut u,
                 info,
-                &rasmcore_image::domain::filters::GaussianBlurCvParams { sigma: 2.0 },
             )
             .unwrap()
         },
@@ -2522,7 +2521,7 @@ fn property_bilateral_identity() {
     // On a uniform image, output should equal input.
     let pixels = vec![128u8; 32 * 32 * 3];
     let info = test_info(32, 32, PixelFormat::Rgb8);
-    let result = rasmcore_image::domain::filters::bilateral(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &rasmcore_image::domain::filters::BilateralParams { diameter: 5, sigma_color: 20.0, sigma_space: 20.0 }).unwrap();
+    let result = rasmcore_image::domain::filters::BilateralParams { diameter: 5, sigma_color: 20.0, sigma_space: 20.0 }.compute(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info).unwrap();
     assert_eq!(
         result, pixels,
         "bilateral on uniform image should be identity"
@@ -2544,7 +2543,7 @@ fn property_bilateral_edge_preservation() {
         }
     }
     let info = test_info(w, h, PixelFormat::Rgb8);
-    let result = rasmcore_image::domain::filters::bilateral(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info, &rasmcore_image::domain::filters::BilateralParams { diameter: 5, sigma_color: 30.0, sigma_space: 30.0 }).unwrap();
+    let result = rasmcore_image::domain::filters::BilateralParams { diameter: 5, sigma_color: 30.0, sigma_space: 30.0 }.compute(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(pixels.to_vec()), &info).unwrap();
 
     // Check that the edge is still sharp: pixel at (14,16) should be dark,
     // pixel at (18,16) should be bright
@@ -2589,15 +2588,14 @@ fn property_zoom_blur_identity() {
     let info = test_info(32, 32, PixelFormat::Rgb8);
     let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
     let mut u = |_: rasmcore_pipeline::Rect| Ok(pixels.clone());
-    let result = rasmcore_image::domain::filters::zoom_blur(
+    let result = rasmcore_image::domain::filters::ZoomBlurParams {
+        center_x: 0.5,
+        center_y: 0.5,
+        factor: 0.0,
+    }.compute(
         r,
         &mut u,
         &info,
-        &rasmcore_image::domain::filters::ZoomBlurParams {
-            center_x: 0.5,
-            center_y: 0.5,
-            factor: 0.0,
-        },
     )
     .unwrap();
     assert_eq!(result, pixels, "zoom_blur at factor=0 should be identity");
@@ -2610,15 +2608,14 @@ fn property_zoom_blur_uniform() {
     let info = test_info(32, 32, PixelFormat::Rgb8);
     let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
     let mut u = |_: rasmcore_pipeline::Rect| Ok(pixels.clone());
-    let result = rasmcore_image::domain::filters::zoom_blur(
+    let result = rasmcore_image::domain::filters::ZoomBlurParams {
+        center_x: 0.5,
+        center_y: 0.5,
+        factor: 0.5,
+    }.compute(
         r,
         &mut u,
         &info,
-        &rasmcore_image::domain::filters::ZoomBlurParams {
-            center_x: 0.5,
-            center_y: 0.5,
-            factor: 0.5,
-        },
     )
     .unwrap();
     for &v in &result {
@@ -3121,11 +3118,10 @@ fn algorithm_high_pass_vs_magick() {
     let input_path = write_png(&pixels, w, h, 3);
 
     for radius in [1.0f32, 4.0, 10.0, 25.0] {
-        let ours = rasmcore_image::domain::filters::high_pass(
+        let ours = rasmcore_image::domain::filters::HighPassParams { radius }.compute(
             rasmcore_image::domain::pipeline::Rect::new(0, 0, w, h),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &rasmcore_image::domain::filters::HighPassParams { radius },
         )
         .unwrap();
 

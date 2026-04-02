@@ -9,6 +9,8 @@ use std::time::Instant;
 
 use rasmcore_image::domain::types::*;
 use rasmcore_image::domain::{decoder, encoder, filters, transform};
+use rasmcore_image::domain::filter_traits::CpuFilter;
+use rasmcore_pipeline::Rect;
 
 fn fixtures_dir() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/generated")
@@ -93,10 +95,12 @@ fn benchmark_filters() {
     let decoded = decoder::decode(&data).unwrap();
 
     bench("Blur r=2.0", || {
-        filters::blur(&decoded.pixels, &decoded.info, 2.0).unwrap()
+        let r = Rect::new(0, 0, decoded.info.width, decoded.info.height);
+        filters::BlurParams { radius: 2.0 }.compute(r, &mut |_| Ok(decoded.pixels.to_vec()), &decoded.info).unwrap()
     });
     bench("Sharpen 1.0", || {
-        filters::sharpen(&decoded.pixels, &decoded.info, 1.0).unwrap()
+        let r = Rect::new(0, 0, decoded.info.width, decoded.info.height);
+        filters::SharpenParams { amount: 1.0 }.compute(r, &mut |_| Ok(decoded.pixels.to_vec()), &decoded.info).unwrap()
     });
     bench("Grayscale", || {
         filters::grayscale(&decoded.pixels, &decoded.info).unwrap()
@@ -129,13 +133,18 @@ fn benchmark_artistic_filters() {
     };
 
     bench("Solarize t=128", || {
-        filters::solarize(&pixels, &info, 128).unwrap()
+        let r = Rect::new(0, 0, info.width, info.height);
+        filters::solarize(r, &mut |_| Ok(pixels.to_vec()), &info, &filters::SolarizeParams { threshold: 128 }).unwrap()
     });
-    bench("Emboss", || filters::emboss(&pixels, &info).unwrap());
+    bench("Emboss", || {
+        let r = Rect::new(0, 0, info.width, info.height);
+        filters::emboss(r, &mut |_| Ok(pixels.to_vec()), &info).unwrap()
+    });
     bench("Oil paint r=3", || {
-        filters::oil_paint(&pixels, &info, 3).unwrap()
+        let r = Rect::new(0, 0, info.width, info.height);
+        filters::oil_paint(r, &mut |_| Ok(pixels.to_vec()), &info, &filters::OilPaintParams { radius: 3 }).unwrap()
     });
     bench("Charcoal r=1 σ=0.5", || {
-        filters::charcoal(&pixels, &info, 1.0, 0.5).unwrap()
+        filters::charcoal(&pixels, &info, &filters::CharcoalParams { radius: 1.0, sigma: 0.5 }).unwrap()
     });
 }

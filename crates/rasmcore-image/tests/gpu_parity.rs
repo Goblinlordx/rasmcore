@@ -6,6 +6,7 @@
 
 use rasmcore_image::domain::color_lut::ColorLut3D;
 use rasmcore_image::domain::filters;
+use rasmcore_image::domain::filter_traits::CpuFilter;
 use rasmcore_image::domain::types::*;
 use rasmcore_pipeline::Rect;
 use rasmcore_pipeline::gpu::{GpuCapable, GpuError, GpuExecutor, GpuOp};
@@ -361,11 +362,10 @@ fn gpu_cpu_parity_gaussian_blur() {
     let rect = Rect::new(0, 0, w, h);
 
     // CPU path
-    let cpu_output = filters::blur(
+    let cpu_output = filters::BlurParams { radius: 3.0 }.compute(
         rect,
         &mut |_| Ok(pixels.clone()),
         &info,
-        &filters::BlurParams { radius: 3.0 },
     )
     .unwrap();
 
@@ -418,7 +418,7 @@ fn gpu_cpu_parity_bilateral() {
 
     // CPU path (RGB8)
     let cpu_rgb =
-        filters::bilateral(rect, &mut |_| Ok(rgb_pixels.clone()), &info_rgb, &config).unwrap();
+        config.compute(rect, &mut |_| Ok(rgb_pixels.clone()), &info_rgb).unwrap();
 
     // GPU path (RGBA8)
     let node = BilateralNode::new(0, info_rgba.clone(), config.clone());
