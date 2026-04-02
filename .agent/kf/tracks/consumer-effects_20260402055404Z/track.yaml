@@ -1,0 +1,67 @@
+id: consumer-effects_20260402055404Z
+title: "Consumer effects — glitch, light leaks, prism split, mirror/kaleidoscope, chromatic aberration"
+type: feature
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Add 5 popular consumer/social effects found in PicsArt, Pixlr, and Snapseed:
+    glitch/bad TV, light leaks, prism/chromatic split, mirror/kaleidoscope,
+    and chromatic aberration simulation. All are implementable as registered filters.
+  context: |
+    These effects are high-engagement features in consumer apps. While rasmcore
+    targets professional use, these are low-complexity additions that expand
+    appeal. Each is a simple spatial or channel manipulation.
+  codebase_analysis: |
+    Building blocks already exist:
+    - Channel separation/recombination for prism/chromatic effects
+    - Blend modes (screen, add) for light leak overlay
+    - Geometric transforms for mirror operations
+    - Noise generators for glitch artifacts
+  acceptance_criteria:
+    - glitch effect: horizontal scanline displacement + RGB channel offset + optional noise bands
+    - light_leak effect: procedural gradient overlay with warm color, blend via screen/add
+    - chromatic_split effect: RGB channel spatial offset (dx,dy per channel)
+    - mirror effect: reflect image along axis with configurable segments (kaleidoscope)
+    - chromatic_aberration effect: radial RGB fringing from center (lateral CA simulation)
+    - All registered as filters with ConfigParams
+  out_of_scope: |
+    Video glitch effects (temporal artifacts). Texture-based light leaks (using images).
+  technical_notes: |
+    Glitch: slice image into horizontal bands, randomly offset some bands horizontally,
+    optionally shift R/G/B channels independently. Seed param for determinism.
+
+    Light leak: generate smooth radial/linear gradient in warm tones (orange/yellow),
+    composite via screen or add blend mode. Position/angle/intensity params.
+
+    Chromatic split: separate RGB channels, apply spatial offset to each, recombine.
+    Simple and striking.
+
+    Mirror: reflect pixels across axis. For kaleidoscope: divide into N angular
+    segments, mirror alternating segments.
+
+    Chromatic aberration: for each pixel, sample R/G/B at slightly different radial
+    distances from center. Amount increases with distance from center (barrel-like).
+plan:
+  - phase: Channel effects
+    tasks:
+      - text: Implement chromatic_split — per-channel spatial offset
+        done: false
+      - text: Implement chromatic_aberration — radial RGB fringing from center
+        done: false
+  - phase: Visual effects
+    tasks:
+      - text: Implement glitch — scanline displacement + channel offset + noise bands
+        done: false
+      - text: Implement light_leak — procedural warm gradient overlay
+        done: false
+      - text: Implement mirror_kaleidoscope — axis reflection with N-segment support
+        done: false
+  - phase: Verification
+    tasks:
+      - text: All filters registered, appear in param-manifest.json
+        done: false
+      - text: Visual test for each effect, full test suite passes
+        done: false
+extra: {}

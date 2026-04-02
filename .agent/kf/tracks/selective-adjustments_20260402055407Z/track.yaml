@@ -1,0 +1,128 @@
+id: selective-adjustments_20260402055407Z
+title: "Selective/masked adjustments — per-region adjustment routing with mask generators"
+type: feature
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Add mask generation nodes (linear gradient, radial gradient, luminance range,
+    color range, brush/path) and a masked adjustment routing node that applies
+    any adjustment stack only within the masked region. This is the Lightroom
+    Mobile masking system equivalent.
+  context: |
+    Selective editing is the #1 gap vs Lightroom Mobile (the most popular
+    prosumer editing app). Snapseed has control-point-based selective editing.
+    Affinity and Photopea have full layer+mask systems.
+
+    rasmcore's pipeline architecture already supports this pattern:
+    - mask_apply exists (applies grayscale mask to alpha)
+    - Pipeline graph can branch (one path for adjustment, one for mask)
+    - Composition node can merge adjusted + original using mask
+
+    The missing pieces: mask GENERATION nodes and a "masked adjustment" routing
+    node that composes original + adjusted using a mask.
+
+    For brush-based masks: the brush is inherently stateful (path accumulates
+    strokes). The pipeline can model this as: path input -> mask compositor ->
+    adjustment -> blend with original. The path updates, the mask compositor
+    regenerates, and the result updates in real-time through the pipeline.
+  codebase_analysis: |
+    Existing infrastructure:
+    - mask_apply: applies grayscale mask to image alpha
+    - blend: composites two images with blend mode + opacity
+    - Pipeline graph: supports multi-input nodes, branching, caching
+
+    What's needed:
+    1. Mask generator nodes (gradient, radial, luminance, color range)
+    2. Brush/path mask compositor (accumulates stroke paths into mask buffer)
+    3. Masked adjustment meta-node: fork pipeline, apply adjustments on one
+       branch, composite back using mask on the other branch
+
+    Pattern: masked_adjust(original, mask, adjustments[]) -> result
+    Where result = blend(adjusted, original, mask)
+  acceptance_criteria:
+    - Linear gradient mask generator (position, angle, feather)
+    - Radial gradient mask generator (center, radii, feather)
+    - Luminance range mask generator (black, white, feather)
+    - Color range mask generator (target hue, hue range, sat range, feather)
+    - Brush/path mask generator (accepts list of stroke points with radius+pressure)
+    - Masked adjustment node that applies any adjustment stack within mask
+    - Multiple masks can be combined (add, subtract, intersect)
+    - Mask inversion
+    - Feathered mask edges (gaussian blur on mask)
+    - Test: gradient mask + exposure adjustment produces correct selective result
+    - Test: luminance range mask correctly isolates highlights/shadows
+  out_of_scope: |
+    AI-based masks (select subject, select sky) — require ML models.
+    Interactive mask painting UI (brush cursor, preview, undo).
+    Layer-based compositing (Photoshop layer+mask model).
+  technical_notes: |
+    Architecture: masks are grayscale images (Gray8 or Gray16). They flow
+    through the pipeline like any other image. Selective adjustment is NOT a
+    new node type — it's the standard pipeline fork-and-merge pattern:
+
+      source -> fork -+-> [adjustment stack] --+-> composite(mask) -> output
+                      |                        |
+                      +-> [passthrough] -------+
+
+    The composite node blends adjusted and original using the mask:
+    output = adjusted * mask + original * (1 - mask). This uses existing
+    blend infrastructure (blend mode=normal, mask=the generated mask).
+
+    No new execution primitive needed. The "masked adjustment" is just a
+    pipeline graph wiring pattern using existing nodes.
+
+    For brush masks: the mask generator is a pure stateless function that
+    takes a full path (list of stroke points with radius/pressure) and
+    rasterizes it into a grayscale buffer. Stateless: path in, mask out.
+
+    Incremental rendering (only rasterizing new stroke segments) is a cache
+    optimization: reduce(prev_mask, new_segment) -> updated_mask. Same
+    cache pattern used elsewhere. No pipeline API change needed.
+
+    This fits the existing pipeline model exactly: mask generation is just
+    another node in the graph.
+
+    Mask generators as registered filters:
+    - mask_gradient_linear(width, height, angle, position, feather) -> Gray8
+    - mask_gradient_radial(width, height, cx, cy, rx, ry, feather) -> Gray8
+    - mask_luminance_range(pixels, info, black, white, feather) -> Gray8
+    - mask_color_range(pixels, info, hue, hue_range, sat_min, feather) -> Gray8
+    - mask_from_path(width, height, points[], radii[], pressures[]) -> Gray8
+plan:
+  - phase: Mask generators
+    tasks:
+      - text: Implement mask_gradient_linear generator
+        done: false
+      - text: Implement mask_gradient_radial generator
+        done: false
+      - text: Implement mask_luminance_range generator (from image luminance)
+        done: false
+      - text: Implement mask_color_range generator (from image hue/saturation)
+        done: false
+      - text: Implement mask_from_path generator (rasterize stroke points)
+        done: false
+  - phase: Mask operations
+    tasks:
+      - text: Implement mask combine (add, subtract, intersect modes)
+        done: false
+      - text: Implement mask invert and mask feather (gaussian blur)
+        done: false
+  - phase: Masked adjustment routing
+    tasks:
+      - text: Implement masked_adjust node — fork + adjust + blend via mask
+        done: false
+      - text: Wire into pipeline graph so any adjustment can be selectively applied
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test gradient mask + exposure produces correct selective result
+        done: false
+      - text: Test luminance mask isolates highlights/shadows correctly
+        done: false
+      - text: Test brush path mask rasterization accuracy
+        done: false
+      - text: Full test suite passes, WASM build clean
+        done: false
+extra: {}

@@ -1,0 +1,57 @@
+id: blend-modes-missing_20260402055401Z
+title: "Add 8 missing W3C blend modes — dissolve, linear burn, vivid/linear/pin light, etc."
+type: feature
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Add the 8 blend modes present in Photopea/Affinity but missing from rasmcore:
+    dissolve, linear burn, darker color, lighter color, vivid light, linear light,
+    pin light, hard mix, divide.
+  context: |
+    rasmcore has 19 blend modes. Photopea and Affinity Photo have 27+.
+    The missing modes are all defined in the W3C Compositing and Blending spec
+    or are well-documented Photoshop extensions. All are pure per-pixel formulas.
+  codebase_analysis: |
+    Existing blend modes in crates/rasmcore-image/src/domain/filters/composite/blend.rs.
+    Uses BlendMode enum + per-pixel formula dispatch. Adding new modes is
+    mechanical: add enum variant, implement formula, register.
+    Current modes: normal, multiply, screen, overlay, darken, lighten, color_dodge,
+    color_burn, hard_light, soft_light, difference, exclusion, subtract, hue,
+    saturation, color, luminosity, add, divide.
+
+    Wait — divide may already exist. Verify before implementing.
+  acceptance_criteria:
+    - Dissolve blend mode (random transparency dither)
+    - Linear Burn blend mode (a + b - 1)
+    - Darker Color blend mode (compare luminosity, pick darker)
+    - Lighter Color blend mode (compare luminosity, pick lighter)
+    - Vivid Light blend mode (color dodge if b > 0.5, color burn otherwise)
+    - Linear Light blend mode (linear dodge if b > 0.5, linear burn otherwise)
+    - Pin Light blend mode (darken if b < 0.5, lighten otherwise)
+    - Hard Mix blend mode (threshold at 1.0 after vivid light)
+    - All modes match Photoshop/W3C reference behavior
+    - Parity test for each new mode against numpy reference
+  out_of_scope: |
+    UI for blend mode selection. Opacity/fill distinction.
+  technical_notes: |
+    All formulas from W3C Compositing and Blending Level 1 spec +
+    Photoshop blend mode documentation. Each is a pure per-pixel function.
+    Dissolve needs a deterministic PRNG seeded by pixel position.
+plan:
+  - phase: Implementation
+    tasks:
+      - text: Add dissolve, linear burn, darker color, lighter color blend modes
+        done: false
+      - text: Add vivid light, linear light, pin light, hard mix blend modes
+        done: false
+      - text: Register all new modes in WIT/adapter if needed
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Parity tests for all new blend modes against numpy reference
+        done: false
+      - text: Existing blend tests still pass
+        done: false
+extra: {}

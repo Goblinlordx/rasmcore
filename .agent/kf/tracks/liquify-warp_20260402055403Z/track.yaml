@@ -1,0 +1,87 @@
+id: liquify-warp_20260402055403Z
+title: "Liquify — interactive push/pinch/twirl/expand warp tool"
+type: feature
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Add liquify warp operations that generate displacement fields from brush
+    parameters: push, pinch, expand (punch), twirl left/right, smooth (relax).
+    Builds on existing displacement_map infrastructure.
+  context: |
+    Liquify is available in Affinity Photo, PicsArt, Pixlr, and Photopea.
+    rasmcore already has displacement_map which applies arbitrary per-pixel warp
+    fields. Liquify operations generate those displacement fields from
+    brush-like parameters (center, radius, strength, direction).
+
+    The interactive brush loop (accumulating strokes) is a UI concern. The engine
+    provides: given a displacement field + new liquify stroke params, produce an
+    updated displacement field and apply it.
+  codebase_analysis: |
+    Existing: displacement_map in filters/spatial/displacement_map.rs takes
+    map_x: &[f32], map_y: &[f32] per-pixel displacement fields with bilinear
+    sampling. This is the rendering backend.
+
+    Liquify operations generate/modify displacement fields:
+    - Push: translate pixels in a direction within brush radius
+    - Pinch: pull pixels toward center
+    - Expand (Punch): push pixels away from center
+    - Twirl: rotate pixels around center
+    - Smooth: relax displacement toward zero (undo tool)
+
+    Each liquify operation is stateless: it takes the full stroke path and
+    generates the displacement field from scratch. Incremental field updates
+    (only applying new stroke segments) are a cache optimization:
+    reduce(prev_field, new_stroke) -> updated_field. No API change needed.
+  acceptance_criteria:
+    - liquify_push operation: displace pixels in direction vector within radius
+    - liquify_pinch operation: contract pixels toward center point
+    - liquify_expand operation: expand pixels away from center point
+    - liquify_twirl operation: rotate pixels around center by angle
+    - liquify_smooth operation: relax/attenuate displacement field within radius
+    - All operations take center (x,y), radius, strength, and tool-specific params
+    - Gaussian falloff from center (smooth brush edge)
+    - Operations modify displacement field (f32 x/y buffers) for accumulation
+    - Final render via existing displacement_map
+    - Visual quality test against Krita liquify reference
+  out_of_scope: |
+    Real-time preview rendering. Brush cursor visualization.
+    Face-aware liquify (requires ML face landmark detection).
+    Mesh-based liquify UI (cage deformation — UI concern).
+  technical_notes: |
+    Each liquify operation is a function:
+      fn liquify_X(map_x, map_y, center, radius, strength, ...) -> (map_x, map_y)
+
+    Push formula (per pixel within radius):
+      weight = gaussian(distance_to_center / radius) * strength
+      map_x[i] += direction.x * weight
+      map_y[i] += direction.y * weight
+
+    Pinch: direction = normalize(center - pixel_pos)
+    Expand: direction = normalize(pixel_pos - center)
+    Twirl: direction = perpendicular(pixel_pos - center), scaled by angle
+    Smooth: map_x[i] *= (1 - weight), map_y[i] *= (1 - weight)
+
+    Reference: Krita Liquify Transform (GPLv3 — study algorithm, don't copy).
+    Core algorithm is well-documented in computer graphics literature.
+plan:
+  - phase: Displacement field operations
+    tasks:
+      - text: Implement liquify_push — directional displacement within radius
+        done: false
+      - text: Implement liquify_pinch and liquify_expand — radial contract/expand
+        done: false
+      - text: Implement liquify_twirl — rotational displacement
+        done: false
+      - text: Implement liquify_smooth — displacement field relaxation
+        done: false
+  - phase: Integration and verification
+    tasks:
+      - text: Register all liquify operations as filters with appropriate params
+        done: false
+      - text: Visual test — verify push/pinch/twirl produce expected deformation
+        done: false
+      - text: Full test suite passes, WASM build clean
+        done: false
+extra: {}

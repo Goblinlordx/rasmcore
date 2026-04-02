@@ -1,0 +1,63 @@
+id: lens-corrections_20260402055406Z
+title: "Lens corrections — chromatic aberration removal and red-eye removal"
+type: feature
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Add two optical correction operations: lateral chromatic aberration removal
+    (shift R/B channels to align with G) and red-eye removal (detect and
+    desaturate red regions in specified area).
+  context: |
+    CA removal is in Lightroom, Affinity, and Photopea. Red-eye removal is in
+    Affinity, Pixlr, Photopea, and Fotor. Both are standard photo corrections.
+
+    Lens profile-based distortion correction (lensfun database) is deferred as
+    it requires shipping a large lens database and is lower priority.
+  codebase_analysis: |
+    Existing barrel/pincushion distortion filter could be extended for lens
+    distortion profiles, but that's out of scope here.
+
+    CA removal: shift R and B channels radially toward/away from center to
+    align with G. Similar to existing chromatic_aberration effect but inverted.
+
+    Red-eye: localized in a user-specified region. Convert to HSL, detect
+    pixels with hue near red and high saturation, desaturate + darken.
+  acceptance_criteria:
+    - ca_remove filter: radial R/B channel shift to align with G, parameterized by R and B shift amounts
+    - red_eye_remove filter: given center point + radius, desaturate and darken red-hue pixels
+    - CA removal test with synthetic CA pattern
+    - Red-eye removal test with known red-eye region
+  out_of_scope: |
+    Lens profile database (lensfun). Longitudinal CA correction (requires depth info).
+    Automatic lens detection from EXIF. Vignette correction profiles.
+  technical_notes: |
+    CA removal (lateral):
+    For each pixel at distance d from center:
+      R channel samples at d * (1 + r_shift)
+      B channel samples at d * (1 + b_shift)
+      G channel stays at d
+    Bilinear interpolation for sub-pixel sampling.
+    Typical r_shift/b_shift values: -0.002 to +0.002.
+
+    Red-eye removal:
+    Within specified circular region:
+      Convert to HSL
+      If hue in [340, 20] (red range) and saturation > threshold:
+        desaturate to 0, darken by factor
+      Soft edge at region boundary via distance falloff.
+plan:
+  - phase: Implementation
+    tasks:
+      - text: Implement ca_remove — radial R/B channel realignment
+        done: false
+      - text: Implement red_eye_remove — localized red desaturation within region
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test CA removal with synthetic chromatic aberration pattern
+        done: false
+      - text: Test red-eye removal, full suite passes
+        done: false
+extra: {}
