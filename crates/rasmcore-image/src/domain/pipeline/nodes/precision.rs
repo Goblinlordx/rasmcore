@@ -9,8 +9,8 @@ use crate::domain::transform::convert_format;
 use crate::domain::types::{ImageInfo, PixelFormat};
 use rasmcore_pipeline::Rect;
 
-/// Promotes pixel data from u8/u16 to f32 format.
-/// Inserted automatically after source nodes when pipeline is in HP mode.
+/// Promotes pixel data from any format to f32.
+/// Inserted automatically after source nodes.
 pub struct PromoteNode {
     upstream: u32,
     source_info: ImageInfo,
@@ -18,26 +18,19 @@ pub struct PromoteNode {
 }
 
 impl PromoteNode {
-    /// Promote to f32 (HighPrecision mode).
+    /// Promote to Rgba32f — the canonical pipeline format.
+    /// All formats (Gray, Rgb, Rgba, u8/u16/f16/f32) become Rgba32f.
+    /// Gray → R=G=B=luma, A=1.0. Rgb → A=1.0. Already-Rgba32f is a no-op.
     pub fn new(upstream: u32, source_info: ImageInfo) -> Self {
-        Self::with_precision(upstream, source_info, false)
+        Self {
+            upstream,
+            source_info,
+            target_format: PixelFormat::Rgba32f,
+        }
     }
 
-    /// Promote to f16 or f32 based on precision mode.
-    pub fn with_precision(upstream: u32, source_info: ImageInfo, half: bool) -> Self {
-        let target_format = if half {
-            match source_info.format {
-                PixelFormat::Rgb8 | PixelFormat::Rgb16 => PixelFormat::Rgb16f,
-                PixelFormat::Gray8 | PixelFormat::Gray16 => PixelFormat::Gray16f,
-                _ => PixelFormat::Rgba16f,
-            }
-        } else {
-            match source_info.format {
-                PixelFormat::Rgb8 | PixelFormat::Rgb16 => PixelFormat::Rgb32f,
-                PixelFormat::Gray8 | PixelFormat::Gray16 => PixelFormat::Gray32f,
-                _ => PixelFormat::Rgba32f,
-            }
-        };
+    /// Promote to a specific target format (for non-standard use cases).
+    pub fn with_target(upstream: u32, source_info: ImageInfo, target_format: PixelFormat) -> Self {
         Self {
             upstream,
             source_info,
@@ -153,17 +146,19 @@ mod tests {
     }
 
     #[test]
-    fn promote_rgb8_to_rgb32f() {
+    fn promote_rgb8_to_rgba32f() {
+        // f32 pipeline: everything promotes to Rgba32f
         let info = make_info(PixelFormat::Rgb8);
         let node = PromoteNode::new(0, info);
-        assert_eq!(node.info().format, PixelFormat::Rgb32f);
+        assert_eq!(node.info().format, PixelFormat::Rgba32f);
     }
 
     #[test]
-    fn promote_gray8_to_gray32f() {
+    fn promote_gray8_to_rgba32f() {
+        // f32 pipeline: even grayscale promotes to Rgba32f (R=G=B=luma, A=1)
         let info = make_info(PixelFormat::Gray8);
         let node = PromoteNode::new(0, info);
-        assert_eq!(node.info().format, PixelFormat::Gray32f);
+        assert_eq!(node.info().format, PixelFormat::Rgba32f);
     }
 
     #[test]

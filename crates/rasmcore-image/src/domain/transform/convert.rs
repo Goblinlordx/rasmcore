@@ -318,6 +318,223 @@ fn convert_pixels(
             Ok(out)
         }
 
+        // ── Direct lossless promotion to Rgba32f (f32 pipeline) ──
+        // These paths preserve full precision without going through u8.
+        (PixelFormat::Rgb8, PixelFormat::Rgba32f) => {
+            let mut out = Vec::with_capacity(pixel_count * 16);
+            for chunk in pixels.chunks_exact(3) {
+                out.extend_from_slice(&(chunk[0] as f32 / 255.0).to_le_bytes());
+                out.extend_from_slice(&(chunk[1] as f32 / 255.0).to_le_bytes());
+                out.extend_from_slice(&(chunk[2] as f32 / 255.0).to_le_bytes());
+                out.extend_from_slice(&1.0f32.to_le_bytes());
+            }
+            Ok(out)
+        }
+        (PixelFormat::Gray8, PixelFormat::Rgba32f) => {
+            let mut out = Vec::with_capacity(pixel_count * 16);
+            for &v in pixels {
+                let f = (v as f32 / 255.0).to_le_bytes();
+                out.extend_from_slice(&f);
+                out.extend_from_slice(&f);
+                out.extend_from_slice(&f);
+                out.extend_from_slice(&1.0f32.to_le_bytes());
+            }
+            Ok(out)
+        }
+        (PixelFormat::Bgr8, PixelFormat::Rgba32f) => {
+            let mut out = Vec::with_capacity(pixel_count * 16);
+            for chunk in pixels.chunks_exact(3) {
+                out.extend_from_slice(&(chunk[2] as f32 / 255.0).to_le_bytes()); // R
+                out.extend_from_slice(&(chunk[1] as f32 / 255.0).to_le_bytes()); // G
+                out.extend_from_slice(&(chunk[0] as f32 / 255.0).to_le_bytes()); // B
+                out.extend_from_slice(&1.0f32.to_le_bytes());
+            }
+            Ok(out)
+        }
+        (PixelFormat::Bgra8, PixelFormat::Rgba32f) => {
+            let mut out = Vec::with_capacity(pixel_count * 16);
+            for chunk in pixels.chunks_exact(4) {
+                out.extend_from_slice(&(chunk[2] as f32 / 255.0).to_le_bytes()); // R
+                out.extend_from_slice(&(chunk[1] as f32 / 255.0).to_le_bytes()); // G
+                out.extend_from_slice(&(chunk[0] as f32 / 255.0).to_le_bytes()); // B
+                out.extend_from_slice(&(chunk[3] as f32 / 255.0).to_le_bytes()); // A
+            }
+            Ok(out)
+        }
+        (PixelFormat::Gray16, PixelFormat::Rgba32f) => {
+            let mut out = Vec::with_capacity(pixel_count * 16);
+            for chunk in pixels.chunks_exact(2) {
+                let v = u16::from_le_bytes([chunk[0], chunk[1]]);
+                let f = (v as f32 / 65535.0).to_le_bytes();
+                out.extend_from_slice(&f);
+                out.extend_from_slice(&f);
+                out.extend_from_slice(&f);
+                out.extend_from_slice(&1.0f32.to_le_bytes());
+            }
+            Ok(out)
+        }
+        (PixelFormat::Rgb16, PixelFormat::Rgba32f) => {
+            let mut out = Vec::with_capacity(pixel_count * 16);
+            for chunk in pixels.chunks_exact(6) {
+                let r = u16::from_le_bytes([chunk[0], chunk[1]]);
+                let g = u16::from_le_bytes([chunk[2], chunk[3]]);
+                let b = u16::from_le_bytes([chunk[4], chunk[5]]);
+                out.extend_from_slice(&(r as f32 / 65535.0).to_le_bytes());
+                out.extend_from_slice(&(g as f32 / 65535.0).to_le_bytes());
+                out.extend_from_slice(&(b as f32 / 65535.0).to_le_bytes());
+                out.extend_from_slice(&1.0f32.to_le_bytes());
+            }
+            Ok(out)
+        }
+        (PixelFormat::Rgba16, PixelFormat::Rgba32f) => {
+            let mut out = Vec::with_capacity(pixel_count * 16);
+            for chunk in pixels.chunks_exact(8) {
+                let r = u16::from_le_bytes([chunk[0], chunk[1]]);
+                let g = u16::from_le_bytes([chunk[2], chunk[3]]);
+                let b = u16::from_le_bytes([chunk[4], chunk[5]]);
+                let a = u16::from_le_bytes([chunk[6], chunk[7]]);
+                out.extend_from_slice(&(r as f32 / 65535.0).to_le_bytes());
+                out.extend_from_slice(&(g as f32 / 65535.0).to_le_bytes());
+                out.extend_from_slice(&(b as f32 / 65535.0).to_le_bytes());
+                out.extend_from_slice(&(a as f32 / 65535.0).to_le_bytes());
+            }
+            Ok(out)
+        }
+        (PixelFormat::Gray16f, PixelFormat::Rgba32f) => {
+            let mut out = Vec::with_capacity(pixel_count * 16);
+            for chunk in pixels.chunks_exact(2) {
+                let v = half::f16::from_le_bytes([chunk[0], chunk[1]]);
+                let f = v.to_f32().to_le_bytes();
+                out.extend_from_slice(&f);
+                out.extend_from_slice(&f);
+                out.extend_from_slice(&f);
+                out.extend_from_slice(&1.0f32.to_le_bytes());
+            }
+            Ok(out)
+        }
+        (PixelFormat::Rgb16f, PixelFormat::Rgba32f) => {
+            let mut out = Vec::with_capacity(pixel_count * 16);
+            for chunk in pixels.chunks_exact(6) {
+                let r = half::f16::from_le_bytes([chunk[0], chunk[1]]);
+                let g = half::f16::from_le_bytes([chunk[2], chunk[3]]);
+                let b = half::f16::from_le_bytes([chunk[4], chunk[5]]);
+                out.extend_from_slice(&r.to_f32().to_le_bytes());
+                out.extend_from_slice(&g.to_f32().to_le_bytes());
+                out.extend_from_slice(&b.to_f32().to_le_bytes());
+                out.extend_from_slice(&1.0f32.to_le_bytes());
+            }
+            Ok(out)
+        }
+        (PixelFormat::Rgba16f, PixelFormat::Rgba32f) => {
+            let mut out = Vec::with_capacity(pixel_count * 16);
+            for chunk in pixels.chunks_exact(8) {
+                let r = half::f16::from_le_bytes([chunk[0], chunk[1]]);
+                let g = half::f16::from_le_bytes([chunk[2], chunk[3]]);
+                let b = half::f16::from_le_bytes([chunk[4], chunk[5]]);
+                let a = half::f16::from_le_bytes([chunk[6], chunk[7]]);
+                out.extend_from_slice(&r.to_f32().to_le_bytes());
+                out.extend_from_slice(&g.to_f32().to_le_bytes());
+                out.extend_from_slice(&b.to_f32().to_le_bytes());
+                out.extend_from_slice(&a.to_f32().to_le_bytes());
+            }
+            Ok(out)
+        }
+        (PixelFormat::Gray32f, PixelFormat::Rgba32f) => {
+            let mut out = Vec::with_capacity(pixel_count * 16);
+            for chunk in pixels.chunks_exact(4) {
+                out.extend_from_slice(chunk); // R = luma
+                out.extend_from_slice(chunk); // G = luma
+                out.extend_from_slice(chunk); // B = luma
+                out.extend_from_slice(&1.0f32.to_le_bytes()); // A = 1.0
+            }
+            Ok(out)
+        }
+        (PixelFormat::Cmyk8, PixelFormat::Rgba32f) => {
+            let mut out = Vec::with_capacity(pixel_count * 16);
+            for chunk in pixels.chunks_exact(4) {
+                let c = chunk[0] as f32 / 255.0;
+                let m = chunk[1] as f32 / 255.0;
+                let y = chunk[2] as f32 / 255.0;
+                let k = chunk[3] as f32 / 255.0;
+                let r = (1.0 - c) * (1.0 - k);
+                let g = (1.0 - m) * (1.0 - k);
+                let b = (1.0 - y) * (1.0 - k);
+                out.extend_from_slice(&r.to_le_bytes());
+                out.extend_from_slice(&g.to_le_bytes());
+                out.extend_from_slice(&b.to_le_bytes());
+                out.extend_from_slice(&1.0f32.to_le_bytes());
+            }
+            Ok(out)
+        }
+
+        // ── Direct quantization from Rgba32f (f32 pipeline) ──
+        (PixelFormat::Rgba32f, PixelFormat::Rgb8) => {
+            let mut out = Vec::with_capacity(pixel_count * 3);
+            for chunk in pixels.chunks_exact(16) {
+                for i in 0..3 {
+                    let v = f32::from_le_bytes([chunk[i * 4], chunk[i * 4 + 1], chunk[i * 4 + 2], chunk[i * 4 + 3]]);
+                    out.push((v * 255.0 + 0.5).clamp(0.0, 255.0) as u8);
+                }
+            }
+            Ok(out)
+        }
+        (PixelFormat::Rgba32f, PixelFormat::Gray8) => {
+            let mut out = Vec::with_capacity(pixel_count);
+            for chunk in pixels.chunks_exact(16) {
+                let r = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                let g = f32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]);
+                let b = f32::from_le_bytes([chunk[8], chunk[9], chunk[10], chunk[11]]);
+                let luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+                out.push((luma * 255.0 + 0.5).clamp(0.0, 255.0) as u8);
+            }
+            Ok(out)
+        }
+        (PixelFormat::Rgba32f, PixelFormat::Rgba16) => {
+            let mut out = Vec::with_capacity(pixel_count * 8);
+            for chunk in pixels.chunks_exact(16) {
+                for i in 0..4 {
+                    let v = f32::from_le_bytes([chunk[i * 4], chunk[i * 4 + 1], chunk[i * 4 + 2], chunk[i * 4 + 3]]);
+                    let u = (v * 65535.0 + 0.5).clamp(0.0, 65535.0) as u16;
+                    out.extend_from_slice(&u.to_le_bytes());
+                }
+            }
+            Ok(out)
+        }
+        (PixelFormat::Rgba32f, PixelFormat::Rgb16) => {
+            let mut out = Vec::with_capacity(pixel_count * 6);
+            for chunk in pixels.chunks_exact(16) {
+                for i in 0..3 {
+                    let v = f32::from_le_bytes([chunk[i * 4], chunk[i * 4 + 1], chunk[i * 4 + 2], chunk[i * 4 + 3]]);
+                    let u = (v * 65535.0 + 0.5).clamp(0.0, 65535.0) as u16;
+                    out.extend_from_slice(&u.to_le_bytes());
+                }
+            }
+            Ok(out)
+        }
+        (PixelFormat::Rgba32f, PixelFormat::Gray16) => {
+            let mut out = Vec::with_capacity(pixel_count * 2);
+            for chunk in pixels.chunks_exact(16) {
+                let r = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                let g = f32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]);
+                let b = f32::from_le_bytes([chunk[8], chunk[9], chunk[10], chunk[11]]);
+                let luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+                let u = (luma * 65535.0 + 0.5).clamp(0.0, 65535.0) as u16;
+                out.extend_from_slice(&u.to_le_bytes());
+            }
+            Ok(out)
+        }
+        (PixelFormat::Rgba32f, PixelFormat::Gray32f) => {
+            let mut out = Vec::with_capacity(pixel_count * 4);
+            for chunk in pixels.chunks_exact(16) {
+                let r = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                let g = f32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]);
+                let b = f32::from_le_bytes([chunk[8], chunk[9], chunk[10], chunk[11]]);
+                let luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+                out.extend_from_slice(&luma.to_le_bytes());
+            }
+            Ok(out)
+        }
+
         // ── Cross-depth + cross-channel: two-step via intermediate ──
         _ => {
             // Step 1: convert to 8-bit same-channel-count

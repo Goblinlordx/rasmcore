@@ -25,6 +25,7 @@ pub mod pipeline;
 pub mod pixel_sample;
 pub mod point_ops;
 pub mod quantize;
+pub mod quantize_f32;
 pub mod script_plugin;
 pub mod smart_crop;
 pub mod transform;

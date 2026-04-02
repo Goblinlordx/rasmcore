@@ -11,7 +11,7 @@ use crate::domain;
 use crate::domain::pipeline::graph::NodeGraph;
 #[allow(unused_imports)]
 use crate::domain::pipeline::nodes::{
-    color, composite, filters, frame_source, sink, source, transform,
+    color, composite, filters, frame_source, precision, sink, source, transform,
 };
 
 use super::{to_domain_frame_selection, to_wit_error, to_wit_image_info};
@@ -412,11 +412,32 @@ impl GuestImagePipeline for PipelineResource {
         // Create source node with content hash and metadata
         let source_hash = rasmcore_pipeline::compute_source_hash(&data);
         let node = source::SourceNode::new(data).map_err(to_wit_error)?;
-        let id =
+        let src_info = <source::SourceNode as domain::pipeline::graph::ImageNode>::info(&node);
+        let source_id =
             self.graph
                 .borrow_mut()
                 .add_source_node(Box::new(node), source_hash, meta, "source");
-        Ok(id)
+
+        // f32 pipeline: promote to Rgba32f immediately after decode.
+        // All downstream nodes see Rgba32f — no format branching needed.
+        if src_info.format != domain::types::PixelFormat::Rgba32f {
+            let promote = precision::PromoteNode::new(source_id, src_info);
+            let promote_hash = rasmcore_pipeline::compute_hash(
+                &self.graph.borrow().node_hash(source_id),
+                "promote_f32",
+                &[],
+            );
+            let id = self.graph.borrow_mut().add_node_described(
+                Box::new(promote),
+                promote_hash,
+                source_id,
+                domain::pipeline::graph::NodeKind::Filter,
+                "promote_f32",
+            );
+            Ok(id)
+        } else {
+            Ok(source_id)
+        }
     }
 
     fn read_frames(
