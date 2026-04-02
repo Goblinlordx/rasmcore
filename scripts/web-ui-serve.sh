@@ -8,19 +8,26 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 WEB_UI="$ROOT/web-ui"
 
 SDK_PATH="${1:-$ROOT/sdk/typescript/generated}"
+SDK_JS="$SDK_PATH/rasmcore-image.js"
+WASM_FILE="$ROOT/target/wasm32-wasip1/debug/rasmcore_image.wasm"
 PORT="${2:-3000}"
 
-# Verify SDK exists — rebuild if missing
-if [ ! -f "$SDK_PATH/rasmcore-image.js" ]; then
-  echo "SDK not found — building WASM component and generating SDK..."
+# Build WASM if missing
+if [ ! -f "$WASM_FILE" ]; then
+  echo "Building WASM component..."
   cargo component build -p rasmcore-image
+fi
+
+# Generate SDK if missing or stale (older than WASM)
+if [ ! -f "$SDK_JS" ] || [ "$WASM_FILE" -nt "$SDK_JS" ]; then
+  echo "Generating TypeScript SDK..."
   "$ROOT/scripts/generate-ts-sdk.sh"
 fi
 
 # Copy SDK files into web-ui/sdk/ (workers import from ../sdk/)
 echo "Syncing SDK into web-ui/sdk/..."
 mkdir -p "$WEB_UI/sdk"
-rsync -a --delete --exclude='.gitignore' "$SDK_PATH/" "$WEB_UI/sdk/"
+cp -R "$SDK_PATH/"* "$WEB_UI/sdk/" 2>/dev/null || true
 
 cd "$WEB_UI"
 
