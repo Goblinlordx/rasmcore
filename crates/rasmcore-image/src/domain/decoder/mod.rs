@@ -570,6 +570,36 @@ pub fn decode_with_hint(
     )))
 }
 
+/// Decode image data to native f32 precision when the format supports it.
+///
+/// Formats with native f32 paths (EXR → Rgba32f, HDR → Rgb32f) produce
+/// f32 output directly, avoiding u8 quantization. All other formats
+/// fall back to the standard u8/u16 decode path.
+pub fn decode_f32(data: &[u8]) -> Result<DecodedImage, ImageError> {
+    decode_f32_with_hint(data, None)
+}
+
+/// Decode to native f32 with an optional format hint.
+pub fn decode_f32_with_hint(
+    data: &[u8],
+    format_hint: Option<&str>,
+) -> Result<DecodedImage, ImageError> {
+    // Resolve format (via hint or auto-detection)
+    let format = if let Some(hint) = format_hint {
+        hint.to_string()
+    } else {
+        detect_format(data).unwrap_or_default()
+    };
+
+    // Route to f32 decoder if available for this format
+    match format.as_str() {
+        "exr" => decode_native_exr_f32(data),
+        "hdr" => decode_native_hdr_f32(data),
+        // All other formats: standard decode (u8/u16)
+        _ => decode_with_hint(data, format_hint),
+    }
+}
+
 // ─── Multi-Frame / Multi-Page API ───────────────────────────────────────────
 
 /// Return the total number of frames/pages in the image without full decode.
@@ -1580,6 +1610,91 @@ pub(crate) fn decode_native_hdr(data: &[u8]) -> Result<DecodedImage, ImageError>
     })
 }
 
+/// Decode Radiance HDR to native f32 precision (Rgb32f).
+///
+/// Stores RGBE→f32 linear values directly as little-endian bytes.
+/// RGBE encoding has ~1% relative precision, so f32 round-trips through
+/// HDR format will have RGBE-limited precision (not bit-exact).
+pub(crate) fn decode_native_hdr_f32(data: &[u8]) -> Result<DecodedImage, ImageError> {
+    let mut width = 0u32;
+    let mut height = 0u32;
+    let mut data_start = 0;
+
+    let mut pos = 0;
+    while pos < data.len() {
+        let line_end = data[pos..]
+            .iter()
+            .position(|&b| b == b'\n')
+            .unwrap_or(data.len() - pos);
+        let line = &data[pos..pos + line_end];
+
+        if let Ok(line_str) = std::str::from_utf8(line)
+            && (line_str.starts_with("-Y ") || line_str.starts_with("+Y "))
+        {
+            let parts: Vec<&str> = line_str.split_whitespace().collect();
+            if parts.len() >= 4 {
+                height = parts[1].parse().unwrap_or(0);
+                width = parts[3].parse().unwrap_or(0);
+            }
+            data_start = pos + line_end + 1;
+            break;
+        }
+
+        pos += line_end + 1;
+    }
+
+    if width == 0 || height == 0 {
+        return Err(ImageError::InvalidInput(
+            "HDR: no resolution line found".into(),
+        ));
+    }
+
+    let pixel_data = &data[data_start..];
+    let npixels = (width * height) as usize;
+    // Rgb32f: 12 bytes per pixel (3 × f32)
+    let mut pixels = Vec::with_capacity(npixels * 12);
+
+    for i in 0..npixels {
+        let offset = i * 4;
+        if offset + 4 > pixel_data.len() {
+            pixels.extend_from_slice(&0.0f32.to_le_bytes());
+            pixels.extend_from_slice(&0.0f32.to_le_bytes());
+            pixels.extend_from_slice(&0.0f32.to_le_bytes());
+            continue;
+        }
+        let r = pixel_data[offset];
+        let g = pixel_data[offset + 1];
+        let b = pixel_data[offset + 2];
+        let e = pixel_data[offset + 3] as i32;
+
+        if e == 0 {
+            pixels.extend_from_slice(&0.0f32.to_le_bytes());
+            pixels.extend_from_slice(&0.0f32.to_le_bytes());
+            pixels.extend_from_slice(&0.0f32.to_le_bytes());
+        } else {
+            // RGBE → linear f32: channel * 2^(e-128-8)
+            let scale = 2.0f32.powi(e - 128 - 8);
+            let rf = r as f32 * scale;
+            let gf = g as f32 * scale;
+            let bf = b as f32 * scale;
+            pixels.extend_from_slice(&rf.to_le_bytes());
+            pixels.extend_from_slice(&gf.to_le_bytes());
+            pixels.extend_from_slice(&bf.to_le_bytes());
+        }
+    }
+
+    Ok(DecodedImage {
+        pixels,
+        info: ImageInfo {
+            width,
+            height,
+            format: PixelFormat::Rgb32f,
+            color_space: ColorSpace::Srgb,
+        },
+        icc_profile: None,
+    })
+}
+
 /// Decode WebP using the image-webp crate directly (bypasses image crate).
 pub(crate) fn decode_native_webp(data: &[u8]) -> Result<DecodedImage, ImageError> {
     let mut decoder = image_webp::WebPDecoder::new(std::io::Cursor::new(data))
@@ -1695,6 +1810,86 @@ pub(crate) fn decode_native_exr(data: &[u8]) -> Result<DecodedImage, ImageError>
             width: w,
             height: h,
             format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
+        },
+        icc_profile: None,
+    })
+}
+
+/// Decode EXR to native f32 precision (Rgba32f).
+///
+/// Stores f32 samples directly as little-endian bytes — no u8 quantization.
+/// For f32-stored EXR files, this is lossless. For f16-stored files,
+/// precision is limited to f16 range (converted to f32 by the exr crate).
+pub(crate) fn decode_native_exr_f32(data: &[u8]) -> Result<DecodedImage, ImageError> {
+    use exr::prelude::*;
+
+    let image = read()
+        .no_deep_data()
+        .largest_resolution_level()
+        .all_channels()
+        .all_layers()
+        .all_attributes()
+        .from_buffered(std::io::Cursor::new(data))
+        .map_err(|e| ImageError::InvalidInput(format!("EXR: {e}")))?;
+
+    if image.layer_data.is_empty() {
+        return Err(ImageError::InvalidInput("EXR: no layers".into()));
+    }
+    let layer = &image.layer_data[0];
+    let w = layer.size.width() as u32;
+    let h = layer.size.height() as u32;
+    let npixels = (w * h) as usize;
+
+    let find_channel = |name: &str| -> Option<usize> {
+        layer
+            .channel_data
+            .list
+            .iter()
+            .position(|c| c.name.to_string().eq_ignore_ascii_case(name))
+    };
+
+    let r_idx = find_channel("R").or_else(|| find_channel("r"));
+    let g_idx = find_channel("G").or_else(|| find_channel("g"));
+    let b_idx = find_channel("B").or_else(|| find_channel("b"));
+    let a_idx = find_channel("A").or_else(|| find_channel("a"));
+
+    let get_f32_sample = |ch_idx: Option<usize>, px: usize, default: f32| -> f32 {
+        match ch_idx {
+            Some(idx) => {
+                let samples = &layer.channel_data.list[idx].sample_data;
+                match samples {
+                    FlatSamples::F32(v) => v.get(px).copied().unwrap_or(default),
+                    FlatSamples::F16(v) => v.get(px).map(|f| f.to_f32()).unwrap_or(default),
+                    FlatSamples::U32(v) => v
+                        .get(px)
+                        .map(|&u| u as f32 / u32::MAX as f32)
+                        .unwrap_or(default),
+                }
+            }
+            None => default,
+        }
+    };
+
+    // Store RGBA as f32 LE bytes: 16 bytes per pixel
+    let mut pixels = Vec::with_capacity(npixels * 16);
+    for i in 0..npixels {
+        let r = get_f32_sample(r_idx, i, 0.0);
+        let g = get_f32_sample(g_idx, i, 0.0);
+        let b = get_f32_sample(b_idx, i, 0.0);
+        let a = get_f32_sample(a_idx, i, 1.0);
+        pixels.extend_from_slice(&r.to_le_bytes());
+        pixels.extend_from_slice(&g.to_le_bytes());
+        pixels.extend_from_slice(&b.to_le_bytes());
+        pixels.extend_from_slice(&a.to_le_bytes());
+    }
+
+    Ok(DecodedImage {
+        pixels,
+        info: ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgba32f,
             color_space: ColorSpace::Srgb,
         },
         icc_profile: None,

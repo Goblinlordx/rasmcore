@@ -2994,6 +2994,7 @@ dependencies = [
  "fast_image_resize",
  "fontdue",
  "gif 0.14.1",
+ "half",
  "image-webp 0.2.4",
  "imgref",
  "inventory",
