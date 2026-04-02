@@ -38,6 +38,31 @@ pub struct GlitchParams {
     pub seed: u32,
 }
 
+const GLITCH_WGSL: &str = include_str!("../../../shaders/glitch.wgsl");
+
+impl rasmcore_pipeline::GpuCapable for GlitchParams {
+    fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<rasmcore_pipeline::GpuOp>> {
+        let mut params = Vec::with_capacity(32);
+        params.extend_from_slice(&width.to_le_bytes());
+        params.extend_from_slice(&height.to_le_bytes());
+        params.extend_from_slice(&self.shift_amount.to_le_bytes());
+        params.extend_from_slice(&self.channel_offset.to_le_bytes());
+        params.extend_from_slice(&self.intensity.to_le_bytes());
+        params.extend_from_slice(&self.band_height.to_le_bytes());
+        params.extend_from_slice(&self.seed.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes()); // _pad
+
+        Some(vec![rasmcore_pipeline::GpuOp::Compute {
+            shader: rasmcore_gpu_shaders::compose(&[rasmcore_gpu_shaders::PIXEL_OPS], GLITCH_WGSL),
+            entry_point: "main",
+            workgroup_size: [16, 16, 1],
+            params,
+            extra_buffers: Vec::new(),
+            buffer_format: Default::default(),
+        }])
+    }
+}
+
 #[rasmcore_macros::register_filter(
     name = "glitch",
     category = "effect",

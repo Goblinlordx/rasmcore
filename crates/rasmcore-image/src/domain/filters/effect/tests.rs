@@ -967,5 +967,76 @@ mod consumer_effect_tests {
         });
         assert_eq!(result.len(), 64 * 64 * 3);
     }
+
+    // ── GPU ops generation ──
+
+    #[test]
+    fn chromatic_split_gpu_ops_generated() {
+        let params = ChromaticSplitParams {
+            red_dx: 5.0, red_dy: 0.0,
+            green_dx: 0.0, green_dy: 0.0,
+            blue_dx: -5.0, blue_dy: 0.0,
+        };
+        use rasmcore_pipeline::GpuCapable;
+        let ops = params.gpu_ops(100, 100).unwrap();
+        assert_eq!(ops.len(), 1);
+    }
+
+    #[test]
+    fn chromatic_aberration_gpu_ops_generated() {
+        let params = ChromaticAberrationParams { strength: 3.0 };
+        use rasmcore_pipeline::GpuCapable;
+        let ops = params.gpu_ops(100, 100).unwrap();
+        assert_eq!(ops.len(), 1);
+    }
+
+    #[test]
+    fn chromatic_aberration_gpu_none_at_zero() {
+        let params = ChromaticAberrationParams { strength: 0.0 };
+        use rasmcore_pipeline::GpuCapable;
+        assert!(params.gpu_ops(100, 100).is_none());
+    }
+
+    #[test]
+    fn glitch_gpu_ops_generated() {
+        let params = GlitchParams {
+            shift_amount: 20.0, channel_offset: 5.0,
+            intensity: 0.5, band_height: 8, seed: 42,
+        };
+        use rasmcore_pipeline::GpuCapable;
+        let ops = params.gpu_ops(100, 100).unwrap();
+        assert_eq!(ops.len(), 1);
+    }
+
+    #[test]
+    fn light_leak_gpu_ops_generated() {
+        let params = LightLeakParams {
+            intensity: 0.5, position_x: 0.5, position_y: 0.5,
+            radius: 0.5, warmth: 25.0,
+        };
+        use rasmcore_pipeline::GpuCapable;
+        let ops = params.gpu_ops(100, 100).unwrap();
+        assert_eq!(ops.len(), 1);
+    }
+
+    #[test]
+    fn light_leak_gpu_none_at_zero() {
+        let params = LightLeakParams {
+            intensity: 0.0, position_x: 0.5, position_y: 0.5,
+            radius: 0.5, warmth: 25.0,
+        };
+        use rasmcore_pipeline::GpuCapable;
+        assert!(params.gpu_ops(100, 100).is_none());
+    }
+
+    #[test]
+    fn mirror_gpu_ops_generated() {
+        let params = MirrorKaleidoscopeParams {
+            segments: 6, angle: 30.0, mode: 2,
+        };
+        use rasmcore_pipeline::GpuCapable;
+        let ops = params.gpu_ops(100, 100).unwrap();
+        assert_eq!(ops.len(), 1);
+    }
 }
 

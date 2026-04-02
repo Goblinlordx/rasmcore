@@ -22,6 +22,31 @@ pub struct MirrorKaleidoscopeParams {
     pub mode: u32,
 }
 
+const MIRROR_WGSL: &str = include_str!("../../../shaders/mirror_kaleidoscope.wgsl");
+
+impl rasmcore_pipeline::GpuCapable for MirrorKaleidoscopeParams {
+    fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<rasmcore_pipeline::GpuOp>> {
+        let mut params = Vec::with_capacity(32);
+        params.extend_from_slice(&width.to_le_bytes());
+        params.extend_from_slice(&height.to_le_bytes());
+        params.extend_from_slice(&self.segments.to_le_bytes());
+        params.extend_from_slice(&self.mode.to_le_bytes());
+        params.extend_from_slice(&self.angle.to_radians().to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes()); // _pad1
+        params.extend_from_slice(&0u32.to_le_bytes()); // _pad2
+        params.extend_from_slice(&0u32.to_le_bytes()); // _pad3
+
+        Some(vec![rasmcore_pipeline::GpuOp::Compute {
+            shader: rasmcore_gpu_shaders::compose(&[rasmcore_gpu_shaders::PIXEL_OPS], MIRROR_WGSL),
+            entry_point: "main",
+            workgroup_size: [16, 16, 1],
+            params,
+            extra_buffers: Vec::new(),
+            buffer_format: Default::default(),
+        }])
+    }
+}
+
 #[rasmcore_macros::register_filter(
     name = "mirror_kaleidoscope",
     category = "effect",
