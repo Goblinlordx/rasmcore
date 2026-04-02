@@ -1026,4 +1026,188 @@ fn lut(input, channel, params) {
 
         assert_eq!(result, vec![255, 191, 127, 0]);
     }
+
+    // ─── Self-Inverse (Even/Odd) Tests ────────────────────────────────────
+
+    /// Helper: load an invert script, apply once (odd) and twice (even),
+    /// verify inversion and identity respectively.
+    fn assert_self_inverse(script_source: &str, name: &str) {
+        let scripts = vec![script_source.to_string()];
+        let registry = ScriptRegistry::new(&scripts).unwrap();
+        let script = registry.get(name).unwrap().clone();
+
+        let info = ImageInfo {
+            width: 4,
+            height: 1,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
+        let config: HashMap<String, String> = HashMap::new();
+
+        // 12 bytes: 4 pixels * 3 channels (RGB)
+        let original = vec![0u8, 64, 128, 255, 100, 200, 10, 20, 30, 240, 250, 5];
+        let expected_inverted: Vec<u8> = original.iter().map(|&b| 255 - b).collect();
+
+        // Single application (odd) = inverted
+        let node1 = ScriptNode::new(script.clone(), 0, info.clone(), &config);
+        let once = node1
+            .compute_region(
+                Rect::new(0, 0, 4, 1),
+                &mut |_, _| Ok(original.clone()),
+            )
+            .unwrap();
+        assert_eq!(once, expected_inverted, "{name}: single apply should invert");
+
+        // Double application (even) = identity
+        let node2 = ScriptNode::new(script, 0, info, &config);
+        let twice = node2
+            .compute_region(
+                Rect::new(0, 0, 4, 1),
+                &mut |_, _| Ok(once.clone()),
+            )
+            .unwrap();
+        assert_eq!(twice, original, "{name}: double apply should be identity");
+    }
+
+    #[test]
+    fn fusable_invert_self_inverse() {
+        assert_self_inverse(
+            r#"
+//! name: inv_f
+//! category: test
+//! strategy: fusable
+
+fn lut(input, channel, params) {
+    255.0 - input
+}
+"#,
+            "inv_f",
+        );
+    }
+
+    #[test]
+    fn compute_invert_self_inverse() {
+        assert_self_inverse(
+            r#"
+//! name: inv_c
+//! category: test
+//! strategy: compute
+
+fn compute(pixels, info, params) {
+    let out = pixels;
+    for i in range(0, out.len()) {
+        out[i] = 255 - out[i];
+    }
+    out
+}
+"#,
+            "inv_c",
+        );
+    }
+
+    #[test]
+    fn gpu_invert_self_inverse() {
+        assert_self_inverse(
+            r#"
+//! name: inv_g
+//! category: test
+//! strategy: gpu
+
+fn gpu_shader() {
+    `@compute @workgroup_size(256) fn main() {}`
+}
+
+fn compute(pixels, info, params) {
+    let out = pixels;
+    for i in range(0, out.len()) {
+        out[i] = 255 - out[i];
+    }
+    out
+}
+"#,
+            "inv_g",
+        );
+    }
+
+    #[test]
+    fn gpu_invert_produces_valid_gpu_ops() {
+        use rasmcore_pipeline::gpu::GpuCapable;
+
+        let scripts = vec![
+            r#"
+//! name: inv_gpu_ops
+//! category: test
+//! strategy: gpu
+
+fn gpu_shader() {
+    `@compute @workgroup_size(256) fn main(@builtin(global_invocation_id) id: vec3<u32>) {}`
+}
+
+fn compute(pixels, info, params) { pixels }
+"#
+            .to_string(),
+        ];
+
+        let registry = ScriptRegistry::new(&scripts).unwrap();
+        let script = registry.get("inv_gpu_ops").unwrap().clone();
+
+        let info = ImageInfo {
+            width: 64,
+            height: 64,
+            format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
+        };
+        let config: HashMap<String, String> = HashMap::new();
+        let node = ScriptNode::new(script, 0, info, &config);
+
+        let ops = node.gpu_ops(64, 64).expect("GPU strategy should produce ops");
+        assert_eq!(ops.len(), 1);
+        match &ops[0] {
+            rasmcore_pipeline::gpu::GpuOp::Compute { shader, entry_point, .. } => {
+                assert!(shader.contains("@compute"), "shader should contain @compute");
+                assert_eq!(*entry_point, "main");
+            }
+            _ => panic!("expected GpuOp::Compute"),
+        }
+    }
+
+    #[test]
+    fn script_manifest_lists_all_invert_scripts() {
+        let scripts = vec![
+            r#"
+//! name: invert_fusable
+//! category: adjustment
+//! strategy: fusable
+
+fn lut(input, channel, params) { 255.0 - input }
+"#
+            .to_string(),
+            r#"
+//! name: invert_compute
+//! category: adjustment
+//! strategy: compute
+
+fn compute(pixels, info, params) { pixels }
+"#
+            .to_string(),
+            r#"
+//! name: invert_gpu
+//! category: adjustment
+//! strategy: gpu
+
+fn gpu_shader() { `@compute @workgroup_size(1) fn main() {}` }
+fn compute(pixels, info, params) { pixels }
+"#
+            .to_string(),
+        ];
+
+        let registry = ScriptRegistry::new(&scripts).unwrap();
+        let manifest = script_filter_manifest(&registry);
+        let names: Vec<&str> = manifest.iter().map(|e| e.name.as_str()).collect();
+
+        assert!(names.contains(&"invert_fusable"), "manifest should contain invert_fusable");
+        assert!(names.contains(&"invert_compute"), "manifest should contain invert_compute");
+        assert!(names.contains(&"invert_gpu"), "manifest should contain invert_gpu");
+        assert_eq!(manifest.len(), 3);
+    }
 }
