@@ -100,11 +100,11 @@ plan:
 - phase: Legacy filter auto-wrap
   tasks:
   - text: Add f32_native marker to FilterReg/CpuFilter trait (default false)
-    done: false
+    done: true
   - text: In generated pipeline node compute_region, if not f32_native, wrap with f32-to-u8 and u8-to-f32 conversion
-    done: false
+    done: true
   - text: Verify existing filters produce same output (within +-1 LSB) with auto-wrap
-    done: false
+    done: true
 - phase: Reusable quantization utilities
   tasks:
   - text: Add quantize module with shared functions — quantize_f32_to_u8, quantize_f32_to_u16, quantize_f32_to_f16, quantize_f32_to_rgba8,
@@ -121,9 +121,9 @@ plan:
 - phase: Verification
   tasks:
   - text: All existing domain tests pass (allow +-1 LSB tolerance for u8 round-trip)
-    done: false
+    done: true
   - text: WASM component builds
-    done: false
+    done: true
   - text: Web UI works with f32 pipeline (load, apply filters, export)
-    done: false
+    done: true
 extra: {}
