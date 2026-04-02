@@ -132,6 +132,30 @@ pub fn convert_samples<S: PixelSample, D: PixelSample>(src_bytes: &[u8]) -> Vec<
     D::to_bytes(&dst_samples)
 }
 
+/// Determine the corresponding 8-bit format for a given f32 format.
+/// Returns `None` if the format is not f32.
+pub fn f32_to_standard_format(format: super::types::PixelFormat) -> Option<super::types::PixelFormat> {
+    use super::types::PixelFormat;
+    match format {
+        PixelFormat::Rgba32f => Some(PixelFormat::Rgba8),
+        PixelFormat::Rgb32f => Some(PixelFormat::Rgb8),
+        PixelFormat::Gray32f => Some(PixelFormat::Gray8),
+        _ => None,
+    }
+}
+
+/// Determine the corresponding f32 format for a given 8-bit format.
+/// Returns `None` if the format is not 8-bit RGB/RGBA/Gray.
+pub fn standard_to_f32_format(format: super::types::PixelFormat) -> Option<super::types::PixelFormat> {
+    use super::types::PixelFormat;
+    match format {
+        PixelFormat::Rgba8 => Some(PixelFormat::Rgba32f),
+        PixelFormat::Rgb8 => Some(PixelFormat::Rgb32f),
+        PixelFormat::Gray8 => Some(PixelFormat::Gray32f),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -14,7 +14,10 @@ pub fn validate_format(format: PixelFormat) -> Result<(), ImageError> {
         | PixelFormat::Gray8
         | PixelFormat::Rgb16
         | PixelFormat::Rgba16
-        | PixelFormat::Gray16 => Ok(()),
+        | PixelFormat::Gray16
+        | PixelFormat::Rgb32f
+        | PixelFormat::Rgba32f
+        | PixelFormat::Gray32f => Ok(()),
         other => Err(ImageError::UnsupportedFormat(format!(
             "filter on {other:?} not supported"
         ))),
@@ -29,12 +32,20 @@ pub fn is_16bit(format: PixelFormat) -> bool {
     )
 }
 
+/// Check if a pixel format is 32-bit float.
+pub fn is_f32(format: PixelFormat) -> bool {
+    matches!(
+        format,
+        PixelFormat::Rgb32f | PixelFormat::Rgba32f | PixelFormat::Gray32f
+    )
+}
+
 /// Number of channels for a pixel format (not bytes — channels).
 pub fn channels(format: PixelFormat) -> usize {
     match format {
-        PixelFormat::Gray8 | PixelFormat::Gray16 => 1,
-        PixelFormat::Rgb8 | PixelFormat::Rgb16 => 3,
-        PixelFormat::Rgba8 | PixelFormat::Rgba16 => 4,
+        PixelFormat::Gray8 | PixelFormat::Gray16 | PixelFormat::Gray32f => 1,
+        PixelFormat::Rgb8 | PixelFormat::Rgb16 | PixelFormat::Rgb32f => 3,
+        PixelFormat::Rgba8 | PixelFormat::Rgba16 | PixelFormat::Rgba32f => 4,
         _ => 3,
     }
 }
@@ -67,6 +78,50 @@ pub fn f32_to_u16_pixels(values: &[f32]) -> Vec<u8> {
         .map(|&v| (v * 65535.0 + 0.5).clamp(0.0, 65535.0) as u16)
         .collect();
     u16_to_bytes(&u16s)
+}
+
+/// Read f32 samples from a byte buffer (little-endian).
+pub fn bytes_to_f32(bytes: &[u8]) -> Vec<f32> {
+    bytes
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect()
+}
+
+/// Write f32 samples to a byte buffer (little-endian).
+pub fn f32_to_bytes(values: &[f32]) -> Vec<u8> {
+    values.iter().flat_map(|v| v.to_le_bytes()).collect()
+}
+
+/// Convert f32 pixel buffer to 8-bit for processing, then back to f32.
+/// Used when an operation only supports 8-bit internally and f32 input arrives.
+pub fn process_via_standard<F>(pixels: &[u8], info: &ImageInfo, f: F) -> Result<Vec<u8>, ImageError>
+where
+    F: FnOnce(&[u8], &ImageInfo) -> Result<Vec<u8>, ImageError>,
+{
+    let samples = bytes_to_f32(pixels);
+
+    // Convert f32 [0.0, 1.0] → u8 [0, 255]
+    let pixels_8: Vec<u8> = samples
+        .iter()
+        .map(|&v| (v * 255.0 + 0.5).clamp(0.0, 255.0) as u8)
+        .collect();
+
+    let info_8 = ImageInfo {
+        format: match info.format {
+            PixelFormat::Rgb32f => PixelFormat::Rgb8,
+            PixelFormat::Rgba32f => PixelFormat::Rgba8,
+            PixelFormat::Gray32f => PixelFormat::Gray8,
+            other => other,
+        },
+        ..*info
+    };
+
+    let result_8 = f(&pixels_8, &info_8)?;
+
+    // Convert u8 [0, 255] → f32 [0.0, 1.0]
+    let result_f32: Vec<f32> = result_8.iter().map(|&v| v as f32 / 255.0).collect();
+    Ok(f32_to_bytes(&result_f32))
 }
 
 /// Convert 16-bit pixel buffer to 8-bit for processing, then back to 16-bit.

@@ -160,6 +160,76 @@ fn convert_pixels(
             Ok(out)
         }
 
+        // ── f32 → 8-bit demotion ──
+        (PixelFormat::Rgba32f, PixelFormat::Rgba8) => {
+            let mut out = Vec::with_capacity(pixel_count * 4);
+            for chunk in pixels.chunks_exact(16) {
+                for i in 0..4 {
+                    let v = f32::from_le_bytes([chunk[i * 4], chunk[i * 4 + 1], chunk[i * 4 + 2], chunk[i * 4 + 3]]);
+                    out.push((v * 255.0 + 0.5).clamp(0.0, 255.0) as u8);
+                }
+            }
+            Ok(out)
+        }
+        (PixelFormat::Rgb32f, PixelFormat::Rgb8) => {
+            let mut out = Vec::with_capacity(pixel_count * 3);
+            for chunk in pixels.chunks_exact(12) {
+                for i in 0..3 {
+                    let v = f32::from_le_bytes([chunk[i * 4], chunk[i * 4 + 1], chunk[i * 4 + 2], chunk[i * 4 + 3]]);
+                    out.push((v * 255.0 + 0.5).clamp(0.0, 255.0) as u8);
+                }
+            }
+            Ok(out)
+        }
+        (PixelFormat::Gray32f, PixelFormat::Gray8) => {
+            let mut out = Vec::with_capacity(pixel_count);
+            for chunk in pixels.chunks_exact(4) {
+                let v = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                out.push((v * 255.0 + 0.5).clamp(0.0, 255.0) as u8);
+            }
+            Ok(out)
+        }
+
+        // ── 8-bit → f32 promotion ──
+        (PixelFormat::Rgba8, PixelFormat::Rgba32f) => {
+            let mut out = Vec::with_capacity(pixel_count * 16);
+            for &v in pixels {
+                out.extend_from_slice(&(v as f32 / 255.0).to_le_bytes());
+            }
+            Ok(out)
+        }
+        (PixelFormat::Rgb8, PixelFormat::Rgb32f) => {
+            let mut out = Vec::with_capacity(pixel_count * 12);
+            for &v in pixels {
+                out.extend_from_slice(&(v as f32 / 255.0).to_le_bytes());
+            }
+            Ok(out)
+        }
+        (PixelFormat::Gray8, PixelFormat::Gray32f) => {
+            let mut out = Vec::with_capacity(pixel_count * 4);
+            for &v in pixels {
+                out.extend_from_slice(&(v as f32 / 255.0).to_le_bytes());
+            }
+            Ok(out)
+        }
+
+        // ── f32 channel conversions ──
+        (PixelFormat::Rgb32f, PixelFormat::Rgba32f) => {
+            let mut out = Vec::with_capacity(pixel_count * 16);
+            for chunk in pixels.chunks_exact(12) {
+                out.extend_from_slice(chunk);
+                out.extend_from_slice(&1.0f32.to_le_bytes());
+            }
+            Ok(out)
+        }
+        (PixelFormat::Rgba32f, PixelFormat::Rgb32f) => {
+            let mut out = Vec::with_capacity(pixel_count * 12);
+            for chunk in pixels.chunks_exact(16) {
+                out.extend_from_slice(&chunk[..12]);
+            }
+            Ok(out)
+        }
+
         // ── Cross-depth + cross-channel: two-step via intermediate ──
         _ => {
             // Step 1: convert to 8-bit same-channel-count
@@ -176,6 +246,18 @@ fn convert_pixels(
                     convert_pixels(pixels, src, PixelFormat::Rgba8, pixel_count)?,
                     PixelFormat::Rgba8,
                 ),
+                PixelFormat::Gray32f => (
+                    convert_pixels(pixels, src, PixelFormat::Gray8, pixel_count)?,
+                    PixelFormat::Gray8,
+                ),
+                PixelFormat::Rgb32f => (
+                    convert_pixels(pixels, src, PixelFormat::Rgb8, pixel_count)?,
+                    PixelFormat::Rgb8,
+                ),
+                PixelFormat::Rgba32f => (
+                    convert_pixels(pixels, src, PixelFormat::Rgba8, pixel_count)?,
+                    PixelFormat::Rgba8,
+                ),
                 other => (pixels.to_vec(), other),
             };
             // Step 2: convert channels at 8-bit
@@ -184,9 +266,9 @@ fn convert_pixels(
             } else {
                 // Get 8-bit target
                 let target_8 = match dst {
-                    PixelFormat::Gray8 | PixelFormat::Gray16 => PixelFormat::Gray8,
-                    PixelFormat::Rgb8 | PixelFormat::Rgb16 => PixelFormat::Rgb8,
-                    PixelFormat::Rgba8 | PixelFormat::Rgba16 => PixelFormat::Rgba8,
+                    PixelFormat::Gray8 | PixelFormat::Gray16 | PixelFormat::Gray32f => PixelFormat::Gray8,
+                    PixelFormat::Rgb8 | PixelFormat::Rgb16 | PixelFormat::Rgb32f => PixelFormat::Rgb8,
+                    PixelFormat::Rgba8 | PixelFormat::Rgba16 | PixelFormat::Rgba32f => PixelFormat::Rgba8,
                     _ => {
                         return Err(ImageError::UnsupportedFormat(format!(
                             "conversion from {src:?} to {dst:?} not supported"
@@ -202,7 +284,7 @@ fn convert_pixels(
                     )
                 }
             };
-            // Step 3: promote to 16-bit if needed
+            // Step 3: promote to 16-bit or f32 if needed
             if channel_fmt == dst {
                 Ok(channel_converted)
             } else {
