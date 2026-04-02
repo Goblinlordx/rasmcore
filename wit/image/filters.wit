@@ -129,6 +129,10 @@ interface filters {
         gamma-value: f32,
     }
 
+    record invert-v2-config {
+        strength: f32,
+    }
+
     record contrast-config {
         amount: f32,
     }
@@ -245,6 +249,39 @@ interface filters {
         threshold: f32,
         block-size: u32,
         nms-radius: u32,
+    }
+
+    record wave-config {
+        amplitude: f32,
+        wavelength: f32,
+        vertical: f32,
+    }
+
+    record barrel-config {
+        k1: f32,
+        k2: f32,
+    }
+
+    record mesh-warp-config {
+        grid-cols: u32,
+        grid-rows: u32,
+        grid-json: string,
+    }
+
+    record ripple-config {
+        amplitude: f32,
+        wavelength: f32,
+        center-x: f32,
+        center-y: f32,
+    }
+
+    record swirl-config {
+        angle: f32,
+        radius: f32,
+    }
+
+    record spherize-config {
+        amount: f32,
     }
 
     record tonemap-drago-config {
@@ -376,6 +413,15 @@ interface filters {
         tint: f32,
     }
 
+    record chromatic-split-config {
+        red-dx: f32,
+        red-dy: f32,
+        green-dx: f32,
+        green-dy: f32,
+        blue-dx: f32,
+        blue-dy: f32,
+    }
+
     record oil-paint-config {
         radius: u32,
     }
@@ -385,6 +431,10 @@ interface filters {
         seed: u64,
     }
 
+    record chromatic-aberration-config {
+        strength: f32,
+    }
+
     record solarize-config {
         threshold: u8,
     }
@@ -392,6 +442,14 @@ interface filters {
     record salt-pepper-noise-config {
         density: f32,
         seed: u64,
+    }
+
+    record glitch-config {
+        shift-amount: f32,
+        channel-offset: f32,
+        intensity: f32,
+        band-height: u32,
+        seed: u32,
     }
 
     record film-grain-config {
@@ -416,9 +474,23 @@ interface filters {
         seed: u64,
     }
 
+    record mirror-kaleidoscope-config {
+        segments: u32,
+        angle: f32,
+        mode: u32,
+    }
+
     record halftone-config {
         dot-size: f32,
         angle-offset: f32,
+    }
+
+    record light-leak-config {
+        intensity: f32,
+        position-x: f32,
+        position-y: f32,
+        radius: f32,
+        warmth: f32,
     }
 
     record evaluate-multiply-config {
@@ -504,9 +576,34 @@ interface filters {
         shape: u32,
     }
 
+    record guided-filter-config {
+        radius: u32,
+        epsilon: f32,
+    }
+
+    record lens-blur-config {
+        radius: u32,
+        blade-count: u32,
+        rotation: f32,
+    }
+
+    record kuwahara-config {
+        radius: u32,
+    }
+
+    record sharpen-config {
+        amount: f32,
+    }
+
     record displacement-map-config {
         map-x: list<f32>,
         map-y: list<f32>,
+    }
+
+    record zoom-blur-config {
+        center-x: f32,
+        center-y: f32,
+        factor: f32,
     }
 
     record convolve-config {
@@ -514,6 +611,66 @@ interface filters {
         kh: u32,
         divisor: f32,
         kernel: list<f32>,
+    }
+
+    record smart-sharpen-config {
+        amount: f32,
+        radius: u32,
+        threshold: f32,
+    }
+
+    record high-pass-config {
+        radius: f32,
+    }
+
+    record rank-filter-config {
+        radius: u32,
+        rank: f32,
+    }
+
+    record box-blur-config {
+        radius: u32,
+    }
+
+    record bokeh-blur-config {
+        radius: u32,
+        shape: u32,
+    }
+
+    record gaussian-blur-cv-config {
+        sigma: f32,
+    }
+
+    record tilt-shift-config {
+        focus-position: f32,
+        band-size: f32,
+        blur-radius: f32,
+        angle: f32,
+    }
+
+    record motion-blur-config {
+        length: u32,
+        angle-degrees: f32,
+    }
+
+    record median-config {
+        radius: u32,
+    }
+
+    record blur-config {
+        radius: f32,
+    }
+
+    record bilateral-config {
+        diameter: u32,
+        sigma-color: f32,
+        sigma-space: f32,
+    }
+
+    record spin-blur-config {
+        center-x: f32,
+        center-y: f32,
+        angle: f32,
     }
 
     record seam-carve-width-config {
@@ -643,7 +800,7 @@ interface filters {
     sigmoidal-contrast: func(pixels: buffer, info: image-info, config: sigmoidal-contrast-config) -> result<buffer, rasmcore-error>;
     exposure: func(pixels: buffer, info: image-info, config: exposure-config) -> result<buffer, rasmcore-error>;
     gamma: func(pixels: buffer, info: image-info, config: gamma-config) -> result<buffer, rasmcore-error>;
-    invert-v2: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    invert-v2: func(pixels: buffer, info: image-info, config: invert-v2-config) -> result<buffer, rasmcore-error>;
     contrast: func(pixels: buffer, info: image-info, config: contrast-config) -> result<buffer, rasmcore-error>;
     levels: func(pixels: buffer, info: image-info, config: levels-config) -> result<buffer, rasmcore-error>;
     invert: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
@@ -667,13 +824,13 @@ interface filters {
     hough-lines: func(pixels: buffer, info: image-info, config: hough-lines-config) -> result<buffer, rasmcore-error>;
     harris-corners: func(pixels: buffer, info: image-info, config: harris-corners-config) -> result<buffer, rasmcore-error>;
     depolar: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    wave: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    wave: func(pixels: buffer, info: image-info, config: wave-config) -> result<buffer, rasmcore-error>;
     polar: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    barrel: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    mesh-warp: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    ripple: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    swirl: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    spherize: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    barrel: func(pixels: buffer, info: image-info, config: barrel-config) -> result<buffer, rasmcore-error>;
+    mesh-warp: func(pixels: buffer, info: image-info, config: mesh-warp-config) -> result<buffer, rasmcore-error>;
+    ripple: func(pixels: buffer, info: image-info, config: ripple-config) -> result<buffer, rasmcore-error>;
+    swirl: func(pixels: buffer, info: image-info, config: swirl-config) -> result<buffer, rasmcore-error>;
+    spherize: func(pixels: buffer, info: image-info, config: spherize-config) -> result<buffer, rasmcore-error>;
     tonemap-drago: func(pixels: buffer, info: image-info, config: tonemap-drago-config) -> result<buffer, rasmcore-error>;
     tonemap-reinhard: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     tonemap-filmic: func(pixels: buffer, info: image-info, config: tonemap-filmic-config) -> result<buffer, rasmcore-error>;
@@ -697,16 +854,21 @@ interface filters {
     sparse-color: func(pixels: buffer, info: image-info, config: sparse-color-config) -> result<buffer, rasmcore-error>;
     vibrance: func(pixels: buffer, info: image-info, config: vibrance-config) -> result<buffer, rasmcore-error>;
     white-balance-temperature: func(pixels: buffer, info: image-info, config: white-balance-temperature-config) -> result<buffer, rasmcore-error>;
+    chromatic-split: func(pixels: buffer, info: image-info, config: chromatic-split-config) -> result<buffer, rasmcore-error>;
     oil-paint: func(pixels: buffer, info: image-info, config: oil-paint-config) -> result<buffer, rasmcore-error>;
     poisson-noise: func(pixels: buffer, info: image-info, config: poisson-noise-config) -> result<buffer, rasmcore-error>;
+    chromatic-aberration: func(pixels: buffer, info: image-info, config: chromatic-aberration-config) -> result<buffer, rasmcore-error>;
     solarize: func(pixels: buffer, info: image-info, config: solarize-config) -> result<buffer, rasmcore-error>;
     salt-pepper-noise: func(pixels: buffer, info: image-info, config: salt-pepper-noise-config) -> result<buffer, rasmcore-error>;
+    glitch: func(pixels: buffer, info: image-info, config: glitch-config) -> result<buffer, rasmcore-error>;
     film-grain: func(pixels: buffer, info: image-info, config: film-grain-config) -> result<buffer, rasmcore-error>;
     pixelate: func(pixels: buffer, info: image-info, config: pixelate-config) -> result<buffer, rasmcore-error>;
     uniform-noise: func(pixels: buffer, info: image-info, config: uniform-noise-config) -> result<buffer, rasmcore-error>;
     gaussian-noise: func(pixels: buffer, info: image-info, config: gaussian-noise-config) -> result<buffer, rasmcore-error>;
+    mirror-kaleidoscope: func(pixels: buffer, info: image-info, config: mirror-kaleidoscope-config) -> result<buffer, rasmcore-error>;
     halftone: func(pixels: buffer, info: image-info, config: halftone-config) -> result<buffer, rasmcore-error>;
     emboss: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    light-leak: func(pixels: buffer, info: image-info, config: light-leak-config) -> result<buffer, rasmcore-error>;
     evaluate-multiply: func(pixels: buffer, info: image-info, config: evaluate-multiply-config) -> result<buffer, rasmcore-error>;
     evaluate-subtract: func(pixels: buffer, info: image-info, config: evaluate-subtract-config) -> result<buffer, rasmcore-error>;
     evaluate-min: func(pixels: buffer, info: image-info, config: evaluate-min-config) -> result<buffer, rasmcore-error>;
@@ -728,26 +890,26 @@ interface filters {
     morph-open: func(pixels: buffer, info: image-info, config: morph-open-config) -> result<buffer, rasmcore-error>;
     skeletonize: func(pixels: buffer, info: image-info, config: skeletonize-config) -> result<buffer, rasmcore-error>;
     dilate: func(pixels: buffer, info: image-info, config: dilate-config) -> result<buffer, rasmcore-error>;
-    guided-filter: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    lens-blur: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    kuwahara: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    sharpen: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    guided-filter: func(pixels: buffer, info: image-info, config: guided-filter-config) -> result<buffer, rasmcore-error>;
+    lens-blur: func(pixels: buffer, info: image-info, config: lens-blur-config) -> result<buffer, rasmcore-error>;
+    kuwahara: func(pixels: buffer, info: image-info, config: kuwahara-config) -> result<buffer, rasmcore-error>;
+    sharpen: func(pixels: buffer, info: image-info, config: sharpen-config) -> result<buffer, rasmcore-error>;
     displacement-map: func(pixels: buffer, info: image-info, config: displacement-map-config) -> result<buffer, rasmcore-error>;
-    zoom-blur: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    zoom-blur: func(pixels: buffer, info: image-info, config: zoom-blur-config) -> result<buffer, rasmcore-error>;
     convolve: func(pixels: buffer, info: image-info, config: convolve-config) -> result<buffer, rasmcore-error>;
-    smart-sharpen: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    high-pass: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    rank-filter: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    box-blur: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    bokeh-blur: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    smart-sharpen: func(pixels: buffer, info: image-info, config: smart-sharpen-config) -> result<buffer, rasmcore-error>;
+    high-pass: func(pixels: buffer, info: image-info, config: high-pass-config) -> result<buffer, rasmcore-error>;
+    rank-filter: func(pixels: buffer, info: image-info, config: rank-filter-config) -> result<buffer, rasmcore-error>;
+    box-blur: func(pixels: buffer, info: image-info, config: box-blur-config) -> result<buffer, rasmcore-error>;
+    bokeh-blur: func(pixels: buffer, info: image-info, config: bokeh-blur-config) -> result<buffer, rasmcore-error>;
     average-blur: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    gaussian-blur-cv: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    tilt-shift: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    motion-blur: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    median: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    blur: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    bilateral: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    spin-blur: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    gaussian-blur-cv: func(pixels: buffer, info: image-info, config: gaussian-blur-cv-config) -> result<buffer, rasmcore-error>;
+    tilt-shift: func(pixels: buffer, info: image-info, config: tilt-shift-config) -> result<buffer, rasmcore-error>;
+    motion-blur: func(pixels: buffer, info: image-info, config: motion-blur-config) -> result<buffer, rasmcore-error>;
+    median: func(pixels: buffer, info: image-info, config: median-config) -> result<buffer, rasmcore-error>;
+    blur: func(pixels: buffer, info: image-info, config: blur-config) -> result<buffer, rasmcore-error>;
+    bilateral: func(pixels: buffer, info: image-info, config: bilateral-config) -> result<buffer, rasmcore-error>;
+    spin-blur: func(pixels: buffer, info: image-info, config: spin-blur-config) -> result<buffer, rasmcore-error>;
     unpremultiply: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     premultiply: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     seam-carve-width: func(pixels: buffer, info: image-info, config: seam-carve-width-config) -> result<buffer, rasmcore-error>;
