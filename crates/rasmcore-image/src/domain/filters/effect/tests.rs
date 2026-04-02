@@ -724,3 +724,248 @@ mod pixelate_tests {
     }
 }
 
+#[cfg(test)]
+mod consumer_effect_tests {
+    use super::*;
+    use crate::domain::types::ColorSpace;
+
+    fn rgb_info(w: u32, h: u32) -> ImageInfo {
+        ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        }
+    }
+
+    fn gradient_rgb(w: u32, h: u32) -> Vec<u8> {
+        let mut px = Vec::with_capacity((w * h * 3) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                px.push(((x * 255) / w.max(1)) as u8);
+                px.push(((y * 255) / h.max(1)) as u8);
+                px.push(128u8);
+            }
+        }
+        px
+    }
+
+    fn run_filter<F>(w: u32, h: u32, f: F) -> Vec<u8>
+    where
+        F: FnOnce(Rect, &mut UpstreamFn, &ImageInfo) -> Result<Vec<u8>, ImageError>,
+    {
+        let pixels = gradient_rgb(w, h);
+        let info = rgb_info(w, h);
+        let r = Rect::new(0, 0, w, h);
+        let mut u = |_: Rect| Ok(pixels.clone());
+        f(r, &mut u, &info).unwrap()
+    }
+
+    // ── Registration ──
+
+    #[test]
+    fn consumer_effects_registered() {
+        let filters = crate::domain::filter_registry::registered_filters();
+        let names: Vec<&str> = filters.iter().map(|f| f.name).collect();
+        for expected in &[
+            "chromatic_split",
+            "chromatic_aberration",
+            "glitch",
+            "light_leak",
+            "mirror_kaleidoscope",
+        ] {
+            assert!(
+                names.contains(expected),
+                "{expected} should be in the filter registry"
+            );
+        }
+    }
+
+    // ── Chromatic Split ──
+
+    #[test]
+    fn chromatic_split_output_size() {
+        let result = run_filter(64, 64, |r, u, info| {
+            chromatic_split(
+                r, u, info,
+                &ChromaticSplitParams {
+                    red_dx: 5.0, red_dy: 0.0,
+                    green_dx: 0.0, green_dy: 0.0,
+                    blue_dx: -5.0, blue_dy: 0.0,
+                },
+            )
+        });
+        assert_eq!(result.len(), 64 * 64 * 3);
+    }
+
+    #[test]
+    fn chromatic_split_zero_is_identity() {
+        let pixels = gradient_rgb(32, 32);
+        let result = run_filter(32, 32, |r, u, info| {
+            chromatic_split(
+                r, u, info,
+                &ChromaticSplitParams {
+                    red_dx: 0.0, red_dy: 0.0,
+                    green_dx: 0.0, green_dy: 0.0,
+                    blue_dx: 0.0, blue_dy: 0.0,
+                },
+            )
+        });
+        assert_eq!(result, pixels);
+    }
+
+    // ── Chromatic Aberration ──
+
+    #[test]
+    fn chromatic_aberration_output_size() {
+        let result = run_filter(64, 64, |r, u, info| {
+            chromatic_aberration(r, u, info, &ChromaticAberrationParams { strength: 3.0 })
+        });
+        assert_eq!(result.len(), 64 * 64 * 3);
+    }
+
+    #[test]
+    fn chromatic_aberration_zero_is_identity() {
+        let pixels = gradient_rgb(32, 32);
+        let result = run_filter(32, 32, |r, u, info| {
+            chromatic_aberration(r, u, info, &ChromaticAberrationParams { strength: 0.0 })
+        });
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn chromatic_aberration_green_unchanged() {
+        let pixels = gradient_rgb(64, 64);
+        let result = run_filter(64, 64, |r, u, info| {
+            chromatic_aberration(r, u, info, &ChromaticAberrationParams { strength: 5.0 })
+        });
+        // Green channel (index 1) should be identical to original
+        for i in (1..pixels.len()).step_by(3) {
+            assert_eq!(result[i], pixels[i], "green channel should be unchanged at byte {i}");
+        }
+    }
+
+    // ── Glitch ──
+
+    #[test]
+    fn glitch_deterministic() {
+        let a = run_filter(64, 64, |r, u, info| {
+            glitch(r, u, info, &GlitchParams {
+                shift_amount: 20.0, channel_offset: 5.0,
+                intensity: 0.5, band_height: 8, seed: 42,
+            })
+        });
+        let b = run_filter(64, 64, |r, u, info| {
+            glitch(r, u, info, &GlitchParams {
+                shift_amount: 20.0, channel_offset: 5.0,
+                intensity: 0.5, band_height: 8, seed: 42,
+            })
+        });
+        assert_eq!(a, b, "same seed should produce identical output");
+    }
+
+    #[test]
+    fn glitch_different_seeds_differ() {
+        let a = run_filter(64, 64, |r, u, info| {
+            glitch(r, u, info, &GlitchParams {
+                shift_amount: 20.0, channel_offset: 5.0,
+                intensity: 0.5, band_height: 8, seed: 1,
+            })
+        });
+        let b = run_filter(64, 64, |r, u, info| {
+            glitch(r, u, info, &GlitchParams {
+                shift_amount: 20.0, channel_offset: 5.0,
+                intensity: 0.5, band_height: 8, seed: 2,
+            })
+        });
+        assert_ne!(a, b, "different seeds should produce different output");
+    }
+
+    // ── Light Leak ──
+
+    #[test]
+    fn light_leak_zero_intensity_is_identity() {
+        let pixels = gradient_rgb(32, 32);
+        let result = run_filter(32, 32, |r, u, info| {
+            light_leak(r, u, info, &LightLeakParams {
+                intensity: 0.0, position_x: 0.5, position_y: 0.5,
+                radius: 0.5, warmth: 25.0,
+            })
+        });
+        assert_eq!(result, pixels);
+    }
+
+    #[test]
+    fn light_leak_brightens_image() {
+        let pixels = gradient_rgb(64, 64);
+        let result = run_filter(64, 64, |r, u, info| {
+            light_leak(r, u, info, &LightLeakParams {
+                intensity: 0.8, position_x: 0.5, position_y: 0.5,
+                radius: 0.8, warmth: 25.0,
+            })
+        });
+        // Screen blend always lightens — sum should be >= original
+        let sum_orig: u64 = pixels.iter().map(|&v| v as u64).sum();
+        let sum_result: u64 = result.iter().map(|&v| v as u64).sum();
+        assert!(sum_result >= sum_orig, "light leak should brighten the image");
+    }
+
+    // ── Mirror/Kaleidoscope ──
+
+    #[test]
+    fn mirror_horizontal_symmetry() {
+        let result = run_filter(64, 64, |r, u, info| {
+            mirror_kaleidoscope(r, u, info, &MirrorKaleidoscopeParams {
+                segments: 2, angle: 0.0, mode: 0,
+            })
+        });
+        // Left half should equal reversed right half
+        let w = 64usize;
+        let ch = 3usize;
+        for y in 0..64usize {
+            for x in 0..32usize {
+                let mirror_x = w - 1 - x;
+                let left = (y * w + x) * ch;
+                let right = (y * w + mirror_x) * ch;
+                assert_eq!(
+                    &result[left..left + ch],
+                    &result[right..right + ch],
+                    "horizontal mirror should be symmetric at row={y} x={x}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn mirror_vertical_symmetry() {
+        let result = run_filter(64, 64, |r, u, info| {
+            mirror_kaleidoscope(r, u, info, &MirrorKaleidoscopeParams {
+                segments: 2, angle: 0.0, mode: 1,
+            })
+        });
+        let w = 64usize;
+        let h = 64usize;
+        let ch = 3usize;
+        for y in 0..32usize {
+            let mirror_y = h - 1 - y;
+            let top = y * w * ch;
+            let bot = mirror_y * w * ch;
+            assert_eq!(
+                &result[top..top + w * ch],
+                &result[bot..bot + w * ch],
+                "vertical mirror should be symmetric at row={y}"
+            );
+        }
+    }
+
+    #[test]
+    fn kaleidoscope_output_size() {
+        let result = run_filter(64, 64, |r, u, info| {
+            mirror_kaleidoscope(r, u, info, &MirrorKaleidoscopeParams {
+                segments: 6, angle: 30.0, mode: 2,
+            })
+        });
+        assert_eq!(result.len(), 64 * 64 * 3);
+    }
+}
+
