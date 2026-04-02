@@ -3198,10 +3198,10 @@ fn close_grayscale_vs_im() {
 }
 
 #[test]
-fn close_colorize_vs_im() {
-    // IM -colorize blends a fill color at given percentage.
-    // Our colorize uses luminance-weighted tint — different formula,
-    // so we expect divergence but both should produce a similar warm cast.
+fn close_colorize_vs_im_colorize_cmd() {
+    // IM -colorize is a straight RGB lerp — fundamentally different from our
+    // PS-style SetLum/ClipColor. Both produce a color tint but via different
+    // math. We compare anyway to document the divergence.
     if let Some(error) = check_parity_rgb(
         64,
         64,
@@ -3219,15 +3219,148 @@ fn close_colorize_vs_im() {
             .unwrap()
         },
         &["-fill", "rgb(255,128,0)", "-colorize", "30%"],
-        "colorize warm 30% vs IM",
+        "colorize warm 30% vs IM -colorize",
     ) {
-        // Different blending formulas: ours uses luminance-weighted tint,
-        // IM uses straight color blend. Expect larger divergence.
+        // IM -colorize is a straight lerp, ours is W3C SetLum/ClipColor.
+        // Different algorithms — divergence is expected and documented.
         assert!(
             error < 20.0,
-            "colorize warm 30% vs IM: MAE={error:.4} exceeds 20.0"
+            "colorize warm 30% vs IM -colorize: MAE={error:.4} exceeds 20.0"
         );
     }
+}
+
+#[test]
+fn exact_colorize_vs_w3c_spec() {
+    // Validate colorize against the W3C Compositing and Blending Level 1 spec,
+    // which defines the Photoshop Color blend mode algorithm:
+    //   SetLum(target_color, Lum(pixel))
+    // with Lum = 0.299*R + 0.587*G + 0.114*B (BT.601, gamma-encoded).
+    //
+    // Reference: https://www.w3.org/TR/compositing-1/#blendingcolor
+    // This IS the Photoshop standard — PS is the ground truth for this spec.
+
+    use rasmcore_image::domain::filters;
+
+    // Hand-computed reference values from W3C SetLum/ClipColor:
+    //   target = rgb(255, 128, 0) → normalized (1.0, 0.50196, 0.0)
+    //   target_lum = 0.299*1.0 + 0.587*0.50196 + 0.114*0.0 = 0.59365
+    //
+    // For each input pixel, compute:
+    //   pixel_lum = 0.299*R + 0.587*G + 0.114*B
+    //   d = pixel_lum - target_lum
+    //   (cr, cg, cb) = (target + d) then ClipColor
+    struct Case {
+        input: [u8; 3],
+        expected: [u8; 3],
+    }
+
+    let cases = [
+        // Pure black → luma=0 → ClipColor collapses to (0,0,0)
+        Case { input: [0, 0, 0], expected: [0, 0, 0] },
+        // Pure white → luma=1.0 → x>1 and l=1 → ClipColor to (1,1,1)
+        Case { input: [255, 255, 255], expected: [255, 255, 255] },
+        // 50% gray → luma≈0.502 → shift target to match, clip negatives
+        Case { input: [128, 128, 128], expected: [216, 108, 0] },
+        // Pure red → luma=0.299
+        Case { input: [255, 0, 0], expected: [128, 64, 0] },
+        // Pure green → luma=0.587 → close to target luma, minimal shift
+        Case { input: [0, 255, 0], expected: [252, 127, 0] },
+        // Pure blue → luma=0.114 → large negative shift, heavy clipping
+        Case { input: [0, 0, 255], expected: [49, 25, 0] },
+        // Mid-tone
+        Case { input: [200, 100, 50], expected: [209, 105, 0] },
+    ];
+
+    for case in &cases {
+        let [ir, ig, ib] = case.input;
+        let pixels = vec![ir, ig, ib];
+        let info = test_info(1, 1, PixelFormat::Rgb8);
+        let rect = Rect::new(0, 0, 1, 1);
+        let result = filters::colorize(
+            rect,
+            &mut |_| Ok(pixels.clone()),
+            &info,
+            &filters::ColorizeParams {
+                target: rasmcore_image::domain::param_types::ColorRgb { r: 255, g: 128, b: 0 },
+                amount: 1.0,
+            },
+        )
+        .unwrap();
+
+        let [er, eg, eb] = case.expected;
+        let got = [result[0], result[1], result[2]];
+        // Allow ±1 for f32 rounding
+        for ch in 0..3 {
+            let diff = (got[ch] as i16 - case.expected[ch] as i16).abs();
+            assert!(
+                diff <= 1,
+                "colorize W3C: input ({ir},{ig},{ib}) ch{ch}: got {} expected {}, diff={diff}",
+                got[ch], case.expected[ch]
+            );
+        }
+        eprintln!(
+            "  W3C colorize ({ir:3},{ig:3},{ib:3}) -> ({:3},{:3},{:3}) expected ({er:3},{eg:3},{eb:3}) ✓",
+            got[0], got[1], got[2]
+        );
+    }
+}
+
+#[test]
+fn exact_colorize_identity_and_amount() {
+    // Verify amount=0.0 is identity and amount blends linearly.
+    use rasmcore_image::domain::filters;
+
+    let pixels = vec![200u8, 100, 50];
+    let info = test_info(1, 1, PixelFormat::Rgb8);
+
+    // amount=0.0 → identity
+    let result = filters::colorize(
+        Rect::new(0, 0, 1, 1),
+        &mut |_| Ok(pixels.clone()),
+        &info,
+        &filters::ColorizeParams {
+            target: rasmcore_image::domain::param_types::ColorRgb { r: 255, g: 128, b: 0 },
+            amount: 0.0,
+        },
+    )
+    .unwrap();
+    assert_eq!(&result[..3], &pixels[..3], "amount=0.0 should be identity");
+    eprintln!("  amount=0.0 identity ✓");
+
+    // amount=0.5 → halfway between original and fully colorized
+    let full = filters::colorize(
+        Rect::new(0, 0, 1, 1),
+        &mut |_| Ok(pixels.clone()),
+        &info,
+        &filters::ColorizeParams {
+            target: rasmcore_image::domain::param_types::ColorRgb { r: 255, g: 128, b: 0 },
+            amount: 1.0,
+        },
+    )
+    .unwrap();
+
+    let half = filters::colorize(
+        Rect::new(0, 0, 1, 1),
+        &mut |_| Ok(pixels.clone()),
+        &info,
+        &filters::ColorizeParams {
+            target: rasmcore_image::domain::param_types::ColorRgb { r: 255, g: 128, b: 0 },
+            amount: 0.5,
+        },
+    )
+    .unwrap();
+
+    for ch in 0..3 {
+        let expected_mid = ((pixels[ch] as f32 + full[ch] as f32) / 2.0 + 0.5) as u8;
+        let diff = (half[ch] as i16 - expected_mid as i16).abs();
+        assert!(
+            diff <= 1,
+            "amount=0.5 ch{ch}: got {} expected ~{expected_mid}",
+            half[ch]
+        );
+    }
+    eprintln!("  amount=0.5 midpoint ✓");
 }
 
 #[test]
