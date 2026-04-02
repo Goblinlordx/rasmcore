@@ -5,86 +5,123 @@ status: pending
 created: '2026-04-02'
 updated: '2026-04-02'
 spec:
-  summary: |
-    Add parity tests for creative effects (9% coverage) and remaining spatial
+  summary: 'Add parity tests for creative effects (9% coverage) and remaining spatial
+
     filter gaps against ImageMagick/OpenCV/numpy.
-  context: |
-    Effects category has only 1 of 11 operations tested. Spatial filters are
+
+    '
+  context: 'Effects category has only 1 of 11 operations tested. Spatial filters are
+
     at 70% but miss key operations like motion_blur, smart_sharpen, and
+
     kuwahara. These are visible creative effects — incorrect output is
+
     immediately noticeable to users.
-  codebase_analysis: |
-    Effect implementations (src/domain/filters/effect/):
+
+    '
+  codebase_analysis: 'Effect implementations (src/domain/filters/effect/):
+
     - emboss.rs: 3x3 emboss convolution kernel
+
     - oil_paint.rs: Kuwahara-style oil paint simulation
+
     - solarize.rs: Sabattier effect (invert above threshold)
+
     - charcoal.rs: charcoal sketch effect
+
     - halftone.rs: CMYK halftone dot pattern
+
     - pixelate.rs: block averaging
 
+
     Spatial gaps (src/domain/filters/spatial/):
+
     - motion_blur.rs: directional blur at angle
+
     - smart_sharpen.rs: adaptive sharpening
+
     - kuwahara.rs: anisotropic smoothing
+
     - spin_blur.rs: rotational motion blur
+
     - zoom_blur.rs: radial zoom blur
+
     - gaussian_blur_cv.rs: OpenCV-compatible Gaussian
 
+
     Reference tools:
+
     - ImageMagick: -emboss, -charcoal, -paint, -solarize, -motion-blur
+
     - OpenCV: filter2D (emboss kernel), GaussianBlur
+
     - Pillow: ImageFilter.EMBOSS, ImageOps.solarize
+
     - numpy: direct kernel convolution for emboss
+
+    '
   acceptance_criteria:
-    - Emboss parity test against numpy 3x3 kernel convolution
-    - Solarize parity test against Pillow ImageOps.solarize
-    - Oil paint parity test against ImageMagick -paint (approximate — algorithms differ)
-    - Motion blur parity test against ImageMagick -motion-blur or scipy
-    - Pixelate parity test against numpy block averaging
-    - Halftone visual correctness test (dot pattern at expected angles)
-    - All convolution-based tests MAE < 1.0, creative effects MAE < 3.0
-  out_of_scope: |
-    Stochastic noise generators (gaussian_noise, salt_pepper — non-deterministic by design).
+  - Emboss parity test against numpy 3x3 kernel convolution
+  - Solarize parity test against Pillow ImageOps.solarize
+  - Oil paint parity test against ImageMagick -paint (approximate — algorithms differ)
+  - Motion blur parity test against ImageMagick -motion-blur or scipy
+  - Pixelate parity test against numpy block averaging
+  - Halftone visual correctness test (dot pattern at expected angles)
+  - All convolution-based tests MAE < 1.0, creative effects MAE < 3.0
+  out_of_scope: 'Stochastic noise generators (gaussian_noise, salt_pepper — non-deterministic by design).
+
     Charcoal (complex multi-stage effect — document as custom).
+
     Fixing algorithms (separate bug tracks if needed).
-  technical_notes: |
-    Emboss is a 3x3 kernel convolution — should be exact (MAE=0) against
+
+    '
+  technical_notes: 'Emboss is a 3x3 kernel convolution — should be exact (MAE=0) against
+
     numpy convolve2d with the same kernel.
 
+
     Solarize is a simple point op: if pixel > threshold then 255 - pixel.
+
     Should be pixel-exact (MAE=0) against Pillow.
 
-    Oil paint uses neighborhood statistics — different from ImageMagick's
+
+    Oil paint uses neighborhood statistics — different from ImageMagick''s
+
     algorithm. Use loose tolerance (MAE < 5.0) and focus on structural
+
     similarity rather than pixel-exact match.
 
+
     Motion blur at 0 degrees should match horizontal box blur of the same
+
     length — use this as a sanity check.
+
+    '
 plan:
-  - phase: Effect parity tests
-    tasks:
-      - text: Add emboss parity test against numpy 3x3 kernel convolution
-        done: false
-      - text: Add solarize parity test against Pillow ImageOps.solarize — exact match expected
-        done: false
-      - text: Add oil_paint parity test against ImageMagick -paint (loose tolerance)
-        done: false
-      - text: Add pixelate parity test against numpy block averaging
-        done: false
-      - text: Add halftone visual correctness test (dot pattern structure)
-        done: false
-  - phase: Spatial gap parity tests
-    tasks:
-      - text: Add motion_blur parity test against ImageMagick or scipy
-        done: false
-      - text: Add gaussian_blur_cv parity test against OpenCV GaussianBlur
-        done: false
-  - phase: Verification
-    tasks:
-      - text: All new parity tests pass within documented thresholds
-        done: false
-      - text: Existing tests still pass (no regressions)
-        done: false
-      - text: Document any algorithmic differences in test comments
-        done: false
+- phase: Effect parity tests
+  tasks:
+  - text: Add emboss parity test against numpy 3x3 kernel convolution
+    done: true
+  - text: Add solarize parity test against Pillow ImageOps.solarize — exact match expected
+    done: true
+  - text: Add oil_paint parity test against ImageMagick -paint (loose tolerance)
+    done: true
+  - text: Add pixelate parity test against numpy block averaging
+    done: true
+  - text: Add halftone visual correctness test (dot pattern structure)
+    done: true
+- phase: Spatial gap parity tests
+  tasks:
+  - text: Add motion_blur parity test against ImageMagick or scipy
+    done: true
+  - text: Add gaussian_blur_cv parity test against OpenCV GaussianBlur
+    done: true
+- phase: Verification
+  tasks:
+  - text: All new parity tests pass within documented thresholds
+    done: true
+  - text: Existing tests still pass (no regressions)
+    done: true
+  - text: Document any algorithmic differences in test comments
+    done: true
 extra: {}
