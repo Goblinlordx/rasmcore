@@ -1,62 +1,75 @@
 id: filter-migrate-spatial_20260402050833Z
-title: "Migrate spatial + distortion filters to derive(Filter) pattern"
+title: Migrate spatial + distortion filters to derive(Filter) pattern
 type: refactor
 status: pending
 created: '2026-04-02'
 updated: '2026-04-02'
 spec:
-  summary: |
-    Migrate spatial and distortion filter categories from bare-fn to derive(Filter)
+  summary: 'Migrate spatial and distortion filter categories from bare-fn to derive(Filter)
+
     pattern. Includes all GPU-capable filters. Each filter follows the validated
+
     migration sequence: validate -> deregister -> validate removal -> implement new ->
+
     validate new.
-  context: |
-    The foundation track established the derive(Filter) infrastructure. This track
+
+    '
+  context: 'The foundation track established the derive(Filter) infrastructure. This track
+
     migrates the two most complex categories (spatial has GPU filters, distortion has
+
     GPU filters). Approximately 30 filters total.
 
+
     Migration per filter produces 2 commits:
+
     1. Deregister old + validate removal
+
     2. Register new + validate
+
+    '
   acceptance_criteria:
-    - All spatial filters migrated to derive(Filter) + CpuFilter
-    - All distortion filters migrated to derive(Filter) + CpuFilter
-    - GPU-capable filters also implement GpuFilter on the struct
-    - PointOp filters implement PointOp trait on the struct
-    - gpu_impls.rs entries removed for migrated filters
-    - All parity tests pass for every migrated filter
-    - No regressions in any non-migrated filter
-    - Each filter migration follows the validate/deregister/implement/validate sequence
-  out_of_scope: |
-    Filters in other categories (color, adjustment, grading, effects, etc.).
+  - All spatial filters migrated to derive(Filter) + CpuFilter
+  - All distortion filters migrated to derive(Filter) + CpuFilter
+  - GPU-capable filters also implement GpuFilter on the struct
+  - PointOp filters implement PointOp trait on the struct
+  - gpu_impls.rs entries removed for migrated filters
+  - All parity tests pass for every migrated filter
+  - No regressions in any non-migrated filter
+  - Each filter migration follows the validate/deregister/implement/validate sequence
+  out_of_scope: 'Filters in other categories (color, adjustment, grading, effects, etc.).
+
     Those are migrated in the remaining filters track.
+
+    '
 plan:
-  - phase: Spatial filters migration
-    tasks:
-      - text: Migrate blur (GPU) — validate, deregister, implement derive(Filter) + CpuFilter + GpuFilter
-        done: false
-      - text: Migrate sharpen (GPU), high_pass (GPU), bilateral (GPU), guided_filter (GPU)
-        done: false
-      - text: Migrate median (GPU), motion_blur (GPU), spin_blur (GPU), zoom_blur (GPU)
-        done: false
-      - text: Migrate non-GPU spatial filters (bokeh_blur, lens_blur, box_blur, average_blur, convolve, kuwahara, rank_filter, tilt_shift, gaussian_blur_cv, displacement_map, smart_sharpen)
-        done: false
-      - text: Verify all spatial parity tests pass
-        done: false
-  - phase: Distortion filters migration
-    tasks:
-      - text: Migrate spherize (GPU), swirl (GPU), barrel (GPU), wave (GPU), ripple (GPU), polar (GPU), depolar (GPU)
-        done: false
-      - text: Migrate non-GPU distortion filters (mesh_warp, perspective_warp)
-        done: false
-      - text: Verify all distortion parity tests pass
-        done: false
-  - phase: Cleanup and verification
-    tasks:
-      - text: Remove migrated entries from gpu_impls.rs
-        done: false
-      - text: Full test suite passes
-        done: false
-      - text: WASM build clean
-        done: false
+- phase: Spatial filters migration
+  tasks:
+  - text: Migrate blur (GPU) — validate, deregister, implement derive(Filter) + CpuFilter + GpuFilter
+    done: true
+  - text: Migrate sharpen (GPU), high_pass (GPU), bilateral (GPU), guided_filter (GPU)
+    done: true
+  - text: Migrate median (GPU), motion_blur (GPU), spin_blur (GPU), zoom_blur (GPU)
+    done: true
+  - text: Migrate non-GPU spatial filters (bokeh_blur, lens_blur, box_blur, average_blur, convolve, kuwahara, rank_filter,
+      tilt_shift, gaussian_blur_cv, displacement_map, smart_sharpen)
+    done: true
+  - text: Verify all spatial parity tests pass
+    done: true
+- phase: Distortion filters migration
+  tasks:
+  - text: Migrate spherize (GPU), swirl (GPU), barrel (GPU), wave (GPU), ripple (GPU), polar (GPU), depolar (GPU)
+    done: true
+  - text: Migrate non-GPU distortion filters (mesh_warp, perspective_warp)
+    done: true
+  - text: Verify all distortion parity tests pass
+    done: true
+- phase: Cleanup and verification
+  tasks:
+  - text: Remove migrated entries from gpu_impls.rs
+    done: true
+  - text: Full test suite passes
+    done: true
+  - text: WASM build clean
+    done: true
 extra: {}
