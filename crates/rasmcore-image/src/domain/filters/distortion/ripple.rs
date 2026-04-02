@@ -56,6 +56,8 @@ pub fn ripple(
     let cy = config.center_y * info.height as f32;
     let overlap = amplitude.ceil() as u32 + 1;
 
+    // Sampling: Ewa — no direct IM equivalent. EWA suits the radial sinusoidal
+    // displacement which creates varying anisotropy depending on distance from center.
     apply_distortion(
         request, upstream, info,
         DistortionOverlap::Uniform(overlap),

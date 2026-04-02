@@ -45,6 +45,8 @@ pub fn spherize(
     let radius = cx.min(cy);
     let amt = config.amount.clamp(-1.0, 1.0);
 
+    // Sampling: Ewa — no direct IM equivalent. EWA suits the nonlinear radial
+    // mapping (powf-based bulge/pinch has anisotropic stretching near the edge).
     apply_distortion(
         request, upstream, info,
         DistortionOverlap::FullImage,

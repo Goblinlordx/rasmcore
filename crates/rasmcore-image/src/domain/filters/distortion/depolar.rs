@@ -47,6 +47,9 @@ pub fn depolar(
     let c7 = hf / max_radius;
     let half_w = wf * 0.5;
 
+    // Sampling: Ewa — matches IM Polar (distort.c EWA engine, MAE 2.55).
+    // The Cartesian-to-polar mapping benefits from EWA's anisotropic filtering
+    // near the center where radial lines converge.
     apply_distortion(
         request, upstream, info,
         DistortionOverlap::FullImage,

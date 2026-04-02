@@ -50,27 +50,54 @@
 //!   /257 after (matching IM Q16-HDRI internal 0-65535 range).
 //! - **Pixel-center convention**: `d.x = i + 0.5` for distort source coords.
 //!
+//! # Sampling mode selection
+//!
+//! Each distortion filter uses one of three sampling modes. The choice is based
+//! on empirical benchmarking against ImageMagick 7.x (see `sampling_mode_audit`
+//! test and `.agent/kf/tracks/sampling-mode-audit_20260402041200Z/report.md`).
+//!
+//! | Filter    | Mode      | MAE vs IM | Why                                    |
+//! |-----------|-----------|-----------|----------------------------------------|
+//! | wave      | Bilinear  | 0.00      | IM uses bilinear in `effect.c`         |
+//! | swirl     | Bilinear  | 0.00      | IM uses bilinear in `effect.c`         |
+//! | polar     | Bilinear  | 1.95      | Matches IM DePolar better than EWA     |
+//! | depolar   | Ewa       | 2.55      | Matches IM Polar (distort.c EWA)       |
+//! | barrel    | EwaClamp  | 8.24      | IM barrel uses EWA + edge-clamp border |
+//! | spherize  | Ewa       | n/a       | No IM equivalent; EWA suits anisotropy |
+//! | ripple    | Ewa       | n/a       | No IM equivalent; EWA suits radial     |
+//! | mesh_warp | Bilinear  | n/a       | Piecewise affine; locally smooth       |
+//!
+//! **Rules of thumb:**
+//! - Use **Bilinear** when IM uses `effect.c` (not EWA), or the mapping is
+//!   locally smooth with bounded Jacobian (wave, swirl, mesh_warp, polar).
+//! - Use **Ewa** when the mapping has strong anisotropy (depolar near center,
+//!   spherize near edge) and IM uses its distort.c EWA pipeline.
+//! - Use **EwaClamp** only for barrel distortion where edge-repeat border
+//!   handling matches IM's `-virtual-pixel Edge` default.
+//! - **Never** use EwaClamp as a general-purpose mode — it causes catastrophic
+//!   edge-bleed for most other distortion types.
+//!
 //! # IM parity — current status
 //!
-//! Tested against ImageMagick 7.1.2-18 Q16-HDRI on 64×64 gradient images.
+//! Tested against ImageMagick 7.1.2-18 Q16-HDRI on 64×64 test images.
 //!
-//! | Filter  | MAE  | IM command | Resampling |
-//! |---------|------|------------|------------|
-//! | wave    | <1.0 | `-wave 5x20` | Bilinear (IM `effect.c` WaveImage) |
-//! | polar   | 2.55 | `-distort Polar 32` | EWA Robidoux |
-//! | swirl   | 2.34 | `-swirl 90` | EWA Robidoux |
-//! | barrel  | 8.24 | `-distort Barrel "0.5 0.1 0 1"` | EWA Robidoux |
-//! | depolar | ~2.5 | `-distort DePolar 32` | EWA Robidoux |
+//! | Filter  | MAE  | IM command | Our sampling |
+//! |---------|------|------------|--------------|
+//! | wave    | 0.00 | `-wave 5x20` | Bilinear |
+//! | swirl   | 0.00 | `-swirl 90` | Bilinear |
+//! | polar   | 1.95 | `-distort DePolar 32` | Bilinear |
+//! | depolar | 2.55 | `-distort Polar 32` | Ewa |
+//! | barrel  | 8.24 | `-distort Barrel "0.5 0.1 0 1"` | EwaClamp |
 //!
 //! # Known residuals and root causes
 //!
-//! ## Wave (MAE < 1.0) — RESOLVED
+//! ## Wave/Swirl (MAE 0.00) — RESOLVED
 //!
-//! IM's `-wave` is implemented in `effect.c` (WaveImage), NOT `distort.c`.
-//! It uses simple bilinear interpolation, not EWA. Our wave filter matches
-//! by using `bilinear_pub()` instead of `sample()`. Near pixel-exact.
+//! IM implements `-wave` and `-swirl` in `effect.c` with bilinear interpolation,
+//! not in `distort.c` with EWA. Using `DistortionSampling::Bilinear` gives
+//! exact match (MAE 0.00).
 //!
-//! ## Polar/Swirl/Depolar (MAE ~2.5) — FP PRECISION FLOOR
+//! ## Polar/Depolar (MAE ~2.0-2.5) — FP PRECISION FLOOR
 //!
 //! **Root cause: incremental quadratic accumulation precision.**
 //!

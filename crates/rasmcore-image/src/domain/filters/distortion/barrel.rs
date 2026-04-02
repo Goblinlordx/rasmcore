@@ -63,6 +63,9 @@ pub fn barrel(
         (di * df + cx, dj * df + cy)
     };
 
+    // Sampling: EwaClamp — IM barrel uses EWA with -virtual-pixel Edge (edge-clamp).
+    // EwaClamp matches this border behavior. MAE ~8.24 vs IM (residual from
+    // Robidoux vs Laguerre kernel and k1/k2 coefficient mapping differences).
     apply_distortion(
         request, upstream, info,
         DistortionOverlap::FullImage,

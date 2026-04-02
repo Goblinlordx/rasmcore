@@ -44,6 +44,8 @@ pub fn polar(
     let max_radius = cx.min(cy);
     let two_pi = std::f64::consts::TAU;
 
+    // Sampling: Bilinear — matches IM DePolar empirically (MAE 1.95).
+    // EWA gives worse parity (MAE 5.18) for the uniform polar-to-Cartesian mapping.
     apply_distortion(
         request, upstream, info,
         DistortionOverlap::FullImage,

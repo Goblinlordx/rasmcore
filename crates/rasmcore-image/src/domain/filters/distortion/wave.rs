@@ -53,6 +53,8 @@ pub fn wave(
     let overlap = amplitude.ceil() as u32 + 1;
     let dummy_j = crate::domain::ewa::JACOBIAN_IDENTITY;
 
+    // Sampling: Bilinear — IM implements -wave in effect.c with bilinear,
+    // not in distort.c with EWA. Bilinear gives exact match (MAE 0.00 vs IM).
     apply_distortion(
         request, upstream, info,
         DistortionOverlap::Uniform(overlap),

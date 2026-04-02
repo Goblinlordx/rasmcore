@@ -268,6 +268,8 @@ pub fn mesh_warp(
         upstream,
         info,
         DistortionOverlap::FullImage,
+        // Sampling: Bilinear — piecewise affine mapping within each quad cell
+        // is well-suited for bilinear interpolation (locally smooth, no anisotropy).
         DistortionSampling::Bilinear,
         &|xf, yf| {
             if let Some((c, r)) = find_quad(&grid, cols, xf, yf, rows) {

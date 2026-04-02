@@ -63,6 +63,8 @@ pub fn swirl(
         (1.0, 1.0)
     };
 
+    // Sampling: Bilinear — IM implements -swirl in effect.c with bilinear,
+    // not in distort.c with EWA. Bilinear gives exact match (MAE 0.00 vs IM).
     apply_distortion(
         request, upstream, info,
         DistortionOverlap::FullImage,
