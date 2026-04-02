@@ -23,6 +23,12 @@ spec:
     - ~115 filter files have NO bit-depth checks at all
     - Only point ops and color ops handle all depths natively
 
+    Professional reference: Photoshop uses f32 per channel internally for
+    ALL compositing and filter ops since CS4 (2008). Even 8-bit documents
+    promote to float for computation, then quantize back. Affinity Photo,
+    GIMP 2.10+ (GEGL), and Darktable all use f32 pipelines. Our goal is
+    PS-level quality or better — every filter should compute in f32.
+
     This audit will classify every filter into one of these categories and
     produce a machine-readable report that subsequent fix tracks can consume.
   codebase_analysis: |
@@ -47,6 +53,8 @@ spec:
     - Each entry shows filter name, category, current handling level, and what needs fixing
     - Summary counts per handling level
     - Prioritized list of fix candidates (most impactful first)
+    - Competitive analysis section comparing our handling vs PS/Affinity/GIMP/libvips
+    - Recommendation on target precision model (always-f32 like PS, or format-preserving)
   out_of_scope: |
     Actually fixing any filter implementations (separate fix tracks).
     Encoder/decoder bit depth handling.
@@ -79,5 +87,9 @@ plan:
       - text: "Identify filters where the underlying engine already supports higher bit depths but the wrapper downconverts (e.g., distortion filters using process_via_8bit despite EWA sampler supporting f32)"
         done: false
       - text: "Prioritize fix candidates by impact (most-used filters first, easiest fixes first)"
+        done: false
+      - text: "Document how PS, Affinity Photo, GIMP/GEGL, Darktable, and libvips handle pipeline precision"
+        done: false
+      - text: "Recommend target precision model for rasmcore — always-f32 (PS model) vs format-preserving with minimum-f32-compute"
         done: false
 extra: {}
