@@ -1393,6 +1393,43 @@ impl NodeGraph {
         self.node_accumulators.clear();
     }
 
+    /// Store computed nodes to the layer cache **without pruning**.
+    ///
+    /// Use this between passes of a multi-pass pipeline (e.g., analysis → processing).
+    /// Stores all newly computed node outputs so the next pass can hit them,
+    /// but does NOT reset references or evict unused entries. Call the normal
+    /// `finalize_layer_cache()` after the final pass to prune.
+    pub fn store_layer_cache_no_prune(&mut self) {
+        let layer_cache = match &self.layer_cache {
+            Some(lc) => lc.clone(),
+            None => return,
+        };
+        let mut lc = layer_cache.borrow_mut();
+
+        // Push newly computed nodes (not cache hits) — same logic as finalize,
+        // but skip reset_references and cleanup_unreferenced.
+        for (node_id, hash) in self.node_hashes.iter().enumerate() {
+            if *hash == rasmcore_pipeline::ZERO_HASH {
+                continue;
+            }
+            lc.mark_referenced(hash);
+
+            if !self.cache_hit_nodes.contains(&(node_id as u32))
+                && let Some(Some(pixels)) = self.node_accumulators.get(node_id)
+            {
+                let info = match self.nodes.get(node_id) {
+                    Some(n) => n.info(),
+                    None => continue,
+                };
+                let bpp = bytes_per_pixel(info.format);
+                lc.store(*hash, pixels.clone(), info.width, info.height, bpp);
+            }
+        }
+
+        // Free accumulator memory (pixels are now in the cache)
+        self.node_accumulators.clear();
+    }
+
     /// Clear all graph state after execution. Keeps the layer_cache reference
     /// and the graph description (for introspection and re-execution).
     pub fn cleanup(&mut self) {
