@@ -86,6 +86,8 @@ pub fn parse_source_files(
         compositors: all_compositors,
         mappers: all_mappers,
         param_structs: all_params,
+        transforms: Vec::new(),
+        encoders: Vec::new(),
     }
 }
 

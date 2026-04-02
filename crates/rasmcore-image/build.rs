@@ -360,6 +360,31 @@ fn main() {
         .unwrap();
     }
 
+    // ── Regenerate param-manifest.json with transforms + encoders ──
+    // The initial generate_all() call produced the manifest without transforms/encoders
+    // because they're parsed after filters. Now that we have all data, regenerate.
+    data.transforms = all_transforms.clone();
+    data.encoders = all_encoder_configs.clone();
+    {
+        let manifest_json = rasmcore_codegen::generate::manifest::generate(&data);
+        std::fs::write(out_dir.join("param-manifest.json"), &manifest_json).unwrap();
+        // Recompute hash
+        let hash = {
+            let mut h: u64 = 0xcbf29ce484222325;
+            for &byte in manifest_json.as_bytes() {
+                h ^= byte as u64;
+                h = h.wrapping_mul(0x100000001b3);
+            }
+            h
+        };
+        std::fs::write(out_dir.join("param-manifest.hash"), format!("{hash:016x}")).unwrap();
+        eprintln!(
+            "rasmcore build.rs: Regenerated manifest with {} transform(s) + {} encoder(s)",
+            data.transforms.len(),
+            data.encoders.len(),
+        );
+    }
+
     // ── Generate WIT from template ──
     // Replaces deprecated generate-wit.cjs — build.rs is the single source of truth.
     {

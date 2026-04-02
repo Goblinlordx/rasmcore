@@ -115,4 +115,6 @@ pub struct CodegenData {
     pub compositors: Vec<SimpleReg>,
     pub mappers: Vec<MapperReg>,
     pub param_structs: std::collections::HashMap<String, Vec<ParamField>>,
+    pub transforms: Vec<crate::parse::transforms::TransformReg>,
+    pub encoders: Vec<crate::parse::encoders::EncoderInfo>,
 }

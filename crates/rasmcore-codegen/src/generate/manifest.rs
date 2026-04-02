@@ -129,11 +129,73 @@ pub fn generate(data: &CodegenData) -> String {
         })
         .collect();
 
+    // ─── Transforms ───
+    let transform_entries: Vec<Value> = data
+        .transforms
+        .iter()
+        .map(|t| {
+            let params_json: Vec<Value> = t
+                .params
+                .iter()
+                .map(|(pname, ptype)| {
+                    let (min, max, step, def) = default_range_for_type(ptype);
+                    json!({
+                        "name": pname,
+                        "type": ptype,
+                        "min": parse_json_value(min),
+                        "max": parse_json_value(max),
+                        "step": parse_json_value(step),
+                        "default": parse_json_value(def),
+                        "label": "",
+                        "hint": "",
+                    })
+                })
+                .collect();
+
+            json!({
+                "name": t.name,
+                "params": params_json,
+                "multi_input": t.multi_input,
+            })
+        })
+        .collect();
+
+    // ─── Encoders ───
+    let encoder_entries: Vec<Value> = data
+        .encoders
+        .iter()
+        .map(|e| {
+            let params_json: Vec<Value> = e
+                .fields
+                .iter()
+                .map(|f| {
+                    let mut entry = json!({
+                        "name": f.name,
+                        "type": f.rust_type,
+                        "default": parse_json_value(&f.default_val),
+                    });
+                    if f.is_enum {
+                        entry["enum_variants"] = json!(f.enum_variants);
+                    }
+                    entry
+                })
+                .collect();
+
+            json!({
+                "format": e.format,
+                "params": params_json,
+                "takes_metadata": e.sink_takes_metadata,
+            })
+        })
+        .collect();
+
     let manifest = json!({
         "filters": filter_entries,
         "generators": gen_entries,
         "compositors": comp_entries,
         "mappers": map_entries,
+        "transforms": transform_entries,
+        "encoders": encoder_entries,
     });
 
     serde_json::to_string_pretty(&manifest).unwrap()
@@ -156,6 +218,8 @@ fn field_to_json(field: &ParamField) -> Value {
 mod tests {
     use super::*;
     use crate::types::{CodegenData, FilterReg};
+    use crate::parse::transforms::TransformReg;
+    use crate::parse::encoders::EncoderInfo;
 
     #[test]
     fn generate_manifest_basic() {
@@ -177,6 +241,8 @@ mod tests {
             compositors: vec![],
             mappers: vec![],
             param_structs: std::collections::HashMap::new(),
+            transforms: vec![],
+            encoders: vec![],
         };
 
         let json_str = generate(&data);
@@ -196,9 +262,13 @@ mod tests {
             compositors: vec![],
             mappers: vec![],
             param_structs: std::collections::HashMap::new(),
+            transforms: vec![],
+            encoders: vec![],
         };
         let json_str = generate(&data);
         let parsed: Value = serde_json::from_str(&json_str).unwrap();
         assert!(parsed["filters"].as_array().unwrap().is_empty());
+        assert!(parsed["transforms"].as_array().unwrap().is_empty());
+        assert!(parsed["encoders"].as_array().unwrap().is_empty());
     }
 }
