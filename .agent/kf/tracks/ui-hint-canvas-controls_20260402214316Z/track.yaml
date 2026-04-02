@@ -5,94 +5,136 @@ status: pending
 created: '2026-04-02'
 updated: '2026-04-02'
 spec:
-  summary: |
-    Add three new parameter hint types (rc.point, rc.path, rc.box_select) for
+  summary: 'Add three new parameter hint types (rc.point, rc.path, rc.box_select) for
+
     canvas-interactive UI controls. Annotate existing filter params and wire up
+
     web UI rendering.
-  context: |
-    The param hint system (rc.pixels, rc.angle_deg, rc.signed_slider, etc.)
+
+    '
+  context: 'The param hint system (rc.pixels, rc.angle_deg, rc.signed_slider, etc.)
+
     controls how the web UI renders filter parameters. Currently all hints map
+
     to sliders, spinners, or toggles. Several filters take coordinate params
+
     (cx/cy, x1/y1, seed_x/seed_y) or path data (mask_from_path) that would
+
     benefit from canvas-based interaction instead of manual number entry.
 
+
     Three new hint types are needed:
+
     - rc.point — click on canvas to select a coordinate (replaces paired cx/cy spinners)
+
     - rc.path — draw a freehand stroke on canvas (for brush/mask tools)
+
     - rc.box_select — drag a rectangle on canvas (for crop/selection regions)
-  codebase_analysis: |
-    Hint flow: #[param(hint="rc.X")] in Rust -> rasmcore-macros ParamAttr ->
+
+    '
+  codebase_analysis: 'Hint flow: #[param(hint="rc.X")] in Rust -> rasmcore-macros ParamAttr ->
+
     rasmcore-codegen manifest.rs -> param-manifest.json -> web-ui manifest.ts
+
     mapParam() -> web-ui ParamControl.tsx render.
 
+
     Existing hints: rc.pixels, rc.spinner, rc.seed, rc.log_slider,
+
     rc.signed_slider, rc.opacity, rc.temperature_k, rc.angle_deg,
+
     rc.color_rgb, rc.color_rgba, rc.toggle, rc.enum, rc.text, rc.percentage.
 
+
     ControlType union in web-ui/src/types.ts line 44: number | color | toggle |
+
     text | spinner | log_slider | signed_slider | opacity | temperature | enum.
 
+
     Filters needing rc.point: draw_circle (cx/cy), draw_ellipse (cx/cy),
+
     draw_arc (cx/cy), mask_gradient_radial (cx/cy), flood_fill (seed_x/seed_y).
+
 
     Filters needing rc.path: mask_from_path (points_x/points_y).
 
+
     Filters needing rc.box_select: smart_crop (width/height target region).
+
+    '
   acceptance_criteria:
-    - rc.point hint applied to draw_circle, draw_ellipse, draw_arc cx/cy params
-    - rc.point applied to mask_gradient_radial cx/cy and flood_fill seed_x/seed_y
-    - rc.path hint applied to mask_from_path point params
-    - rc.box_select hint applied to smart_crop region params
-    - ControlType union updated with point, path, box_select
-    - manifest.ts hintMap updated for rc.point, rc.path, rc.box_select
-    - ParamControl.tsx renders placeholder controls for new hint types
-    - param-manifest.json contains new hints after build
-    - All existing tests pass, WASM build clean
-  out_of_scope: |
-    Full canvas overlay rendering (drag handles, real-time preview).
+  - rc.point hint applied to draw_circle, draw_ellipse, draw_arc cx/cy params
+  - rc.point applied to mask_gradient_radial cx/cy and flood_fill seed_x/seed_y
+  - rc.path hint applied to mask_from_path point params
+  - rc.box_select hint applied to smart_crop region params
+  - ControlType union updated with point, path, box_select
+  - manifest.ts hintMap updated for rc.point, rc.path, rc.box_select
+  - ParamControl.tsx renders placeholder controls for new hint types
+  - param-manifest.json contains new hints after build
+  - All existing tests pass, WASM build clean
+  out_of_scope: 'Full canvas overlay rendering (drag handles, real-time preview).
+
     Interactive path drawing with pressure sensitivity.
+
     Multi-point path serialization over WIT interface.
+
     New param struct types (Point2D, Path2D, BoundingBox).
-  technical_notes: |
-    Phase 1 (Rust): Add hint annotations to existing #[param(...)] attributes.
+
+    '
+  technical_notes: 'Phase 1 (Rust): Add hint annotations to existing #[param(...)] attributes.
+
     No new param types needed — the hint is metadata that tells the UI what
+
     control to render. The actual values still flow as f32/u32 scalars.
 
+
     Phase 2 (Web UI): Add new ControlType variants. Map in manifest.ts hintMap.
+
     ParamControl.tsx renders a labeled placeholder for canvas hints (actual
+
     canvas interaction is a separate UI feature track). The placeholder should
+
     show the current value with a note like "canvas: click to set" so the
+
     parameter is still usable via direct number input.
 
+
     For rc.point: Applied to paired x/y params. UI can detect paired suffixes
+
     (cx/cy, _x/_y, seed_x/seed_y) to group into a single point control.
 
+
     For rc.path: Marks params that accept stroke path data. Initially renders
+
     as text/JSON input; canvas drawing is a future enhancement.
 
+
     For rc.box_select: Applied to grouped x/y/width/height params. Initially
+
     renders as 4 number inputs in a 2x2 grid layout.
+
+    '
 plan:
-  - phase: Rust hint annotations
-    tasks:
-      - text: Add rc.point hint to draw_circle, draw_ellipse, draw_arc cx/cy params
-        done: false
-      - text: Add rc.point hint to mask_gradient_radial cx/cy and flood_fill seed_x/seed_y
-        done: false
-      - text: Add rc.path hint to mask_from_path point params
-        done: false
-      - text: Add rc.box_select hint to smart_crop target region params
-        done: false
-  - phase: Web UI controls
-    tasks:
-      - text: Add point, path, box_select to ControlType union and hintMap
-        done: false
-      - text: Render placeholder controls in ParamControl.tsx for new hints
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Verify param-manifest.json contains new hints after build
-        done: false
-      - text: All tests pass, WASM build clean
-        done: false
+- phase: Rust hint annotations
+  tasks:
+  - text: Add rc.point hint to draw_circle, draw_ellipse, draw_arc cx/cy params
+    done: true
+  - text: Add rc.point hint to mask_gradient_radial cx/cy and flood_fill seed_x/seed_y
+    done: true
+  - text: Add rc.path hint to mask_from_path point params
+    done: true
+  - text: Add rc.box_select hint to smart_crop target region params
+    done: true
+- phase: Web UI controls
+  tasks:
+  - text: Add point, path, box_select to ControlType union and hintMap
+    done: true
+  - text: Render placeholder controls in ParamControl.tsx for new hints
+    done: true
+- phase: Verification
+  tasks:
+  - text: Verify param-manifest.json contains new hints after build
+    done: true
+  - text: All tests pass, WASM build clean
+    done: true
 extra: {}
