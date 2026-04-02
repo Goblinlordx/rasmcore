@@ -191,8 +191,38 @@ impl NodeGraph {
     pub fn register_ml(&mut self, node_id: u32, ml: Box<dyn MlCapable>) { ... }
     pub fn set_ml_executor(&mut self, executor: Rc<dyn MlExecutor>) { ... }
     pub fn has_ml(&self, node_id: u32) -> bool { ... }
+
+    /// Validate that all ML-required nodes have an executor available.
+    /// Call before execution — unlike GPU (which silently falls back to CPU),
+    /// ML-only nodes have NO CPU fallback and will fail at request_region.
+    pub fn validate_ml_requirements(&self) -> Result<(), ValidationError> {
+        let has_executor = self.ml_executor.is_some();
+        for (id, ml_node) in self.ml_nodes.iter().enumerate() {
+            if ml_node.is_some() && !has_executor {
+                return Err(ValidationError {
+                    message: format!(
+                        "node {id} requires ML runtime but no MlExecutor is set. \
+                         Call set_ml_executor() before execution."
+                    ),
+                    node_id: Some(id as u32),
+                    upstream_id: None,
+                });
+            }
+        }
+        Ok(())
+    }
 }
 ```
+
+**Critical design point:** `validate_ml_requirements()` must be called before pipeline
+execution (e.g., in `sink::write()` or by the caller). GPU nodes silently fall back to CPU,
+but ML nodes have no fallback — failing deep inside `request_region` with a confusing
+`NotSupported` error is unacceptable. Fail fast at validation time with a clear message
+about the missing executor.
+
+The existing `validate()` method checks graph topology. `validate_ml_requirements()` is
+a separate check because ML executor availability is a runtime concern (host may or may
+not have ONNX Runtime installed), not a graph structure concern.
 
 ## 5. Remote Model Bundles
 
