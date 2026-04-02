@@ -1,73 +1,99 @@
 id: clib-cross-compile_20260402012601Z
-title: "Cross-compile librcimg for 6 desktop targets"
+title: Cross-compile librcimg for 6 desktop targets
 type: chore
 status: pending
 created: 2026-04-02
-updated: 2026-04-02
+updated: '2026-04-02'
 spec:
-  summary: |
-    Build script and CI configuration to cross-compile rasmcore-ffi to 6
+  summary: 'Build script and CI configuration to cross-compile rasmcore-ffi to 6
+
     desktop targets and package as release artifacts.
-  context: |
-    The C shared library needs to be available as prebuilt binaries for each
-    platform so SDK users don't need a Rust toolchain. Six desktop targets
+
+    '
+  context: 'The C shared library needs to be available as prebuilt binaries for each
+
+    platform so SDK users don''t need a Rust toolchain. Six desktop targets
+
     cover the major platforms. The build produces both .so/.dylib/.dll (dynamic)
+
     and .a/.lib (static) for each target.
-  codebase_analysis: |
-    - rasmcore-ffi has crate-type = ["cdylib", "staticlib"] — produces both
+
+    '
+  codebase_analysis: '- rasmcore-ffi has crate-type = ["cdylib", "staticlib"] — produces both
+
     - Rust cross-compilation via cargo build --target works for all 6 targets
+
     - Linux cross: gcc-aarch64-linux-gnu or cross-rs
+
     - macOS: native aarch64/x86_64 on Apple Silicon (lipo for universal)
+
     - Windows: mingw-w64 or cross-rs
+
     - No CI config exists yet for cross-compilation
+
+    '
   acceptance_criteria:
-    - Build script that compiles for all 6 desktop targets
-    - Each target produces librcimg dynamic lib + static lib + rcimg.h
-    - Archives per platform (tar.gz for unix, zip for windows)
-    - CI workflow (GitHub Actions) that builds on push/tag
-    - Release artifacts named rcimg-{version}-{target}.tar.gz
-  out_of_scope: |
-    - Mobile targets (Android/iOS — future phase)
+  - Build script that compiles for all 6 desktop targets
+  - Each target produces librcimg dynamic lib + static lib + rcimg.h
+  - Archives per platform (tar.gz for unix, zip for windows)
+  - CI workflow (GitHub Actions) that builds on push/tag
+  - Release artifacts named rcimg-{version}-{target}.tar.gz
+  out_of_scope: '- Mobile targets (Android/iOS — future phase)
+
     - Automated package publishing (npm, pip, go get)
+
     - GPU runtime (wgpu-native) bundling — that is a separate concern
-  technical_notes: |
-    Use cross-rs for Linux/Windows cross-compilation from macOS or Linux CI.
+
+    '
+  technical_notes: 'Use cross-rs for Linux/Windows cross-compilation from macOS or Linux CI.
+
     macOS targets build natively on macOS runners. GitHub Actions matrix
+
     with 3 OS runners x 2 arch = 6 jobs. Each job runs cargo build --release
+
     --target and packages the output.
 
+
     Target triples:
+
     - x86_64-unknown-linux-gnu
+
     - aarch64-unknown-linux-gnu
+
     - x86_64-apple-darwin
+
     - aarch64-apple-darwin
+
     - x86_64-pc-windows-gnu
+
     - aarch64-pc-windows-gnu
+
+    '
 plan:
-  - phase: "Build script"
-    tasks:
-      - text: "Create scripts/build-release.sh that builds for a single target triple"
-        done: false
-      - text: "Add packaging step — collect lib + header + .pc into archive"
-        done: false
-      - text: "Test build script on host platform (aarch64-apple-darwin)"
-        done: false
-  - phase: "Cross-compilation setup"
-    tasks:
-      - text: "Add cross-rs config (Cross.toml) for Linux and Windows targets"
-        done: false
-      - text: "Test cross-compile for x86_64-unknown-linux-gnu"
-        done: false
-      - text: "Test cross-compile for x86_64-pc-windows-gnu"
-        done: false
-  - phase: "CI pipeline"
-    tasks:
-      - text: "Create .github/workflows/release.yml with 6-target matrix"
-        done: false
-      - text: "Add artifact upload step for each target"
-        done: false
-      - text: "Add release creation on tag push with all 6 artifacts"
-        done: false
-      - text: "Verify CI builds pass (dry run or test tag)"
-        done: false
+- phase: Build script
+  tasks:
+  - text: Create scripts/build-release.sh that builds for a single target triple
+    done: true
+  - text: Add packaging step — collect lib + header + .pc into archive
+    done: true
+  - text: Test build script on host platform (aarch64-apple-darwin)
+    done: true
+- phase: Cross-compilation setup
+  tasks:
+  - text: Add cross-rs config (Cross.toml) for Linux and Windows targets
+    done: true
+  - text: Test cross-compile for x86_64-unknown-linux-gnu
+    done: true
+  - text: Test cross-compile for x86_64-pc-windows-gnu
+    done: true
+- phase: CI pipeline
+  tasks:
+  - text: Create .github/workflows/release.yml with 6-target matrix
+    done: true
+  - text: Add artifact upload step for each target
+    done: true
+  - text: Add release creation on tag push with all 6 artifacts
+    done: true
+  - text: Verify CI builds pass (dry run or test tag)
+    done: true
 extra: {}

@@ -240,6 +240,13 @@ interface filters {
         max-gap: u32,
     }
 
+    record harris-corners-config {
+        k: f32,
+        threshold: f32,
+        block-size: u32,
+        nms-radius: u32,
+    }
+
     record wave-config {
         amplitude: f32,
         wavelength: f32,
@@ -762,6 +769,7 @@ interface filters {
     sat-vs-sat: func(pixels: buffer, info: image-info, config: sat-vs-sat-config) -> result<buffer, rasmcore-error>;
     connected-components: func(pixels: buffer, info: image-info, config: connected-components-config) -> result<buffer, rasmcore-error>;
     hough-lines: func(pixels: buffer, info: image-info, config: hough-lines-config) -> result<buffer, rasmcore-error>;
+    harris-corners: func(pixels: buffer, info: image-info, config: harris-corners-config) -> result<buffer, rasmcore-error>;
     depolar: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     wave: func(pixels: buffer, info: image-info, config: wave-config) -> result<buffer, rasmcore-error>;
     polar: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
