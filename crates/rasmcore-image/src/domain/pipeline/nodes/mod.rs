@@ -9,4 +9,5 @@ pub mod frame_source;
 pub mod gpu_impls;
 pub mod sink;
 pub mod source;
+pub mod subgraph;
 pub mod transform;
