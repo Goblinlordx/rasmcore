@@ -1,0 +1,8 @@
+title: GPU f32 buffer support — dual-format executor and proof shaders
+status: pending
+type: feature
+approved: false
+created: '2026-04-02'
+updated: '2026-04-02'
+deps:
+- f32-pipeline-foundation_20260402150956Z

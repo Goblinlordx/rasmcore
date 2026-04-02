@@ -1,0 +1,161 @@
+id: f32-filter-audit-wave1_20260402150958Z
+title: "f32 filter audit + wave 1 migration — point ops, adjustment, color"
+type: feature
+status: pending
+created: 2026-04-02
+updated: 2026-04-02
+spec:
+  summary: |
+    Audit every filter/op for f32 readiness and migrate the easiest wave
+    (~40 point ops, adjustment, color, and evaluate filters) to the
+    PixelSample<T> generic pattern. Produce a living audit doc and tests
+    proving f32-in → f32-out for each migrated filter.
+  context: |
+    Comprehensive audit identified 175+ filters across the codebase:
+    - Trivial migration: ~25 filters (point ops, generators)
+    - Easy migration: ~65 filters (adjustment, color, simple spatial)
+    - Moderate: ~55 filters (complex spatial)
+    - Hard: ~30 filters (analysis, external crate deps like fast_image_resize)
+
+    Current pattern: filters call validate_format(), check is_16bit(), and
+    use process_via_8bit() for 16-bit fallback. The foundation track adds
+    PixelSample<T> trait and helpers. This track uses them.
+
+    Key insight: most point ops already compute in f32 internally (LUT
+    evaluation uses f32 math) but then materialize as u8 LUTs. For f32
+    format, the LUT approach is unnecessary — apply the f32 math directly
+    to f32 samples. This is actually simpler code, not more complex.
+  codebase_analysis: |
+    Wave 1 targets (trivial + easy, all point ops or per-pixel):
+
+    Adjustment filters (all LUT-based, f32 internally):
+    - brightness, contrast, gamma, exposure, sigmoidal_contrast, levels,
+      color_balance, invert, invert_v2, posterize
+
+    Color filters (3D CLUT or per-pixel, f32 internally):
+    - hue_rotate, saturate, vibrance, modulate, sepia, channel_mixer,
+      colorize, photo_filter, selective_color, white_balance_temperature
+
+    Evaluate filters (LUT-based, f32 internally):
+    - evaluate_add, evaluate_subtract, evaluate_multiply, evaluate_divide,
+      evaluate_min, evaluate_max, evaluate_pow, evaluate_log, evaluate_abs
+
+    Color grading (curves/spline, f32 internally):
+    - curves_master, curves_red, curves_green, curves_blue,
+      lift_gamma_gain, asc_cdl, split_toning
+
+    Tone mapping (already pure f32 math):
+    - tonemap_reinhard, tonemap_drago, tonemap_filmic
+
+    Hue-vs curves (1D curve eval, f32):
+    - hue_vs_sat, hue_vs_lum, lum_vs_sat, sat_vs_sat
+
+    Simple per-pixel:
+    - solarize, dodge, burn, vignette, vignette_powerlaw
+
+    Total wave 1: ~40 filters
+
+    Infrastructure changes needed:
+    - point_ops.rs — add PixelSample-generic path alongside existing LUT path.
+      For f32 format, skip LUT materialization and apply f32 math directly.
+    - ColorOp trait (used by color filters) — ensure f32 passthrough works
+    - filters/common/pixel_format.rs — validate_format() already updated by
+      foundation track; this track uses the new helpers
+
+    External crate blockers in wave 1: NONE (all are hand-coded)
+  acceptance_criteria:
+    - Audit document (.agent/kf/tracks/f32-filter-audit-wave1_20260402150958Z/audit.md)
+      listing every filter with f32 readiness status, migration difficulty, and blockers
+    - All ~40 wave 1 filters accept Rgba32f/Rgb32f/Gray32f input and produce
+      f32 output without downconvert-upconvert round-trip
+    - Point ops for f32 format bypass LUT materialization and apply f32 math directly
+    - process_via_standard() fallback works for any filter NOT yet migrated
+    - Each migrated filter has a test with f32 input verifying f32 output
+    - Parity tests — f32 pipeline result vs standard pipeline result for each
+      migrated filter, within expected precision bounds (f32 should be equal
+      or better than u8 quantized result)
+    - Standard mode regression — all existing filter tests pass unchanged
+    - Audit doc identifies wave 2 candidates (spatial filters) and wave 3 (hard)
+  out_of_scope: |
+    - Spatial filters (blur, sharpen, bilateral, etc.) — wave 2
+    - Distortion filters — wave 2
+    - Analysis filters (Harris, Hough, etc.) — wave 3
+    - External crate blockers (fast_image_resize f32) — separate investigation
+    - Drawing/text filters — wave 3
+    - Composite/blend f32 — wave 2
+    - GPU shader migration — separate track
+  technical_notes: |
+    Migration pattern for LUT-based point ops:
+
+    Before (current):
+      fn apply(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>> {
+          let lut = self.build_point_lut();  // [u8; 256]
+          apply_lut(pixels, info, &lut)
+      }
+
+    After (generic):
+      fn apply<T: PixelSample>(samples: &[T], channels: usize) -> Vec<T> {
+          samples.iter().map(|&s| {
+              let v = s.to_f32();
+              let result = /* same f32 math as build_point_lut */;
+              T::from_f32(result)
+          }).collect()
+      }
+
+    For u8: LLVM can still auto-vectorize the to_f32/from_f32 conversions.
+    For f32: to_f32/from_f32 are no-ops, eliminated entirely.
+
+    The LUT path can remain as an optimization for u8 (LUT is faster than
+    per-pixel f32 math for u8 since it's a single table lookup). The
+    generic path is the fallback and the primary path for f32/u16.
+
+    ColorOp-based filters (hue_rotate, saturate, etc.) use a 3D CLUT that's
+    already computed in f32. For f32 format, the trilinear interpolation
+    into the CLUT works the same — just skip the u8→f32 input conversion
+    and f32→u8 output conversion.
+
+    Audit format in audit.md:
+    | Filter | Category | Type | f32 Ready | Migration | Blocker | Wave |
+    Each row is one filter. Wave column indicates 1/2/3/deferred.
+plan:
+  - phase: "Audit — document all filters"
+    tasks:
+      - text: "Generate comprehensive audit table of all 175+ filters with f32 readiness, difficulty, blockers, and wave assignment"
+        done: false
+      - text: "Identify and document any filters with external crate blockers for f32"
+        done: false
+      - text: "Write audit.md with per-filter status and migration plan for waves 1-3"
+        done: false
+  - phase: "Infrastructure — point_ops f32 path"
+    tasks:
+      - text: "Add PixelSample-generic apply path to point_ops.rs alongside existing LUT path"
+        done: false
+      - text: "Add f32 direct-math path for LutPointOp trait (skip LUT materialization for f32)"
+        done: false
+      - text: "Ensure ColorOp 3D CLUT path works with f32 input (skip u8 boundary conversions)"
+        done: false
+      - text: "Test point_ops f32 path — brightness, contrast, gamma with f32 samples"
+        done: false
+  - phase: "Wave 1 filter migration"
+    tasks:
+      - text: "Migrate ~10 adjustment filters to PixelSample generic (brightness, contrast, gamma, exposure, levels, etc.)"
+        done: false
+      - text: "Migrate ~10 color filters to PixelSample generic (hue_rotate, saturate, vibrance, etc.)"
+        done: false
+      - text: "Migrate ~9 evaluate filters to PixelSample generic"
+        done: false
+      - text: "Migrate ~7 color grading filters (curves, lift_gamma_gain, asc_cdl, split_toning)"
+        done: false
+      - text: "Migrate ~3 tone mapping filters (reinhard, drago, filmic)"
+        done: false
+      - text: "Migrate remaining wave 1 filters (solarize, dodge, burn, vignette, hue-vs curves)"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Per-filter f32 test — each migrated filter with f32 input produces f32 output without precision loss"
+        done: false
+      - text: "Parity test — f32 result vs u8 result for representative filters, within precision bounds"
+        done: false
+      - text: "Regression — all existing filter tests pass unchanged in standard mode"
+        done: false
+extra: {}

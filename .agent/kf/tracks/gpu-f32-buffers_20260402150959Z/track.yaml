@@ -1,0 +1,154 @@
+id: gpu-f32-buffers_20260402150959Z
+title: "GPU f32 buffer support — dual-format executor and proof shaders"
+type: feature
+status: pending
+created: 2026-04-02
+updated: 2026-04-02
+spec:
+  summary: |
+    Add dual-format (u32-packed RGBA8 and vec4<f32>) buffer support to the
+    GPU executor. Update shared WGSL fragments, migrate 2 proof shaders
+    (gaussian_blur, affine_resample), and auto-select format based on
+    pipeline precision mode. Eliminates GPU pack/unpack precision loss
+    for HP pipelines and unblocks future GPU-accelerated analysis filters.
+  context: |
+    All 19 production shaders use array<u32> with pack()/unpack() for RGBA8.
+    Between multi-pass GPU ops (e.g., separable blur), the pack→unpack
+    round-trip loses ~0.4 bits of precision per pass. For standard mode
+    this is invisible, but HP mode demands f32 throughout.
+
+    The GPU executor (WgpuExecutor in rasmcore-cli) manages ping-pong
+    buffers, shader caching, and buffer pooling. It assumes u32-packed
+    RGBA8 for upload/download. The WebGPU executor (web-ui/gpu-handler.ts)
+    has the same assumption.
+
+    This track adds a BufferFormat field to GpuOp so filters can declare
+    whether they need f32 or u32 buffers. The executor pools both types.
+    Shared WGSL fragments get f32 variants. GPU-capable filters auto-select
+    format based on pipeline precision.
+  codebase_analysis: |
+    Key files:
+    - crates/rasmcore-pipeline/src/gpu.rs — GpuOp, GpuCapable, GpuExecutor traits
+    - crates/rasmcore-cli/src/gpu_executor.rs — WgpuExecutor with buffer pooling
+    - crates/rasmcore-gpu-shaders/src/lib.rs — PIXEL_OPS, SAMPLE_BILINEAR constants
+    - crates/rasmcore-gpu-shaders/src/wgsl/pixel_ops.wgsl — pack()/unpack()
+    - crates/rasmcore-gpu-shaders/src/wgsl/sample_bilinear.wgsl — bilinear sampling
+    - crates/rasmcore-image/src/shaders/*.wgsl — 19 filter shaders
+    - web-ui/src/gpu-handler.ts — WebGPU executor
+
+    GpuOp::Compute currently has: shader, entry_point, workgroup_size, params,
+    extra_buffers. Need to add: buffer_format field.
+
+    GpuExecutor::execute takes &[u8] input assumed to be RGBA8.
+    For f32: input is &[u8] reinterpreted as f32 (4 bytes per channel,
+    16 bytes per pixel for RGBA).
+
+    Buffer pooling: ping-pong buffers are sized by width*height*4 (bytes).
+    For f32: width*height*16. The pooling logic already handles size
+    mismatches (grows as needed).
+
+    Proof shaders chosen because:
+    - gaussian_blur: multi-pass (H+V), demonstrates f32 inter-pass precision
+    - affine_resample: used by resize, demonstrates f32 sampling precision
+  acceptance_criteria:
+    - BufferFormat enum (U32Packed, F32Vec4) added to GpuOp
+    - GpuExecutor::execute handles both buffer formats
+    - WgpuExecutor pools u32 and f32 buffers separately
+    - f32 pixel_ops.wgsl fragment — identity pack/unpack for array<vec4<f32>>
+    - f32 sample_bilinear.wgsl variant — reads vec4<f32> directly
+    - Composition helpers (with_pixel_ops_f32, with_sampling_f32) in gpu-shaders crate
+    - gaussian_blur shader has f32 variant — both H and V passes
+    - affine_resample shader has f32 variant
+    - GpuFilter::gpu_ops receives precision hint to select u32 or f32 shader
+    - GPU parity test — f32 gaussian_blur vs CPU f32 gaussian_blur
+    - GPU parity test — f32 affine_resample vs CPU f32 affine_resample
+    - Regression — all existing u32-format GPU tests pass unchanged
+    - WebGPU executor (gpu-handler.ts) updated for dual-format support
+    - No f32 buffer is allocated in standard precision mode (zero overhead)
+  out_of_scope: |
+    - Migrating all 19 shaders to f32 — future tracks, one category at a time
+    - GPU resize as a standalone op — future track after this proves the pattern
+    - Analysis filter GPU acceleration (Harris, FFT) — future track
+    - f32 texture objects vs storage buffers — keep storage buffer approach
+  technical_notes: |
+    BufferFormat design:
+
+      enum BufferFormat {
+          U32Packed,  // Current: array<u32>, pack()/unpack() per pixel
+          F32Vec4,    // New: array<vec4<f32>>, direct read/write per pixel
+      }
+
+    Added to GpuOp::Compute:
+      Compute {
+          shader: String,
+          entry_point: &'static str,
+          workgroup_size: [u32; 3],
+          params: Vec<u8>,
+          extra_buffers: Vec<Vec<u8>>,
+          buffer_format: BufferFormat,  // NEW
+      }
+
+    Shader selection in GpuFilter::gpu_ops:
+      fn gpu_ops(&self, width: u32, height: u32, precision: PipelinePrecision)
+          -> Option<Vec<GpuOp>>
+      {
+          match precision {
+              Standard => /* existing u32 shader */,
+              HighPrecision => /* f32 shader, or None to fall back to CPU */,
+          }
+      }
+
+    f32 pixel_ops.wgsl (identity version):
+      fn unpack_f32(pixel: vec4<f32>) -> vec4<f32> { return pixel; }
+      fn pack_f32(color: vec4<f32>) -> vec4<f32> { return color; }
+
+    Buffer sizing: f32 buffers are 4x larger. The GpuConfig.max_full_image_pixels
+    threshold should account for this — a 4K image in f32 is 256MB (4096*4096*16),
+    which hits the typical max_buffer_size limit. May need to lower the threshold
+    for f32 or rely on tiling.
+
+    WebGPU executor changes: the TypeScript executor needs the same dual-format
+    support. The shader hash cache key should include buffer_format to avoid
+    collisions between u32 and f32 versions of the same shader.
+plan:
+  - phase: "Infrastructure — buffer format enum and executor"
+    tasks:
+      - text: "Add BufferFormat enum to rasmcore-pipeline/src/gpu.rs and to GpuOp::Compute"
+        done: false
+      - text: "Update WgpuExecutor to handle F32Vec4 buffer creation, upload, and readback"
+        done: false
+      - text: "Add separate f32 buffer pool alongside existing u32 pool"
+        done: false
+      - text: "Update dispatch_workgroups to account for vec4<f32> element size"
+        done: false
+  - phase: "Shader fragments — f32 variants"
+    tasks:
+      - text: "Add f32 pixel_ops.wgsl fragment (identity pack/unpack for vec4<f32>)"
+        done: false
+      - text: "Add f32 sample_bilinear.wgsl variant (reads vec4<f32> directly)"
+        done: false
+      - text: "Add composition helpers: with_pixel_ops_f32(), with_sampling_f32()"
+        done: false
+      - text: "Validate f32 fragments with naga (build-time shader validation)"
+        done: false
+  - phase: "Proof shaders — gaussian_blur and affine_resample"
+    tasks:
+      - text: "Create f32 variant of gaussian_blur.wgsl (H and V passes)"
+        done: false
+      - text: "Create f32 variant of affine_resample.wgsl"
+        done: false
+      - text: "Update BlurParams::gpu_ops to select u32 or f32 shader based on precision"
+        done: false
+      - text: "Update ComposedAffineNode gpu_ops to select u32 or f32 shader based on precision"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "GPU f32 parity test — gaussian_blur f32 GPU vs CPU f32, verify improved precision over u32 multi-pass"
+        done: false
+      - text: "GPU f32 parity test — affine_resample f32 GPU vs CPU f32"
+        done: false
+      - text: "Regression — all existing u32 GPU tests pass unchanged"
+        done: false
+      - text: "Update WebGPU executor (gpu-handler.ts) for dual-format support"
+        done: false
+extra: {}

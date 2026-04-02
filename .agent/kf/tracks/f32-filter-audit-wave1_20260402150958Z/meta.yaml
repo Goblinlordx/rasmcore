@@ -1,0 +1,8 @@
+title: f32 filter audit + wave 1 migration — point ops, adjustment, color
+status: pending
+type: feature
+approved: false
+created: '2026-04-02'
+updated: '2026-04-02'
+deps:
+- f32-pipeline-foundation_20260402150956Z
