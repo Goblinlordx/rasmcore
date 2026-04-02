@@ -1,0 +1,66 @@
+id: polar-depolar-im-align_20260402032400Z
+title: Align polar filter to IM DePolar convention (fix roundtrip)
+type: refactor
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: Fix polar.rs to use IM pixel-center convention (+0.5), angle origin at north (0 not -PI), and f64 precision — matching
+    depolar.rs convention. This fixes the polar/depolar roundtrip (currently MAE 42.8, target < 3.0) and aligns polar output
+    with IM -distort DePolar (currently MAE 54.7, target < 3.0).
+  context: 'Parity testing revealed our polar() function uses a completely different coordinate convention from ImageMagick''s
+    -distort DePolar (MAE 54.7). Meanwhile depolar() already closely matches IM''s -distort Polar (MAE 2.55 in unit tests).
+    The mismatch means polar→depolar roundtrip loses massive fidelity (MAE 42.8 center region vs IM''s 0.003). The root cause
+    is two-fold: (1) polar uses angle origin -PI (south) while depolar/IM use 0 (north), and (2) polar uses raw integer coords
+    while depolar/IM use pixel-center (+0.5).'
+  codebase_analysis: 'Files to change:
+
+    - crates/rasmcore-image/src/domain/filters/distortion/polar.rs: Rewrite inverse_fn to use f64, pixel-center (+0.5/-0.5),
+    and IM DePolar angle convention (angle = d.y/h * 2PI, radius = d.x/w * max_radius, source = center + radius*sin(angle),
+    center - radius*cos(angle)).
+
+    - crates/rasmcore-image/src/domain/ewa.rs (jacobian_polar): Update to match new polar formula with pixel-center convention.
+
+    - crates/rasmcore-image/src/domain/filters/distortion/tests.rs: Update roundtrip threshold from MAE<30 to MAE<3.0. Add
+    im_parity_depolar test (our polar vs IM DePolar).
+
+
+    Key reference: depolar.rs already implements the IM convention correctly. The polar inverse_fn should be the mathematical
+    inverse of depolar''s inverse_fn. IM DePolar maps output(x,y) in polar space to source in Cartesian: d.x=i+0.5, d.y=j+0.5,
+    angle=d.x/w*2PI, radius=d.y/h*max_r, sx=cx+radius*sin(angle)-0.5, sy=cy-radius*cos(angle)-0.5.'
+  acceptance_criteria:
+  - polar output matches IM -distort DePolar within MAE < 3.0 (currently 54.7)
+  - polar→depolar roundtrip MAE < 3.0 in center region (currently 42.8)
+  - depolar vs IM Polar parity preserved (existing MAE 2.55 not regressed)
+  - Jacobian updated to match new polar formula
+  - All existing distortion tests pass (no regressions)
+  out_of_scope: Changing depolar.rs (already aligned with IM). Changing border handling (zero vs clamp). GPU polar/depolar
+    (separate concern). Non-square image handling changes.
+  technical_notes: 'The fix is straightforward: mirror the depolar.rs convention in polar.rs. IM DePolar inverse mapping:
+    d.x=i+0.5, d.y=j+0.5, angle=d.x/w*TAU, radius=d.y/h*max_r, sx=cx+radius*sin(angle)-0.5, sy=cy-radius*cos(angle)-0.5. Use
+    f64 for intermediate math (matching depolar). Update jacobian_polar to use same pixel-center coords and angle convention.
+    The existing im_parity_polar test (depolar vs IM Polar at MAE 2.55) provides a regression guard for the depolar side.'
+plan:
+- phase: Rewrite polar inverse mapping
+  tasks:
+  - text: Rewrite polar.rs inverse_fn to use f64, pixel-center (+0.5/-0.5), and IM DePolar angle convention
+    done: false
+  - text: Update jacobian_polar in ewa.rs to match new pixel-center and angle convention
+    done: false
+- phase: Update tests
+  tasks:
+  - text: Add im_parity_depolar test (our polar vs IM -distort DePolar, MAE < 3.0)
+    done: false
+  - text: Tighten polar_depolar_roundtrip threshold from MAE < 30 to MAE < 3.0
+    done: false
+  - text: Update parity.rs roundtrip test threshold and remove coordinate-mismatch documentation
+    done: false
+- phase: Verification
+  tasks:
+  - text: Existing im_parity_polar test still passes (depolar vs IM Polar, MAE < 3.0)
+    done: false
+  - text: All distortion unit tests pass (no regressions)
+    done: false
+  - text: All parity tests pass including updated roundtrip
+    done: false
+extra: {}
