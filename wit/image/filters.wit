@@ -259,6 +259,18 @@ interface filters {
         toe-numerator: f32,
     }
 
+    record replace-color-config {
+        center-hue: f32,
+        hue-range: f32,
+        sat-min: f32,
+        sat-max: f32,
+        lum-min: f32,
+        lum-max: f32,
+        hue-shift: f32,
+        sat-shift: f32,
+        lum-shift: f32,
+    }
+
     record sepia-config {
         intensity: f32,
     }
@@ -665,6 +677,7 @@ interface filters {
     tonemap-drago: func(pixels: buffer, info: image-info, config: tonemap-drago-config) -> result<buffer, rasmcore-error>;
     tonemap-reinhard: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     tonemap-filmic: func(pixels: buffer, info: image-info, config: tonemap-filmic-config) -> result<buffer, rasmcore-error>;
+    replace-color: func(pixels: buffer, info: image-info, config: replace-color-config) -> result<buffer, rasmcore-error>;
     sepia: func(pixels: buffer, info: image-info, config: sepia-config) -> result<buffer, rasmcore-error>;
     saturate: func(pixels: buffer, info: image-info, config: saturate-config) -> result<buffer, rasmcore-error>;
     photo-filter: func(pixels: buffer, info: image-info, config: photo-filter-config) -> result<buffer, rasmcore-error>;
