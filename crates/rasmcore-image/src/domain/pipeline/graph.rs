@@ -593,6 +593,9 @@ pub struct NodeGraph {
     // GPU acceleration — registered per-node at graph build time
     gpu_nodes: Vec<Option<Box<dyn rasmcore_pipeline::GpuCapable>>>,
     gpu_executor: Option<std::rc::Rc<dyn rasmcore_pipeline::GpuExecutor>>,
+    // ML inference — registered per-node at graph build time
+    ml_nodes: Vec<Option<Box<dyn rasmcore_pipeline::MlCapable>>>,
+    ml_executor: Option<std::rc::Rc<dyn rasmcore_pipeline::MlExecutor>>,
 }
 
 impl NodeGraph {
@@ -612,6 +615,8 @@ impl NodeGraph {
             description: GraphDescription::new(),
             gpu_nodes: Vec::new(),
             gpu_executor: None,
+            ml_nodes: Vec::new(),
+            ml_executor: None,
         }
     }
 
@@ -635,6 +640,7 @@ impl NodeGraph {
         self.node_metadata.push(rasmcore_pipeline::Metadata::new());
         self.node_accumulators.push(None);
         self.gpu_nodes.push(None);
+        self.ml_nodes.push(None);
         // Track descriptor (best-effort — no name/kind available for untyped adds)
         let _ = self.description.add(NodeDescriptor {
             kind: NodeKind::Filter, // default for untyped
@@ -660,6 +666,7 @@ impl NodeGraph {
         self.node_metadata.push(metadata);
         self.node_accumulators.push(None);
         self.gpu_nodes.push(None);
+        self.ml_nodes.push(None);
         let _ = self.description.add(NodeDescriptor {
             kind: NodeKind::Filter,
             name: String::new(),
@@ -817,6 +824,7 @@ impl NodeGraph {
         });
 
         self.gpu_nodes.push(None);
+        self.ml_nodes.push(None);
 
         id
     }
@@ -840,6 +848,50 @@ impl NodeGraph {
     /// Check if a node has registered GPU capability.
     pub fn has_gpu(&self, node_id: u32) -> bool {
         self.gpu_nodes.get(node_id as usize).is_some_and(|g| g.is_some())
+    }
+
+    /// Register an ML-capable implementation for a node.
+    ///
+    /// At `request_region` time, the graph checks this before falling back
+    /// to CPU `compute_region`. Unlike GPU, ML has NO CPU fallback —
+    /// call `validate_ml_requirements()` before execution.
+    pub fn register_ml(&mut self, node_id: u32, ml: Box<dyn rasmcore_pipeline::MlCapable>) {
+        if let Some(slot) = self.ml_nodes.get_mut(node_id as usize) {
+            *slot = Some(ml);
+        }
+    }
+
+    /// Set the ML executor for this graph.
+    pub fn set_ml_executor(&mut self, executor: std::rc::Rc<dyn rasmcore_pipeline::MlExecutor>) {
+        self.ml_executor = Some(executor);
+    }
+
+    /// Check if a node has registered ML capability.
+    pub fn has_ml(&self, node_id: u32) -> bool {
+        self.ml_nodes.get(node_id as usize).is_some_and(|m| m.is_some())
+    }
+
+    /// Validate that all ML-registered nodes have an executor available.
+    ///
+    /// Call before execution. Unlike GPU (which silently falls back to CPU),
+    /// ML-only nodes have NO CPU fallback and will fail at request_region.
+    /// This catches the problem early with a clear error message.
+    pub fn validate_ml_requirements(&self) -> Result<(), ValidationError> {
+        let has_executor = self.ml_executor.is_some();
+        for (id, ml_node) in self.ml_nodes.iter().enumerate() {
+            if ml_node.is_some() && !has_executor {
+                return Err(ValidationError {
+                    message: format!(
+                        "node {} requires ML runtime but no MlExecutor is set — \
+                         call set_ml_executor() before execution",
+                        id,
+                    ),
+                    node_id: Some(id as u32),
+                    upstream_id: None,
+                });
+            }
+        }
+        Ok(())
     }
 
     /// Add a node that derives its metadata from an upstream node.
@@ -1310,6 +1362,44 @@ impl NodeGraph {
                 }
                 Err(_) => {
                     // GPU failed — fall through to CPU path
+                }
+            }
+        }
+
+        // Try ML dispatch if executor and ML ops are available for this node.
+        // Use raw pointer to split borrow (same pattern as GPU dispatch + CPU path).
+        let ml_dispatch = self.ml_executor.clone().and_then(|executor| {
+            let has_ml = self.ml_nodes.get(node_id as usize)?.is_some();
+            let upstream_id = self.nodes[node_id as usize].upstream_id()?;
+            if has_ml { Some((executor, upstream_id)) } else { None }
+        });
+        if let Some((executor, upstream_id)) = ml_dispatch {
+            let full_rect = Rect::new(0, 0, info.width, info.height);
+            let input = self.request_region(upstream_id, full_rect)?;
+            // Safe: ml_nodes[node_id] won't be modified during ml_op/process_ml_output
+            let ml_nodes_ptr = self.ml_nodes.as_ptr();
+            let ml_capable = unsafe { &*ml_nodes_ptr.add(node_id as usize) }.as_ref().unwrap();
+            if let Some(ml_op) = ml_capable.ml_op(&input, info.width, info.height) {
+                match executor.execute(&ml_op) {
+                    Ok(ml_output) => {
+                        match ml_capable.process_ml_output(&ml_output, &input, info.width, info.height) {
+                            Ok(pixels) => {
+                                let pixels = if request == full_rect {
+                                    pixels
+                                } else {
+                                    crop_region(&pixels, full_rect, request, bpp)
+                                };
+                                self.accumulate_tile(node_id, request, &pixels, bpp);
+                                return Ok(pixels);
+                            }
+                            Err(e) => {
+                                eprintln!("ML post-process error for node {node_id}: {e}");
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("ML inference error for node {node_id}: {e}");
+                    }
                 }
             }
         }

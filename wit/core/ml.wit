@@ -1,0 +1,89 @@
+/// ML inference offload interface.
+///
+/// Optional import — when provided by the host, pipeline nodes can offload
+/// ML inference to the host's runtime (ONNX Runtime, CoreML, WebNN, etc.).
+/// When absent, ML-only nodes report NotSupported.
+///
+/// The WASM component emits a model reference + input tensor. The host
+/// resolves the model, runs inference, and returns the output tensor.
+/// Models are NOT embedded in the component — they are hosted externally
+/// and cached by the host.
+
+interface ml {
+    /// Reference to a model by name and version.
+    /// The host resolves this to a local cached model file.
+    record model-ref {
+        /// Model identifier (e.g., "rmbg-1.4", "real-esrgan-x4plus").
+        name: string,
+        /// Version or variant (e.g., "1.0.0", "fp16", "int8").
+        version: string,
+    }
+
+    /// Tensor element data type.
+    enum tensor-dtype {
+        float32,
+        float16,
+        uint8,
+        int8,
+    }
+
+    /// Tensor shape and type descriptor.
+    record tensor-desc {
+        /// Dimension sizes (e.g., [1, 3, 1024, 1024] for NCHW).
+        shape: list<u32>,
+        /// Element data type.
+        dtype: tensor-dtype,
+    }
+
+    /// ML inference operation emitted by a node.
+    record ml-op {
+        /// Model to run inference with.
+        model: model-ref,
+        /// Raw input tensor bytes (layout per dtype, row-major).
+        input: list<u8>,
+        /// Input tensor shape and type.
+        input-desc: tensor-desc,
+        /// Expected output tensor shape and type.
+        output-desc: tensor-desc,
+        /// Key-value parameters (model-specific, e.g., threshold).
+        params: list<tuple<string, string>>,
+    }
+
+    /// Error from ML execution.
+    variant ml-error {
+        /// Model not found in local cache or registry.
+        model-not-found(string),
+        /// Model failed to load or compile.
+        model-loading(string),
+        /// Inference runtime error.
+        inference-error(string),
+        /// Input/output tensor shape mismatch.
+        shape-mismatch(string),
+        /// No ML runtime available on this host.
+        not-available(string),
+    }
+
+    /// Execute an ML inference operation.
+    ///
+    /// Returns raw output tensor bytes matching output-desc.
+    ml-execute: func(op: ml-op) -> result<list<u8>, ml-error>;
+
+    /// Information about a model available on this host.
+    record ml-capability-info {
+        /// Model reference.
+        model: model-ref,
+        /// Input tensor requirements.
+        input-desc: tensor-desc,
+        /// Output tensor format.
+        output-desc: tensor-desc,
+        /// Execution backend name (e.g., "coreml", "cuda", "cpu").
+        backend: string,
+        /// Estimated inference time in milliseconds.
+        estimated-ms: u32,
+    }
+
+    /// Query available ML models and their capabilities.
+    ///
+    /// Returns empty list if no ML runtime is available.
+    ml-capabilities: func() -> list<ml-capability-info>;
+}

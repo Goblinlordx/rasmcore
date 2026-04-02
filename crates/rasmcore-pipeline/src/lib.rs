@@ -8,6 +8,7 @@ pub mod cache;
 pub mod gpu;
 pub mod layer_cache;
 pub mod metadata;
+pub mod ml;
 pub mod rect;
 
 pub use cache::{CacheQuery, RegionHandle, RegionKey, SpatialCache};
@@ -17,3 +18,4 @@ pub use layer_cache::{
 pub use metadata::{Metadata, MetadataFilter, MetadataValue, glob_match};
 pub use rect::{Overlap, Rect};
 pub use gpu::{GpuCapable, GpuConfig, GpuError, GpuExecutor, GpuOp};
+pub use ml::{MlCapable, MlCapabilityInfo, MlError, MlExecutor, MlOp, ModelRef, TensorDesc, TensorDtype};
