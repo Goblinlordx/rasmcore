@@ -1,0 +1,7 @@
+title: Create rasmcore-gpu-shaders crate — shared WGSL shader library with composition
+  API
+status: pending
+type: refactor
+approved: false
+created: '2026-04-02'
+updated: '2026-04-02'
