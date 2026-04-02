@@ -844,4 +844,142 @@ mod tests {
         assert_eq!(sg.info().format, PixelFormat::Rgb8);
         assert_eq!(out_info.width, 8);
     }
+
+    // ── Mapper + Orchestrator Tests ──
+
+    /// Simple levels node: applies black/white/gamma stretch.
+    struct LevelsNode {
+        upstream: u32,
+        info: ImageInfo,
+        params: LevelsParams,
+    }
+    impl ImageNode for LevelsNode {
+        fn info(&self) -> ImageInfo {
+            self.info.clone()
+        }
+        fn compute_region(
+            &self,
+            request: Rect,
+            upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+        ) -> Result<Vec<u8>, ImageError> {
+            let pixels = upstream_fn(self.upstream, request)?;
+            let black = (self.params.black * 255.0) as u8;
+            let white = (self.params.white * 255.0).max(black as f32 + 1.0) as u8;
+            let range = (white - black) as f32;
+            let gamma = self.params.gamma;
+            Ok(pixels
+                .iter()
+                .map(|&v| {
+                    let normalized = ((v.max(black) - black) as f32 / range).min(1.0);
+                    let corrected = normalized.powf(1.0 / gamma);
+                    (corrected * 255.0 + 0.5).clamp(0.0, 255.0) as u8
+                })
+                .collect())
+        }
+        fn access_pattern(&self) -> AccessPattern {
+            AccessPattern::Sequential
+        }
+        fn upstream_id(&self) -> Option<u32> {
+            Some(self.upstream)
+        }
+    }
+
+    #[test]
+    fn levels_to_levels_mapper() {
+        let result = AnalysisResult::Levels {
+            black: 0.1,
+            white: 0.9,
+            gamma: 1.2,
+        };
+        let params = LevelsToLevels.map(&result).unwrap();
+        assert!((params.black - 0.1).abs() < 0.001);
+        assert!((params.white - 0.9).abs() < 0.001);
+        assert!((params.gamma - 1.2).abs() < 0.001);
+    }
+
+    #[test]
+    fn crop_rect_to_crop_mapper() {
+        let result = AnalysisResult::CropRect {
+            x: 10,
+            y: 20,
+            width: 100,
+            height: 200,
+        };
+        let params = CropRectToCrop.map(&result).unwrap();
+        assert_eq!(params.x, 10);
+        assert_eq!(params.y, 20);
+        assert_eq!(params.width, 100);
+        assert_eq!(params.height, 200);
+    }
+
+    #[test]
+    fn mapper_type_mismatch_error() {
+        let result = AnalysisResult::Histogram {
+            r: vec![],
+            g: vec![],
+            b: vec![],
+        };
+        assert!(LevelsToLevels.map(&result).is_err());
+        assert!(CropRectToCrop.map(&result).is_err());
+    }
+
+    #[test]
+    fn two_pass_auto_levels_end_to_end() {
+        // Create a dark image (all pixels in 20-60 range)
+        let info = rgb8_info(4, 4);
+        let pixels: Vec<u8> = (0..48).map(|i| 20 + (i % 41) as u8).collect();
+        let pixels_clone = pixels.clone();
+        let pixels_clone2 = pixels.clone();
+        let info_clone = info.clone();
+        let info_clone2 = info.clone();
+
+        let (output, analysis_result) = AnalyzeAndProcess::new(
+            // Analysis builder: source → passthrough (just need pixels for analysis)
+            move |cache| {
+                let mut g = NodeGraph::with_layer_cache(0, cache.clone());
+                let src = g.add_node(Box::new(RawSource::new(pixels_clone, info_clone)));
+                (g, src)
+            },
+            // Analyzer
+            AutoLevelsAnalysis::default(),
+            // Mapper
+            LevelsToLevels,
+            // Process builder: source → levels adjustment using analyzed params
+            move |params: LevelsParams, cache| {
+                let mut g = NodeGraph::with_layer_cache(0, cache.clone());
+                let src = g.add_node(Box::new(RawSource::new(pixels_clone2, info_clone2.clone())));
+                let levels = g.add_node(Box::new(LevelsNode {
+                    upstream: src,
+                    info: info_clone2,
+                    params,
+                }));
+                (g, levels)
+            },
+        )
+        .execute_with_result()
+        .unwrap();
+
+        // Verify analysis produced levels
+        match &analysis_result {
+            AnalysisResult::Levels { black, white, gamma } => {
+                eprintln!("  auto-levels analysis: black={black:.4} white={white:.4} gamma={gamma:.2}");
+                assert!(*black < 0.3, "black={black} should be low");
+                assert!(*white < 0.4, "white={white} should be in low range for dark image");
+            }
+            _ => panic!("expected Levels result"),
+        }
+
+        // Verify output is different from input (levels were applied)
+        assert_ne!(output, pixels, "output should differ from input (levels applied)");
+
+        // Verify output is brighter (levels stretch expands the range)
+        let input_mean: f32 = pixels.iter().map(|&v| v as f32).sum::<f32>() / pixels.len() as f32;
+        let output_mean: f32 = output.iter().map(|&v| v as f32).sum::<f32>() / output.len() as f32;
+        eprintln!("  input mean: {input_mean:.1}, output mean: {output_mean:.1}");
+        assert!(
+            output_mean > input_mean,
+            "output mean {output_mean:.1} should be brighter than input {input_mean:.1}"
+        );
+        eprintln!("  two-pass auto-levels end-to-end ✓");
+    }
 }
