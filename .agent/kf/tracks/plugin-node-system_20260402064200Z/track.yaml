@@ -23,16 +23,40 @@ spec:
     - Hot-loading new capabilities at runtime
 
     A plugin node is NOT a lesser node. It implements the exact same WIT
-    interface as built-in nodes. It can declare:
-    - Point-op (provide LUT for LUT fusion optimization)
-    - GpuCapable (provide WGSL shader for GPU dispatch)
-    - MlCapable (provide model-ref for ML dispatch)
-    - Spatial op, generator, transform, encoder, decoder — any node type
-
-    The pipeline graph treats plugin nodes identically to built-in nodes.
-    The only difference is WHERE the implementation comes from:
+    interface as built-in nodes. The pipeline graph treats plugin nodes
+    identically to built-in nodes. The only difference is WHERE the
+    implementation comes from:
     - Built-in: compiled into the core .wasm component
     - Plugin: loaded from a separate .wasm file at runtime
+
+    Node execution model (same for built-in and plugin):
+
+    Every node has a CPU implementation (compute_region). This is the
+    baseline — always present. On top of that, nodes declare orthogonal
+    properties:
+
+    1. FUSABLE (optimization property):
+       Node is a point-op that can be collapsed into a [u8; 256] LUT.
+       Multiple adjacent fusable nodes are fused into a single LUT.
+       The fused LUT node automatically gets CPU and GPU implementations
+       (the engine provides a generic LUT shader). The individual node's
+       compute_region is never called — the fused LUT replaces it.
+
+    2. GPU (execution acceleration):
+       Node provides an explicit WGSL shader for its specific operation.
+       This is for non-fusable operations (spatial ops, distortions, etc.)
+       that need custom GPU code. Mutually exclusive with fusable — if a
+       node is fusable, the fused LUT handles GPU automatically.
+
+    3. ML (external inference):
+       Node provides a model reference for ML runtime dispatch.
+       No CPU fallback — ML features are ML-only.
+
+    These are mutually exclusive execution strategies:
+    - Fusable point-op -> fused LUT -> CPU or GPU (automatic)
+    - Non-fusable with GPU shader -> GPU or CPU fallback
+    - ML op -> ML runtime only
+    - CPU-only -> compute_region only
 
     The host already has a WASM runtime (wasmtime for CLI, browser native
     WASM for web). Loading a second .wasm module is not embedding an
@@ -73,9 +97,9 @@ spec:
     - Plugin loading flow for CLI host (wasmtime component loading)
     - Plugin loading flow for browser host (WebAssembly.instantiate)
     - How plugin nodes integrate with pipeline graph (identical to built-in nodes)
-    - How plugins declare point-op / LUT fusion capability
-    - How plugins declare GpuCapable (provide shader source)
-    - How plugins declare MlCapable (provide model reference)
+    - How plugins declare execution strategy (fusable / GPU / ML / CPU-only)
+    - Verification that strategies are mutually exclusive
+    - How fusable plugin point-ops participate in LUT fusion chain
     - Security model (sandboxing, resource limits, capability permissions)
     - Performance analysis (cross-component call overhead for pixel buffers)
     - Concrete example showing a custom filter plugin end-to-end
@@ -100,14 +124,31 @@ spec:
        - Mitigation: tile-based pipeline means buffers are tile-sized, not full image
        -> Tile pipeline naturally limits copy overhead
 
-    3. Plugin capability declarations:
-       - Point-op: plugin exports build-point-lut() -> list<u8> (256 entries)
-         Pipeline can fuse this LUT with adjacent point-ops, same as built-in
-       - GpuCapable: plugin exports gpu-ops(w, h) -> option<list<gpu-op>>
-         Returns WGSL shader source + params, host dispatches to GPU
-       - MlCapable: plugin exports ml-op(w, h) -> option<ml-op>
-         Returns model-ref + params, host dispatches to ML runtime
-       - These are optional exports. Plugin without them = CPU-only node.
+    3. Plugin execution strategy (mutually exclusive):
+       A plugin declares ONE strategy via its exports:
+
+       a) Fusable point-op:
+          Plugin exports build-point-lut(config) -> list<u8> (256 entries)
+          Engine fuses with adjacent point-ops into single LUT.
+          Fused LUT runs on GPU (engine provides LUT shader) or CPU.
+          Plugin's compute-region is fallback only (unfused single-node case).
+
+       b) Non-fusable with GPU shader:
+          Plugin exports gpu-ops(w, h) -> option<list<gpu-op>>
+          Returns WGSL shader source + params, host dispatches to GPU.
+          Plugin's compute-region is CPU fallback.
+          Cannot also be fusable — spatial/complex ops need explicit shaders.
+
+       c) ML operation:
+          Plugin exports ml-op(w, h) -> option<ml-op>
+          Returns model-ref + params, host dispatches to ML runtime.
+          No CPU fallback. Plugin's compute-region is not used.
+
+       d) CPU-only (default):
+          No additional exports. compute-region handles everything.
+
+       These are mutually exclusive. A node is exactly one of: fusable,
+       GPU-accelerated, ML-accelerated, or CPU-only.
 
     4. Config params:
        - Plugin exports get-config-schema() -> JSON schema
