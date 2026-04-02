@@ -199,7 +199,7 @@ impl rasmcore_pipeline::GpuCapable for SkeletonizeParams {
             params_0.extend_from_slice(&height.to_le_bytes());
             params_0.extend_from_slice(&0u32.to_le_bytes()); // sub_iter = 0
             params_0.extend_from_slice(&0u32.to_le_bytes()); // padding
-            ops.push(rasmcore_pipeline::GpuOp {
+            ops.push(rasmcore_pipeline::GpuOp::Compute {
                 shader: SKELETONIZE_WGSL.clone(),
                 entry_point: "main",
                 workgroup_size: [16, 16, 1],
@@ -213,7 +213,7 @@ impl rasmcore_pipeline::GpuCapable for SkeletonizeParams {
             params_1.extend_from_slice(&height.to_le_bytes());
             params_1.extend_from_slice(&1u32.to_le_bytes()); // sub_iter = 1
             params_1.extend_from_slice(&0u32.to_le_bytes()); // padding
-            ops.push(rasmcore_pipeline::GpuOp {
+            ops.push(rasmcore_pipeline::GpuOp::Compute {
                 shader: SKELETONIZE_WGSL.clone(),
                 entry_point: "main",
                 workgroup_size: [16, 16, 1],

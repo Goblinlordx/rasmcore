@@ -182,7 +182,7 @@ impl GpuCapable for ComposedAffineNode {
         params.extend_from_slice(&0u32.to_le_bytes()); // _pad1
         params.extend_from_slice(&0u32.to_le_bytes()); // _pad2
 
-        Some(vec![GpuOp {
+        Some(vec![GpuOp::Compute {
             shader: AFFINE_SHADER.clone(),
             entry_point: "main",
             workgroup_size: [16, 16, 1],

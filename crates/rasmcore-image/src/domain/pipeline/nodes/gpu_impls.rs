@@ -89,14 +89,14 @@ impl GpuCapable for BlurNode {
         let shader = GAUSSIAN_BLUR.clone();
 
         Some(vec![
-            GpuOp {
+            GpuOp::Compute {
                 shader: shader.clone(),
                 entry_point: "blur_h",
                 workgroup_size: [256, 1, 1],
                 params: params.clone(),
                 extra_buffers: vec![kernel_buf.clone()],
             },
-            GpuOp {
+            GpuOp::Compute {
                 shader,
                 entry_point: "blur_v",
                 workgroup_size: [1, 256, 1],
@@ -119,7 +119,7 @@ impl GpuCapable for SharpenNode {
         params.extend_from_slice(&self.config.amount.to_le_bytes());
         params.extend_from_slice(&0u32.to_le_bytes());
 
-        Some(vec![GpuOp {
+        Some(vec![GpuOp::Compute {
             shader: SHARPEN.clone(),
             entry_point: "main",
             workgroup_size: [16, 16, 1],
@@ -146,7 +146,7 @@ impl GpuCapable for BilateralNode {
         params.extend_from_slice(&0u32.to_le_bytes());
         params.extend_from_slice(&0u32.to_le_bytes());
 
-        Some(vec![GpuOp {
+        Some(vec![GpuOp::Compute {
             shader: BILATERAL.clone(),
             entry_point: "main",
             workgroup_size: [16, 16, 1],
@@ -168,7 +168,7 @@ impl GpuCapable for GuidedFilterNode {
         params.extend_from_slice(&self.config.radius.to_le_bytes());
         params.extend_from_slice(&self.config.epsilon.to_le_bytes());
 
-        Some(vec![GpuOp {
+        Some(vec![GpuOp::Compute {
             shader: GUIDED_FILTER.clone(),
             entry_point: "main",
             workgroup_size: [16, 16, 1],
@@ -190,7 +190,7 @@ impl GpuCapable for MedianNode {
         params.extend_from_slice(&self.config.radius.to_le_bytes());
         params.extend_from_slice(&0u32.to_le_bytes());
 
-        Some(vec![GpuOp {
+        Some(vec![GpuOp::Compute {
             shader: MEDIAN.clone(),
             entry_point: "main",
             workgroup_size: [16, 16, 1],
@@ -218,7 +218,7 @@ impl GpuCapable for SpinBlurNode {
         params.extend_from_slice(&0u32.to_le_bytes());
         params.extend_from_slice(&0u32.to_le_bytes());
 
-        Some(vec![GpuOp {
+        Some(vec![GpuOp::Compute {
             shader: SPIN_BLUR.clone(),
             entry_point: "main",
             workgroup_size: [16, 16, 1],
@@ -241,7 +241,7 @@ impl GpuCapable for MotionBlurNode {
         params.extend_from_slice(&self.config.length.to_le_bytes());
         params.extend_from_slice(&angle_rad.to_le_bytes());
 
-        Some(vec![GpuOp {
+        Some(vec![GpuOp::Compute {
             shader: MOTION_BLUR.clone(),
             entry_point: "main",
             workgroup_size: [16, 16, 1],
@@ -268,7 +268,7 @@ impl GpuCapable for ZoomBlurNode {
         params.extend_from_slice(&0u32.to_le_bytes());
         params.extend_from_slice(&0u32.to_le_bytes());
 
-        Some(vec![GpuOp {
+        Some(vec![GpuOp::Compute {
             shader: ZOOM_BLUR.clone(),
             entry_point: "main",
             workgroup_size: [16, 16, 1],
@@ -288,7 +288,7 @@ impl GpuCapable for SpherizeNode {
         params.extend_from_slice(&height.to_le_bytes());
         params.extend_from_slice(&self.config.amount.to_le_bytes());
         params.extend_from_slice(&0u32.to_le_bytes());
-        Some(vec![GpuOp { shader: SPHERIZE.clone(), entry_point: "main", workgroup_size: [16, 16, 1], params, extra_buffers: vec![] }])
+        Some(vec![GpuOp::Compute { shader: SPHERIZE.clone(), entry_point: "main", workgroup_size: [16, 16, 1], params, extra_buffers: vec![] }])
     }
 }
 
@@ -300,7 +300,7 @@ impl GpuCapable for SwirlNode {
         params.extend_from_slice(&height.to_le_bytes());
         params.extend_from_slice(&self.config.angle.to_le_bytes());
         params.extend_from_slice(&self.config.radius.to_le_bytes());
-        Some(vec![GpuOp { shader: SWIRL.clone(), entry_point: "main", workgroup_size: [16, 16, 1], params, extra_buffers: vec![] }])
+        Some(vec![GpuOp::Compute { shader: SWIRL.clone(), entry_point: "main", workgroup_size: [16, 16, 1], params, extra_buffers: vec![] }])
     }
 }
 
@@ -312,7 +312,7 @@ impl GpuCapable for BarrelNode {
         params.extend_from_slice(&height.to_le_bytes());
         params.extend_from_slice(&self.config.k1.to_le_bytes());
         params.extend_from_slice(&self.config.k2.to_le_bytes());
-        Some(vec![GpuOp { shader: BARREL.clone(), entry_point: "main", workgroup_size: [16, 16, 1], params, extra_buffers: vec![] }])
+        Some(vec![GpuOp::Compute { shader: BARREL.clone(), entry_point: "main", workgroup_size: [16, 16, 1], params, extra_buffers: vec![] }])
     }
 }
 
@@ -328,7 +328,7 @@ impl GpuCapable for RippleNode {
         params.extend_from_slice(&self.config.center_y.to_le_bytes());
         params.extend_from_slice(&0u32.to_le_bytes());
         params.extend_from_slice(&0u32.to_le_bytes());
-        Some(vec![GpuOp { shader: RIPPLE.clone(), entry_point: "main", workgroup_size: [16, 16, 1], params, extra_buffers: vec![] }])
+        Some(vec![GpuOp::Compute { shader: RIPPLE.clone(), entry_point: "main", workgroup_size: [16, 16, 1], params, extra_buffers: vec![] }])
     }
 }
 
@@ -344,7 +344,7 @@ impl GpuCapable for WaveNode {
         params.extend_from_slice(&0u32.to_le_bytes());
         params.extend_from_slice(&0u32.to_le_bytes());
         params.extend_from_slice(&0u32.to_le_bytes());
-        Some(vec![GpuOp { shader: WAVE.clone(), entry_point: "main", workgroup_size: [16, 16, 1], params, extra_buffers: vec![] }])
+        Some(vec![GpuOp::Compute { shader: WAVE.clone(), entry_point: "main", workgroup_size: [16, 16, 1], params, extra_buffers: vec![] }])
     }
 }
 
@@ -356,7 +356,7 @@ impl GpuCapable for PolarNode {
         params.extend_from_slice(&height.to_le_bytes());
         params.extend_from_slice(&0u32.to_le_bytes());
         params.extend_from_slice(&0u32.to_le_bytes());
-        Some(vec![GpuOp { shader: POLAR.clone(), entry_point: "main", workgroup_size: [16, 16, 1], params, extra_buffers: vec![] }])
+        Some(vec![GpuOp::Compute { shader: POLAR.clone(), entry_point: "main", workgroup_size: [16, 16, 1], params, extra_buffers: vec![] }])
     }
 }
 
@@ -368,6 +368,6 @@ impl GpuCapable for DepolarNode {
         params.extend_from_slice(&height.to_le_bytes());
         params.extend_from_slice(&0u32.to_le_bytes());
         params.extend_from_slice(&0u32.to_le_bytes());
-        Some(vec![GpuOp { shader: DEPOLAR.clone(), entry_point: "main", workgroup_size: [16, 16, 1], params, extra_buffers: vec![] }])
+        Some(vec![GpuOp::Compute { shader: DEPOLAR.clone(), entry_point: "main", workgroup_size: [16, 16, 1], params, extra_buffers: vec![] }])
     }
 }

@@ -166,7 +166,7 @@ impl rasmcore_pipeline::gpu::GpuCapable for FusedLutNode {
             lut_buf.extend_from_slice(&(v as u32).to_le_bytes());
         }
 
-        Some(vec![rasmcore_pipeline::gpu::GpuOp {
+        Some(vec![rasmcore_pipeline::gpu::GpuOp::Compute {
             shader: LUT1D_SHADER.clone(),
             entry_point: "main",
             workgroup_size: [256, 1, 1],
@@ -227,7 +227,7 @@ impl rasmcore_pipeline::gpu::GpuCapable for FusedClutNode {
             lut_buf.extend_from_slice(&0.0f32.to_le_bytes());   // padding (vec4 alignment)
         }
 
-        Some(vec![rasmcore_pipeline::gpu::GpuOp {
+        Some(vec![rasmcore_pipeline::gpu::GpuOp::Compute {
             shader: LUT3D_SHADER.clone(),
             entry_point: "main",
             workgroup_size: [256, 1, 1],

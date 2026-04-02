@@ -5,22 +5,38 @@
 //! batches consecutive GPU-capable nodes and dispatches them to the
 //! host's GPU runtime (WebGPU in browser, wgpu in CLI).
 
-/// A single GPU compute operation (one shader dispatch).
+/// A single GPU operation in an execution chain.
+///
+/// Operations are executed sequentially with ping-pong buffers. `Compute`
+/// dispatches a shader; `Snapshot` saves the current buffer state so later
+/// ops can reference it (e.g., high-pass needs the original after blur).
 #[derive(Debug, Clone)]
-pub struct GpuOp {
-    /// WGSL compute shader source code (owned, composed from shared fragments + filter body).
-    pub shader: String,
-    /// Entry point function name (e.g., "main", "blur_h").
-    pub entry_point: &'static str,
-    /// Workgroup size used in the shader (x, y, z).
-    /// Dispatch count = ceil(width/x, height/y, 1).
-    pub workgroup_size: [u32; 3],
-    /// Serialized uniform parameters (filter-specific, packed as bytes).
-    /// Layout must match the WGSL uniform struct (little-endian, 4-byte aligned).
-    pub params: Vec<u8>,
-    /// Optional extra storage buffers (e.g., blur kernel weights, 3D LUT data).
-    /// Each entry is a separate `storage<read>` buffer binding.
-    pub extra_buffers: Vec<Vec<u8>>,
+pub enum GpuOp {
+    /// Save a read-only copy of the current ping-pong read buffer.
+    ///
+    /// The snapshot is mapped to the specified binding index for all
+    /// subsequent `Compute` ops. Multiple snapshots can coexist at
+    /// different bindings.
+    Snapshot {
+        /// Binding index where this snapshot will be accessible.
+        binding: u32,
+    },
+    /// Dispatch a compute shader.
+    Compute {
+        /// WGSL compute shader source code (owned, composed from shared fragments + filter body).
+        shader: String,
+        /// Entry point function name (e.g., "main", "blur_h").
+        entry_point: &'static str,
+        /// Workgroup size used in the shader (x, y, z).
+        /// Dispatch count = ceil(width/x, height/y, 1).
+        workgroup_size: [u32; 3],
+        /// Serialized uniform parameters (filter-specific, packed as bytes).
+        /// Layout must match the WGSL uniform struct (little-endian, 4-byte aligned).
+        params: Vec<u8>,
+        /// Optional extra storage buffers (e.g., blur kernel weights, 3D LUT data).
+        /// Each entry is a separate `storage<read>` buffer binding.
+        extra_buffers: Vec<Vec<u8>>,
+    },
 }
 
 /// Trait for pipeline nodes that can execute on GPU.
