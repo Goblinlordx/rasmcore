@@ -48,38 +48,39 @@ spec:
 plan:
 - phase: Build benchmark harness
   tasks:
-  - text: Write a Rust test harness that runs each distortion filter with all 3 sampling modes (Ewa, EwaClamp, Bilinear) on a standard test image and outputs raw RGB
-    done: false
+  - text: Write a Rust test harness that runs each distortion filter with all 3 sampling modes (Ewa, EwaClamp, Bilinear) on
+      a standard test image and outputs raw RGB
+    done: true
   - text: Write IM reference generator script for all 8 distortion filters with matched parameters
-    done: false
+    done: true
 - phase: Collect measurements
   tasks:
   - text: Run barrel with all 3 modes, compute MAE vs IM for each
-    done: false
+    done: true
   - text: Run spherize with all 3 modes, compute MAE vs IM for each
-    done: false
+    done: true
   - text: Run swirl with all 3 modes, compute MAE vs IM for each
-    done: false
+    done: true
   - text: Run ripple with all 3 modes, compute MAE vs IM for each
-    done: false
+    done: true
   - text: Run wave with all 3 modes, compute MAE vs IM for each
-    done: false
+    done: true
   - text: Run polar with all 3 modes, compute MAE vs IM DePolar for each
-    done: false
+    done: true
   - text: Run depolar with all 3 modes, compute MAE vs IM Polar for each
-    done: false
+    done: true
   - text: Run mesh_warp with all 3 modes, compute MAE vs IM perspective for each
-    done: false
+    done: true
 - phase: IM source analysis
   tasks:
   - text: Document IM resampler per distortion type from IM 7.x source (distort.c)
-    done: false
+    done: true
   - text: Note any per-operation overrides IM applies (filter type, support radius)
-    done: false
+    done: true
 - phase: Report
   tasks:
   - text: Produce decision matrix table (filter x mode x MAE) with recommended mode
-    done: false
+    done: true
   - text: List filters that would benefit from a mode change and expected improvement
-    done: false
+    done: true
 extra: {}
