@@ -121,7 +121,7 @@ plan:
   - text: Implement script loader — parse metadata, compile AST, validate strategy
     done: true
   - text: Add pipeline-config with scripts field to WIT pipeline constructor
-    done: false
+    done: true
 - phase: ScriptNode implementation
   tasks:
   - text: Implement ScriptNode wrapping compiled Rhai AST as ImageNode
@@ -129,7 +129,7 @@ plan:
   - text: Register NodeRef type with .apply(name, config) method for composite graphs
     done: true
   - text: Implement builtin() host function — call existing filters by name
-    done: false
+    done: true
   - text: Implement fusable strategy — evaluate lut() for 0-255, produce LUT
     done: true
   - text: Implement GPU strategy — extract shader + params from script
@@ -141,21 +141,21 @@ plan:
 - phase: Pipeline integration and validation
   tasks:
   - text: Add generic apply(source, filter_name, config) to WIT pipeline interface
-    done: false
+    done: true
   - text: Register script nodes in filter list and param manifest
-    done: false
+    done: true
   - text: Validate scripts on load (strategy matches functions, LUT range, shader validity)
-    done: false
+    done: true
   - text: Composite scripts can reference built-in and other script filters by name
-    done: false
+    done: true
 - phase: Examples and verification
   tasks:
   - text: Write example fusable script (warm_tint or similar)
-    done: false
+    done: true
   - text: Write example compute script (glow effect using builtin calls)
-    done: false
+    done: true
   - text: Write example composite script (vintage film look using fluent .apply chain)
-    done: false
+    done: true
   - text: All existing tests pass, WASM build clean
-    done: false
+    done: true
 extra: {}
