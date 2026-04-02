@@ -22,122 +22,196 @@ pub fn generate_nodes(filters: &[FilterReg]) -> String {
     code.push_str("#[allow(unused_imports)] use crate::domain::types::*;\n");
     code.push_str("#[allow(unused_imports)] use rasmcore_pipeline::Rect;\n\n");
 
+
     for f in filters {
         let node_name = format!("{}Node", to_pascal_case(&f.name));
-        let domain_fn = &f.fn_name;
 
-        // Struct
-        code.push_str(&format!("pub struct {node_name} {{\n"));
-        code.push_str("    pub(crate) upstream: u32,\n");
-        code.push_str("    pub(crate) source_info: ImageInfo,\n");
-        for (pname, ptype) in &f.params {
-            let clean_n = pname.trim_start_matches('_');
-            code.push_str(&format!("    pub(crate) {clean_n}: {},\n", to_owned_type(ptype)));
-        }
-        code.push_str("}\n\n");
+        if f.derive_style {
+            // ── New-style: derive(Filter) struct with CpuFilter trait ──────
+            let config_type = f.config_struct.as_deref().unwrap_or("()");
 
-        // Constructor
-        let ctor_params: Vec<String> = f
-            .params
-            .iter()
-            .map(|(n, t)| {
-                let clean_n = n.trim_start_matches('_');
-                format!("{clean_n}: {}", to_owned_type(t))
-            })
-            .collect();
-        let ctor_sig = if ctor_params.is_empty() {
-            "upstream: u32, source_info: ImageInfo".to_string()
+            // Struct: holds config + upstream + info
+            code.push_str(&format!("pub struct {node_name} {{\n"));
+            code.push_str("    pub(crate) upstream: u32,\n");
+            code.push_str("    pub(crate) source_info: ImageInfo,\n");
+            code.push_str(&format!("    pub(crate) config: filters::{config_type},\n"));
+            code.push_str("}\n\n");
+
+            // Constructor: takes config struct directly
+            code.push_str(&format!("impl {node_name} {{\n"));
+            code.push_str(&format!(
+                "    pub fn new(upstream: u32, source_info: ImageInfo, config: filters::{config_type}) -> Self {{\n"
+            ));
+            code.push_str("        Self { upstream, source_info, config }\n");
+            code.push_str("    }\n");
+            code.push_str("}\n\n");
+
+            // ImageNode impl: delegates to CpuFilter::compute()
+            code.push_str("#[allow(clippy::unnecessary_cast, unused_variables)]\n");
+            code.push_str(&format!("impl ImageNode for {node_name} {{\n"));
+            code.push_str("    fn info(&self) -> ImageInfo { self.source_info.clone() }\n\n");
+            code.push_str("    fn compute_region(\n");
+            code.push_str("        &self,\n");
+            code.push_str("        request: Rect,\n");
+            code.push_str(
+                "        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,\n",
+            );
+            code.push_str("    ) -> Result<Vec<u8>, ImageError> {\n");
+            // Direct inline dispatch — same pattern as old-style codegen.
+            // The closure is consumed immediately by compute(), so borrows are valid.
+            code.push_str("        use crate::domain::filter_traits::CpuFilter;\n");
+            code.push_str("        let __uid = self.upstream;\n");
+            code.push_str("        let __info = self.source_info.clone();\n");
+            code.push_str("        let __cfg = &self.config;\n");
+            code.push_str("        let mut __up = |rect: Rect| upstream_fn(__uid, rect);\n");
+            code.push_str("        __cfg.compute(request, &mut __up, &__info)\n");
+            code.push_str("    }\n\n");
+
+            // upstream_id()
+            code.push_str("    fn upstream_id(&self) -> Option<u32> { Some(self.upstream) }\n");
+
+            // PointOp: generated only if impl PointOp detected in source
+            if f.point_op {
+                code.push_str("    fn as_point_op_lut(&self) -> Option<[u8; 256]> {\n");
+                code.push_str("        use crate::domain::filter_traits::PointOp;\n");
+                code.push_str("        Some(self.config.build_lut())\n");
+                code.push_str("    }\n");
+            }
+
+            // ColorOp: generated only if impl ColorOp detected in source
+            if f.color_op {
+                code.push_str("    fn as_color_lut_op(&self) -> Option<crate::domain::color_lut::ColorLut3D> {\n");
+                code.push_str("        use crate::domain::filter_traits::ColorOp;\n");
+                code.push_str("        Some(self.config.build_clut())\n");
+                code.push_str("    }\n");
+            }
+
+            code.push_str(
+                "    fn access_pattern(&self) -> AccessPattern { AccessPattern::LocalNeighborhood }\n",
+            );
+            code.push_str("}\n\n");
+
+            // GpuCapable: generated only if impl GpuFilter detected in source
+            if f.gpu {
+                code.push_str(&format!(
+                    "impl rasmcore_pipeline::gpu::GpuCapable for {node_name} {{\n"
+                ));
+                code.push_str("    fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {\n");
+                code.push_str("        use crate::domain::filter_traits::GpuFilter;\n");
+                code.push_str("        self.config.gpu_ops(width, height)\n");
+                code.push_str("    }\n");
+                code.push_str("}\n\n");
+            }
+
         } else {
-            format!(
-                "upstream: u32, source_info: ImageInfo, {}",
-                ctor_params.join(", ")
-            )
-        };
-        let mut all_fields = vec!["upstream".to_string(), "source_info".to_string()];
-        all_fields.extend(
-            f.params
+            // ── Old-style: bare function with #[register_filter] ───────────
+            let domain_fn = &f.fn_name;
+
+            // Struct
+            code.push_str(&format!("pub struct {node_name} {{\n"));
+            code.push_str("    pub(crate) upstream: u32,\n");
+            code.push_str("    pub(crate) source_info: ImageInfo,\n");
+            for (pname, ptype) in &f.params {
+                let clean_n = pname.trim_start_matches('_');
+                code.push_str(&format!("    pub(crate) {clean_n}: {},\n", to_owned_type(ptype)));
+            }
+            code.push_str("}\n\n");
+
+            // Constructor
+            let ctor_params: Vec<String> = f
+                .params
                 .iter()
-                .map(|(n, _)| n.trim_start_matches('_').to_string()),
-        );
-
-        code.push_str(&format!("impl {node_name} {{\n"));
-        code.push_str("    #[allow(clippy::too_many_arguments)]\n");
-        code.push_str(&format!("    pub fn new({ctor_sig}) -> Self {{\n"));
-        code.push_str(&format!("        Self {{ {} }}\n", all_fields.join(", ")));
-        code.push_str("    }\n");
-        code.push_str("}\n\n");
-
-        // Build call args (extra params beyond pixels/info or request/upstream/info)
-        let call_args: Vec<String> = f
-            .params
-            .iter()
-            .map(|(n, t)| {
-                let clean_n = n.trim_start_matches('_');
-                if t.starts_with('&') {
-                    format!("&self.{clean_n}")
-                } else if t == "String" {
-                    format!("self.{clean_n}.clone()")
-                } else {
-                    format!("self.{clean_n}")
-                }
-            })
-            .collect();
-
-        code.push_str("#[allow(clippy::unnecessary_cast, unused_variables)]\n");
-        code.push_str(&format!("impl ImageNode for {node_name} {{\n"));
-        code.push_str("    fn info(&self) -> ImageInfo { self.source_info.clone() }\n\n");
-        code.push_str("    fn compute_region(\n");
-        code.push_str("        &self,\n");
-        code.push_str("        request: Rect,\n");
-        code.push_str(
-            "        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,\n",
-        );
-        code.push_str("    ) -> Result<Vec<u8>, ImageError> {\n");
-
-        // Delegate directly to filter function (rect-request style)
-        let extra_args = if call_args.is_empty() {
-            String::new()
-        } else {
-            format!(", {}", call_args.join(", "))
-        };
-        code.push_str("        let upstream_id = self.upstream;\n");
-        code.push_str("        let mut upstream = |rect: Rect| upstream_fn(upstream_id, rect);\n");
-        code.push_str(&format!(
-            "        filters::{domain_fn}(request, &mut upstream, &self.source_info{extra_args})\n"
-        ));
-        code.push_str("    }\n\n");
-
-        // upstream_id() for graph traversal
-        code.push_str("    fn upstream_id(&self) -> Option<u32> { Some(self.upstream) }\n");
-
-        // Generate as_point_op_lut() for LUT-fuseable point operations
-        if f.point_op {
-            if f.config_struct.is_some() {
-                code.push_str("    fn as_point_op_lut(&self) -> Option<[u8; 256]> { Some(self.config.build_point_lut()) }\n");
+                .map(|(n, t)| {
+                    let clean_n = n.trim_start_matches('_');
+                    format!("{clean_n}: {}", to_owned_type(t))
+                })
+                .collect();
+            let ctor_sig = if ctor_params.is_empty() {
+                "upstream: u32, source_info: ImageInfo".to_string()
             } else {
-                // Zero-param point op (e.g., invert) — inline the LUT
-                let op_name = &f.name;
-                match op_name.as_str() {
-                    "invert" => {
-                        code.push_str("    fn as_point_op_lut(&self) -> Option<[u8; 256]> { Some(crate::domain::point_ops::build_lut(&crate::domain::point_ops::PointOp::Invert)) }\n");
+                format!(
+                    "upstream: u32, source_info: ImageInfo, {}",
+                    ctor_params.join(", ")
+                )
+            };
+            let mut all_fields = vec!["upstream".to_string(), "source_info".to_string()];
+            all_fields.extend(
+                f.params
+                    .iter()
+                    .map(|(n, _)| n.trim_start_matches('_').to_string()),
+            );
+
+            code.push_str(&format!("impl {node_name} {{\n"));
+            code.push_str("    #[allow(clippy::too_many_arguments)]\n");
+            code.push_str(&format!("    pub fn new({ctor_sig}) -> Self {{\n"));
+            code.push_str(&format!("        Self {{ {} }}\n", all_fields.join(", ")));
+            code.push_str("    }\n");
+            code.push_str("}\n\n");
+
+            // Build call args
+            let call_args: Vec<String> = f
+                .params
+                .iter()
+                .map(|(n, t)| {
+                    let clean_n = n.trim_start_matches('_');
+                    if t.starts_with('&') {
+                        format!("&self.{clean_n}")
+                    } else if t == "String" {
+                        format!("self.{clean_n}.clone()")
+                    } else {
+                        format!("self.{clean_n}")
                     }
-                    _ => {
-                        // Config-based point ops that lost their config_struct link — skip LUT
-                        // (the config struct is in a different file; LUT fusion handled at runtime)
+                })
+                .collect();
+
+            code.push_str("#[allow(clippy::unnecessary_cast, unused_variables)]\n");
+            code.push_str(&format!("impl ImageNode for {node_name} {{\n"));
+            code.push_str("    fn info(&self) -> ImageInfo { self.source_info.clone() }\n\n");
+            code.push_str("    fn compute_region(\n");
+            code.push_str("        &self,\n");
+            code.push_str("        request: Rect,\n");
+            code.push_str(
+                "        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,\n",
+            );
+            code.push_str("    ) -> Result<Vec<u8>, ImageError> {\n");
+
+            let extra_args = if call_args.is_empty() {
+                String::new()
+            } else {
+                format!(", {}", call_args.join(", "))
+            };
+            code.push_str("        let upstream_id = self.upstream;\n");
+            code.push_str("        let mut upstream = |rect: Rect| upstream_fn(upstream_id, rect);\n");
+            code.push_str(&format!(
+                "        filters::{domain_fn}(request, &mut upstream, &self.source_info{extra_args})\n"
+            ));
+            code.push_str("    }\n\n");
+
+            code.push_str("    fn upstream_id(&self) -> Option<u32> { Some(self.upstream) }\n");
+
+            if f.point_op {
+                if f.config_struct.is_some() {
+                    code.push_str("    fn as_point_op_lut(&self) -> Option<[u8; 256]> { Some(self.config.build_point_lut()) }\n");
+                } else {
+                    let op_name = &f.name;
+                    match op_name.as_str() {
+                        "invert" => {
+                            code.push_str("    fn as_point_op_lut(&self) -> Option<[u8; 256]> { Some(crate::domain::point_ops::build_lut(&crate::domain::point_ops::PointOp::Invert)) }\n");
+                        }
+                        _ => {}
                     }
                 }
             }
-        }
 
-        // Generate as_color_lut_op() for 3D CLUT-fuseable color operations
-        if f.color_op && f.config_struct.is_some() {
-            code.push_str("    fn as_color_lut_op(&self) -> Option<crate::domain::color_lut::ColorLut3D> { Some(self.config.build_clut()) }\n");
-        }
+            if f.color_op && f.config_struct.is_some() {
+                code.push_str("    fn as_color_lut_op(&self) -> Option<crate::domain::color_lut::ColorLut3D> { Some(self.config.build_clut()) }\n");
+            }
 
-        code.push_str(
-            "    fn access_pattern(&self) -> AccessPattern { AccessPattern::LocalNeighborhood }\n",
-        );
-        code.push_str("}\n\n");
+            code.push_str(
+                "    fn access_pattern(&self) -> AccessPattern { AccessPattern::LocalNeighborhood }\n",
+            );
+            code.push_str("}\n\n");
+        }
     }
 
     code

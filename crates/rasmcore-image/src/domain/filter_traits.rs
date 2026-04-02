@@ -29,9 +29,37 @@ pub trait CpuFilter {
     fn compute(
         &self,
         request: Rect,
-        upstream: &mut UpstreamFn,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
         info: &ImageInfo,
     ) -> Result<Vec<u8>, ImageError>;
+}
+
+/// Helper for codegen: dispatches CpuFilter::compute with proper borrow handling.
+///
+/// Generic over F to avoid trait-object borrow issues — the compiler can see
+/// the closure doesn't escape when F is concrete.
+#[doc(hidden)]
+#[inline]
+pub fn __cpu_filter_dispatch<F: CpuFilter>(
+    filter: &F,
+    request: Rect,
+    upstream_id: u32,
+    upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
+    info: &ImageInfo,
+) -> Result<Vec<u8>, ImageError> {
+    // SAFETY: The upstream closure is only used for the duration of filter.compute().
+    // CpuFilter::compute() must not store the upstream reference — it's purely
+    // a callback for the duration of the call. This unsafe block is necessary
+    // because the borrow checker can't verify this through trait object dispatch.
+    // The old-style codegen (calling bare functions) doesn't need this because
+    // the compiler can inline and verify the function body directly.
+    let uid = upstream_id;
+    let ptr: *mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError> = upstream_fn;
+    let mut up = move |rect: Rect| -> Result<Vec<u8>, ImageError> {
+        // SAFETY: ptr is valid for the duration of filter.compute()
+        unsafe { (&mut *ptr)(uid, rect) }
+    };
+    filter.compute(request, &mut up, info)
 }
 
 /// GPU shader dispatch for a filter (optional).

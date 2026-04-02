@@ -151,7 +151,24 @@ pub fn generate(filters: &[FilterReg], mappers: &[MapperReg], transforms: &[Tran
     for f in filters {
         let node_name = format!("{}Node", to_pascal_case(&f.name));
 
-        // Build param extraction lines
+        // derive(Filter) style: construct config struct with Default, pass to node
+        if f.derive_style {
+            let config_type = f.config_struct.as_deref().unwrap_or("()");
+            if gpu_capable_nodes.contains(&node_name) {
+                code.push_str(&format!(
+                    "        \"{}\" => {{ let cfg = domain_filters::{config_type}::default(); Ok((Box::new(filters::{node_name}::new(upstream, info.clone(), cfg.clone())), Some(Box::new(filters::{node_name}::new(upstream, info, cfg))))) }},\n",
+                    f.name
+                ));
+            } else {
+                code.push_str(&format!(
+                    "        \"{}\" => Ok((Box::new(filters::{node_name}::new(upstream, info, domain_filters::{config_type}::default())), None)),\n",
+                    f.name
+                ));
+            }
+            continue;
+        }
+
+        // Old-style: build param extraction lines
         let mut param_args = Vec::new();
         for (pname, ptype) in &f.params {
             let clean_name = pname.trim_start_matches('_');

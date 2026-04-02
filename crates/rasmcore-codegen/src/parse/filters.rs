@@ -3,13 +3,45 @@
 use crate::types::FilterReg;
 
 /// Extract all FilterReg entries from a parsed Rust source file.
+///
+/// Scans for both old-style `#[register_filter]` on functions and new-style
+/// `#[derive(Filter)]` / `#[filter(...)]` on structs. For derive-style filters,
+/// also scans for trait impl blocks (PointOp, ColorOp, GpuFilter) to set flags.
 pub fn extract_filters(file: &syn::File) -> Vec<FilterReg> {
     let mut filters = Vec::new();
+
+    // Collect trait impls: map struct name -> set of trait names
+    let mut trait_impls: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
     for item in &file.items {
-        if let syn::Item::Fn(func) = item {
-            if let Some(reg) = extract_filter_reg(func) {
-                filters.push(reg);
+        if let syn::Item::Impl(imp) = item {
+            if let Some((_, path, _)) = &imp.trait_ {
+                let trait_name = path.segments.last().map(|s| s.ident.to_string()).unwrap_or_default();
+                let self_type = quote::quote!(#imp.self_ty).to_string().replace(' ', "");
+                trait_impls.entry(self_type).or_default().push(trait_name);
             }
+        }
+    }
+
+    for item in &file.items {
+        match item {
+            syn::Item::Fn(func) => {
+                if let Some(reg) = extract_filter_reg(func) {
+                    filters.push(reg);
+                }
+            }
+            syn::Item::Struct(s) => {
+                if let Some(mut reg) = extract_derive_filter_reg(s) {
+                    // Check for trait impls on this struct
+                    let struct_name = s.ident.to_string();
+                    if let Some(impls) = trait_impls.get(&struct_name) {
+                        reg.point_op = impls.iter().any(|t| t == "PointOp");
+                        reg.color_op = impls.iter().any(|t| t == "ColorOp");
+                        reg.gpu = impls.iter().any(|t| t == "GpuFilter");
+                    }
+                    filters.push(reg);
+                }
+            }
+            _ => {}
         }
     }
     filters
@@ -62,6 +94,7 @@ fn extract_filter_reg(func: &syn::ItemFn) -> Option<FilterReg> {
             point_op,
             color_op,
             gpu,
+            derive_style: false,
             rect_request,
             fn_name,
             params,
@@ -69,6 +102,68 @@ fn extract_filter_reg(func: &syn::ItemFn) -> Option<FilterReg> {
         });
     }
     None
+}
+
+/// Extract a FilterReg from a struct with `#[derive(Filter)]` + `#[filter(...)]`.
+fn extract_derive_filter_reg(s: &syn::ItemStruct) -> Option<FilterReg> {
+    // Check for #[derive(Filter)] or #[filter(...)]
+    let has_derive_filter = s.attrs.iter().any(|a| {
+        if let syn::Meta::List(ml) = &a.meta {
+            if a.path().is_ident("derive") {
+                return ml.tokens.to_string().contains("Filter");
+            }
+        }
+        false
+    });
+    let has_filter_attr = s.attrs.iter().any(|a| a.path().is_ident("filter"));
+
+    if !has_derive_filter && !has_filter_attr {
+        return None;
+    }
+
+    // Parse #[filter(...)] attribute for metadata
+    let mut name = String::new();
+    let mut category = String::new();
+    let mut group = String::new();
+    let mut variant = String::new();
+    let mut reference = String::new();
+
+    for attr in &s.attrs {
+        if !attr.path().is_ident("filter") {
+            continue;
+        }
+        let tokens = match &attr.meta {
+            syn::Meta::List(ml) => ml.tokens.to_string(),
+            _ => continue,
+        };
+        name = extract_kv(&tokens, "name").unwrap_or_default();
+        category = extract_kv(&tokens, "category").unwrap_or_default();
+        group = extract_kv(&tokens, "group").unwrap_or_default();
+        variant = extract_kv(&tokens, "variant").unwrap_or_default();
+        reference = extract_kv(&tokens, "reference").unwrap_or_default();
+    }
+
+    if name.is_empty() {
+        return None;
+    }
+
+    let struct_name = s.ident.to_string();
+
+    Some(FilterReg {
+        name,
+        category,
+        group,
+        variant,
+        reference,
+        point_op: false,  // Detected by trait impl scanning, not attribute
+        color_op: false,
+        gpu: false,
+        derive_style: true,
+        rect_request: true,
+        fn_name: String::new(),  // No bare fn
+        params: Vec::new(),      // Params come from ConfigParams, not fn sig
+        config_struct: Some(struct_name),
+    })
 }
 
 /// Extract named parameters from function signature, skipping

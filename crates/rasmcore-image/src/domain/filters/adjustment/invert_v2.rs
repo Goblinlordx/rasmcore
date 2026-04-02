@@ -4,7 +4,7 @@
 //! The old invert filter (in point_ops) continues to work alongside this.
 
 use crate::domain::error::ImageError;
-use crate::domain::filter_traits::{CpuFilter, PointOp, UpstreamFn};
+use crate::domain::filter_traits::{CpuFilter, PointOp};
 use crate::domain::types::ImageInfo;
 use rasmcore_pipeline::Rect;
 
@@ -21,7 +21,7 @@ impl CpuFilter for InvertV2 {
     fn compute(
         &self,
         request: Rect,
-        upstream: &mut UpstreamFn,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
         info: &ImageInfo,
     ) -> Result<Vec<u8>, ImageError> {
         let pixels = upstream(request)?;

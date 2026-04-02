@@ -20,6 +20,10 @@ pub struct FilterReg {
     /// Whether this filter has a GPU-accelerated implementation (GpuCapable).
     /// Set via `gpu = "true"` in register_filter attributes.
     pub gpu: bool,
+    /// True if this filter uses derive(Filter) pattern (struct + trait impls).
+    /// When true, codegen generates nodes that delegate to CpuFilter::compute()
+    /// instead of calling a bare function.
+    pub derive_style: bool,
     /// True if this filter uses the new rect-request signature:
     /// `fn(request: Rect, upstream: &mut UpstreamFn, info, ...)`
     /// False for legacy signature: `fn(pixels: &[u8], info, ...)`
