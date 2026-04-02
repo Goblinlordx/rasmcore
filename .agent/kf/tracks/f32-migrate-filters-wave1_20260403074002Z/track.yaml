@@ -82,22 +82,22 @@ plan:
 - phase: Spatial filters (need inner loop rewrite)
   tasks:
   - text: Rewrite blur inner loop for f32 samples
-    done: false
+    done: true
   - text: Rewrite convolve/sharpen inner loop for f32 samples
-    done: false
+    done: true
   - text: Rewrite median inner loop for f32 samples
-    done: false
+    done: true
   - text: Migrate remaining spatial filters (box_blur, average_blur, high_pass, smart_sharpen, spin_blur, zoom_blur, kuwahara,
       rank_filter, displacement_map)
-    done: false
+    done: true
   - text: Run all spatial filter tests
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: No calls to process_via_8bit in spatial/ or distortion/ directories
-    done: false
+    done: true
   - text: All domain tests pass
-    done: false
+    done: true
   - text: WASM component builds
-    done: false
+    done: true
 extra: {}

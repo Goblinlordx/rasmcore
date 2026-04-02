@@ -1,5 +1,5 @@
 title: Migrate spatial + distortion filters to native f32 compute
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-04-02'
