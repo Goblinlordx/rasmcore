@@ -161,6 +161,7 @@ interface pipeline {
         sigmoidal-contrast: func(source: node-id, config: sigmoidal-contrast-config) -> result<node-id, rasmcore-error>;
         exposure: func(source: node-id, config: exposure-config) -> result<node-id, rasmcore-error>;
         gamma: func(source: node-id, config: gamma-config) -> result<node-id, rasmcore-error>;
+        invert-v2: func(source: node-id) -> result<node-id, rasmcore-error>;
         contrast: func(source: node-id, config: contrast-config) -> result<node-id, rasmcore-error>;
         levels: func(source: node-id, config: levels-config) -> result<node-id, rasmcore-error>;
         invert: func(source: node-id) -> result<node-id, rasmcore-error>;

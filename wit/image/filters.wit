@@ -749,6 +749,7 @@ interface filters {
     sigmoidal-contrast: func(pixels: buffer, info: image-info, config: sigmoidal-contrast-config) -> result<buffer, rasmcore-error>;
     exposure: func(pixels: buffer, info: image-info, config: exposure-config) -> result<buffer, rasmcore-error>;
     gamma: func(pixels: buffer, info: image-info, config: gamma-config) -> result<buffer, rasmcore-error>;
+    invert-v2: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
     contrast: func(pixels: buffer, info: image-info, config: contrast-config) -> result<buffer, rasmcore-error>;
     levels: func(pixels: buffer, info: image-info, config: levels-config) -> result<buffer, rasmcore-error>;
     invert: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
