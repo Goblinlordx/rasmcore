@@ -88,6 +88,7 @@ pub trait ImageNode {
     ) -> Option<rasmcore_pipeline::Metadata> {
         None
     }
+
 }
 
 /// Rc wrapper around FrameSourceNode that implements ImageNode by delegation.
@@ -589,6 +590,9 @@ pub struct NodeGraph {
     node_accumulators: Vec<Option<Vec<u8>>>,
     // Graph description — built alongside the live graph
     description: GraphDescription,
+    // GPU acceleration — registered per-node at graph build time
+    gpu_nodes: Vec<Option<Box<dyn rasmcore_pipeline::GpuCapable>>>,
+    gpu_executor: Option<std::rc::Rc<dyn rasmcore_pipeline::GpuExecutor>>,
 }
 
 impl NodeGraph {
@@ -606,6 +610,8 @@ impl NodeGraph {
             node_metadata: Vec::new(),
             node_accumulators: Vec::new(),
             description: GraphDescription::new(),
+            gpu_nodes: Vec::new(),
+            gpu_executor: None,
         }
     }
 
@@ -628,6 +634,7 @@ impl NodeGraph {
         self.node_hashes.push(rasmcore_pipeline::ZERO_HASH);
         self.node_metadata.push(rasmcore_pipeline::Metadata::new());
         self.node_accumulators.push(None);
+        self.gpu_nodes.push(None);
         // Track descriptor (best-effort — no name/kind available for untyped adds)
         let _ = self.description.add(NodeDescriptor {
             kind: NodeKind::Filter, // default for untyped
@@ -652,6 +659,7 @@ impl NodeGraph {
         self.node_hashes.push(rasmcore_pipeline::ZERO_HASH);
         self.node_metadata.push(metadata);
         self.node_accumulators.push(None);
+        self.gpu_nodes.push(None);
         let _ = self.description.add(NodeDescriptor {
             kind: NodeKind::Filter,
             name: String::new(),
@@ -780,7 +788,25 @@ impl NodeGraph {
             output_info: info,
         });
 
+        self.gpu_nodes.push(None);
+
         id
+    }
+
+    /// Register a GPU-capable impl for a node (call after add_node).
+    ///
+    /// At `request_region` time, the graph checks this before falling back
+    /// to CPU `compute_region`.
+    pub fn register_gpu(&mut self, node_id: u32, gpu: Box<dyn rasmcore_pipeline::GpuCapable>) {
+        if let Some(slot) = self.gpu_nodes.get_mut(node_id as usize) {
+            *slot = Some(gpu);
+        }
+    }
+
+    /// Set the GPU executor for this graph. When set, nodes with registered
+    /// GPU ops will be dispatched to GPU with automatic CPU fallback.
+    pub fn set_gpu_executor(&mut self, executor: std::rc::Rc<dyn rasmcore_pipeline::GpuExecutor>) {
+        self.gpu_executor = Some(executor);
     }
 
     /// Add a node that derives its metadata from an upstream node.
@@ -1189,7 +1215,33 @@ impl NodeGraph {
         let info = self.node_info(node_id)?;
         let bpp = bytes_per_pixel(info.format);
 
-        // Compute the full requested region.
+        // Try GPU dispatch if executor and GPU ops are available for this node.
+        // Clone Rc and extract ops before mutable self borrow for upstream fetch.
+        let gpu_dispatch = self.gpu_executor.clone().and_then(|executor| {
+            let ops = self.gpu_nodes.get(node_id as usize)?.as_ref()?.gpu_ops(info.width, info.height)?;
+            let upstream_id = self.nodes[node_id as usize].upstream_id()?;
+            Some((executor, ops, upstream_id))
+        });
+        if let Some((executor, ops, upstream_id)) = gpu_dispatch {
+            let full_rect = Rect::new(0, 0, info.width, info.height);
+            let input = self.request_region(upstream_id, full_rect)?;
+            match executor.execute(&ops, &input, info.width, info.height) {
+                Ok(gpu_pixels) => {
+                    let pixels = if request == full_rect {
+                        gpu_pixels
+                    } else {
+                        crop_region(&gpu_pixels, full_rect, request, bpp)
+                    };
+                    self.accumulate_tile(node_id, request, &pixels, bpp);
+                    return Ok(pixels);
+                }
+                Err(_) => {
+                    // GPU failed — fall through to CPU path
+                }
+            }
+        }
+
+        // CPU path: compute the requested region.
         // We use raw pointer to split the borrow: nodes[node_id] is read,
         // while the rest of self (cache, other nodes) can be mutated.
         let pixels = {
