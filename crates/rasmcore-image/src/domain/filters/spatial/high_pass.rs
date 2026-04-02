@@ -141,7 +141,7 @@ impl GpuFilter for HighPassParams {
                 workgroup_size: [256, 1, 1],
                 params: blur_params.clone(),
                 extra_buffers: vec![kernel_buf.clone()],
-                buffer_format: Default::default(),
+                buffer_format: rasmcore_pipeline::BufferFormat::U32Packed,
             },
             GpuOp::Compute {
                 shader: blur_shader,
@@ -149,7 +149,7 @@ impl GpuFilter for HighPassParams {
                 workgroup_size: [1, 256, 1],
                 params: blur_params,
                 extra_buffers: vec![kernel_buf],
-                buffer_format: Default::default(),
+                buffer_format: rasmcore_pipeline::BufferFormat::U32Packed,
             },
             GpuOp::Compute {
                 shader: HIGH_PASS.clone(),
@@ -157,7 +157,7 @@ impl GpuFilter for HighPassParams {
                 workgroup_size: [16, 16, 1],
                 params: hp_params,
                 extra_buffers: vec![],
-                buffer_format: Default::default(),
+                buffer_format: rasmcore_pipeline::BufferFormat::U32Packed,
             },
         ])
     }

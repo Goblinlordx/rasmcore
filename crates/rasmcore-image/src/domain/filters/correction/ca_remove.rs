@@ -41,7 +41,7 @@ impl rasmcore_pipeline::GpuCapable for CaRemoveParams {
             workgroup_size: [16, 16, 1],
             params,
             extra_buffers: Vec::new(),
-            buffer_format: Default::default(),
+            buffer_format: rasmcore_pipeline::BufferFormat::U32Packed,
         }])
     }
 }

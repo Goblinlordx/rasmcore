@@ -17,10 +17,10 @@
 /// format. Shaders must match the declared format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
 pub enum BufferFormat {
-    /// Packed u32 RGBA8 (4 bytes/pixel). Current default.
-    #[default]
+    /// Packed u32 RGBA8 (4 bytes/pixel). Legacy mode.
     U32Packed,
-    /// vec4<f32> RGBA (16 bytes/pixel). High-precision mode.
+    /// vec4<f32> RGBA (16 bytes/pixel). Default for f32 pipeline.
+    #[default]
     F32Vec4,
 }
 
@@ -159,7 +159,7 @@ pub trait GpuExecutor {
         width: u32,
         height: u32,
     ) -> Result<Vec<u8>, GpuError> {
-        self.execute_with_format(ops, input, width, height, BufferFormat::U32Packed)
+        self.execute_with_format(ops, input, width, height, BufferFormat::F32Vec4)
     }
 
     /// Execute with explicit buffer format.
