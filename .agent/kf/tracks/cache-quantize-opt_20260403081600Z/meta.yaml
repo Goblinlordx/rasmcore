@@ -1,5 +1,5 @@
 title: LayerCache quantization — opt-in Q16/Q8 storage for memory optimization
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-02'

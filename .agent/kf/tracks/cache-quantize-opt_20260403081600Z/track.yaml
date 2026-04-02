@@ -1,89 +1,110 @@
 id: cache-quantize-opt_20260403081600Z
-title: "LayerCache quantization — opt-in Q16/Q8 storage for memory optimization"
+title: LayerCache quantization — opt-in Q16/Q8 storage for memory optimization
 type: feature
 status: pending
 created: '2026-04-03'
-updated: '2026-04-03'
+updated: '2026-04-02'
 spec:
-  summary: |
-    Add opt-in cache quality setting to LayerCache. Filters always see f32 in/out,
+  summary: 'Add opt-in cache quality setting to LayerCache. Filters always see f32 in/out,
+
     but the cache can store entries as Q16 (u16) or Q8 (u8) internally to reduce
+
     memory usage by 2x-4x. Transparent quantize-on-store, promote-on-read.
-  context: |
-    With the f32 pipeline, every cached intermediate is Rgba32f (16 bytes/pixel).
+
+    '
+  context: 'With the f32 pipeline, every cached intermediate is Rgba32f (16 bytes/pixel).
+
     A 4000x3000 image with 10 cached layers needs ~1.9GB. In WASM with 4GB
+
     address space this is tight.
 
+
     No existing tool does per-node cache quantization — industry approaches are
+
     eviction (LRU), spatial proxy, or codec compression. This is a novel approach
+
     for memory-constrained environments: keep full spatial resolution and f32
+
     compute, but compress storage at cache boundaries where precision loss is
+
     imperceptible in 8-bit or 16-bit output.
 
+
     Memory savings:
+
     - Full (f32):  16 bytes/pixel — 1.9GB for 10 layers at 4000x3000
+
     - Q16 (u16):   8 bytes/pixel — 960MB (2x saving)
+
     - Q8 (u8):     4 bytes/pixel — 480MB (4x saving)
-  codebase_analysis: |
-    Key files:
+
+    '
+  codebase_analysis: 'Key files:
+
     - rasmcore-pipeline/src/layer_cache.rs:70-76 — LayerCache struct
+
     - rasmcore-pipeline/src/layer_cache.rs:103-112 — get() returns (&[u8], w, h, bpp)
+
     - rasmcore-pipeline/src/layer_cache.rs:115-150 — store() takes Vec<u8>
+
     - rasmcore-image/src/domain/quantize_f32.rs — shared quantization functions (already exists)
+
     - wit/image/pipeline.wit:112-116 — layer-cache WIT resource
 
-    The cache interface is clean — store/get with raw bytes. Quantization
-    can happen entirely inside these two methods. The quantize_f32 module
-    already has all the conversion functions needed.
-  acceptance_criteria:
-    - CacheQuality enum added to LayerCache (Full, Q16, Q8)
-    - store() quantizes f32 pixels to configured quality before storing
-    - get() promotes stored pixels back to f32 before returning
-    - Default is Full (no behavior change)
-    - Pipeline exposes setCacheQuality via WIT
-    - Memory usage measurably decreases when Q16/Q8 is set
-    - Output quality with Q16 cache is visually identical to Full for 8/16-bit output
-    - All existing tests pass
-  out_of_scope: |
-    Codec-based compression (ProRes/DNxHR style).
-    Per-node quality settings (single quality for entire cache).
-    Disk-backed cache.
-  technical_notes: |
-    Implementation:
-    1. Add CacheQuality enum to rasmcore-pipeline LayerCache
-    2. On store(): if quality is Q16, quantize Rgba32f to Rgba16 (8 bytes/pixel),
-       update stored bpp. If Q8, quantize to Rgba8 (4 bytes/pixel).
-    3. On get(): if stored bpp differs from 16 (f32), promote back to Rgba32f.
-    4. Add set_cache_quality() to pipeline adapter, expose via WIT.
-    5. Web UI can expose as a setting (memory vs quality tradeoff).
 
-    The quantize_f32 module already has rgba32f_to_rgba16, rgba32f_to_rgba8,
-    and the promote paths exist in convert.rs (Rgba16/Rgba8 to Rgba32f).
+    The cache interface is clean — store/get with raw bytes. Quantization
+
+    can happen entirely inside these two methods. The quantize_f32 module
+
+    already has all the conversion functions needed.
+
+    '
+  acceptance_criteria:
+  - CacheQuality enum added to LayerCache (Full, Q16, Q8)
+  - store() quantizes f32 pixels to configured quality before storing
+  - get() promotes stored pixels back to f32 before returning
+  - Default is Full (no behavior change)
+  - Pipeline exposes setCacheQuality via WIT
+  - Memory usage measurably decreases when Q16/Q8 is set
+  - Output quality with Q16 cache is visually identical to Full for 8/16-bit output
+  - All existing tests pass
+  out_of_scope: 'Codec-based compression (ProRes/DNxHR style).
+
+    Per-node quality settings (single quality for entire cache).
+
+    Disk-backed cache.
+
+    '
+  technical_notes: "Implementation:\n1. Add CacheQuality enum to rasmcore-pipeline LayerCache\n2. On store(): if quality is\
+    \ Q16, quantize Rgba32f to Rgba16 (8 bytes/pixel),\n   update stored bpp. If Q8, quantize to Rgba8 (4 bytes/pixel).\n\
+    3. On get(): if stored bpp differs from 16 (f32), promote back to Rgba32f.\n4. Add set_cache_quality() to pipeline adapter,\
+    \ expose via WIT.\n5. Web UI can expose as a setting (memory vs quality tradeoff).\n\nThe quantize_f32 module already\
+    \ has rgba32f_to_rgba16, rgba32f_to_rgba8,\nand the promote paths exist in convert.rs (Rgba16/Rgba8 to Rgba32f).\n"
 plan:
-  - phase: "Core implementation"
-    tasks:
-      - text: "Add CacheQuality enum (Full, Q16, Q8) to LayerCache"
-        done: false
-      - text: "Modify store() to quantize f32 pixels based on cache quality"
-        done: false
-      - text: "Modify get() to promote stored pixels back to f32"
-        done: false
-      - text: "Add set_cache_quality() method to LayerCache"
-        done: false
-  - phase: "Pipeline integration"
-    tasks:
-      - text: "Add cache-quality to WIT layer-cache resource or pipeline"
-        done: false
-      - text: "Wire pipeline adapter setCacheQuality method"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Test Q16 cache round-trip preserves quality for 8-bit output"
-        done: false
-      - text: "Test Q8 cache round-trip preserves quality for 8-bit output"
-        done: false
-      - text: "Verify memory usage decreases with Q16/Q8"
-        done: false
-      - text: "All existing tests pass"
-        done: false
+- phase: Core implementation
+  tasks:
+  - text: Add CacheQuality enum (Full, Q16, Q8) to LayerCache
+    done: true
+  - text: Modify store() to quantize f32 pixels based on cache quality
+    done: true
+  - text: Modify get() to promote stored pixels back to f32
+    done: true
+  - text: Add set_cache_quality() method to LayerCache
+    done: true
+- phase: Pipeline integration
+  tasks:
+  - text: Add cache-quality to WIT layer-cache resource or pipeline
+    done: true
+  - text: Wire pipeline adapter setCacheQuality method
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test Q16 cache round-trip preserves quality for 8-bit output
+    done: true
+  - text: Test Q8 cache round-trip preserves quality for 8-bit output
+    done: true
+  - text: Verify memory usage decreases with Q16/Q8
+    done: true
+  - text: All existing tests pass
+    done: true
 extra: {}
