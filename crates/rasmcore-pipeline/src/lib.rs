@@ -17,5 +17,5 @@ pub use layer_cache::{
 };
 pub use metadata::{Metadata, MetadataFilter, MetadataValue, glob_match};
 pub use rect::{Overlap, Rect};
-pub use gpu::{GpuCapable, GpuConfig, GpuError, GpuExecutor, GpuOp};
+pub use gpu::{BufferFormat, GpuCapable, GpuConfig, GpuError, GpuExecutor, GpuOp};
 pub use ml::{MlCapable, MlCapabilityInfo, MlError, MlExecutor, MlOp, ModelRef, TensorDesc, TensorDtype};

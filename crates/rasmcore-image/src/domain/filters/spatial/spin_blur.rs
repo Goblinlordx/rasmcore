@@ -145,6 +145,7 @@ impl GpuFilter for SpinBlurParams {
             workgroup_size: [16, 16, 1],
             params,
             extra_buffers: vec![],
+            buffer_format: Default::default(),
         }])
     }
 }

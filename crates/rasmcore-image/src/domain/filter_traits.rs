@@ -100,6 +100,21 @@ pub trait GpuFilter {
         width: u32,
         height: u32,
     ) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>>;
+
+    /// Return GPU operations with explicit buffer format selection.
+    ///
+    /// Override to provide f32 shader variants when `buffer_format` is `F32Vec4`.
+    /// Default delegates to `gpu_ops()` (backward compatible — all existing filters
+    /// return u32 shaders regardless of format).
+    fn gpu_ops_with_format(
+        &self,
+        width: u32,
+        height: u32,
+        buffer_format: rasmcore_pipeline::gpu::BufferFormat,
+    ) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        let _ = buffer_format;
+        self.gpu_ops(width, height)
+    }
 }
 
 /// Per-channel 1D LUT for pipeline point-op fusion (optional).

@@ -86,18 +86,20 @@ impl TestGpuExecutor {
 }
 
 impl GpuExecutor for TestGpuExecutor {
-    fn execute(
+    fn execute_with_format(
         &self,
         ops: &[GpuOp],
         input: &[u8],
         width: u32,
         height: u32,
+        buffer_format: rasmcore_pipeline::BufferFormat,
     ) -> Result<Vec<u8>, GpuError> {
         if ops.is_empty() {
             return Ok(input.to_vec());
         }
 
-        let buf_size = (width * height * 4) as u64;
+        let bpp = buffer_format.bytes_per_pixel() as u64;
+        let buf_size = (width as u64) * (height as u64) * bpp;
         if buf_size as usize > self.max_buffer {
             return Err(GpuError::BufferTooLarge {
                 requested: buf_size as usize,
@@ -141,7 +143,7 @@ impl GpuExecutor for TestGpuExecutor {
                     self.queue.submit(std::iter::once(enc.finish()));
                     snapshots.insert(*binding, snap);
                 }
-                GpuOp::Compute { shader, entry_point, workgroup_size, params, extra_buffers } => {
+                GpuOp::Compute { shader, entry_point, workgroup_size, params, extra_buffers, .. } => {
                     let shader_module = self.get_shader(shader);
                     let uniform_buf = if !params.is_empty() {
                         let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -527,6 +529,7 @@ fn gpu_cpu_parity_lut3d() {
         workgroup_size: [256, 1, 1],
         params,
         extra_buffers: vec![lut_buf],
+        buffer_format: Default::default(),
     }];
 
     let gpu_output = gpu.execute(&ops, &pixels, w, h).unwrap();

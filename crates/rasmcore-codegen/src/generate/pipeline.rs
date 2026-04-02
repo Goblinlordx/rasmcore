@@ -101,6 +101,11 @@ pub fn generate_nodes(filters: &[FilterReg]) -> String {
                 code.push_str("        use crate::domain::filter_traits::GpuFilter;\n");
                 code.push_str("        self.config.gpu_ops(width, height)\n");
                 code.push_str("    }\n");
+                code.push_str("    fn gpu_ops_with_format(&self, width: u32, height: u32, buffer_format: rasmcore_pipeline::gpu::BufferFormat) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {\n");
+                code.push_str("        if self.source_info.format != crate::domain::types::PixelFormat::Rgba8 { return None; }\n");
+                code.push_str("        use crate::domain::filter_traits::GpuFilter;\n");
+                code.push_str("        self.config.gpu_ops_with_format(width, height, buffer_format)\n");
+                code.push_str("    }\n");
                 code.push_str("}\n\n");
             }
 

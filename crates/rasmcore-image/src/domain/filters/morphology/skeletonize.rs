@@ -205,6 +205,7 @@ impl rasmcore_pipeline::GpuCapable for SkeletonizeParams {
                 workgroup_size: [16, 16, 1],
                 params: params_0,
                 extra_buffers: Vec::new(),
+                buffer_format: Default::default(),
             });
 
             // Sub-iteration 2 (sub_iter = 1)
@@ -219,6 +220,7 @@ impl rasmcore_pipeline::GpuCapable for SkeletonizeParams {
                 workgroup_size: [16, 16, 1],
                 params: params_1,
                 extra_buffers: Vec::new(),
+                buffer_format: Default::default(),
             });
         }
 

@@ -5,6 +5,35 @@
 //! batches consecutive GPU-capable nodes and dispatches them to the
 //! host's GPU runtime (WebGPU in browser, wgpu in CLI).
 
+/// Buffer element format for GPU storage buffers.
+///
+/// Determines how pixel data is laid out in GPU memory:
+/// - `U32Packed`: Current default — each pixel is a packed `u32` (RGBA8).
+///   Shaders use `unpack()`/`pack()` to convert to/from `vec4<f32>`.
+/// - `F32Vec4`: High-precision — each pixel is a `vec4<f32>` (16 bytes).
+///   Shaders read/write `vec4<f32>` directly, no pack/unpack round-trip.
+///
+/// The executor uses this to determine buffer sizes and upload/download
+/// format. Shaders must match the declared format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+pub enum BufferFormat {
+    /// Packed u32 RGBA8 (4 bytes/pixel). Current default.
+    #[default]
+    U32Packed,
+    /// vec4<f32> RGBA (16 bytes/pixel). High-precision mode.
+    F32Vec4,
+}
+
+impl BufferFormat {
+    /// Bytes per pixel for this buffer format.
+    pub const fn bytes_per_pixel(self) -> u32 {
+        match self {
+            BufferFormat::U32Packed => 4,
+            BufferFormat::F32Vec4 => 16,
+        }
+    }
+}
+
 /// A single GPU operation in an execution chain.
 ///
 /// Operations are executed sequentially with ping-pong buffers. `Compute`
@@ -36,6 +65,11 @@ pub enum GpuOp {
         /// Optional extra storage buffers (e.g., blur kernel weights, 3D LUT data).
         /// Each entry is a separate `storage<read>` buffer binding.
         extra_buffers: Vec<Vec<u8>>,
+        /// Buffer element format for input/output storage buffers.
+        /// Determines buffer sizing (4 vs 16 bytes/pixel) and upload/download layout.
+        /// Default: `U32Packed` (backward compatible).
+        #[serde(default)]
+        buffer_format: BufferFormat,
     },
 }
 
@@ -53,7 +87,23 @@ pub trait GpuCapable {
     /// A single node may produce multiple ops (e.g., separable blur
     /// returns horizontal + vertical passes). All ops within a node
     /// are dispatched sequentially with ping-pong buffers.
-    fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<GpuOp>>;
+    ///
+    /// `buffer_format` indicates whether the executor expects u32-packed
+    /// or f32 buffers. Nodes should select the matching shader variant.
+    /// Default impl delegates to the legacy 2-arg signature for backward compat.
+    fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<GpuOp>> {
+        let _ = (width, height);
+        None
+    }
+
+    /// Return GPU operations with explicit buffer format selection.
+    ///
+    /// Override this to provide f32 shader variants when `buffer_format`
+    /// is `F32Vec4`. The default delegates to the 2-arg `gpu_ops()`.
+    fn gpu_ops_with_format(&self, width: u32, height: u32, buffer_format: BufferFormat) -> Option<Vec<GpuOp>> {
+        let _ = buffer_format;
+        self.gpu_ops(width, height)
+    }
 }
 
 /// Error from GPU execution.
@@ -96,16 +146,30 @@ pub trait GpuExecutor {
     /// Execute a batch of GPU operations on pixel data.
     ///
     /// - `ops`: Sequence of compute shader dispatches to chain.
-    /// - `input`: RGBA8 pixel data (width * height * 4 bytes).
+    /// - `input`: Pixel data. For `U32Packed`: width*height*4 bytes (RGBA8).
+    ///   For `F32Vec4`: width*height*16 bytes (4x f32 per pixel).
     /// - `width`, `height`: Image dimensions.
+    /// - `buffer_format`: Element format for ping-pong buffers.
     ///
-    /// Returns the output pixel data (same dimensions, RGBA8).
+    /// Returns the output pixel data (same format as input).
     fn execute(
         &self,
         ops: &[GpuOp],
         input: &[u8],
         width: u32,
         height: u32,
+    ) -> Result<Vec<u8>, GpuError> {
+        self.execute_with_format(ops, input, width, height, BufferFormat::U32Packed)
+    }
+
+    /// Execute with explicit buffer format.
+    fn execute_with_format(
+        &self,
+        ops: &[GpuOp],
+        input: &[u8],
+        width: u32,
+        height: u32,
+        buffer_format: BufferFormat,
     ) -> Result<Vec<u8>, GpuError>;
 
     /// Maximum buffer size in bytes that this GPU can handle.

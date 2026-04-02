@@ -381,12 +381,13 @@ struct FfiGpuExecutor {
 }
 
 impl rasmcore_pipeline::GpuExecutor for FfiGpuExecutor {
-    fn execute(
+    fn execute_with_format(
         &self,
         ops: &[rasmcore_pipeline::GpuOp],
         input: &[u8],
         width: u32,
         height: u32,
+        _buffer_format: rasmcore_pipeline::BufferFormat,
     ) -> Result<Vec<u8>, rasmcore_pipeline::GpuError> {
         let ops_json =
             serde_json::to_string(ops).map_err(|e| rasmcore_pipeline::GpuError::Other(e.to_string()))?;

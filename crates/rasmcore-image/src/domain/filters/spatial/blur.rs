@@ -101,6 +101,7 @@ impl GpuFilter for BlurParams {
                 workgroup_size: [256, 1, 1],
                 params: params.clone(),
                 extra_buffers: vec![kernel_buf.clone()],
+                buffer_format: Default::default(),
             },
             GpuOp::Compute {
                 shader,
@@ -108,6 +109,7 @@ impl GpuFilter for BlurParams {
                 workgroup_size: [1, 256, 1],
                 params,
                 extra_buffers: vec![kernel_buf],
+                buffer_format: Default::default(),
             },
         ])
     }

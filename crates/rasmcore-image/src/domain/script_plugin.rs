@@ -600,6 +600,7 @@ impl rasmcore_pipeline::gpu::GpuCapable for ScriptNode {
             workgroup_size: [256, 1, 1],
             params,
             extra_buffers: vec![],
+            buffer_format: Default::default(),
         }])
     }
 }

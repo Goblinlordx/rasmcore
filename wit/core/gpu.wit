@@ -8,6 +8,14 @@
 /// decides how to execute them (WebGPU in browser, wgpu native, etc.).
 
 interface gpu {
+    /// Buffer element format for GPU storage buffers.
+    enum buffer-format {
+        /// Packed u32 RGBA8 (4 bytes/pixel). Default.
+        u32-packed,
+        /// vec4<f32> RGBA (16 bytes/pixel). High-precision mode.
+        f32-vec4,
+    }
+
     /// A single GPU compute operation (one shader dispatch).
     record gpu-op {
         /// WGSL compute shader source code.
@@ -23,6 +31,8 @@ interface gpu {
         /// Extra storage buffers (e.g., blur kernel, 3D LUT data).
         /// Each entry is bound as a separate read-only storage buffer.
         extra-buffers: list<list<u8>>,
+        /// Buffer element format. Determines buffer sizing and layout.
+        buffer-format: buffer-format,
     }
 
     /// Error from GPU execution.
@@ -41,11 +51,14 @@ interface gpu {
     /// All intermediate buffers stay in GPU memory (no round-trips).
     /// Only the final output is read back to CPU.
     ///
-    /// Input/output: RGBA8 pixel data (width * height * 4 bytes).
+    /// Input/output pixel data format depends on buffer-format:
+    /// - u32-packed: width * height * 4 bytes (RGBA8)
+    /// - f32-vec4: width * height * 16 bytes (4x f32 per pixel)
     gpu-execute: func(
         ops: list<gpu-op>,
         input: list<u8>,
         width: u32,
         height: u32,
+        buffer-format: buffer-format,
     ) -> result<list<u8>, gpu-error>;
 }

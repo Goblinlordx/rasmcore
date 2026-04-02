@@ -2244,17 +2244,19 @@ fn gpu_benchmarks(c: &mut Criterion) {
     }
 
     impl GpuExecutor for BenchGpuExecutor {
-        fn execute(
+        fn execute_with_format(
             &self,
             ops: &[GpuOp],
             input: &[u8],
             width: u32,
             height: u32,
+            buffer_format: rasmcore_pipeline::BufferFormat,
         ) -> Result<Vec<u8>, GpuError> {
             if ops.is_empty() {
                 return Ok(input.to_vec());
             }
-            let buf_size = (width * height * 4) as u64;
+            let bpp = buffer_format.bytes_per_pixel() as u64;
+            let buf_size = (width as u64) * (height as u64) * bpp;
             let buf_a = self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: None,
                 size: buf_size,

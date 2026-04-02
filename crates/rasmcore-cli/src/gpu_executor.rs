@@ -8,7 +8,7 @@
 //! on the executor and reused across execute() calls. Buffers grow as needed
 //! but never shrink — this avoids repeated allocation for same-sized images.
 
-use rasmcore_pipeline::gpu::{GpuError, GpuExecutor, GpuOp};
+use rasmcore_pipeline::gpu::{BufferFormat, GpuError, GpuExecutor, GpuOp};
 use std::collections::HashMap;
 use wgpu;
 
@@ -38,8 +38,10 @@ pub struct WgpuExecutor {
     shader_cache: std::cell::RefCell<HashMap<u64, wgpu::ShaderModule>>,
     adapter_name: String,
     max_buffer: usize,
-    // Buffer pool — cached across execute() calls
+    // Buffer pool — cached across execute() calls (u32-packed format)
     ping_pong: std::cell::RefCell<Option<(CachedBuffer, CachedBuffer, u64)>>, // (buf_a, buf_b, buf_size)
+    // Buffer pool — f32 vec4 format (separate pool, 4x larger per pixel)
+    ping_pong_f32: std::cell::RefCell<Option<(CachedBuffer, CachedBuffer, u64)>>,
     staging: std::cell::RefCell<Option<CachedBuffer>>,
     uniform: std::cell::RefCell<Option<CachedBuffer>>,
     extra_cache: std::cell::RefCell<HashMap<u64, wgpu::Buffer>>,
@@ -81,6 +83,7 @@ impl WgpuExecutor {
             adapter_name,
             max_buffer,
             ping_pong: std::cell::RefCell::new(None),
+            ping_pong_f32: std::cell::RefCell::new(None),
             staging: std::cell::RefCell::new(None),
             uniform: std::cell::RefCell::new(None),
             extra_cache: std::cell::RefCell::new(HashMap::new()),
@@ -130,9 +133,15 @@ impl WgpuExecutor {
         buf
     }
 
-    /// Get or create ping-pong buffers of at least `buf_size`.
-    fn ensure_ping_pong(&self, buf_size: u64) -> (wgpu::Buffer, wgpu::Buffer) {
-        let mut pp = self.ping_pong.borrow_mut();
+    /// Get or create ping-pong buffers of at least `buf_size` from the given pool.
+    fn ensure_ping_pong_pool(
+        &self,
+        pool: &std::cell::RefCell<Option<(CachedBuffer, CachedBuffer, u64)>>,
+        buf_size: u64,
+        label_a: &str,
+        label_b: &str,
+    ) -> (wgpu::Buffer, wgpu::Buffer) {
+        let mut pp = pool.borrow_mut();
         if let Some((ref a, ref b, cached_size)) = *pp {
             if cached_size >= buf_size {
                 return (a.buffer.clone(), b.buffer.clone());
@@ -142,10 +151,10 @@ impl WgpuExecutor {
             | wgpu::BufferUsages::COPY_DST
             | wgpu::BufferUsages::COPY_SRC;
         let buf_a = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("gpu-buf-a"), size: buf_size, usage, mapped_at_creation: false,
+            label: Some(label_a), size: buf_size, usage, mapped_at_creation: false,
         });
         let buf_b = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("gpu-buf-b"), size: buf_size, usage, mapped_at_creation: false,
+            label: Some(label_b), size: buf_size, usage, mapped_at_creation: false,
         });
         *pp = Some((
             CachedBuffer { buffer: buf_a.clone(), size: buf_size },
@@ -153,6 +162,16 @@ impl WgpuExecutor {
             buf_size,
         ));
         (buf_a, buf_b)
+    }
+
+    /// Get or create u32-packed ping-pong buffers.
+    fn ensure_ping_pong(&self, buf_size: u64) -> (wgpu::Buffer, wgpu::Buffer) {
+        self.ensure_ping_pong_pool(&self.ping_pong, buf_size, "gpu-buf-a", "gpu-buf-b")
+    }
+
+    /// Get or create f32 vec4 ping-pong buffers.
+    fn ensure_ping_pong_f32(&self, buf_size: u64) -> (wgpu::Buffer, wgpu::Buffer) {
+        self.ensure_ping_pong_pool(&self.ping_pong_f32, buf_size, "gpu-buf-a-f32", "gpu-buf-b-f32")
     }
 
     /// Get or create the staging (readback) buffer of at least `buf_size`.
@@ -211,18 +230,20 @@ impl WgpuExecutor {
 }
 
 impl GpuExecutor for WgpuExecutor {
-    fn execute(
+    fn execute_with_format(
         &self,
         ops: &[GpuOp],
         input: &[u8],
         width: u32,
         height: u32,
+        buffer_format: BufferFormat,
     ) -> Result<Vec<u8>, GpuError> {
         if ops.is_empty() {
             return Ok(input.to_vec());
         }
 
-        let buf_size = (width * height * 4) as u64; // RGBA8
+        let bpp = buffer_format.bytes_per_pixel() as u64;
+        let buf_size = (width as u64) * (height as u64) * bpp;
         if buf_size as usize > self.max_buffer {
             return Err(GpuError::BufferTooLarge {
                 requested: buf_size as usize,
@@ -236,8 +257,11 @@ impl GpuExecutor for WgpuExecutor {
             _ => None,
         }).max().unwrap_or(0);
 
-        // Get or create pooled buffers
-        let (buf_a, buf_b) = self.ensure_ping_pong(buf_size);
+        // Get or create pooled buffers (separate pools for u32 vs f32)
+        let (buf_a, buf_b) = match buffer_format {
+            BufferFormat::U32Packed => self.ensure_ping_pong(buf_size),
+            BufferFormat::F32Vec4 => self.ensure_ping_pong_f32(buf_size),
+        };
         let uniform_buf = if max_uniform_size > 0 {
             Some(self.ensure_uniform(max_uniform_size))
         } else {
@@ -277,6 +301,7 @@ impl GpuExecutor for WgpuExecutor {
                     workgroup_size,
                     params,
                     extra_buffers,
+                    buffer_format: _, // format is handled at the batch level
                 } => {
                     let shader_module = self.get_shader(shader)?;
 

@@ -173,6 +173,7 @@ impl rasmcore_pipeline::gpu::GpuCapable for FusedLutNode {
             workgroup_size: [256, 1, 1],
             params,
             extra_buffers: vec![lut_buf],
+            buffer_format: Default::default(),
         }])
     }
 }
@@ -234,6 +235,7 @@ impl rasmcore_pipeline::gpu::GpuCapable for FusedClutNode {
             workgroup_size: [256, 1, 1],
             params,
             extra_buffers: vec![lut_buf],
+            buffer_format: Default::default(),
         }])
     }
 }
