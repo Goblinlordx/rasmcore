@@ -1,5 +1,5 @@
 title: .cube LUT encoder + decoder — export/import color op chains as 3D LUT files
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-02'
