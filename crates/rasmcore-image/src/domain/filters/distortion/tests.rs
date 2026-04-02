@@ -1081,5 +1081,288 @@ mod distortion_effect_tests {
         // test coefficients. See ewa.rs "Known residuals — Barrel" docs.
         assert!(mae < 9.0, "barrel IM parity MAE = {mae:.2} > 9.0");
     }
+
+    /// Sampling mode audit: run each distortion filter with all 3 sampling modes
+    /// and compare against ImageMagick. Outputs a decision matrix.
+    #[test]
+    fn sampling_mode_audit() {
+        let has_magick = std::process::Command::new("magick")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if !has_magick {
+            eprintln!("SKIP: ImageMagick not available");
+            return;
+        }
+
+        let (w, h) = (64u32, 64u32);
+        let (png_path, pixels) = make_distortion_test_image(w, h);
+        let info = rgb_info(w, h);
+        let full = Rect::new(0, 0, w, h);
+        let wf = w as f64;
+        let hf = h as f64;
+        let cx = wf * 0.5;
+        let cy = hf * 0.5;
+        let max_radius = cx.min(cy);
+        let expected_len = (w * h * 3) as usize;
+
+        let compute_mae = |our: &[u8], im: &[u8]| -> f64 {
+            our.iter()
+                .zip(im.iter())
+                .map(|(&a, &b)| (a as f64 - b as f64).abs())
+                .sum::<f64>()
+                / our.len() as f64
+        };
+
+        let run_im = |args: &[&str]| -> Option<Vec<u8>> {
+            let raw = std::env::temp_dir().join("sampling_audit_im.rgb");
+            let mut cmd_args: Vec<String> = vec![
+                png_path.to_str().unwrap().to_string(),
+                "-background".to_string(),
+                "black".to_string(),
+                "-virtual-pixel".to_string(),
+                "Background".to_string(),
+            ];
+            for a in args {
+                cmd_args.push(a.to_string());
+            }
+            cmd_args.push("-depth".to_string());
+            cmd_args.push("8".to_string());
+            cmd_args.push(format!("rgb:{}", raw.to_str().unwrap()));
+            let result = std::process::Command::new("magick")
+                .args(&cmd_args)
+                .output()
+                .unwrap();
+            if !result.status.success() {
+                return None;
+            }
+            let data = std::fs::read(&raw).unwrap();
+            if data.len() != expected_len {
+                return None;
+            }
+            Some(data)
+        };
+
+        let run_distortion = |
+            sampling: DistortionSampling,
+            overlap: DistortionOverlap,
+            inverse_fn: &dyn Fn(f32, f32) -> (f32, f32),
+            jacobian_fn: &dyn Fn(f32, f32) -> crate::domain::ewa::Jacobian,
+        | -> Vec<u8> {
+            let mut up = |_: Rect| Ok(pixels.to_vec());
+            apply_distortion(full, &mut up, &info, overlap, sampling, inverse_fn, jacobian_fn)
+                .unwrap()
+        };
+
+        let mode_at = |i: usize| match i {
+            0 => DistortionSampling::Bilinear,
+            1 => DistortionSampling::Ewa,
+            2 => DistortionSampling::EwaClamp,
+            _ => unreachable!(),
+        };
+
+        eprintln!("\n======================================================================");
+        eprintln!("  SAMPLING MODE AUDIT — MAE vs ImageMagick");
+        eprintln!("======================================================================");
+        eprintln!("{:<12} {:>10} {:>10} {:>10} {:>10}",
+            "Filter", "Bilinear", "Ewa", "EwaClamp", "Current");
+
+        // ── Swirl ──
+        if let Some(im_data) = run_im(&["-swirl", "90"]) {
+            let swirl_rad = 90.0f32.to_radians();
+            let swirl_r = (w as f32 * 0.5).max(h as f32 * 0.5);
+            let (sx, sy) = (1.0f32, 1.0f32); // square
+            let inv = |xf: f32, yf: f32| -> (f32, f32) {
+                let dx = sx * (xf - w as f32 * 0.5);
+                let dy = sy * (yf - h as f32 * 0.5);
+                let dist = (dx * dx + dy * dy).sqrt();
+                let t = (1.0 - dist / swirl_r).max(0.0);
+                let rot = swirl_rad * t * t;
+                let (cos_r, sin_r) = (rot.cos(), rot.sin());
+                ((cos_r * dx - sin_r * dy) / sx + w as f32 * 0.5,
+                 (sin_r * dx + cos_r * dy) / sy + h as f32 * 0.5)
+            };
+            let jac = |xf: f32, yf: f32| {
+                crate::domain::ewa::jacobian_swirl(
+                    xf, yf, w as f32 * 0.5, h as f32 * 0.5,
+                    swirl_rad, swirl_r, sx, sy,
+                )
+            };
+            let mut maes = Vec::new();
+            for i in 0..3 {
+                let out = run_distortion(mode_at(i), DistortionOverlap::FullImage, &inv, &jac);
+                maes.push(compute_mae(&out, &im_data));
+            }
+            eprintln!("{:<12} {:>10.2} {:>10.2} {:>10.2} {:>10}",
+                "swirl", maes[0], maes[1], maes[2], "Ewa");
+        }
+
+        // ── Wave ──
+        if let Some(im_data) = run_im(&["-wave", "5x20"]) {
+            let amp = 5.0f32;
+            let wl = 20.0f32;
+            let dummy_j = crate::domain::ewa::JACOBIAN_IDENTITY;
+            let inv = |xf: f32, yf: f32| -> (f32, f32) {
+                (xf, yf - amp * (std::f32::consts::TAU * xf / wl).sin())
+            };
+            let jac = |_: f32, _: f32| dummy_j;
+            // IM wave extends canvas; crop to original size
+            let im_raw = std::env::temp_dir().join("sampling_audit_wave.rgb");
+            let result = std::process::Command::new("magick")
+                .args([
+                    png_path.to_str().unwrap(),
+                    "-background", "black",
+                    "-virtual-pixel", "Background",
+                    "-wave", "5x20",
+                    "-gravity", "Center",
+                    "-extent", &format!("{w}x{h}"),
+                    "-depth", "8",
+                    &format!("rgb:{}", im_raw.to_str().unwrap()),
+                ])
+                .output()
+                .unwrap();
+            if result.status.success() {
+                let im_wave = std::fs::read(&im_raw).unwrap();
+                if im_wave.len() == expected_len {
+                    let mut maes = Vec::new();
+                    for i in 0..3 {
+                        let overlap = DistortionOverlap::Uniform(amp.ceil() as u32 + 1);
+                        let out = run_distortion(mode_at(i), overlap, &inv, &jac);
+                        maes.push(compute_mae(&out, &im_wave));
+                    }
+                    eprintln!("{:<12} {:>10.2} {:>10.2} {:>10.2} {:>10}",
+                        "wave", maes[0], maes[1], maes[2], "Bilinear");
+                }
+            }
+        }
+
+        // ── Barrel ──
+        {
+            let k1 = 0.3f64;
+            let rscale = 2.0 / (wf.min(hf));
+            let a_coeff = k1 * rscale * rscale * rscale;
+            let im_args = ["-distort", "Barrel", "0.3 0.0 0.0 1.0"];
+            if let Some(im_data) = run_im(&im_args) {
+                let inv = |xf: f32, yf: f32| -> (f32, f32) {
+                    let xf64 = xf as f64 + 0.5;
+                    let yf64 = yf as f64 + 0.5;
+                    let di = xf64 - cx;
+                    let dj = yf64 - cy;
+                    let dr = (di * di + dj * dj).sqrt();
+                    let df = a_coeff * dr * dr * dr + 1.0;
+                    ((di * df + cx - 0.5) as f32, (dj * df + cy - 0.5) as f32)
+                };
+                let jac = |xf: f32, yf: f32| {
+                    // Numerical Jacobian for barrel
+                    let h_step = 0.5f32;
+                    let (sx_px, sy_px) = inv(xf + h_step, yf);
+                    let (sx_mx, sy_mx) = inv(xf - h_step, yf);
+                    let (sx_py, sy_py) = inv(xf, yf + h_step);
+                    let (sx_my, sy_my) = inv(xf, yf - h_step);
+                    let inv_2h = 1.0 / (2.0 * h_step);
+                    [
+                        [(sx_px - sx_mx) * inv_2h, (sx_py - sx_my) * inv_2h],
+                        [(sy_px - sy_mx) * inv_2h, (sy_py - sy_my) * inv_2h],
+                    ]
+                };
+                let mut maes = Vec::new();
+                for i in 0..3 {
+                    let out = run_distortion(mode_at(i), DistortionOverlap::FullImage, &inv, &jac);
+                    maes.push(compute_mae(&out, &im_data));
+                }
+                eprintln!("{:<12} {:>10.2} {:>10.2} {:>10.2} {:>10}",
+                    "barrel", maes[0], maes[1], maes[2], "EwaClamp");
+            }
+        }
+
+        // ── Polar (vs IM DePolar) ──
+        {
+            let two_pi = std::f64::consts::TAU;
+            let im_args = ["-distort", "DePolar", &format!("{max_radius}")];
+            if let Some(im_data) = run_im(&im_args) {
+                let inv = |xf: f32, yf: f32| -> (f32, f32) {
+                    let dx = xf as f64 + 0.5;
+                    let dy = yf as f64 + 0.5;
+                    let angle = (dx - cx) / wf * two_pi;
+                    let radius = dy / hf * max_radius;
+                    ((cx + radius * angle.sin() - 0.5) as f32,
+                     (cy + radius * angle.cos() - 0.5) as f32)
+                };
+                let jac = |xf: f32, yf: f32| {
+                    crate::domain::ewa::jacobian_polar(xf, yf, w as f32, h as f32, max_radius as f32)
+                };
+                let mut maes = Vec::new();
+                for i in 0..3 {
+                    let out = run_distortion(mode_at(i), DistortionOverlap::FullImage, &inv, &jac);
+                    maes.push(compute_mae(&out, &im_data));
+                }
+                eprintln!("{:<12} {:>10.2} {:>10.2} {:>10.2} {:>10}",
+                    "polar", maes[0], maes[1], maes[2], "Bilinear");
+            }
+        }
+
+        // ── Depolar (vs IM Polar) ──
+        {
+            let two_pi = std::f64::consts::TAU;
+            let c6 = wf / two_pi;
+            let c7 = hf / max_radius;
+            let half_w = wf * 0.5;
+            let im_args_str = format!("{max_radius}");
+            let im_args = ["-distort", "Polar", &im_args_str];
+            if let Some(im_data) = run_im(&im_args) {
+                let inv = |xf: f32, yf: f32| -> (f32, f32) {
+                    let xf64 = xf as f64 + 0.5;
+                    let yf64 = yf as f64 + 0.5;
+                    let ii = xf64 - cx;
+                    let jj = yf64 - cy;
+                    let radius = (ii * ii + jj * jj).sqrt();
+                    let angle = ii.atan2(jj);
+                    let mut xx = angle / two_pi;
+                    xx -= xx.round();
+                    ((xx * two_pi * c6 + half_w - 0.5) as f32,
+                     (radius * c7 - 0.5) as f32)
+                };
+                let jac = |xf: f32, yf: f32| {
+                    let xf64 = xf as f64 + 0.5;
+                    let yf64 = yf as f64 + 0.5;
+                    let ii = xf64 - cx;
+                    let jj = yf64 - cy;
+                    let r2 = ii * ii + jj * jj;
+                    if r2 < 1e-10 {
+                        crate::domain::ewa::JACOBIAN_IDENTITY
+                    } else {
+                        let r = r2.sqrt();
+                        [
+                            [(jj / r2 * c6) as f32, (-ii / r2 * c6) as f32],
+                            [(ii / r * c7) as f32, (jj / r * c7) as f32],
+                        ]
+                    }
+                };
+                let mut maes = Vec::new();
+                for i in 0..3 {
+                    let out = run_distortion(mode_at(i), DistortionOverlap::FullImage, &inv, &jac);
+                    maes.push(compute_mae(&out, &im_data));
+                }
+                eprintln!("{:<12} {:>10.2} {:>10.2} {:>10.2} {:>10}",
+                    "depolar", maes[0], maes[1], maes[2], "Ewa");
+            }
+        }
+
+        // ── Spherize ── (no direct IM equivalent; use barrel approximation)
+        // IM doesn't have a direct spherize. Skip IM comparison for spherize.
+        eprintln!("{:<12} {:>10} {:>10} {:>10} {:>10}",
+            "spherize", "n/a", "n/a", "n/a", "Ewa");
+
+        // ── Ripple ── (no direct IM equivalent)
+        eprintln!("{:<12} {:>10} {:>10} {:>10} {:>10}",
+            "ripple", "n/a", "n/a", "n/a", "Ewa");
+
+        // ── Mesh warp ── (IM perspective is different; skip)
+        eprintln!("{:<12} {:>10} {:>10} {:>10} {:>10}",
+            "mesh_warp", "n/a", "n/a", "n/a", "Bilinear");
+
+        eprintln!("======================================================================\n");
+    }
 }
 
