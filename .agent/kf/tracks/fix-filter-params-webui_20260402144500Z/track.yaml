@@ -1,0 +1,127 @@
+id: fix-filter-params-webui_20260402144500Z
+title: "Fix filter parameters not reaching domain for derive(Filter) and old-pattern filters"
+type: bug
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Pixelate and wave (plus ~28 other derive(Filter) filters) ignore UI parameter
+    changes. Two codegen bugs: (1) WIT generation omits config param for
+    derive(Filter) filters, (2) old-pattern ConfigParams manifest metadata
+    emits default=0 / null bounds for pixelate.
+  context: |
+    User reports pixelate and wave have no visible effect in the web UI and
+    parameter sliders do nothing. Investigation found two distinct codegen bugs
+    that together break parameter passthrough for roughly 30 filters.
+
+    Bug 1 — derive(Filter) WIT codegen:
+    build.rs line 526 checks f.params.is_empty() to decide whether to include
+    a config record in the WIT pipeline method signature. For derive(Filter)
+    filters, params are stored in f.config_struct (populated via auto-linking
+    at build.rs lines 98-107), NOT in f.params. So f.params.is_empty() returns
+    true even though the filter has parameters. Result: WIT generates signatures
+    like wave(source) instead of wave(source, config: wave-config). The web UI
+    sends config but jco silently drops the extra arg at the WIT boundary.
+    Domain receives default params only.
+
+    Affected: wave, depolar, polar, barrel, mesh_warp, ripple, swirl, spherize,
+    guided_filter, lens_blur, kuwahara, sharpen, zoom_blur, smart_sharpen,
+    high_pass, rank_filter, box_blur, bokeh_blur, average_blur, gaussian_blur_cv,
+    tilt_shift, motion_blur, median, blur, bilateral, spin_blur, invert_v2
+    (~27 filters total).
+
+    Bug 2 — Pixelate manifest metadata:
+    Pixelate uses old ConfigParams pattern, so its WIT is correct (has config).
+    But the deployed param-manifest.json for the WASM build emits
+    default=0, min=null, max=null, step=null for block_size. The correct values
+    from #[param(min = 1, max = 128, step = 1, default = 8)] are not reaching
+    the manifest. With block_size defaulting to 0 (clamped to 1 by .max(1)),
+    each pixel is its own block — no visible effect. Null slider bounds may also
+    prevent user interaction.
+  codebase_analysis: |
+    Key files:
+    - crates/rasmcore-image/build.rs:526 — WIT generation checks f.params.is_empty()
+    - crates/rasmcore-image/build.rs:98-107 — config_struct auto-linking
+    - crates/rasmcore-codegen/src/parse/config_params.rs:86-121 — #[param] parsing
+    - crates/rasmcore-codegen/src/generate/manifest.rs — manifest JSON generation
+    - wit/image/pipeline.wit:188 — wave signature (missing config)
+    - wit/image/pipeline.wit:222 — pixelate signature (correct, has config)
+    - web-ui/src/pipeline-worker.ts:110-117 — applyStep dispatches with/without config
+    - web-ui/src/utils/manifest.ts:275-334 — loadManifest reads param-manifest.json
+
+    The derive(Filter) macro stores params in a FilterData.config_struct field
+    rather than the FilterData.params vector used by old register_filter macro.
+    The WIT generation code only checks the params vector.
+
+    For pixelate, the codegen parsing code (config_params.rs:94-117) correctly
+    handles #[param(...)] via ParamAttr syn parsing — verified by unit tests.
+    The WASM build manifest divergence may be a stale build artifact or a
+    target-specific parsing regression. Needs rebuild verification.
+  acceptance_criteria:
+    - build.rs WIT generation considers f.config_struct.is_some() in addition to f.params for config inclusion
+    - All derive(Filter) filters with params get config records in pipeline.wit
+    - wave WIT signature becomes wave(source, config: wave-config) with amplitude/wavelength/vertical fields
+    - All ~27 affected derive(Filter) filter WIT signatures include config records
+    - Pixelate param-manifest.json emits correct metadata (default=8, min=1, max=128, step=1)
+    - Web UI shows parameter controls for wave and pixelate
+    - Changing wave amplitude/wavelength produces visible different output
+    - Changing pixelate block_size produces visible different output
+    - WASM component builds successfully (cargo component build)
+    - No regression in other filter parameter passthrough
+  out_of_scope: |
+    Migrating pixelate to derive(Filter) pattern (covered by filter-migrate-remaining track).
+    Fixing the 12 positional-arg filters (covered by codegen-extra-params-in-config track).
+    Web UI React migration or layout changes.
+  technical_notes: |
+    Fix 1 — build.rs WIT condition:
+    Change line 526 from:
+      if f.params.is_empty()
+    To:
+      if f.params.is_empty() && f.config_struct.is_none()
+    This makes derive(Filter) filters with a config_struct generate
+    (source, config: {name}-config) signatures. The config record generation
+    already handles config_struct fields.
+
+    Fix 2 — Pixelate manifest:
+    First verify whether a clean WASM rebuild produces correct metadata.
+    If so, the issue is stale artifacts and the fix is ensuring demo/build.sh
+    does a clean codegen rebuild. If the regression persists, trace the
+    config_params.rs #[param] parsing for the pixelate struct specifically
+    under wasm32-wasip1 target to find the divergence.
+
+    The pipeline adapter (generated_pipeline_adapter.rs) already generates
+    correct config extraction for derive(Filter) filters when config_struct
+    is present — the bug is solely in the WIT signature generation.
+plan:
+  - phase: "Diagnosis & Fix"
+    tasks:
+      - text: "Fix build.rs:526 WIT condition to check config_struct.is_some() for derive(Filter) filters"
+        done: false
+      - text: "Rebuild WASM component and verify wave WIT signature now includes config"
+        done: false
+      - text: "Verify all ~27 derive(Filter) filters get config records in generated pipeline.wit"
+        done: false
+      - text: "Investigate pixelate manifest metadata — clean WASM rebuild to determine if stale or code bug"
+        done: false
+      - text: "If pixelate manifest still wrong after rebuild, fix config_params.rs param parsing"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "cargo component build succeeds for wasm32-wasip1 target"
+        done: false
+      - text: "Generated pipeline.wit has config params for all derive(Filter) filters"
+        done: false
+      - text: "param-manifest.json has correct metadata for pixelate (default=8, min=1, max=128, step=1)"
+        done: false
+      - text: "param-manifest.json has correct metadata for wave (amplitude, wavelength, vertical)"
+        done: false
+      - text: "Web UI shows parameter sliders for wave and pixelate"
+        done: false
+      - text: "Changing wave amplitude/wavelength produces visibly different output"
+        done: false
+      - text: "Changing pixelate block_size produces visibly different output"
+        done: false
+      - text: "Spot-check 3+ other derive(Filter) filters (blur, sharpen, swirl) — params work in UI"
+        done: false
+extra: {}
