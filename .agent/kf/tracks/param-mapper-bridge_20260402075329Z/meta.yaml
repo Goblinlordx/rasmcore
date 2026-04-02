@@ -1,0 +1,8 @@
+title: Analysis-to-params mapper bridge with two-pass pipeline orchestration
+status: pending
+type: feature
+approved: false
+created: '2026-04-02'
+updated: '2026-04-02'
+deps:
+- composite-nodes_20260402072335Z
