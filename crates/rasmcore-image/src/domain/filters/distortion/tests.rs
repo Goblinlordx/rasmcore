@@ -1011,9 +1011,9 @@ mod distortion_effect_tests {
             / expected_len as f64;
 
         eprintln!("swirl IM parity MAE: {mae:.2}");
-        // MAE 2.34: same f32→f64 Jacobian precision cause as polar.
-        // See ewa.rs "Known residuals" docs.
-        assert!(mae < 3.0, "swirl IM parity MAE = {mae:.2} > 3.0");
+        // Bilinear matches IM's effect.c implementation exactly (MAE ~0.00).
+        // IM -swirl uses bilinear interpolation, not EWA distortion engine.
+        assert!(mae < 1.0, "swirl IM parity MAE = {mae:.2} > 1.0");
     }
 
     #[test]
@@ -1076,9 +1076,9 @@ mod distortion_effect_tests {
             / expected_len as f64;
 
         eprintln!("barrel IM parity MAE: {mae:.2}");
-        // MAE 8.24: our k1/k2 map to different polynomial terms than IM's
-        // "A B C D" barrel args. Fix: match IM's 4-param format or adjust
-        // test coefficients. See ewa.rs "Known residuals — Barrel" docs.
+        // EwaClamp matches IM's -virtual-pixel Edge border handling (MAE ~8.24).
+        // IM barrel uses EWA + edge-clamp by default. The higher MAE is from
+        // Robidoux vs Laguerre filter kernel and k1/k2 coefficient mapping.
         assert!(mae < 9.0, "barrel IM parity MAE = {mae:.2} > 9.0");
     }
 

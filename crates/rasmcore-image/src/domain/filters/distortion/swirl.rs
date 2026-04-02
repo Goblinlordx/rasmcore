@@ -66,7 +66,7 @@ pub fn swirl(
     apply_distortion(
         request, upstream, info,
         DistortionOverlap::FullImage,
-        DistortionSampling::Ewa,
+        DistortionSampling::Bilinear,
         &|xf, yf| {
             let dx = scale_x * (xf - cx);
             let dy = scale_y * (yf - cy);
