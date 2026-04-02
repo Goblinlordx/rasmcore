@@ -1,4 +1,11 @@
 //! Filter: pixelate (category: effect)
+//!
+//! Block-grid mosaic: tiles a fixed grid from (0,0), averages each cell, fills
+//! with the mean color. Edge cells are truncated to image bounds (not padded).
+//! This matches the behavior of Photoshop Mosaic, GIMP/GEGL pixelize, and
+//! FFmpeg pixelize. Resize-based pixelation (OpenCV, ImageMagick -scale) uses
+//! proportional mapping instead, producing visually uniform blocks but is a
+//! different operation.
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;

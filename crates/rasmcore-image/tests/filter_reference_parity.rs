@@ -2807,9 +2807,11 @@ fn close_oil_paint_structural_properties() {
 }
 
 #[test]
-fn close_pixelate_against_pillow() {
-    // Pixelate against Pillow resize(BOX) + resize(NEAREST) — the standard
-    // pixelation approach used in image editors and web applications.
+fn close_pixelate_aligned_against_pillow() {
+    // Pixelate (aligned dims) against Pillow resize(BOX) + resize(NEAREST).
+    // When dimensions are evenly divisible by block_size, the block-grid approach
+    // (PS/GIMP/FFmpeg) and the resize approach (Pillow/OpenCV/IM) produce
+    // identical results — both compute the mean of each block.
     let (w, h) = (32u32, 32);
     let pixels = make_gradient_rgb(w, h);
     let info = info_rgb8(w, h);
@@ -2831,15 +2833,104 @@ from PIL import Image
 
 px = np.array({pixels:?}, dtype=np.uint8).reshape({h}, {w}, 3)
 img = Image.fromarray(px, mode='RGB')
-# Standard pixelation: downsample with BOX (area average), upsample with NEAREST
 small = img.resize(({w} // {block_size}, {h} // {block_size}), Image.Resampling.BOX)
 big = small.resize(({w}, {h}), Image.Resampling.NEAREST)
 sys.stdout.buffer.write(np.array(big).tobytes())
 "#
     );
     let reference = run_python_ref(&script);
-    // Pillow BOX and our block average should match closely (both compute area mean)
-    assert_close("pixelate bs=8 vs Pillow", &ours, &reference, 1.0);
+    assert_close("pixelate bs=8 aligned vs Pillow", &ours, &reference, 1.0);
+}
+
+#[test]
+fn pixelate_non_aligned_truncated_edge_blocks() {
+    // Non-aligned pixelate: validates the block-grid truncation behavior that
+    // matches Photoshop Mosaic, GIMP/GEGL pixelize, and FFmpeg pixelize.
+    //
+    // The grid starts at (0,0) and tiles with fixed block_size. Edge blocks are
+    // truncated to image bounds (not padded or centered). Each block is filled
+    // with the mean of its actual pixels. This differs from resize-based
+    // pixelation (OpenCV/ImageMagick) which uses proportional mapping to produce
+    // visually uniform blocks.
+    //
+    // Reference: GEGL pixelize source (gegl_rectangle_intersect clamps to bounds),
+    // FFmpeg vf_pixelize.c (FFMIN(block_size, remaining)).
+    let (w, h) = (30u32, 25);
+    let pixels = make_gradient_rgb(w, h);
+    let info = info_rgb8(w, h);
+    let block_size = 7u32;
+    let r = Rect::new(0, 0, w, h);
+    let ours = filters::pixelate(
+        r,
+        &mut |_| Ok(pixels.clone()),
+        &info,
+        &filters::PixelateParams { block_size },
+    )
+    .unwrap();
+
+    // Validate block-grid structure: each cell in the grid has uniform color,
+    // and that color equals the mean of the source pixels in that cell.
+    let bs = block_size as usize;
+    let ww = w as usize;
+    let hh = h as usize;
+    let mut checked = 0;
+    let mut by = 0;
+    while by < hh {
+        let bh = bs.min(hh - by);
+        let mut bx = 0;
+        while bx < ww {
+            let bw = bs.min(ww - bx);
+
+            // Verify uniform color within block
+            let block_color = &ours[(by * ww + bx) * 3..(by * ww + bx) * 3 + 3];
+            for row in by..(by + bh) {
+                for col in bx..(bx + bw) {
+                    let off = (row * ww + col) * 3;
+                    assert_eq!(
+                        &ours[off..off + 3],
+                        block_color,
+                        "block ({bx},{by}) not uniform at ({col},{row})"
+                    );
+                }
+            }
+
+            // Verify block color is the mean of source pixels (rounded)
+            let mut sums = [0u32; 3];
+            let count = (bw * bh) as u32;
+            for row in by..(by + bh) {
+                for col in bx..(bx + bw) {
+                    let off = (row * ww + col) * 3;
+                    for c in 0..3 {
+                        sums[c] += pixels[off + c] as u32;
+                    }
+                }
+            }
+            for c in 0..3 {
+                let expected = ((sums[c] + count / 2) / count) as u8;
+                assert_eq!(
+                    block_color[c], expected,
+                    "block ({bx},{by}) ch{c}: got {}, expected {expected}",
+                    block_color[c]
+                );
+            }
+            checked += 1;
+
+            bx += bs;
+        }
+        by += bs;
+    }
+
+    // 30/7 = 4 full + 1 partial = 5 columns, 25/7 = 3 full + 1 partial = 4 rows
+    assert_eq!(checked, 20, "expected 5×4=20 blocks for 30x25 bs=7");
+
+    // Verify edge blocks are actually smaller (the truncation property)
+    let last_col_width = ww % bs; // 30 % 7 = 2
+    let last_row_height = hh % bs; // 25 % 7 = 4
+    assert_eq!(last_col_width, 2, "rightmost column should be 2px wide");
+    assert_eq!(last_row_height, 4, "bottom row should be 4px tall");
+    eprintln!(
+        "  pixelate non-aligned: {checked} blocks, edge=({last_col_width}×{last_row_height}) ✓"
+    );
 }
 
 #[test]
