@@ -50,3 +50,9 @@ web-ui-export-menu_20260401094014Z/web-ui-react-migrate_20260401100641Z:
   risk: high
   note: "Both modify web-ui/ — export-menu must be implemented as React component after migration"
   added: "2026-04-01"
+
+# Bug fix regenerates pipeline.wit filter signatures; migration adds more derive(Filter) filters
+filter-migrate-remaining_20260402050834Z/fix-filter-params-webui_20260402144500Z:
+  risk: medium
+  note: "Both regenerate pipeline.wit filter signatures — bug fix should merge first"
+  added: "2026-04-02"

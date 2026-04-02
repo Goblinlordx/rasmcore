@@ -269,3 +269,6 @@ gpu-shaders-lut-point_20260402020004Z:
 
 # Script invert validation — no deps (script plugin system already exists)
 script-invert-validation_20260402102600Z: []
+
+# Fix derive(Filter) WIT codegen + pixelate manifest — no deps
+fix-filter-params-webui_20260402144500Z: []
