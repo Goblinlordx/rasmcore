@@ -456,8 +456,11 @@ pub enum ColorOp {
     Saturate(f32),
     /// Apply sepia tone with intensity (0-1).
     Sepia(f32),
-    /// Tint toward target RGB color with amount (0-1).
+    /// Tint toward target RGB color with amount (0-1). W3C/PS SetLum/ClipColor.
     Colorize([f32; 3], f32),
+    /// Tint via CIELAB: replace a*b* with target's, parabolic weight by L*.
+    /// Preserves L* exactly. Natural falloff at highlights/shadows.
+    ColorizeLab([f32; 3], f32),
     /// Mix RGB channels via 3x3 matrix: [rr,rg,rb, gr,gg,gb, br,bg,bb].
     ChannelMix([f32; 9]),
     /// Perceptually weighted saturation: boosts low-saturation more than high.
@@ -521,6 +524,32 @@ impl ColorOp {
                     cb = l + (cb - l) * one_l / xl;
                 }
                 // Amount: lerp between original pixel and fully colorized
+                (
+                    r + (cr - r) * amount,
+                    g + (cg - g) * amount,
+                    b + (cb - b) * amount,
+                )
+            }
+            ColorOp::ColorizeLab(target, amount) => {
+                // CIELAB colorize (libvips/sharp approach): replace a*b* chrominance
+                // with target's, weighted by a parabolic curve that reduces tinting
+                // at L* extremes (pure black/white). Preserves L* exactly.
+                use super::color_spaces::{lab_to_rgb, rgb_to_lab};
+                let (r64, g64, b64) = (r as f64, g as f64, b as f64);
+                let (pixel_l, _pixel_a, _pixel_b) = rgb_to_lab(r64, g64, b64);
+                let (_, target_a, target_b) =
+                    rgb_to_lab(target[0] as f64, target[1] as f64, target[2] as f64);
+                // Parabolic weight: max at midtones (L*=50), zero at black/white
+                let l_norm = (pixel_l / 100.0).clamp(0.0, 1.0);
+                let weight = 1.0 - 4.0 * (l_norm - 0.5) * (l_norm - 0.5);
+                let weight = weight.max(0.0);
+                let out_a = target_a * weight;
+                let out_b = target_b * weight;
+                let (cr, cg, cb) = lab_to_rgb(pixel_l, out_a, out_b);
+                let cr = cr.clamp(0.0, 1.0) as f32;
+                let cg = cg.clamp(0.0, 1.0) as f32;
+                let cb = cb.clamp(0.0, 1.0) as f32;
+                // Amount: lerp between original and fully colorized
                 (
                     r + (cr - r) * amount,
                     g + (cg - g) * amount,
