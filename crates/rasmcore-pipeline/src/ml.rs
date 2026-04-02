@@ -166,3 +166,56 @@ pub trait MlExecutor {
     /// Blocks until the model is ready for inference.
     fn ensure_model(&self, name: &str, version: &str) -> Result<(), MlError>;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tensor_desc_byte_size() {
+        let desc = TensorDesc {
+            shape: vec![1, 3, 224, 224],
+            dtype: TensorDtype::Float32,
+        };
+        assert_eq!(desc.num_elements(), 1 * 3 * 224 * 224);
+        assert_eq!(desc.byte_size(), 1 * 3 * 224 * 224 * 4);
+    }
+
+    #[test]
+    fn tensor_dtype_sizes() {
+        assert_eq!(TensorDtype::Float32.element_size(), 4);
+        assert_eq!(TensorDtype::Float16.element_size(), 2);
+        assert_eq!(TensorDtype::Uint8.element_size(), 1);
+        assert_eq!(TensorDtype::Int8.element_size(), 1);
+    }
+
+    #[test]
+    fn ml_error_display() {
+        let err = MlError::NotAvailable("no ONNX runtime".into());
+        assert!(err.to_string().contains("ML not available"));
+        assert!(err.to_string().contains("no ONNX runtime"));
+    }
+
+    #[test]
+    fn ml_op_construction() {
+        let op = MlOp {
+            model: ModelRef {
+                name: "rmbg-1.4".into(),
+                version: "fp16".into(),
+            },
+            input: vec![0u8; 3 * 256 * 256 * 4],
+            input_desc: TensorDesc {
+                shape: vec![1, 3, 256, 256],
+                dtype: TensorDtype::Float32,
+            },
+            output_desc: TensorDesc {
+                shape: vec![1, 1, 256, 256],
+                dtype: TensorDtype::Float32,
+            },
+            params: vec![("threshold".into(), "0.5".into())],
+        };
+        assert_eq!(op.model.name, "rmbg-1.4");
+        assert_eq!(op.input_desc.byte_size(), 3 * 256 * 256 * 4);
+        assert_eq!(op.output_desc.byte_size(), 1 * 256 * 256 * 4);
+    }
+}
