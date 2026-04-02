@@ -59,7 +59,7 @@ pub fn replace_color(
     };
     let pixels = pixels.as_slice();
 
-    let (ch, has_alpha) = match info.format {
+    let (ch, _has_alpha) = match info.format {
         PixelFormat::Rgb8 => (3usize, false),
         PixelFormat::Rgba8 => (4usize, true),
         _ => {
