@@ -697,11 +697,153 @@ fn is_16bit(format: PixelFormat) -> bool {
     )
 }
 
+/// Check if a pixel format is 32-bit float.
+fn is_f32(format: PixelFormat) -> bool {
+    matches!(
+        format,
+        PixelFormat::Rgb32f | PixelFormat::Rgba32f | PixelFormat::Gray32f
+    )
+}
+
+// ─── f32 direct-math infrastructure ────────────────────────────────────────
+
+/// Evaluate a point operation on a single normalized [0,1] f32 sample.
+///
+/// This is the same math as `build_lut`/`build_lut_u16` but applied directly,
+/// avoiding LUT materialization. For f32 format this is the natural path since
+/// there are ~2^23 distinct values in [0,1] — a LUT would be impractical.
+#[inline]
+pub fn eval_point_op_f32(op: &PointOp, x: f32) -> f32 {
+    match op {
+        PointOp::Gamma(gamma) => x.powf(1.0 / gamma),
+        PointOp::Invert => 1.0 - x,
+        PointOp::Threshold(level) => {
+            if x >= *level as f32 / 255.0 { 1.0 } else { 0.0 }
+        }
+        PointOp::Posterize(levels) => {
+            let n = (*levels).max(2) as f32;
+            let quantized = (x * (n - 1.0) + 0.5) as u32;
+            quantized as f32 / (n - 1.0)
+        }
+        PointOp::Clamp(min, max) => {
+            x.clamp(*min as f32 / 255.0, *max as f32 / 255.0)
+        }
+        PointOp::Brightness(amount) => (x + amount).clamp(0.0, 1.0),
+        PointOp::Contrast(amount) => {
+            let factor = if *amount >= 0.0 {
+                1.0 + amount * 2.0
+            } else {
+                1.0 / (1.0 - amount * 2.0)
+            };
+            (factor * (x - 0.5) + 0.5).clamp(0.0, 1.0)
+        }
+        PointOp::Solarize(threshold) => {
+            let t = *threshold as f32 / 255.0;
+            if x >= t { 1.0 - x } else { x }
+        }
+        PointOp::Levels { black, white, gamma } => {
+            let range = (white - black).max(1e-6);
+            let normalized = ((x - black) / range).clamp(0.0, 1.0);
+            normalized.powf(1.0 / gamma)
+        }
+        PointOp::SigmoidalContrast { strength, midpoint, sharpen } => {
+            if *strength < 1e-6 {
+                x
+            } else {
+                let sig = |v: f32| -> f32 { 1.0 / (1.0 + (-*strength * (v - midpoint)).exp()) };
+                let sig_0 = sig(0.0);
+                let sig_1 = sig(1.0);
+                let range = sig_1 - sig_0;
+                if *sharpen {
+                    ((sig(x) - sig_0) / range).clamp(0.0, 1.0)
+                } else {
+                    let y_scaled = x * range + sig_0;
+                    let y_clamped = y_scaled.clamp(1e-7, 1.0 - 1e-7);
+                    (*midpoint - ((1.0 - y_clamped) / y_clamped).ln() / strength).clamp(0.0, 1.0)
+                }
+            }
+        }
+        PointOp::Exposure { ev, offset, gamma_correction } => {
+            let scale = 2.0f32.powf(*ev);
+            let inv_gamma = if *gamma_correction > 0.0 { 1.0 / gamma_correction } else { 1.0 };
+            let scaled = ((x + offset) * scale).clamp(0.0, 1.0);
+            if (inv_gamma - 1.0).abs() < 1e-6 { scaled } else { scaled.powf(inv_gamma) }
+        }
+        PointOp::EvalAdd(v) => (x + *v as f32 / 255.0).clamp(0.0, 1.0),
+        PointOp::EvalSubtract(v) => (x - *v as f32 / 255.0).clamp(0.0, 1.0),
+        PointOp::EvalMultiply(f) => (x * f).clamp(0.0, 1.0),
+        PointOp::EvalDivide(f) => {
+            if f.abs() > 1e-6 { (x / f).clamp(0.0, 1.0) } else { 0.0 }
+        }
+        PointOp::EvalMin(v) => x.max(*v as f32 / 255.0),
+        PointOp::EvalMax(v) => x.min(*v as f32 / 255.0),
+        PointOp::EvalPow(p) => x.powf(*p).clamp(0.0, 1.0),
+        PointOp::EvalLog(base) => {
+            let ln_base = base.ln();
+            if ln_base.abs() < 1e-6 || *base <= 0.0 {
+                x
+            } else {
+                ((1.0 + x * (base - 1.0)).ln() / ln_base).clamp(0.0, 1.0)
+            }
+        }
+        PointOp::EvalAbs => x.abs(),
+    }
+}
+
+/// Apply a point operation directly to f32 pixel data (no LUT).
+///
+/// Pixels are stored as little-endian f32 values in [0.0, 1.0].
+/// For Rgba32f, alpha is preserved unchanged.
+pub fn apply_point_op_f32(pixels: &[u8], info: &ImageInfo, op: &PointOp) -> Result<Vec<u8>, ImageError> {
+    let samples: Vec<f32> = pixels
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect();
+
+    let ch = match info.format {
+        PixelFormat::Rgb32f => 3,
+        PixelFormat::Rgba32f => 4,
+        PixelFormat::Gray32f => 1,
+        other => return Err(ImageError::UnsupportedFormat(format!(
+            "f32 point op on {other:?} not supported"
+        ))),
+    };
+
+    let mut result = samples;
+    match ch {
+        1 => {
+            for s in result.iter_mut() {
+                *s = eval_point_op_f32(op, *s);
+            }
+        }
+        3 => {
+            for chunk in result.chunks_exact_mut(3) {
+                chunk[0] = eval_point_op_f32(op, chunk[0]);
+                chunk[1] = eval_point_op_f32(op, chunk[1]);
+                chunk[2] = eval_point_op_f32(op, chunk[2]);
+            }
+        }
+        4 => {
+            for chunk in result.chunks_exact_mut(4) {
+                chunk[0] = eval_point_op_f32(op, chunk[0]);
+                chunk[1] = eval_point_op_f32(op, chunk[1]);
+                chunk[2] = eval_point_op_f32(op, chunk[2]);
+                // chunk[3] (alpha) preserved
+            }
+        }
+        _ => unreachable!(),
+    }
+
+    Ok(result.iter().flat_map(|v| v.to_le_bytes()).collect())
+}
+
 // ─── Public convenience functions ───────────────────────────────────────────
 
-/// Apply a point operation, auto-dispatching between 8-bit and 16-bit paths.
+/// Apply a point operation, auto-dispatching between 8-bit, 16-bit, and f32 paths.
 fn apply_op(pixels: &[u8], info: &ImageInfo, op: &PointOp) -> Result<Vec<u8>, ImageError> {
-    if is_16bit(info.format) {
+    if is_f32(info.format) {
+        apply_point_op_f32(pixels, info, op)
+    } else if is_16bit(info.format) {
         let lut = build_lut_u16(op);
         apply_lut_u16(pixels, info, &lut)
     } else {
@@ -1473,5 +1615,127 @@ mod tests {
         for v in 0..=255u8 {
             assert_eq!(fused[v as usize], mul[add[v as usize] as usize]);
         }
+    }
+
+    // ── f32 point op tests ─────────────────────────────────────────────
+
+    #[test]
+    fn f32_eval_matches_lut_brightness() {
+        let op = PointOp::Brightness(0.2);
+        let lut = build_lut(&op);
+        for i in 0..=255u8 {
+            let x = i as f32 / 255.0;
+            let f32_result = eval_point_op_f32(&op, x);
+            let lut_result = lut[i as usize] as f32 / 255.0;
+            assert!(
+                (f32_result - lut_result).abs() < 0.005,
+                "brightness mismatch at {i}: f32={f32_result}, lut={lut_result}"
+            );
+        }
+    }
+
+    #[test]
+    fn f32_eval_matches_lut_gamma() {
+        let op = PointOp::Gamma(2.2);
+        let lut = build_lut(&op);
+        for i in 0..=255u8 {
+            let x = i as f32 / 255.0;
+            let f32_result = eval_point_op_f32(&op, x);
+            let lut_result = lut[i as usize] as f32 / 255.0;
+            assert!(
+                (f32_result - lut_result).abs() < 0.005,
+                "gamma mismatch at {i}: f32={f32_result}, lut={lut_result}"
+            );
+        }
+    }
+
+    #[test]
+    fn f32_eval_matches_lut_contrast() {
+        let op = PointOp::Contrast(0.5);
+        let lut = build_lut(&op);
+        for i in 0..=255u8 {
+            let x = i as f32 / 255.0;
+            let f32_result = eval_point_op_f32(&op, x);
+            let lut_result = lut[i as usize] as f32 / 255.0;
+            assert!(
+                (f32_result - lut_result).abs() < 0.005,
+                "contrast mismatch at {i}: f32={f32_result}, lut={lut_result}"
+            );
+        }
+    }
+
+    #[test]
+    fn f32_eval_matches_lut_exposure() {
+        let op = PointOp::Exposure { ev: 1.0, offset: 0.0, gamma_correction: 1.0 };
+        let lut = build_lut(&op);
+        for i in 0..=255u8 {
+            let x = i as f32 / 255.0;
+            let f32_result = eval_point_op_f32(&op, x);
+            let lut_result = lut[i as usize] as f32 / 255.0;
+            assert!(
+                (f32_result - lut_result).abs() < 0.005,
+                "exposure mismatch at {i}: f32={f32_result}, lut={lut_result}"
+            );
+        }
+    }
+
+    #[test]
+    fn f32_eval_invert_identity() {
+        let op = PointOp::Invert;
+        assert!((eval_point_op_f32(&op, 0.0) - 1.0).abs() < 1e-6);
+        assert!((eval_point_op_f32(&op, 1.0) - 0.0).abs() < 1e-6);
+        assert!((eval_point_op_f32(&op, 0.5) - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn f32_apply_point_op_rgba32f() {
+        let info = test_info(2, 1, PixelFormat::Rgba32f);
+        // 2 pixels: [0.5, 0.3, 0.7, 1.0] [0.0, 1.0, 0.5, 0.8]
+        let samples: Vec<f32> = vec![0.5, 0.3, 0.7, 1.0, 0.0, 1.0, 0.5, 0.8];
+        let pixels: Vec<u8> = samples.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let result = apply_point_op_f32(&pixels, &info, &PointOp::Invert).unwrap();
+        let out: Vec<f32> = result
+            .chunks_exact(4)
+            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect();
+        // R,G,B inverted; alpha preserved
+        assert!((out[0] - 0.5).abs() < 1e-6);
+        assert!((out[1] - 0.7).abs() < 1e-6);
+        assert!((out[2] - 0.3).abs() < 1e-6);
+        assert!((out[3] - 1.0).abs() < 1e-6); // alpha unchanged
+        assert!((out[4] - 1.0).abs() < 1e-6);
+        assert!((out[5] - 0.0).abs() < 1e-6);
+        assert!((out[6] - 0.5).abs() < 1e-6);
+        assert!((out[7] - 0.8).abs() < 1e-6); // alpha unchanged
+    }
+
+    #[test]
+    fn f32_apply_point_op_rgb32f() {
+        let info = test_info(1, 1, PixelFormat::Rgb32f);
+        let samples: Vec<f32> = vec![0.2, 0.5, 0.8];
+        let pixels: Vec<u8> = samples.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let result = apply_point_op_f32(&pixels, &info, &PointOp::Brightness(0.1)).unwrap();
+        let out: Vec<f32> = result
+            .chunks_exact(4)
+            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect();
+        assert!((out[0] - 0.3).abs() < 1e-5);
+        assert!((out[1] - 0.6).abs() < 1e-5);
+        assert!((out[2] - 0.9).abs() < 1e-5);
+    }
+
+    #[test]
+    fn f32_apply_point_op_gray32f() {
+        let info = test_info(3, 1, PixelFormat::Gray32f);
+        let samples: Vec<f32> = vec![0.0, 0.5, 1.0];
+        let pixels: Vec<u8> = samples.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let result = apply_point_op_f32(&pixels, &info, &PointOp::Gamma(2.2)).unwrap();
+        let out: Vec<f32> = result
+            .chunks_exact(4)
+            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect();
+        assert!((out[0] - 0.0).abs() < 1e-6);
+        assert!(out[1] > 0.5, "gamma 2.2 should brighten midtones");
+        assert!((out[2] - 1.0).abs() < 1e-6);
     }
 }

@@ -33,40 +33,57 @@ use super::types::{ImageInfo, PixelFormat};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
-/// Apply an f32 RGB transform function to a u8 pixel buffer.
+/// Apply an f32 RGB transform function to a pixel buffer.
+///
+/// Supports 8-bit (Rgb8/Rgba8) and 32-bit float (Rgb32f/Rgba32f) formats.
+/// For f32 format, samples are already in [0,1] — no conversion overhead.
 pub(crate) fn apply_rgb_transform(
     pixels: &[u8],
     info: &ImageInfo,
     f: impl Fn(f32, f32, f32) -> (f32, f32, f32),
 ) -> Result<Vec<u8>, ImageError> {
-    let bpp = match info.format {
-        PixelFormat::Rgb8 => 3,
-        PixelFormat::Rgba8 => 4,
-        _ => {
-            return Err(ImageError::UnsupportedFormat(
-                "color grading requires RGB8 or RGBA8".into(),
-            ));
+    match info.format {
+        PixelFormat::Rgb32f | PixelFormat::Rgba32f => {
+            let ch = if info.format == PixelFormat::Rgba32f { 4 } else { 3 };
+            let mut samples: Vec<f32> = pixels
+                .chunks_exact(4)
+                .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                .collect();
+            for chunk in samples.chunks_exact_mut(ch) {
+                let (or, og, ob) = f(chunk[0], chunk[1], chunk[2]);
+                chunk[0] = or;
+                chunk[1] = og;
+                chunk[2] = ob;
+                // alpha (chunk[3] if ch==4) preserved
+            }
+            Ok(samples.iter().flat_map(|v| v.to_le_bytes()).collect())
         }
-    };
-    let expected = info.width as usize * info.height as usize * bpp;
-    if pixels.len() < expected {
-        return Err(ImageError::InvalidParameters("pixel data too small".into()));
-    }
+        PixelFormat::Rgb8 | PixelFormat::Rgba8 => {
+            let bpp = if info.format == PixelFormat::Rgba8 { 4 } else { 3 };
+            let expected = info.width as usize * info.height as usize * bpp;
+            if pixels.len() < expected {
+                return Err(ImageError::InvalidParameters("pixel data too small".into()));
+            }
 
-    let mut out = vec![0u8; pixels.len()];
-    for i in (0..expected).step_by(bpp) {
-        let r = pixels[i] as f32 / 255.0;
-        let g = pixels[i + 1] as f32 / 255.0;
-        let b = pixels[i + 2] as f32 / 255.0;
-        let (or, og, ob) = f(r, g, b);
-        out[i] = (or * 255.0).round().clamp(0.0, 255.0) as u8;
-        out[i + 1] = (og * 255.0).round().clamp(0.0, 255.0) as u8;
-        out[i + 2] = (ob * 255.0).round().clamp(0.0, 255.0) as u8;
-        if bpp == 4 {
-            out[i + 3] = pixels[i + 3]; // preserve alpha
+            let mut out = vec![0u8; pixels.len()];
+            for i in (0..expected).step_by(bpp) {
+                let r = pixels[i] as f32 / 255.0;
+                let g = pixels[i + 1] as f32 / 255.0;
+                let b = pixels[i + 2] as f32 / 255.0;
+                let (or, og, ob) = f(r, g, b);
+                out[i] = (or * 255.0).round().clamp(0.0, 255.0) as u8;
+                out[i + 1] = (og * 255.0).round().clamp(0.0, 255.0) as u8;
+                out[i + 2] = (ob * 255.0).round().clamp(0.0, 255.0) as u8;
+                if bpp == 4 {
+                    out[i + 3] = pixels[i + 3]; // preserve alpha
+                }
+            }
+            Ok(out)
         }
+        _ => Err(ImageError::UnsupportedFormat(
+            "color grading requires RGB8, RGBA8, Rgb32f, or Rgba32f".into(),
+        )),
     }
-    Ok(out)
 }
 
 // ─── HSL Conversion Helpers ──────────────────────────────────────────────

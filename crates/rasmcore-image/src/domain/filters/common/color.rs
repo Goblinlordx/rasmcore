@@ -10,8 +10,25 @@ use super::*;
 /// normalized (R,G,B). For pipeline use, ColorOpNode builds a CLUT instead.
 pub fn apply_color_op(pixels: &[u8], info: &ImageInfo, op: &ColorOp) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
-    if info.format == PixelFormat::Gray8 || info.format == PixelFormat::Gray16 {
+    if info.format == PixelFormat::Gray8
+        || info.format == PixelFormat::Gray16
+        || info.format == PixelFormat::Gray32f
+    {
         return Ok(pixels.to_vec());
+    }
+
+    // f32 color operations: samples are already in [0,1], no conversion needed
+    if is_f32(info.format) {
+        let ch = channels(info.format);
+        let mut samples = bytes_to_f32(pixels);
+        for chunk in samples.chunks_exact_mut(ch) {
+            let (r, g, b) = op.apply(chunk[0], chunk[1], chunk[2]);
+            chunk[0] = r;
+            chunk[1] = g;
+            chunk[2] = b;
+            // alpha (chunk[3] if ch==4) preserved
+        }
+        return Ok(f32_to_bytes(&samples));
     }
 
     // 16-bit color operations: work in f32 [0,1] range
