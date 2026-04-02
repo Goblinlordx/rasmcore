@@ -1,139 +1,104 @@
 id: ml-plugin-architecture_20260402061336Z
-title: "Research: ML plugin system architecture — WIT interface, remote bundles, host execution"
+title: "Research: ML execution system — host-provided inference via WIT (parallel to GPU)"
 type: research
 status: pending
 created: '2026-04-02'
 updated: '2026-04-02'
 spec:
   summary: |
-    Design the ML/AI plugin system for rasmcore. Define WIT ml-execute interface
-    (mirroring gpu-execute pattern), remote model bundle format and loading
-    mechanism, and host executor traits for ONNX Runtime/CoreML/WebNN backends.
+    Design the ML/AI execution system for rasmcore. This is a host-provided
+    capability (like GPU) that any node — built-in or plugin — can declare.
+    Define WIT ml-execute interface, MlOp type, host executor traits, and
+    remote model bundle format.
   context: |
-    rasmcore currently uses two extension patterns:
-    1. Compile-time composition: Cargo crates + inventory registration + codegen.
-       Excellent for WASM distribution — single .wasm component with everything
-       baked in. This is how all filters, codecs, and transforms work today.
-    2. Host-provided capabilities: GPU execution via WIT import. WASM emits
-       GpuOp descriptors (shader + params), host executes them. Optional —
-       falls back to CPU if host doesn't provide GPU.
+    ML execution is architecturally identical to GPU execution:
+    - GPU: node declares GpuCapable, emits GpuOp (shader + params), host
+      executes via wgpu/WebGPU, returns pixels
+    - ML: node declares MlCapable, emits MlOp (model ref + tensor + params),
+      host executes via ONNX Runtime/CoreML/WebNN, returns tensor
 
-    ML/AI features need a third pattern: host-provided execution (like GPU)
-    combined with remote plugin bundles (models are too large to compile in).
+    Both run OUTSIDE the engine. Both are optional host capabilities. Both
+    can be declared by any node — whether that node is a compiled-in Rust
+    filter or a dynamically loaded plugin (see separate plugin node track).
 
-    Key distinction from current architecture:
-    - Compiled-in extensions are great for deterministic image processing ops
-      (small code, no external data, runs everywhere)
-    - ML models are large (2MB-500MB), platform-dependent (ONNX vs CoreML vs
-      TFLite), and updated independently of the engine
-    - Models should be fetched on demand, cached locally, and loaded by the
-      host runtime — not compiled into the WASM component
+    Key difference from GPU: ML models are large (2MB-500MB) and must be
+    fetched on demand as remote bundles, not compiled in. The host manages
+    model storage, download, and caching.
 
-    The user specifically noted: compiled-in is far nicer for distribution in
-    WASM (high-perf functionality in browser easily), while heavy-duty ML
-    functionality can be provided via remote bundles pulled in on demand.
+    This track is ONLY about the ML execution capability. The plugin node
+    system (loading external .wasm components as pipeline nodes) is a
+    separate track.
   codebase_analysis: |
-    Existing patterns to mirror:
-
-    GPU pattern (wit/core/gpu.wit):
-    - GpuOp type: shader source + entry point + workgroup size + params + extra buffers
+    GPU pattern to mirror (wit/core/gpu.wit):
+    - GpuOp type: shader source + entry point + workgroup size + params
     - gpu-execute(ops, input, w, h) -> result<bytes, error>
-    - Host implements GpuExecutor trait (wgpu on native, WebGPU in browser)
-    - Filters implement GpuCapable trait returning Option<Vec<GpuOp>>
-    - Fallback: if gpu_ops() returns None or host lacks GPU, use CPU path
+    - Host implements GpuExecutor trait
+    - Nodes implement GpuCapable trait returning Option<Vec<GpuOp>>
+    - Fallback: CPU path if GPU unavailable
 
-    Codec sidecar pattern:
-    - Separate Cargo crates, linked at compile time
-    - Discovery via supported-codecs() with is-patent-encumbered flag
-    - No runtime loading currently
+    ML parallel:
+    - MlOp type: model-ref + input tensor + params + output format
+    - ml-execute(op) -> result<bytes, error>
+    - Host implements MlExecutor trait (ONNX/CoreML/WebNN)
+    - Nodes implement MlCapable trait returning Option<MlOp>
+    - No CPU fallback for ML-only features (unlike GPU)
 
-    Plugin discovery:
-    - list_filters() / get-filter-manifest() for introspection
-    - Build-time codegen from register_filter macro
-    - No runtime plugin loading exists today
-
-    WIT interface organization:
-    - core/: shared types, errors, gpu
-    - codec/: encoder, decoder resources
-    - image/: pipeline, filters, transforms
-    - ML would be: core/ml.wit (new, parallel to gpu.wit)
+    Any node type can declare MlCapable — built-in Rust filters,
+    compiled-in crate extensions, or dynamically loaded plugin nodes.
   acceptance_criteria:
-    - Architecture document covering ML plugin system design
     - WIT ml-execute interface specification (parallel to gpu-execute)
-    - MlOp type definition (model reference + input tensor + params + output format)
-    - MlCapable trait design for filters to declare ML acceleration
-    - Remote bundle format specification (what ships in a bundle, versioning, integrity)
-    - Bundle loading protocol (discovery, download, cache, verification)
-    - Host executor trait design for multiple backends (ONNX, CoreML, WebNN)
-    - Platform matrix showing which backend runs where (native, browser, mobile)
-    - Comparison of compiled-in vs remote bundle tradeoffs
-    - Security considerations (model integrity, sandboxing, resource limits)
-    - Concrete example showing background-removal filter wired through the system
+    - MlOp type definition (model-ref + input tensor + output format + params)
+    - MlCapable trait for nodes to declare ML acceleration
+    - Remote model bundle format (ONNX model + manifest with sha256, version, I/O specs)
+    - Bundle loading protocol (discovery URL, download, cache, integrity check)
+    - Host executor trait for multiple backends (ONNX Runtime, CoreML, WebNN)
+    - Platform matrix (which backend on which platform)
+    - ml-capabilities() discovery interface (host reports available models)
+    - Security considerations (model integrity, resource limits, sandboxing)
+    - Concrete example showing background-removal node using MlCapable
+    - Architecture document to .agent/kf/_reports/ml-execution-architecture.md
   out_of_scope: |
-    Implementing any code. Choosing specific models. Training or fine-tuning.
-    Building the actual ONNX/CoreML/WebNN integrations (separate tracks).
-    Building the remote bundle registry/CDN infrastructure.
+    Plugin node system (loading external .wasm as pipeline nodes — separate track).
+    Implementing code. Choosing specific models. Training models.
+    Building ONNX/CoreML/WebNN integrations (implementation tracks).
+    Building model registry/CDN infrastructure.
   technical_notes: |
-    Research approach:
-
-    Phase 1 — Analyze existing patterns:
-    - Document GPU executor flow end-to-end (filter -> GpuOp -> host -> result)
-    - Document codec sidecar distribution model
-    - Identify what maps to ML and what doesn't
-
-    Phase 2 — Design ML system:
-
-    WIT interface (core/ml.wit):
+    WIT interface (core/ml.wit — parallel to core/gpu.wit):
     - ml-execute(op: ml-op) -> result<list<u8>, ml-error>
-    - ml-op: model-ref (name + version), input tensor (bytes + shape + dtype),
-      output-format (shape + dtype), params (key-value)
-    - model-ref is a name+version string, NOT the model bytes
-    - Host resolves model-ref to actual model file (local cache or remote fetch)
+    - ml-op: model-ref (name + version string), input (bytes + shape + dtype),
+      output-format (shape + dtype), params (key-value pairs)
+    - model-ref is a name+version, NOT model bytes — host resolves to file
+    - ml-capabilities() -> list<ml-capability-info> for discovery
 
-    MlCapable trait:
+    MlCapable trait (parallel to GpuCapable):
     - fn ml_op(&self, input, w, h) -> Option<MlOp>
-    - Returns None if ML not available or not beneficial for this input
-    - Filter has NO fallback (unlike GPU) — ML features are ML-only
+    - Returns None if ML not beneficial for this input
+    - No CPU fallback — ML features are ML-only
 
-    Remote bundle format:
-    - Bundle = model file (ONNX) + manifest.json (name, version, input/output
-      specs, min runtime version, license, size, sha256)
-    - Bundles hosted at a registry URL (configurable)
-    - Host downloads on first use, caches in platform-appropriate location
-    - Integrity via sha256 hash in manifest
+    Remote model bundles:
+    - Bundle = ONNX model file + manifest.json
+    - Manifest: name, version, input/output tensor specs, sha256, size, license
+    - Host downloads on first use, caches locally
+    - Host picks best execution provider per platform
 
     Host executor backends:
-    - Native (CLI/desktop): onnxruntime crate (DirectML/CUDA/CoreML EP)
+    - Native: onnxruntime crate (DirectML/CUDA/CoreML EP)
     - Browser: onnxruntime-web with WebNN backend (Chrome 124+)
-    - Mobile: platform-native (CoreML on iOS, NNAPI on Android)
-    - Fallback: onnxruntime CPU EP (always available, slow)
-
-    Key design questions to resolve:
-    1. Should MlOp carry the model bytes or just a reference?
-       -> Reference (name+version). Host manages model storage.
-    2. Should the WASM component know about model format (ONNX vs CoreML)?
-       -> No. Component emits model-ref. Host picks the best format.
-    3. How does the host report available ML capabilities?
-       -> ml-capabilities() -> list<string> (e.g., "background-remove", "super-resolution")
-    4. Tensor format: raw bytes with shape metadata, or typed arrays?
-       -> Raw bytes + TensorDesc (shape, dtype). Keeps WIT simple.
-    5. Can multiple models be chained in one ml-execute call (like GPU ops)?
-       -> V1: single model per call. V2: chained ops if needed.
+    - Mobile: CoreML (iOS), NNAPI (Android)
+    - Fallback: onnxruntime CPU EP
 plan:
   - phase: Research existing patterns
     tasks:
-      - text: Document GPU executor flow end-to-end with all type definitions
+      - text: Document GPU executor flow end-to-end (GpuCapable -> GpuOp -> host -> result)
         done: false
-      - text: Document codec sidecar distribution model and discovery pattern
-        done: false
-      - text: Survey WebNN status, ONNX Runtime Web capabilities, and browser support matrix
+      - text: Survey WebNN status, ONNX Runtime Web, and browser support matrix
         done: false
   - phase: Design and document
     tasks:
-      - text: Design WIT ml-execute interface and MlOp type (parallel to gpu-execute)
+      - text: Design WIT ml-execute interface, MlOp type, MlCapable trait
         done: false
-      - text: Design remote bundle format, loading protocol, and caching strategy
+      - text: Design remote model bundle format and loading protocol
         done: false
-      - text: Write architecture document to .agent/kf/_reports/ml-plugin-architecture.md with full design, examples, and tradeoff analysis
+      - text: Write architecture document to .agent/kf/_reports/ml-execution-architecture.md
         done: false
 extra: {}

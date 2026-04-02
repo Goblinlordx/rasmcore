@@ -1,0 +1,147 @@
+id: plugin-node-system_20260402064200Z
+title: "Research: Plugin node system — external .wasm components as pipeline nodes"
+type: research
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Design the plugin node system that allows external .wasm components to be
+    loaded as pipeline nodes at runtime. Plugin nodes implement the same
+    interface as built-in Rust nodes and can declare all the same capabilities
+    (point-op/LUT fusion, GpuCapable, MlCapable).
+  context: |
+    Currently all pipeline nodes are compiled-in Rust code. Compiled-in is
+    excellent for WASM distribution — single component, high performance,
+    everything baked in. But it means adding a new filter requires rebuilding
+    the entire component.
+
+    A plugin node system would allow:
+    - Third-party filter development without rebuilding rasmcore
+    - Large/specialized filters distributed as remote bundles
+    - Community plugin ecosystem
+    - Hot-loading new capabilities at runtime
+
+    A plugin node is NOT a lesser node. It implements the exact same WIT
+    interface as built-in nodes. It can declare:
+    - Point-op (provide LUT for LUT fusion optimization)
+    - GpuCapable (provide WGSL shader for GPU dispatch)
+    - MlCapable (provide model-ref for ML dispatch)
+    - Spatial op, generator, transform, encoder, decoder — any node type
+
+    The pipeline graph treats plugin nodes identically to built-in nodes.
+    The only difference is WHERE the implementation comes from:
+    - Built-in: compiled into the core .wasm component
+    - Plugin: loaded from a separate .wasm file at runtime
+
+    The host already has a WASM runtime (wasmtime for CLI, browser native
+    WASM for web). Loading a second .wasm module is not embedding an
+    interpreter — it uses the same runtime that runs the core component.
+    Zero size overhead in the core component.
+  codebase_analysis: |
+    Current node interface (what plugins must implement):
+
+    Pipeline node contract:
+    - compute_region(request: Rect, upstream: fn(Rect) -> pixels) -> pixels
+    - Config params (ConfigParams struct with typed fields)
+    - Node metadata (name, category, point_op flag, reference description)
+
+    Capability declarations (optional, plugins can declare any/all):
+    - LutPointOp: build_point_lut() -> [u8; 256] — enables LUT fusion
+    - GpuCapable: gpu_ops(w, h) -> Option<Vec<GpuOp>> — enables GPU dispatch
+    - MlCapable: ml_op(input, w, h) -> Option<MlOp> — enables ML dispatch
+      (proposed in separate ML execution track)
+
+    Registration system:
+    - Built-in: #[register_filter] macro + inventory::submit! at compile time
+    - Plugin: host registers the plugin node at runtime via discovery
+
+    Discovery/introspection:
+    - list_filters() returns all registered filters
+    - get-filter-manifest() returns JSON with param schemas
+    - Plugin nodes would appear in these lists after loading
+
+    WIT interface for plugins (new — defines what a plugin .wasm exports):
+    - Same types as the core pipeline node interface
+    - Plugin exports: compute-region, get-manifest, get-config-schema
+    - Plugin imports: upstream pixel access (host provides)
+    - Plugin optionally exports: build-point-lut, gpu-ops, ml-op
+  acceptance_criteria:
+    - Plugin node WIT interface specification (what a plugin .wasm must export)
+    - Plugin discovery protocol (how host finds and loads plugins)
+    - Remote plugin bundle format (.wasm + manifest with name, version, sha256, params schema)
+    - Plugin loading flow for CLI host (wasmtime component loading)
+    - Plugin loading flow for browser host (WebAssembly.instantiate)
+    - How plugin nodes integrate with pipeline graph (identical to built-in nodes)
+    - How plugins declare point-op / LUT fusion capability
+    - How plugins declare GpuCapable (provide shader source)
+    - How plugins declare MlCapable (provide model reference)
+    - Security model (sandboxing, resource limits, capability permissions)
+    - Performance analysis (cross-component call overhead for pixel buffers)
+    - Concrete example showing a custom filter plugin end-to-end
+    - Architecture document to .agent/kf/_reports/plugin-node-architecture.md
+  out_of_scope: |
+    ML execution system (separate track — ml-plugin-architecture).
+    Implementing code. Building plugin SDK/toolchain.
+    Plugin marketplace/registry infrastructure.
+    Scripting languages (Lua, Rhai) — plugins are compiled .wasm, not scripts.
+  technical_notes: |
+    Key design questions:
+
+    1. Plugin WIT interface granularity:
+       - Option A: Plugin exports a single "filter" interface (1 filter per .wasm)
+       - Option B: Plugin exports a "filter-pack" interface (N filters per .wasm)
+       -> Likely B for distribution efficiency, A for simplicity
+
+    2. Pixel buffer transfer:
+       - Cross-component calls in WASM Component Model copy data
+       - For large images this is significant overhead
+       - Mitigation: shared-nothing is the security model, copying is correct
+       - Mitigation: tile-based pipeline means buffers are tile-sized, not full image
+       -> Tile pipeline naturally limits copy overhead
+
+    3. Plugin capability declarations:
+       - Point-op: plugin exports build-point-lut() -> list<u8> (256 entries)
+         Pipeline can fuse this LUT with adjacent point-ops, same as built-in
+       - GpuCapable: plugin exports gpu-ops(w, h) -> option<list<gpu-op>>
+         Returns WGSL shader source + params, host dispatches to GPU
+       - MlCapable: plugin exports ml-op(w, h) -> option<ml-op>
+         Returns model-ref + params, host dispatches to ML runtime
+       - These are optional exports. Plugin without them = CPU-only node.
+
+    4. Config params:
+       - Plugin exports get-config-schema() -> JSON schema
+       - Host validates config against schema before passing to plugin
+       - Same param types as built-in ConfigParams (f32, u8, bool, enum, etc.)
+
+    5. Plugin loading:
+       - CLI: wasmtime Component::from_file("plugin.wasm")
+       - Browser: fetch("plugin.wasm") -> WebAssembly.instantiate()
+       - Both: plugin appears in filter list, available to pipeline graph
+
+    6. Distribution:
+       - Plugin bundle = .wasm file + manifest.json
+       - Manifest: name, version, author, filters[], sha256, size, min-engine-version
+       - Hosted at configurable registry URL
+       - Downloaded on demand, cached locally
+       - Same bundle format as ML model bundles (unified remote bundle system)
+plan:
+  - phase: Research
+    tasks:
+      - text: Document current node interface contract (compute_region, ConfigParams, capabilities)
+        done: false
+      - text: Analyze WASM Component Model cross-component call overhead for pixel buffers
+        done: false
+      - text: Survey WASM component composition patterns (wasmtime, browser)
+        done: false
+  - phase: Design and document
+    tasks:
+      - text: Design plugin node WIT interface (exports, imports, capability declarations)
+        done: false
+      - text: Design plugin bundle format and loading protocol
+        done: false
+      - text: Design plugin integration with LUT fusion, GPU, and ML capability systems
+        done: false
+      - text: Write architecture document to .agent/kf/_reports/plugin-node-architecture.md
+        done: false
+extra: {}
