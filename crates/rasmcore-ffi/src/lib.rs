@@ -232,10 +232,14 @@ pub extern "C" fn rasmcore_filter(
         };
 
         let info = pipe.graph.node_info(source).map_err(|e| e.to_string())?;
-        let node =
+        let (node, gpu) =
             rasmcore_image::domain::pipeline::dispatch::dispatch_filter(name, source, info, &params)
                 .map_err(|e| e.to_string())?;
-        Ok(pipe.graph.add_node(node))
+        let id = pipe.graph.add_node(node);
+        if let Some(gpu_node) = gpu {
+            pipe.graph.register_gpu(id, gpu_node);
+        }
+        Ok(id)
     })
 }
 

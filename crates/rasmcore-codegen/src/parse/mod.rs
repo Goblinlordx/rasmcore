@@ -88,6 +88,7 @@ pub fn parse_source_files(
         param_structs: all_params,
         transforms: Vec::new(),
         encoders: Vec::new(),
+        gpu_capable_nodes: std::collections::HashSet::new(),
     }
 }
 

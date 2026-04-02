@@ -1,15 +1,19 @@
 //! Generate CLI dispatch function — maps filter/mapper name + string params to typed node construction.
 
 use crate::types::{FilterReg, MapperReg};
+use std::collections::HashSet;
 
 use super::helpers::to_pascal_case;
 
 /// Generate a dispatch function that creates pipeline nodes from name + string params.
 ///
 /// Produces `generated_cli_dispatch.rs` with:
-/// - `dispatch_filter(name, upstream, info, params) -> Result<Box<dyn ImageNode>, String>`
+/// - `dispatch_filter(name, upstream, info, params) -> Result<(Box<dyn ImageNode>, Option<Box<dyn GpuCapable>>), String>`
 /// - `list_filters() -> Vec<FilterMeta>` for --list-filters
-pub fn generate(filters: &[FilterReg], mappers: &[MapperReg]) -> String {
+///
+/// `gpu_capable_nodes` is the set of node names (e.g., "BlurNode") that have
+/// `GpuCapable` impls. For these, the dispatch creates a second instance for GPU registration.
+pub fn generate(filters: &[FilterReg], mappers: &[MapperReg], gpu_capable_nodes: &HashSet<String>) -> String {
     let mut code = String::new();
     code.push_str(
         "// Auto-generated CLI dispatch — maps filter names to typed node constructors.\n",
@@ -19,6 +23,7 @@ pub fn generate(filters: &[FilterReg], mappers: &[MapperReg]) -> String {
     code.push_str("#[allow(unused_imports)] use crate::domain::pipeline::nodes::filters;\n");
     code.push_str("#[allow(unused_imports)] use crate::domain::filters as domain_filters;\n");
     code.push_str("#[allow(unused_imports)] use crate::domain::types::ImageInfo;\n");
+    code.push_str("#[allow(unused_imports)] use rasmcore_pipeline::GpuCapable;\n");
     code.push_str("#[allow(unused_imports)] use std::collections::HashMap;\n\n");
 
     // Helper to parse typed values from string
@@ -129,12 +134,13 @@ pub fn generate(filters: &[FilterReg], mappers: &[MapperReg]) -> String {
 
     // Main dispatch function
     code.push_str("/// Dispatch a filter by name: parse string params, construct typed node.\n");
+    code.push_str("/// Returns (node, gpu_capable) — gpu_capable is Some for GPU-accelerated filters.\n");
     code.push_str("pub fn dispatch_filter(\n");
     code.push_str("    name: &str,\n");
     code.push_str("    upstream: u32,\n");
     code.push_str("    info: ImageInfo,\n");
     code.push_str("    params: &HashMap<String, String>,\n");
-    code.push_str(") -> Result<Box<dyn ImageNode>, String> {\n");
+    code.push_str(") -> Result<(Box<dyn ImageNode>, Option<Box<dyn GpuCapable>>), String> {\n");
     code.push_str("    match name {\n");
 
     for f in filters {
@@ -178,10 +184,18 @@ pub fn generate(filters: &[FilterReg], mappers: &[MapperReg]) -> String {
             format!(", {}", param_args.join(", "))
         };
 
-        code.push_str(&format!(
-            "        \"{}\" => Ok(Box::new(filters::{node_name}::new(upstream, info{args_joined}))),\n",
-            f.name
-        ));
+        if gpu_capable_nodes.contains(&node_name) {
+            // GPU-capable: create node + GPU duplicate
+            code.push_str(&format!(
+                "        \"{}\" => Ok((Box::new(filters::{node_name}::new(upstream, info.clone(){args_joined})), Some(Box::new(filters::{node_name}::new(upstream, info{args_joined}))))),\n",
+                f.name
+            ));
+        } else {
+            code.push_str(&format!(
+                "        \"{}\" => Ok((Box::new(filters::{node_name}::new(upstream, info{args_joined})), None)),\n",
+                f.name
+            ));
+        }
     }
 
     // Mapper dispatch arms — mappers are also dispatched by name
@@ -215,8 +229,9 @@ pub fn generate(filters: &[FilterReg], mappers: &[MapperReg]) -> String {
             format!(", {}", param_args.join(", "))
         };
 
+        // Mappers are never GPU-capable (no GpuCapable impls)
         code.push_str(&format!(
-            "        \"{}\" => Ok(Box::new(filters::{node_name}::new(upstream, info{args_joined}))),\n",
+            "        \"{}\" => Ok((Box::new(filters::{node_name}::new(upstream, info{args_joined})), None)),\n",
             m.name
         ));
     }

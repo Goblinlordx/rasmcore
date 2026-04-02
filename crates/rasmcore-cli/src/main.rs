@@ -135,8 +135,14 @@ fn parse_args(args: &[String]) -> Result<Vec<CliCommand>, String> {
 
 // ─── Graph Builder ──────────────────────────────────────────────────────────
 
-fn build_and_execute(commands: Vec<CliCommand>) -> Result<(), String> {
+fn build_and_execute(
+    commands: Vec<CliCommand>,
+    gpu_executor: Option<std::rc::Rc<dyn rasmcore_pipeline::GpuExecutor>>,
+) -> Result<(), String> {
     let mut graph = NodeGraph::new(64 * 1024 * 1024); // 64MB spatial cache
+    if let Some(executor) = gpu_executor {
+        graph.set_gpu_executor(executor);
+    }
     let mut active_node: Option<u32> = None;
     let mut refs: HashMap<String, u32> = HashMap::new();
 
@@ -185,11 +191,14 @@ fn build_and_execute(commands: Vec<CliCommand>) -> Result<(), String> {
                 // For composite-style ops, we'd need special handling.
                 // For now, node-ref params are handled by the caller.
 
-                let node = dispatch::dispatch_filter(name, upstream, info, &resolved_params)
+                let (node, gpu) = dispatch::dispatch_filter(name, upstream, info, &resolved_params)
                     .map_err(|e| format!("Filter -{name}: {e}"))?;
                 let id = graph.add_node(node);
+                if let Some(gpu_node) = gpu {
+                    graph.register_gpu(id, gpu_node);
+                }
                 active_node = Some(id);
-                eprintln!("  [{name}] → node {id}");
+                eprintln!("  [{name}] → node {id}{}", if graph.has_gpu(id) { " (GPU)" } else { "" });
             }
 
             CliCommand::Ref(name) => {
@@ -302,7 +311,7 @@ fn main() {
 
     // GPU initialization
     #[cfg(feature = "gpu")]
-    {
+    let gpu_executor: Option<std::rc::Rc<dyn rasmcore_pipeline::GpuExecutor>> = {
         let force_gpu = args.iter().any(|a| a == "--gpu");
         let no_gpu = args.iter().any(|a| a == "--no-gpu");
 
@@ -310,8 +319,7 @@ fn main() {
             match gpu_executor::WgpuExecutor::try_new() {
                 Ok(exec) => {
                     eprintln!("GPU: {} (ready)", exec.adapter_name());
-                    // TODO: pass executor to graph walker when GPU-capable nodes exist
-                    let _ = exec; // suppress unused warning for now
+                    Some(std::rc::Rc::new(exec))
                 }
                 Err(e) => {
                     if force_gpu {
@@ -319,12 +327,17 @@ fn main() {
                         process::exit(1);
                     }
                     eprintln!("GPU: not available, using CPU ({e})");
+                    None
                 }
             }
         } else {
             eprintln!("GPU: disabled (--no-gpu)");
+            None
         }
-    }
+    };
+
+    #[cfg(not(feature = "gpu"))]
+    let gpu_executor: Option<std::rc::Rc<dyn rasmcore_pipeline::GpuExecutor>> = None;
 
     let commands = match parse_args(&args) {
         Ok(cmds) => cmds,
@@ -340,7 +353,7 @@ fn main() {
         match cmd {
             CliCommand::Ref(name) => defined_refs.push(name.clone()),
             CliCommand::Filter { params, .. } => {
-                for val in params.values() {
+                for _val in params.values() {
                     // If the value looks like a ref name (no digits, no dots, no slashes),
                     // check it's defined. But don't error here — it might be a literal string.
                     // Full validation would need the filter's param type info.
@@ -350,7 +363,7 @@ fn main() {
         }
     }
 
-    if let Err(e) = build_and_execute(commands) {
+    if let Err(e) = build_and_execute(commands, gpu_executor) {
         eprintln!("Error: {e}");
         process::exit(1);
     }

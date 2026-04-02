@@ -243,6 +243,7 @@ mod tests {
             param_structs: std::collections::HashMap::new(),
             transforms: vec![],
             encoders: vec![],
+            gpu_capable_nodes: std::collections::HashSet::new(),
         };
 
         let json_str = generate(&data);
@@ -264,6 +265,7 @@ mod tests {
             param_structs: std::collections::HashMap::new(),
             transforms: vec![],
             encoders: vec![],
+            gpu_capable_nodes: std::collections::HashSet::new(),
         };
         let json_str = generate(&data);
         let parsed: Value = serde_json::from_str(&json_str).unwrap();

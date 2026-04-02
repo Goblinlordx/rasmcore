@@ -62,7 +62,7 @@ pub fn generate_all(data: &CodegenData, out_dir: &Path) {
     fs::write(out_dir.join("generated_sdk_rust.rs"), &sdk_rs).unwrap();
 
     // CLI dispatch table (filters + mappers)
-    let cli_dispatch = cli_dispatch::generate(&data.filters, &data.mappers);
+    let cli_dispatch = cli_dispatch::generate(&data.filters, &data.mappers, &data.gpu_capable_nodes);
     fs::write(out_dir.join("generated_cli_dispatch.rs"), &cli_dispatch).unwrap();
 
     // WIT declarations (to stderr for review)

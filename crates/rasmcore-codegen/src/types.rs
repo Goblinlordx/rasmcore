@@ -117,4 +117,6 @@ pub struct CodegenData {
     pub param_structs: std::collections::HashMap<String, Vec<ParamField>>,
     pub transforms: Vec<crate::parse::transforms::TransformReg>,
     pub encoders: Vec<crate::parse::encoders::EncoderInfo>,
+    /// Node names (e.g., "BlurNode") with GpuCapable impls — detected from gpu_impls.rs.
+    pub gpu_capable_nodes: std::collections::HashSet<String>,
 }

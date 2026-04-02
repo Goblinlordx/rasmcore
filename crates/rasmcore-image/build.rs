@@ -118,6 +118,25 @@ fn main() {
         }
     }
 
+    // Detect GPU-capable nodes by scanning gpu_impls.rs for GpuCapable impls
+    let gpu_impls_path = Path::new(&manifest_dir).join("src/domain/pipeline/nodes/gpu_impls.rs");
+    println!("cargo:rerun-if-changed=src/domain/pipeline/nodes/gpu_impls.rs");
+    if gpu_impls_path.exists() {
+        let gpu_src = fs::read_to_string(&gpu_impls_path).unwrap_or_default();
+        // Match "impl GpuCapable for XyzNode" patterns
+        for line in gpu_src.lines() {
+            let trimmed = line.trim();
+            if let Some(rest) = trimmed.strip_prefix("impl GpuCapable for ") {
+                let token = rest.split_whitespace().next().unwrap_or("");
+                let node_name = token.strip_suffix('{').unwrap_or(token);
+                if !node_name.is_empty() {
+                    data.gpu_capable_nodes.insert(node_name.to_string());
+                }
+            }
+        }
+        eprintln!("rasmcore build.rs: {} GPU-capable node(s) detected", data.gpu_capable_nodes.len());
+    }
+
     // Duplicate filter name detection — fail at compile time
     {
         let mut seen: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();

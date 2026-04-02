@@ -809,6 +809,11 @@ impl NodeGraph {
         self.gpu_executor = Some(executor);
     }
 
+    /// Check if a node has registered GPU capability.
+    pub fn has_gpu(&self, node_id: u32) -> bool {
+        self.gpu_nodes.get(node_id as usize).is_some_and(|g| g.is_some())
+    }
+
     /// Add a node that derives its metadata from an upstream node.
     ///
     /// Calls `node.derive_metadata(&upstream_meta)` — if `Some(meta)` is returned,
@@ -1471,14 +1476,17 @@ pub fn execute_from_description(
 
                 // Dispatch to filter factory using node name
                 let params = std::collections::HashMap::new();
-                let node = crate::domain::pipeline::dispatch::dispatch_filter(
+                let (node, gpu) = crate::domain::pipeline::dispatch::dispatch_filter(
                     &desc.name,
                     upstream,
                     upstream_info,
                     &params,
                 )
                 .map_err(ImageError::InvalidParameters)?;
-                graph.add_node(node);
+                let id = graph.add_node(node);
+                if let Some(gpu_node) = gpu {
+                    graph.register_gpu(id, gpu_node);
+                }
             }
             NodeKind::Transform => {
                 if desc.upstreams.is_empty() {
@@ -1533,13 +1541,14 @@ pub fn execute_from_description(
                     name => {
                         // Try filter dispatch as fallback
                         let params = std::collections::HashMap::new();
-                        crate::domain::pipeline::dispatch::dispatch_filter(
+                        let (n, _gpu) = crate::domain::pipeline::dispatch::dispatch_filter(
                             name,
                             upstream,
                             upstream_info,
                             &params,
                         )
-                        .map_err(ImageError::InvalidParameters)?
+                        .map_err(ImageError::InvalidParameters)?;
+                        n
                     }
                 };
                 graph.add_node(node);
