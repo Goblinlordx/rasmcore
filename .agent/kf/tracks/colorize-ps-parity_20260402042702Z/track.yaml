@@ -5,121 +5,113 @@ status: pending
 created: '2026-04-02'
 updated: '2026-04-02'
 spec:
-  summary: |
-    Our colorize formula is a custom luminance-weighted RGB blend that matches
+  summary: 'Our colorize formula is a custom luminance-weighted RGB blend that matches
+
     no professional tool. Fix it to match the Photoshop/W3C industry standard:
+
     SetLum(target_color, Lum(original_pixel)) with BT.601 weights.
-  context: |
-    Professional colorize across all major tools replaces hue/chroma while
-    preserving original luminance:
 
-    - Photoshop Colorize: HCL space, BT.601 luma (0.299/0.587/0.114),
-      uses W3C SetLum/ClipColor. De facto industry standard.
-    - GIMP Colorize: HSL space, ICC-adapted weights (0.2225/0.7169/0.0606).
-    - IM Composite Colorize: HCL, ~BT.601 (0.2988/0.5868/0.1144). Matches PS.
-    - libvips/sharp tint(): CIELAB a*b* replacement, parabolic weight. Most
-      sophisticated but different UX (no amount slider).
-    - DaVinci Resolve: YRGB with luma-preserving tint.
-
-    Our current formula:
-      luma = 0.2126*R + 0.7152*G + 0.0722*B  (BT.709)
-      output = original + (luma * target - original) * amount
-
-    This is a luminance-weighted lerp toward (luma * target), which is neither
-    a standard blend nor a standard colorize. It produces MAE=19.5 vs IM and
-    has no match in any professional tool.
-
-    IM -colorize (straight RGB lerp, no luminance preservation) is ALSO not
-    the professional standard — it is a convenience shortcut. The real standard
-    is the W3C Color blend mode (PS Colorize).
-  codebase_analysis: |
-    We already have ALL the W3C building blocks in common/color.rs:
-    - lum() at line 170: BT.601 weights (0.299/0.587/0.114) — matches PS
-    - clip_color() at line 56: W3C ClipColor
-    - set_lum() at line 331: W3C SetLum with ClipColor
-    - set_sat() at line 347: W3C SetSat
-
-    PS Colorize is: SetLum(target_color_at_given_saturation, Lum(pixel))
-    All primitives exist. The fix is a ~10-line change to ColorOp::Colorize.
-
-    The colorize filter is registered in colorize.rs with a target color
-    (RGB) and amount (0-1). It also has ColorLutOp support via CLUT.
-
-    Current ColorOp::Colorize in color_lut.rs (line 498):
-      luma = 0.2126*r + 0.7152*g + 0.0722*b
-      (r + (luma*t[0] - r) * amt, g + (luma*t[1] - g) * amt, b + (luma*t[2] - b) * amt)
-
-    Needs to become (PS-compatible):
-      pixel_luma = lum(r, g, b)  // BT.601
-      // Blend between original and fully-colorized version
-      (cr, cg, cb) = set_lum(target[0], target[1], target[2], pixel_luma)
-      (lerp(r, cr, amount), lerp(g, cg, amount), lerp(b, cb, amount))
-
-    Files affected:
-    - crates/rasmcore-image/src/domain/color_lut.rs (ColorOp::Colorize apply)
-    - crates/rasmcore-image/tests/reference_audit.rs (update IM test, add PS-style validation)
-    - crates/rasmcore-image/PARITY.md (update scorecard)
+    '
+  context: "Professional colorize across all major tools replaces hue/chroma while\npreserving original luminance:\n\n- Photoshop\
+    \ Colorize: HCL space, BT.601 luma (0.299/0.587/0.114),\n  uses W3C SetLum/ClipColor. De facto industry standard.\n- GIMP\
+    \ Colorize: HSL space, ICC-adapted weights (0.2225/0.7169/0.0606).\n- IM Composite Colorize: HCL, ~BT.601 (0.2988/0.5868/0.1144).\
+    \ Matches PS.\n- libvips/sharp tint(): CIELAB a*b* replacement, parabolic weight. Most\n  sophisticated but different\
+    \ UX (no amount slider).\n- DaVinci Resolve: YRGB with luma-preserving tint.\n\nOur current formula:\n  luma = 0.2126*R\
+    \ + 0.7152*G + 0.0722*B  (BT.709)\n  output = original + (luma * target - original) * amount\n\nThis is a luminance-weighted\
+    \ lerp toward (luma * target), which is neither\na standard blend nor a standard colorize. It produces MAE=19.5 vs IM\
+    \ and\nhas no match in any professional tool.\n\nIM -colorize (straight RGB lerp, no luminance preservation) is ALSO not\n\
+    the professional standard — it is a convenience shortcut. The real standard\nis the W3C Color blend mode (PS Colorize).\n"
+  codebase_analysis: "We already have ALL the W3C building blocks in common/color.rs:\n- lum() at line 170: BT.601 weights\
+    \ (0.299/0.587/0.114) — matches PS\n- clip_color() at line 56: W3C ClipColor\n- set_lum() at line 331: W3C SetLum with\
+    \ ClipColor\n- set_sat() at line 347: W3C SetSat\n\nPS Colorize is: SetLum(target_color_at_given_saturation, Lum(pixel))\n\
+    All primitives exist. The fix is a ~10-line change to ColorOp::Colorize.\n\nThe colorize filter is registered in colorize.rs\
+    \ with a target color\n(RGB) and amount (0-1). It also has ColorLutOp support via CLUT.\n\nCurrent ColorOp::Colorize in\
+    \ color_lut.rs (line 498):\n  luma = 0.2126*r + 0.7152*g + 0.0722*b\n  (r + (luma*t[0] - r) * amt, g + (luma*t[1] - g)\
+    \ * amt, b + (luma*t[2] - b) * amt)\n\nNeeds to become (PS-compatible):\n  pixel_luma = lum(r, g, b)  // BT.601\n  //\
+    \ Blend between original and fully-colorized version\n  (cr, cg, cb) = set_lum(target[0], target[1], target[2], pixel_luma)\n\
+    \  (lerp(r, cr, amount), lerp(g, cg, amount), lerp(b, cb, amount))\n\nFiles affected:\n- crates/rasmcore-image/src/domain/color_lut.rs\
+    \ (ColorOp::Colorize apply)\n- crates/rasmcore-image/tests/reference_audit.rs (update IM test, add PS-style validation)\n\
+    - crates/rasmcore-image/PARITY.md (update scorecard)\n"
   acceptance_criteria:
-    - ColorOp::Colorize uses W3C SetLum/ClipColor with BT.601 luma (matching PS)
-    - Amount=1.0 with a pure-hue target produces output matching PS Color blend mode
-    - Amount=0.0 is identity (no change)
-    - Amount=0.5 linearly blends between original and fully colorized
-    - IM Composite Colorize parity test added (should be MAE < 2.0, was 19.5)
-    - GIMP colorize validation via Script-Fu or manual spot-check documented
-    - Existing CLUT path updated (ColorLutOp builds CLUT from new formula)
-    - PARITY.md updated with new reference and measured MAE
-  out_of_scope: |
-    libvips/sharp CIELAB tint approach (different UX model, could be a separate filter).
+  - ColorOp::Colorize uses W3C SetLum/ClipColor with BT.601 luma (matching PS)
+  - Amount=1.0 with a pure-hue target produces output matching PS Color blend mode
+  - Amount=0.0 is identity (no change)
+  - Amount=0.5 linearly blends between original and fully colorized
+  - IM Composite Colorize parity test added (should be MAE < 2.0, was 19.5)
+  - GIMP colorize validation via Script-Fu or manual spot-check documented
+  - Existing CLUT path updated (ColorLutOp builds CLUT from new formula)
+  - PARITY.md updated with new reference and measured MAE
+  out_of_scope: 'libvips/sharp CIELAB tint approach (different UX model, could be a separate filter).
+
     White balance temperature model improvements (separate track).
+
     Grayscale weight changes (BT.709 is correct for grayscale).
+
     DaVinci Resolve parity (proprietary, not publicly reproducible).
-  technical_notes: |
-    The fix is straightforward because we already have the W3C primitives.
+
+    '
+  technical_notes: 'The fix is straightforward because we already have the W3C primitives.
+
 
     Key implementation detail: lum() in common/color.rs uses BT.601 weights
+
     (0.299/0.587/0.114), which is exactly what Photoshop uses for its
+
     Luminosity/Color blend modes. This is confirmed by multiple reverse-
+
     engineering sources and the W3C Compositing spec.
 
+
     The ColorOp::Colorize currently uses BT.709 (0.2126/0.7152/0.0722)
+
     for its custom formula. The fix switches to using lum() (BT.601) via
+
     set_lum(), which is the correct choice for PS compatibility.
 
+
     For the IM reference test: use IM composite Colorize mode (not -colorize)
+
     as the reference, since composite Colorize matches PS behavior.
+
     Command: magick composite -compose Colorize fill.png input.png output.png
 
+
     The amount parameter (0-1) is not part of the PS Colorize (which is
+
     always 100%). We implement it as a lerp between original and fully
+
     colorized output, which matches how opacity/strength controls work
+
     in PS adjustment layers.
+
+    '
 plan:
-  - phase: Fix ColorOp::Colorize formula
-    tasks:
-      - text: Update ColorOp::Colorize::apply() to use set_lum(target, lum(pixel)) with BT.601
-        done: false
-      - text: Update amount as lerp between original and fully colorized (not part of inner formula)
-        done: false
-      - text: Verify CLUT build path (ColorLutOp) generates correct LUT from new formula
-        done: false
-      - text: Run existing unit tests to check for regressions
-        done: false
-  - phase: Validate against professional tools
-    tasks:
-      - text: Add IM Composite Colorize parity test (magick composite -compose Colorize)
-        done: false
-      - text: Update existing close_colorize_vs_im test threshold (should improve from MAE=19.5)
-        done: false
-      - text: Add spot-check test with known PS reference values (pure red colorize on gray ramp)
-        done: false
-      - text: Verify photo_filter is not affected (uses different blend, already byte-exact)
-        done: false
-  - phase: Documentation and verification
-    tasks:
-      - text: Update PARITY.md with new colorize reference and measured MAE
-        done: false
-      - text: Update colorize.rs doc comment to reference W3C/PS standard
-        done: false
-      - text: Run full test suite to verify no regressions
-        done: false
+- phase: Fix ColorOp::Colorize formula
+  tasks:
+  - text: Update ColorOp::Colorize::apply() to use set_lum(target, lum(pixel)) with BT.601
+    done: true
+  - text: Update amount as lerp between original and fully colorized (not part of inner formula)
+    done: true
+  - text: Verify CLUT build path (ColorLutOp) generates correct LUT from new formula
+    done: true
+  - text: Run existing unit tests to check for regressions
+    done: true
+- phase: Validate against professional tools
+  tasks:
+  - text: Add IM Composite Colorize parity test (magick composite -compose Colorize)
+    done: true
+  - text: Update existing close_colorize_vs_im test threshold (should improve from MAE=19.5)
+    done: true
+  - text: Add spot-check test with known PS reference values (pure red colorize on gray ramp)
+    done: true
+  - text: Verify photo_filter is not affected (uses different blend, already byte-exact)
+    done: true
+- phase: Documentation and verification
+  tasks:
+  - text: Update PARITY.md with new colorize reference and measured MAE
+    done: true
+  - text: Update colorize.rs doc comment to reference W3C/PS standard
+    done: true
+  - text: Run full test suite to verify no regressions
+    done: true
 extra: {}
