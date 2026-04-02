@@ -1,6 +1,6 @@
 title: Fix filter parameters not reaching domain for derive(Filter) and old-pattern
   filters
-status: pending
+status: completed
 type: bug
 approved: false
 created: '2026-04-02'
