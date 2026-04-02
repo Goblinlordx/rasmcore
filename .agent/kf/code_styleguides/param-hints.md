@@ -95,6 +95,51 @@ that share the same name prefix AND the same hint into one control.
 Example: `slope_r`, `slope_g`, `slope_b` all with `hint = "rc.color_rgb"`
 → grouped into one color picker labeled "slope".
 
+## Enum Options with Descriptions
+
+For `rc.enum` params, use the `options` attribute to provide per-choice
+descriptions. These are emitted in `param-manifest.json` as an `options`
+array that the UI can render as tooltips, info panels, or rich dropdowns.
+
+### Syntax
+
+```rust
+#[derive(ConfigParams)]
+pub struct ColorizeParams {
+    /// Colorize method
+    #[param(
+        default = "w3c",
+        hint = "rc.enum",
+        options = "w3c:Photoshop/W3C standard — SetLum/ClipColor|lab:CIELAB perceptual — parabolic weighting"
+    )]
+    pub method: String,
+}
+```
+
+### Format
+
+`options = "value1:description1|value2:description2|..."`
+
+- `|` separates options (not comma, to avoid conflicts with description text)
+- `:` separates the value from its description
+- Values should be short identifiers; descriptions can be full sentences
+
+### Manifest Output
+
+```json
+{
+  "name": "method",
+  "hint": "rc.enum",
+  "options": [
+    {"value": "w3c", "description": "Photoshop/W3C standard — SetLum/ClipColor"},
+    {"value": "lab", "description": "CIELAB perceptual — parabolic weighting"}
+  ]
+}
+```
+
+The `options` key is only present when the attribute is set. Params without
+`options` emit no `options` key (backwards compatible).
+
 ## Adding a New Hint Type
 
 1. Document the hint in this file (vocabulary table + decision guide)
