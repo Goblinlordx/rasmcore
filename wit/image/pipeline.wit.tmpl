@@ -74,8 +74,21 @@ interface pipeline {
         clear: func();
     }
 
+    /// Pipeline precision mode.
+    enum pipeline-precision {
+        /// Standard 8-bit processing (default).
+        standard,
+        /// Half-precision 16-bit float processing. 2x memory per pixel.
+        half-precision,
+        /// High-precision 32-bit float processing. 4x memory per pixel.
+        high-precision,
+    }
+
     resource image-pipeline {
         constructor();
+
+        // ─── Configuration ───
+        set-precision: func(precision: pipeline-precision);
 
         // ─── Source ───
         read: func(data: buffer) -> result<node-id, rasmcore-error>;
