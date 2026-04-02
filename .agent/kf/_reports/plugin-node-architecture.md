@@ -63,28 +63,62 @@ fn lut(input, channel, params) {
 }
 ```
 
-### Three Execution Strategies
+### Four Execution Strategies
 
-**Fusable point-op** — script provides `lut(input, channel, params) -> u8`:
+Scripts declare one of four mutually exclusive strategies. Choosing the right
+strategy determines performance characteristics:
+
+**1. Fusable point-op** — script provides `lut(input, channel, params) -> u8`:
 - Engine evaluates for all 256 input values per channel
 - Produces `[u8; 256]` LUT that participates in LUT fusion
 - No `compute()` needed — engine applies LUT directly
 - Validation: engine checks lut() returns valid u8 for all inputs
+- **Best for**: per-pixel color transformations (tint, curves, threshold)
 
-**GPU-accelerated** — script provides WGSL shader + params:
+**2. GPU-accelerated** — script provides WGSL shader + params:
 - `gpu_shader()` returns WGSL source string
 - `gpu_params(width, height, params)` returns serialized uniform bytes
 - `gpu_workgroup()` returns `[x, y, z]` dispatch dimensions
 - `compute()` required as CPU fallback
 - Validation: engine validates WGSL via existing shader validator
+- **Best for**: spatial operations that need GPU performance (custom blur, warp)
 
-**CPU compute** — script provides `compute(pixels, info, params)`:
-- Called per-tile during pipeline execution
-- Can call `builtin("filter_name", pixels, info, config)` to invoke
-  existing built-in filters by name
+**3. Composite** (recommended for multi-step effects) — script provides
+`graph(input, params)` returning a NodeRef DAG via `.apply()` chains:
+- Builds a **lazy pipeline sub-graph** — no pixels computed during graph()
+- Filter names resolved against built-in + script registries at graph build time
+- The composed graph gets **full pipeline optimizations**: LUT fusion across
+  the chain, GPU dispatch for supported nodes, tiling, caching
+- `.apply(name, config)` is the only method — names are runtime strings
+- **Best for**: presets, recipes, multi-step effects (vintage look, HDR tone, etc.)
+
+**4. CPU compute** (escape hatch) — script provides `compute(pixels, info, params)`:
+- Called **eagerly** per-tile during pipeline execution
+- `builtin()` calls are **direct function invocations** — they call the
+  domain filter function immediately and return materialized pixels
+- `builtin()` does NOT create pipeline nodes, does NOT go through the graph,
+  does NOT benefit from LUT fusion, GPU dispatch, or caching
 - For spatial ops: `input_rect(output, bounds_w, bounds_h, params)` declares
   the expansion needed
 - Validation: engine verifies function signatures match contract
+- **Best for**: dynamic logic that can't be expressed as a static graph
+  (conditional branching based on pixel values, iterative algorithms,
+  pixel-level inspection)
+
+### When to Use Which Strategy
+
+| Need | Strategy | Why |
+|------|----------|-----|
+| Per-pixel color mapping | **Fusable** | LUT fusion, automatic GPU, zero per-pixel overhead |
+| Custom GPU shader | **GPU** | Direct hardware acceleration with CPU fallback |
+| Chain of existing filters | **Composite** | Lazy graph, full pipeline optimizations |
+| Conditional / dynamic logic | **Compute** | Flexibility, but no pipeline optimizations |
+
+**Prefer composite over compute** when composing existing filters. A composite
+script like `input.apply("blur", #{...}).apply("contrast", #{...})` will fuse
+the contrast LUT and potentially GPU-dispatch the blur. The equivalent compute
+script calling `builtin("blur", ...)` then `builtin("contrast", ...)` runs
+both eagerly with no fusion or GPU dispatch.
 
 ### Host Functions Available to Scripts
 
