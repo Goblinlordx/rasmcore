@@ -302,7 +302,7 @@ fn node_ref_apply(node: &mut NodeRef, name: &str, config: Map) -> NodeRef {
 
 // ─── Validation ────────────────────────────────────────────────────────────
 
-fn validate_strategy(engine: &Engine, ast: &AST, metadata: &ScriptMetadata) -> Result<(), String> {
+fn validate_strategy(_engine: &Engine, ast: &AST, metadata: &ScriptMetadata) -> Result<(), String> {
     let has_fn = |name: &str| -> bool {
         ast.iter_functions().any(|f| f.name == name)
     };
@@ -353,6 +353,9 @@ fn validate_strategy(engine: &Engine, ast: &AST, metadata: &ScriptMetadata) -> R
 
 // ─── ScriptNode (ImageNode wrapper) ────────────────────────────────────────
 
+/// Dispatch callback type for builtin() calls in compute strategy.
+type DispatchFn = dyn Fn(&str, &[u8], &ImageInfo, &HashMap<String, String>) -> Result<Vec<u8>, ImageError> + Send + Sync;
+
 /// A pipeline node backed by a compiled Rhai script.
 pub struct ScriptNode {
     script: CompiledScript,
@@ -360,7 +363,7 @@ pub struct ScriptNode {
     source_info: ImageInfo,
     config_values: HashMap<String, f64>,
     /// Reference to the shared registry (for builtin() calls in compute strategy)
-    dispatch_fn: Option<Arc<dyn Fn(&str, &[u8], &ImageInfo, &HashMap<String, String>) -> Result<Vec<u8>, ImageError> + Send + Sync>>,
+    dispatch_fn: Option<Arc<DispatchFn>>,
 }
 
 impl ScriptNode {
@@ -389,10 +392,7 @@ impl ScriptNode {
     }
 
     /// Set the dispatch function for builtin() calls.
-    pub fn with_dispatch(
-        mut self,
-        f: Arc<dyn Fn(&str, &[u8], &ImageInfo, &HashMap<String, String>) -> Result<Vec<u8>, ImageError> + Send + Sync>,
-    ) -> Self {
+    pub fn with_dispatch(mut self, f: Arc<DispatchFn>) -> Self {
         self.dispatch_fn = Some(f);
         self
     }
