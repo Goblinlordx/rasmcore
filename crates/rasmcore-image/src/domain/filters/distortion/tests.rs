@@ -1346,3 +1346,210 @@ mod distortion_effect_tests {
     }
 }
 
+// ─── Liquify Tests ────────────────────────────────────────────────────────────
+
+mod liquify_tests {
+    use super::*;
+    use crate::domain::filters::distortion::liquify::*;
+    use crate::domain::filter_traits::CpuFilter;
+
+    fn make_gradient_rgba(w: u32, h: u32) -> Vec<u8> {
+        let mut p = Vec::with_capacity((w * h * 4) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                p.push(((x * 255) / w.max(1)) as u8);
+                p.push(((y * 255) / h.max(1)) as u8);
+                p.push(128u8);
+                p.push(255u8);
+            }
+        }
+        p
+    }
+
+    fn info_rgba(w: u32, h: u32) -> ImageInfo {
+        ImageInfo { width: w, height: h, format: PixelFormat::Rgba8, color_space: ColorSpace::Srgb }
+    }
+
+    #[test]
+    fn liquify_push_displaces_center() {
+        let (w, h) = (64, 64);
+        let pixels = make_gradient_rgba(w, h);
+        let info = info_rgba(w, h);
+        let rect = Rect::new(0, 0, w, h);
+
+        let params = LiquifyPushParams {
+            center_x: 0.5, center_y: 0.5,
+            radius: 20.0, strength: 0.8,
+            direction_x: 10.0, direction_y: 0.0,
+        };
+
+        let result = params.compute(rect, &mut |_| Ok(pixels.clone()), &info).unwrap();
+        assert_eq!(result.len(), pixels.len());
+
+        // Center pixel should have changed (source is displaced)
+        let center_idx = (32 * w + 32) as usize * 4;
+        let orig_r = pixels[center_idx];
+        let push_r = result[center_idx];
+        assert_ne!(orig_r, push_r, "push should displace center pixel");
+    }
+
+    #[test]
+    fn liquify_push_preserves_edges() {
+        let (w, h) = (64, 64);
+        let pixels = make_gradient_rgba(w, h);
+        let info = info_rgba(w, h);
+        let rect = Rect::new(0, 0, w, h);
+
+        let params = LiquifyPushParams {
+            center_x: 0.5, center_y: 0.5,
+            radius: 10.0, strength: 0.5,
+            direction_x: 5.0, direction_y: 0.0,
+        };
+
+        let result = params.compute(rect, &mut |_| Ok(pixels.clone()), &info).unwrap();
+
+        // Corner pixel should be unaffected (far from center, outside radius)
+        let corner_idx = 0;
+        assert_eq!(pixels[corner_idx], result[corner_idx], "corner should be unchanged");
+    }
+
+    #[test]
+    fn liquify_pinch_pulls_toward_center() {
+        let (w, h) = (64, 64);
+        let pixels = make_gradient_rgba(w, h);
+        let info = info_rgba(w, h);
+        let rect = Rect::new(0, 0, w, h);
+
+        let params = LiquifyPinchParams {
+            center_x: 0.5, center_y: 0.5,
+            radius: 20.0, strength: 0.5,
+        };
+
+        let result = params.compute(rect, &mut |_| Ok(pixels.clone()), &info).unwrap();
+        assert_eq!(result.len(), pixels.len());
+
+        // Near-center pixel should be affected
+        let near_center = (30 * w + 30) as usize * 4;
+        assert_ne!(
+            &pixels[near_center..near_center + 4],
+            &result[near_center..near_center + 4],
+            "pinch should affect near-center pixels"
+        );
+    }
+
+    #[test]
+    fn liquify_expand_pushes_away() {
+        let (w, h) = (64, 64);
+        let pixels = make_gradient_rgba(w, h);
+        let info = info_rgba(w, h);
+        let rect = Rect::new(0, 0, w, h);
+
+        let params = LiquifyExpandParams {
+            center_x: 0.5, center_y: 0.5,
+            radius: 20.0, strength: 0.5,
+        };
+
+        let result = params.compute(rect, &mut |_| Ok(pixels.clone()), &info).unwrap();
+        assert_eq!(result.len(), pixels.len());
+
+        let near_center = (30 * w + 30) as usize * 4;
+        assert_ne!(
+            &pixels[near_center..near_center + 4],
+            &result[near_center..near_center + 4],
+            "expand should affect near-center pixels"
+        );
+    }
+
+    #[test]
+    fn liquify_twirl_rotates() {
+        let (w, h) = (64, 64);
+        let pixels = make_gradient_rgba(w, h);
+        let info = info_rgba(w, h);
+        let rect = Rect::new(0, 0, w, h);
+
+        let params = LiquifyTwirlParams {
+            center_x: 0.5, center_y: 0.5,
+            radius: 25.0, strength: 0.7,
+            angle: 90.0,
+        };
+
+        let result = params.compute(rect, &mut |_| Ok(pixels.clone()), &info).unwrap();
+        assert_eq!(result.len(), pixels.len());
+
+        // Pixel offset from center should be rotated
+        let near_center = (28 * w + 32) as usize * 4;
+        assert_ne!(
+            &pixels[near_center..near_center + 4],
+            &result[near_center..near_center + 4],
+            "twirl should rotate near-center pixels"
+        );
+    }
+
+    #[test]
+    fn liquify_field_push_modifies_field() {
+        let (w, h) = (32, 32);
+        let (mut mx, mut my) = identity_field(w, h);
+
+        liquify_field_push(&mut mx, &mut my, w, h, 16.0, 16.0, 10.0, 1.0, 5.0, 0.0);
+
+        // Center pixel's source x should be displaced backward (source = output - dir)
+        let center = (16 * w + 16) as usize;
+        assert!(
+            (mx[center] - 16.0).abs() > 1.0,
+            "field push should displace center: got mx={}",
+            mx[center]
+        );
+        assert!(
+            mx[center] < 16.0,
+            "push direction_x=+5 → source displaced left: got mx={}",
+            mx[center]
+        );
+    }
+
+    #[test]
+    fn liquify_field_smooth_restores_identity() {
+        let (w, h) = (32, 32);
+        let (mut mx, mut my) = identity_field(w, h);
+
+        // Apply push first
+        liquify_field_push(&mut mx, &mut my, w, h, 16.0, 16.0, 10.0, 1.0, 5.0, 3.0);
+        let center = (16 * w + 16) as usize;
+        let pushed_x = mx[center];
+        let pushed_y = my[center];
+
+        // Smooth with full strength should restore toward identity
+        liquify_field_smooth(&mut mx, &mut my, w, h, 16.0, 16.0, 15.0, 1.0);
+        let smoothed_x = mx[center];
+        let smoothed_y = my[center];
+
+        // After smooth, should be closer to identity (16.0) than after push
+        assert!(
+            (smoothed_x - 16.0).abs() < (pushed_x - 16.0).abs(),
+            "smooth should reduce displacement: pushed={pushed_x}, smoothed={smoothed_x}"
+        );
+        assert!(
+            (smoothed_y - 16.0).abs() < (pushed_y - 16.0).abs(),
+            "smooth should reduce displacement: pushed={pushed_y}, smoothed={smoothed_y}"
+        );
+    }
+
+    #[test]
+    fn liquify_field_twirl_rotates_field() {
+        let (w, h) = (32, 32);
+        let (mut mx, mut my) = identity_field(w, h);
+
+        liquify_field_twirl(&mut mx, &mut my, w, h, 16.0, 16.0, 10.0, 1.0, 90.0);
+
+        // Pixel at (20, 16) — 4 pixels right of center — should be rotated
+        let idx = (16 * w + 20) as usize;
+        let sx = mx[idx];
+        let sy = my[idx];
+        // Source coordinates should be displaced from identity (20, 16)
+        let dist = ((sx - 20.0).powi(2) + (sy - 16.0).powi(2)).sqrt();
+        assert!(
+            dist > 1.0,
+            "twirl 90° should rotate source coords away from identity: got ({sx}, {sy}), dist={dist}"
+        );
+    }
+}
+
