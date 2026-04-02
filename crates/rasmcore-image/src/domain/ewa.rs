@@ -353,17 +353,21 @@ fn compute_ellipse(j: &Jacobian) -> Option<EllipseCoeffs> {
 /// Precomputes the Robidoux weight LUT on construction.
 /// Channel storage format for the EWA sampler.
 ///
-/// Determines how to read channel values from the raw byte buffer and
-/// how to scale sampled results back to the native range.
+/// Determines how to read channel values from the raw byte buffer.
+///
+/// Integer formats (U8, U16) use Q16 internal representation to match
+/// ImageMagick's rounding behavior for parity tests. Float formats
+/// (F16, F32) use native f64 precision — matching Photoshop, Nuke,
+/// and DaVinci Resolve's approach of full-precision float processing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SampleFormat {
-    /// 1 byte per channel, range [0, 255]. Internal Q16 scale: × 257.
+    /// 1 byte per channel, range [0, 255]. Internal: Q16 (× 257).
     U8,
-    /// 2 bytes per channel (little-endian u16), range [0, 65535]. Already Q16.
+    /// 2 bytes per channel (little-endian u16), range [0, 65535]. Internal: Q16.
     U16,
-    /// 2 bytes per channel (IEEE 754 half-float), range [0.0, 1.0]. Q16 scale: × 65535.
+    /// 2 bytes per channel (IEEE 754 half-float), range [0.0, 1.0]. Internal: native f64.
     F16,
-    /// 4 bytes per channel (IEEE 754 float), range [0.0, 1.0]. Q16 scale: × 65535.
+    /// 4 bytes per channel (IEEE 754 float), range [0.0, 1.0]. Internal: native f64.
     F32,
 }
 
@@ -376,6 +380,11 @@ impl SampleFormat {
             SampleFormat::F16 => 2,
             SampleFormat::F32 => 4,
         }
+    }
+
+    /// True for float formats that use native f64 precision (no Q16 scaling).
+    pub const fn is_float(self) -> bool {
+        matches!(self, SampleFormat::F16 | SampleFormat::F32)
     }
 
     /// Derive from PixelFormat.
@@ -434,12 +443,14 @@ impl<'a> EwaSampler<'a> {
         }
     }
 
-    /// Read a single channel value at pixel (px, py) and scale to Q16 (0–65535).
-    /// Returns 0.0 for out-of-bounds (black border).
+    /// Read a single channel value at pixel (px, py) into the internal
+    /// representation. Returns 0.0 for out-of-bounds (black border).
+    ///
+    /// Integer formats → Q16 (IM parity). Float formats → native f64.
     #[inline]
     fn fetch(&self, px: i32, py: i32, c: usize) -> f64 {
         if px >= 0 && (px as usize) < self.w && py >= 0 && (py as usize) < self.h {
-            self.read_channel_q16((py as usize * self.w + px as usize) * self.ch + c)
+            self.read_channel((py as usize * self.w + px as usize) * self.ch + c)
         } else {
             0.0
         }
@@ -450,49 +461,55 @@ impl<'a> EwaSampler<'a> {
     fn fetch_clamp(&self, px: i32, py: i32, c: usize) -> f64 {
         let cx = (px.max(0) as usize).min(self.w - 1);
         let cy = (py.max(0) as usize).min(self.h - 1);
-        self.read_channel_q16((cy * self.w + cx) * self.ch + c)
+        self.read_channel((cy * self.w + cx) * self.ch + c)
     }
 
-    /// Read one channel value at logical index `idx` (channel-interleaved) → Q16 f64.
+    /// Read one channel value at logical index `idx` (channel-interleaved).
+    ///
+    /// Integer formats scale to Q16 [0, 65535] for IM-parity math.
+    /// Float formats return the native f64 value — full precision, no Q16
+    /// quantization. The EWA weighted-average math works identically in
+    /// both ranges (it's just `Σ(weight × value) / Σ(weight)`).
     #[inline]
-    fn read_channel_q16(&self, idx: usize) -> f64 {
+    fn read_channel(&self, idx: usize) -> f64 {
         match self.sample_fmt {
             SampleFormat::U8 => {
-                // Scale u8 [0,255] → Q16 [0,65535]: multiply by 257
+                // u8 [0,255] → Q16 [0,65535] for IM parity
                 self.pixels[idx] as f64 * 257.0
             }
             SampleFormat::U16 => {
-                // u16 is already in Q16 range [0,65535]
+                // u16 is already Q16 range [0,65535]
                 let off = idx * 2;
                 u16::from_le_bytes([self.pixels[off], self.pixels[off + 1]]) as f64
             }
             SampleFormat::F16 => {
-                // f16 normalized [0,1] → Q16 [0,65535]
+                // f16 → native f64. No Q16 scaling — full precision.
                 let off = idx * 2;
                 let h = half::f16::from_le_bytes([self.pixels[off], self.pixels[off + 1]]);
-                h.to_f64() * 65535.0
+                h.to_f64()
             }
             SampleFormat::F32 => {
-                // f32 normalized [0,1] → Q16 [0,65535]
+                // f32 → native f64. No Q16 scaling — full precision.
                 let off = idx * 4;
-                let v = f32::from_le_bytes([
+                f32::from_le_bytes([
                     self.pixels[off],
                     self.pixels[off + 1],
                     self.pixels[off + 2],
                     self.pixels[off + 3],
-                ]);
-                v as f64 * 65535.0
+                ]) as f64
             }
         }
     }
 
-    /// Convert a Q16 sampled value back to the native format range.
+    /// Convert an internal sampled value back to the native output range.
+    ///
+    /// Integer formats: undo Q16 scaling. Float formats: pass through as-is.
     #[inline]
-    pub fn q16_to_native(&self, q16: f64) -> f32 {
+    pub fn internal_to_native(&self, v: f64) -> f32 {
         match self.sample_fmt {
-            SampleFormat::U8 => (q16 / 257.0) as f32,           // → [0, 255]
-            SampleFormat::U16 => q16 as f32,                      // → [0, 65535]
-            SampleFormat::F16 | SampleFormat::F32 => (q16 / 65535.0) as f32, // → [0.0, 1.0]
+            SampleFormat::U8 => (v / 257.0) as f32,   // Q16 → [0, 255]
+            SampleFormat::U16 => v as f32,              // Q16 → [0, 65535]
+            SampleFormat::F16 | SampleFormat::F32 => v as f32, // native f64 → f32
         }
     }
 
@@ -554,7 +571,7 @@ impl<'a> EwaSampler<'a> {
         }
 
         if hit > 0 && divisor > 1e-10 {
-            self.q16_to_native(color / divisor)
+            self.internal_to_native(color / divisor)
         } else {
             self.bilinear(sx, sy, c)
         }
@@ -604,7 +621,7 @@ impl<'a> EwaSampler<'a> {
         }
 
         if hit > 0 && divisor > 1e-10 {
-            self.q16_to_native(color / divisor)
+            self.internal_to_native(color / divisor)
         } else {
             self.bilinear_clamp(sx, sy, c)
         }
@@ -621,7 +638,7 @@ impl<'a> EwaSampler<'a> {
             + self.fetch_clamp(x0 + 1, y0, c) * fx * (1.0 - fy)
             + self.fetch_clamp(x0, y0 + 1, c) * (1.0 - fx) * fy
             + self.fetch_clamp(x0 + 1, y0 + 1, c) * fx * fy;
-        self.q16_to_native(v)
+        self.internal_to_native(v)
     }
 
     /// Sample all channels at once using IM-exact EWA.
@@ -648,7 +665,7 @@ impl<'a> EwaSampler<'a> {
             + self.fetch(x0 + 1, y0, c) * fx * (1.0 - fy)
             + self.fetch(x0, y0 + 1, c) * (1.0 - fx) * fy
             + self.fetch(x0 + 1, y0 + 1, c) * fx * fy;
-        self.q16_to_native(v)
+        self.internal_to_native(v)
     }
 }
 
