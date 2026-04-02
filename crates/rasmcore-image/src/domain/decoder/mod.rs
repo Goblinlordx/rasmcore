@@ -24,110 +24,219 @@ pub fn registered_decoders() -> Vec<&'static StaticDecoderRegistration> {
         .collect()
 }
 
-/// Supported decode formats
-const SUPPORTED_FORMATS: &[&str] = &[
-    "png", "jpeg", "gif", "webp", "bmp", "tiff", "qoi", "ico", "tga", "hdr", "pnm", "exr", "dds",
-    "jxl", "jp2", "heic", "fits", "svg", "dng",
-];
+// ─── Decoder Dispatch Registry ──────────────────────────────────────────────
 
-/// Detect image format from header bytes
+/// A registered image decoder with optional auto-detection.
+///
+/// Each format registers one of these via `inventory::submit!`. The registry
+/// is used by `detect_format()` and `decode()` — no hardcoded dispatch needed.
+///
+/// - `detect_fn`: Optional. Returns true if the data matches this format.
+///   Formats without detection (e.g., TGA) require an explicit format hint.
+/// - `decode_fn`: Decodes the data into a DecodedImage.
+/// - `priority`: Lower = checked first in auto-detection. Binary magic checks
+///   (fast, unambiguous) should use 10-100. Text heuristics (slower, ambiguous)
+///   should use 200+. Default: 100.
+pub struct DecoderDispatchEntry {
+    pub format: &'static str,
+    pub extensions: &'static [&'static str],
+    pub detect_fn: Option<fn(&[u8]) -> bool>,
+    pub decode_fn: fn(&[u8]) -> Result<DecodedImage, ImageError>,
+    pub priority: u32,
+}
+
+inventory::collect!(&'static DecoderDispatchEntry);
+
+/// Find a decoder by format name or extension.
+pub fn find_decoder(format: &str) -> Option<&'static DecoderDispatchEntry> {
+    for entry in inventory::iter::<&'static DecoderDispatchEntry>.into_iter().copied() {
+        if entry.format == format || entry.extensions.contains(&format) {
+            return Some(entry);
+        }
+    }
+    None
+}
+
+/// List all decode formats from the dispatch registry.
+pub fn supported_decode_formats() -> Vec<String> {
+    let mut fmts: Vec<String> = inventory::iter::<&'static DecoderDispatchEntry>
+        .into_iter()
+        .copied()
+        .map(|e| e.format.to_string())
+        .collect();
+    fmts.sort();
+    fmts.dedup();
+    fmts
+}
+
+// ─── Decoder Dispatch Registrations ─────────────────────────────────────────
+//
+// Each format registers a DecoderDispatchEntry with optional detect_fn.
+// Priority: lower = checked first. Binary magic (10-50), structured (60-100),
+// TIFF-based (110-130), text heuristics (200+), weak heuristics (300+).
+
+// Binary magic — unambiguous, fast
+inventory::submit! { &DecoderDispatchEntry {
+    format: "png", extensions: &["png"], priority: 10,
+    detect_fn: Some(|d| d.len() >= 4 && d[..4] == [0x89, 0x50, 0x4E, 0x47]),
+    decode_fn: decode_native_png,
+}}
+inventory::submit! { &DecoderDispatchEntry {
+    format: "jpeg", extensions: &["jpeg", "jpg", "jfif"], priority: 10,
+    detect_fn: Some(|d| d.len() >= 2 && d[0] == 0xFF && d[1] == 0xD8),
+    decode_fn: decode_native_jpeg,
+}}
+inventory::submit! { &DecoderDispatchEntry {
+    format: "gif", extensions: &["gif"], priority: 10,
+    detect_fn: Some(|d| d.len() >= 3 && &d[..3] == b"GIF"),
+    decode_fn: decode_native_gif,
+}}
+inventory::submit! { &DecoderDispatchEntry {
+    format: "webp", extensions: &["webp"], priority: 10,
+    detect_fn: Some(|d| d.len() >= 12 && &d[..4] == b"RIFF" && &d[8..12] == b"WEBP"),
+    decode_fn: decode_native_webp,
+}}
+inventory::submit! { &DecoderDispatchEntry {
+    format: "bmp", extensions: &["bmp", "dib"], priority: 10,
+    detect_fn: Some(|d| d.len() >= 2 && &d[..2] == b"BM"),
+    decode_fn: decode_native_bmp,
+}}
+inventory::submit! { &DecoderDispatchEntry {
+    format: "qoi", extensions: &["qoi"], priority: 10,
+    detect_fn: Some(|d| d.len() >= 4 && &d[..4] == b"qoif"),
+    decode_fn: decode_native_qoi,
+}}
+inventory::submit! { &DecoderDispatchEntry {
+    format: "dds", extensions: &["dds"], priority: 10,
+    detect_fn: Some(|d| d.len() >= 4 && d[..4] == [0x44, 0x44, 0x53, 0x20]),
+    decode_fn: decode_dds_native,
+}}
+inventory::submit! { &DecoderDispatchEntry {
+    format: "exr", extensions: &["exr"], priority: 10,
+    detect_fn: Some(|d| d.len() >= 4 && d[..4] == [0x76, 0x2F, 0x31, 0x01]),
+    decode_fn: decode_native_exr,
+}}
+inventory::submit! { &DecoderDispatchEntry {
+    format: "hdr", extensions: &["hdr", "rgbe"], priority: 10,
+    detect_fn: Some(|d| d.len() >= 10 && (d.starts_with(b"#?RADIANCE") || d.starts_with(b"#?RGBE"))),
+    decode_fn: decode_native_hdr,
+}}
+inventory::submit! { &DecoderDispatchEntry {
+    format: "ico", extensions: &["ico", "cur"], priority: 20,
+    detect_fn: Some(|d| {
+        // ICO: reserved=0, type=1(icon)|2(cursor), entry_count > 0 and reasonable
+        d.len() >= 6
+            && d[0] == 0 && d[1] == 0
+            && (d[2] == 1 || d[2] == 2)
+            && d[3] == 0
+            && {
+                let count = u16::from_le_bytes([d[4], d[5]]);
+                count > 0 && count <= 256 && d.len() >= 6 + count as usize * 16
+            }
+    }),
+    decode_fn: decode_native_ico,
+}}
+
+// Structured formats — need deeper header inspection
+inventory::submit! { &DecoderDispatchEntry {
+    format: "jxl", extensions: &["jxl"], priority: 60,
+    detect_fn: Some(is_jxl),
+    decode_fn: decode_jxl,
+}}
+inventory::submit! { &DecoderDispatchEntry {
+    format: "jp2", extensions: &["jp2", "j2k", "j2c"], priority: 60,
+    detect_fn: Some(is_jp2),
+    decode_fn: decode_jp2,
+}}
+inventory::submit! { &DecoderDispatchEntry {
+    format: "fits", extensions: &["fits", "fit"], priority: 60,
+    detect_fn: Some(|d| rasmcore_fits::is_fits(d)),
+    decode_fn: decode_fits,
+}}
+
+// TIFF-based formats — DNG must be checked before generic TIFF
+#[cfg(feature = "native-raw")]
+inventory::submit! { &DecoderDispatchEntry {
+    format: "dng", extensions: &["dng"], priority: 110,
+    detect_fn: Some(|d| {
+        d.len() >= 4
+            && ((d[0] == b'I' && d[1] == b'I' && d[2] == 42 && d[3] == 0)
+                || (d[0] == b'M' && d[1] == b'M' && d[2] == 0 && d[3] == 42))
+            && rasmcore_raw::is_dng(d)
+    }),
+    decode_fn: decode_native_dng,
+}}
+inventory::submit! { &DecoderDispatchEntry {
+    format: "tiff", extensions: &["tiff", "tif"], priority: 120,
+    detect_fn: Some(|d| {
+        d.len() >= 4
+            && ((d[0] == b'I' && d[1] == b'I' && d[2] == 42 && d[3] == 0)
+                || (d[0] == b'M' && d[1] == b'M' && d[2] == 0 && d[3] == 42))
+    }),
+    decode_fn: decode_tiff_native,
+}}
+
+// Feature-gated formats
+#[cfg(feature = "native-heif")]
+inventory::submit! { &DecoderDispatchEntry {
+    format: "heic", extensions: &["heic", "heif", "avif"], priority: 65,
+    detect_fn: Some(is_heif),
+    decode_fn: decode_heif,
+}}
+
+// Text-based formats — slower detection, check after binary
+inventory::submit! { &DecoderDispatchEntry {
+    format: "svg", extensions: &["svg", "svgz"], priority: 200,
+    detect_fn: Some(is_svg),
+    decode_fn: decode_svg,
+}}
+inventory::submit! { &DecoderDispatchEntry {
+    format: "pnm", extensions: &["pnm", "ppm", "pgm", "pbm", "pam"], priority: 200,
+    detect_fn: Some(|d| d.len() >= 2 && d[0] == b'P' && d[1].is_ascii_digit()),
+    decode_fn: decode_native_pnm,
+}}
+
+// Formats without reliable auto-detection (require explicit format hint)
+inventory::submit! { &DecoderDispatchEntry {
+    format: "tga", extensions: &["tga", "targa"], priority: 300,
+    detect_fn: Some(detect_tga),
+    decode_fn: decode_native_tga,
+}}
+
+/// Detect image format from header bytes using the decoder registry.
+///
+/// Iterates registered decoders sorted by priority (lower = checked first).
+/// Binary magic detectors run first (fast, unambiguous), then structured
+/// format checks, then text heuristics.
 pub fn detect_format(header: &[u8]) -> Option<String> {
-    // Check formats not supported by image crate first
-    if is_jxl(header) {
-        return Some("jxl".to_string());
+    // Collect and sort by priority
+    let mut entries: Vec<&DecoderDispatchEntry> =
+        inventory::iter::<&'static DecoderDispatchEntry>
+            .into_iter()
+            .copied()
+            .collect();
+    entries.sort_by_key(|e| e.priority);
+
+    for entry in entries {
+        if let Some(detect) = entry.detect_fn {
+            if detect(header) {
+                return Some(entry.format.to_string());
+            }
+        }
     }
-    if is_jp2(header) {
-        return Some("jp2".to_string());
-    }
-    #[cfg(feature = "native-heif")]
-    if is_heif(header) {
-        return Some("heic".to_string());
-    }
-    if rasmcore_fits::is_fits(header) {
-        return Some("fits".to_string());
-    }
-    if is_svg(header) {
-        return Some("svg".to_string());
-    }
-    // GIF — native detection (GIF87a or GIF89a magic)
-    if header.len() >= 3 && &header[..3] == b"GIF" {
-        return Some("gif".to_string());
-    }
-    // WebP — RIFF container with WEBP fourcc
-    if header.len() >= 12 && &header[..4] == b"RIFF" && &header[8..12] == b"WEBP" {
-        return Some("webp".to_string());
-    }
-    // DDS — DirectDraw Surface magic "DDS "
-    if header.len() >= 4 && header[..4] == [0x44, 0x44, 0x53, 0x20] {
-        return Some("dds".to_string());
-    }
-    // ICO — little-endian: reserved=0, type=1(icon) or 2(cursor)
-    if header.len() >= 4
-        && header[0] == 0
-        && header[1] == 0
-        && (header[2] == 1 || header[2] == 2)
-        && header[3] == 0
-    {
-        return Some("ico".to_string());
-    }
-    // HDR (Radiance RGBE)
-    if header.len() >= 10 && (header.starts_with(b"#?RADIANCE") || header.starts_with(b"#?RGBE")) {
-        return Some("hdr".to_string());
-    }
-    // EXR (OpenEXR magic)
-    if header.len() >= 4 && header[..4] == [0x76, 0x2F, 0x31, 0x01] {
-        return Some("exr".to_string());
-    }
-    // PNG magic
-    if header.len() >= 4 && header[..4] == [0x89, 0x50, 0x4E, 0x47] {
-        return Some("png".to_string());
-    }
-    // JPEG magic (SOI marker)
-    if header.len() >= 2 && header[0] == 0xFF && header[1] == 0xD8 {
-        return Some("jpeg".to_string());
-    }
-    // BMP magic
-    if header.len() >= 2 && &header[..2] == b"BM" {
-        return Some("bmp".to_string());
-    }
-    // QOI magic
-    if header.len() >= 4 && &header[..4] == b"qoif" {
-        return Some("qoi".to_string());
-    }
-    // DNG — TIFF-based, must be checked before generic TIFF detection
-    #[cfg(feature = "native-raw")]
-    if header.len() >= 4
-        && ((header[0] == b'I' && header[1] == b'I' && header[2] == 42 && header[3] == 0)
-            || (header[0] == b'M' && header[1] == b'M' && header[2] == 0 && header[3] == 42))
-        && rasmcore_raw::is_dng(header)
-    {
-        return Some("dng".to_string());
-    }
-    // TIFF (little-endian or big-endian)
-    if header.len() >= 4
-        && ((header[0] == b'I' && header[1] == b'I' && header[2] == 42 && header[3] == 0)
-            || (header[0] == b'M' && header[1] == b'M' && header[2] == 0 && header[3] == 42))
-    {
-        return Some("tiff".to_string());
-    }
-    // PNM (P1-P6)
-    if header.len() >= 2 && header[0] == b'P' && header[1].is_ascii_digit() {
-        return Some("pnm".to_string());
-    }
-    // .cube 3D LUT (text format — check for LUT_3D_SIZE keyword)
+
+    // LUT format detection (these return ColorLut3D, not DecodedImage,
+    // so they're not in the image decoder registry but still detected)
     if is_cube_lut(header) {
         return Some("cube".to_string());
     }
-    // .csp CineSpace LUT (text format — check for CSPLUTV100 header)
     if is_csp_lut(header) {
         return Some("csp".to_string());
     }
-    // .3dl Autodesk LUT (text format — integer triplets, no distinguishing header)
-    // Note: .3dl detection is weaker since the format has no magic header.
-    // It must be detected after all binary formats and other text formats.
     if is_3dl_lut(header) {
         return Some("3dl".to_string());
     }
+
     None
 }
 
@@ -403,112 +512,61 @@ pub fn smart_resize(data: &[u8], target_w: u32, target_h: u32) -> Result<Decoded
 }
 
 /// Decode an image from raw bytes
+/// Decode image data with auto-detection. Convenience wrapper for
+/// `decode_with_hint(data, None)`.
 pub fn decode(data: &[u8]) -> Result<DecodedImage, ImageError> {
-    // Formats not supported by image crate — handle first
-    if is_jxl(data) {
-        return decode_jxl(data);
-    }
-    if is_jp2(data) {
-        return decode_jp2(data);
-    }
-    #[cfg(feature = "native-heif")]
-    if is_heif(data) {
-        return decode_heif(data);
-    }
-    if rasmcore_fits::is_fits(data) {
-        return decode_fits(data);
-    }
-    if is_svg(data) {
-        return decode_svg(data);
+    decode_with_hint(data, None)
+}
+
+/// Decode image data with an optional format hint.
+///
+/// - `format_hint: None` — auto-detect via registered detect_fn functions.
+/// - `format_hint: Some("png")` — use the specified decoder directly.
+///   If that decoder has a detect_fn and it rejects the data, returns an error
+///   (the data doesn't match the claimed format).
+pub fn decode_with_hint(
+    data: &[u8],
+    format_hint: Option<&str>,
+) -> Result<DecodedImage, ImageError> {
+    if let Some(hint) = format_hint {
+        // Explicit format — find decoder by name/extension
+        if let Some(entry) = find_decoder(hint) {
+            // If decoder has detection, validate the data matches
+            if let Some(detect) = entry.detect_fn {
+                if !detect(data) {
+                    return Err(ImageError::InvalidInput(format!(
+                        "data does not match format '{}' (detection rejected)",
+                        entry.format
+                    )));
+                }
+            }
+            return (entry.decode_fn)(data);
+        }
+        return Err(ImageError::UnsupportedFormat(format!(
+            "no decoder registered for format '{hint}'"
+        )));
     }
 
-    // JPEG — native decode via rasmcore-jpeg (always on)
-    if data.len() >= 2 && data[0] == 0xFF && data[1] == 0xD8 {
-        return decode_native_jpeg(data);
+    // Auto-detect: iterate registry by priority
+    let mut entries: Vec<&DecoderDispatchEntry> =
+        inventory::iter::<&'static DecoderDispatchEntry>
+            .into_iter()
+            .copied()
+            .collect();
+    entries.sort_by_key(|e| e.priority);
+
+    for entry in &entries {
+        if let Some(detect) = entry.detect_fn {
+            if detect(data) {
+                return (entry.decode_fn)(data);
+            }
+        }
     }
 
-    // Native trivial codecs — opt-in via feature flags, bypass image crate
-    #[cfg(feature = "native-qoi")]
-    if data.len() >= 4 && &data[..4] == b"qoif" {
-        return decode_native_qoi(data);
-    }
-    #[cfg(feature = "native-bmp")]
-    if data.len() >= 2 && &data[..2] == b"BM" {
-        return decode_native_bmp(data);
-    }
-    #[cfg(feature = "native-pnm")]
-    if data.len() >= 2 && (data[0] == b'P' && data[1].is_ascii_digit()) {
-        return decode_native_pnm(data);
-    }
-    // TGA — native decode when feature enabled (TGA has no magic; detected after image crate)
-    #[cfg(feature = "native-tga")]
-    if detect_tga(data) {
-        return decode_native_tga(data);
-    }
-
-    // PNG — native decode via png crate
-    if data.len() >= 8 && data[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] {
-        return decode_native_png(data);
-    }
-
-    // DNG — TIFF-based RAW, must be checked before generic TIFF
-    #[cfg(feature = "native-raw")]
-    if data.len() >= 4
-        && ((data[0] == b'I' && data[1] == b'I' && data[2] == 42 && data[3] == 0)
-            || (data[0] == b'M' && data[1] == b'M' && data[2] == 0 && data[3] == 42))
-        && rasmcore_raw::is_dng(data)
-    {
-        return decode_native_dng(data);
-    }
-
-    // TIFF — decode via tiff crate directly (dropped from image features)
-    if data.len() >= 4
-        && ((data[0] == b'I' && data[1] == b'I' && data[2] == 42 && data[3] == 0)
-            || (data[0] == b'M' && data[1] == b'M' && data[2] == 0 && data[3] == 42))
-    {
-        return decode_tiff_native(data);
-    }
-
-    // GIF — decode via gif crate directly (dropped from image features)
-    if data.len() >= 6 && &data[..3] == b"GIF" {
-        return decode_native_gif(data);
-    }
-
-    // WebP — decode via image-webp crate directly (dropped from image features)
-    if data.len() >= 12 && &data[..4] == b"RIFF" && &data[8..12] == b"WEBP" {
-        return decode_native_webp(data);
-    }
-
-    // DDS — decode via native implementation (dropped from image features)
-    if data.len() >= 4 && data[..4] == [0x44, 0x44, 0x53, 0x20] {
-        // DDS magic: "DDS " (0x44445320)
-        return decode_dds_native(data);
-    }
-
-    // ICO — extract embedded PNG and decode it
-    if data.len() >= 6
-        && data[0] == 0
-        && data[1] == 0
-        && (data[2] == 1 || data[2] == 2)
-        && data[3] == 0
-    {
-        return decode_native_ico(data);
-    }
-
-    // HDR (Radiance RGBE) — magic "#?RADIANCE" or "#?RGBE"
-    if data.len() >= 10 && (data.starts_with(b"#?RADIANCE") || data.starts_with(b"#?RGBE")) {
-        return decode_native_hdr(data);
-    }
-
-    // EXR (OpenEXR) — magic 0x762F3101
-    if data.len() >= 4 && data[..4] == [0x76, 0x2F, 0x31, 0x01] {
-        return decode_native_exr(data);
-    }
-
-    // All known formats are handled above — unknown format
+    // No registered decoder matched
     let detected = detect_format(data).unwrap_or_else(|| "unknown".to_string());
     Err(ImageError::InvalidInput(format!(
-        "decode: format '{detected}' not supported"
+        "decode: no decoder matched for data (detected as '{detected}')"
     )))
 }
 
@@ -737,9 +795,9 @@ fn convert_pixels(decoded: DecodedImage, target: PixelFormat) -> Result<DecodedI
     })
 }
 
-/// List supported decode formats
+/// List supported decode formats (derived from decoder registry).
 pub fn supported_formats() -> Vec<String> {
-    SUPPORTED_FORMATS.iter().map(|s| String::from(*s)).collect()
+    supported_decode_formats()
 }
 
 /// Decode a JPEG 2000 image using justjp2.
@@ -2851,7 +2909,8 @@ mod tests {
 
     #[test]
     fn supported_formats_includes_svg() {
-        assert!(SUPPORTED_FORMATS.contains(&"svg"));
+        let fmts = supported_formats();
+        assert!(fmts.contains(&"svg".to_string()));
     }
 
     // ─── Multi-Frame Tests ────────────────────────────────────────────────
