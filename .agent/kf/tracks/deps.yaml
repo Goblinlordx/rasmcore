@@ -275,3 +275,6 @@ fix-filter-params-webui_20260402144500Z: []
 
 # Wire up LayerCache in web UI workers — no deps (WASM infrastructure completed)
 webui-wire-layer-cache_20260403064000Z: []
+
+# Bit depth handling audit — research, no deps
+bitdepth-audit_20260403070500Z: []
