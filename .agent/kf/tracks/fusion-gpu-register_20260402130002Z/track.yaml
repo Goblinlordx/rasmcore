@@ -1,0 +1,55 @@
+id: fusion-gpu-register_20260402130002Z
+title: Register GPU capability for fused LUT/CLUT nodes after optimization
+type: bug
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    FusedLutNode and FusedClutNode implement GpuCapable but optimize_point_ops
+    never calls register_gpu after replacing nodes, so GPU dispatch falls back
+    to CPU for all fused point-op chains.
+  context: |
+    The pipeline optimizer fuses consecutive point-ops into a single FusedLutNode
+    (graph.rs:1157). FusedLutNode has a GpuCapable impl with a lut1d.wgsl shader
+    (graph.rs:158-178). But the optimizer only replaces self.nodes[i] — it never
+    updates self.gpu_nodes[i]. The GPU dispatch at graph.rs:1346 checks gpu_nodes
+    and finds None, falling back to CPU. Same issue likely affects FusedClutNode.
+  codebase_analysis: |
+    graph.rs:125-178 — FusedLutNode struct + ImageNode + GpuCapable impls
+    graph.rs:180-240 — FusedClutNode struct + ImageNode + GpuCapable impls
+    graph.rs:1111-1170 — optimize_point_ops() replaces nodes but not gpu_nodes
+    graph.rs:594 — gpu_nodes: Vec<Option<Box<dyn GpuCapable>>>
+    graph.rs:836 — register_gpu(node_id, gpu) updates gpu_nodes
+    graph.rs:1346 — GPU dispatch reads gpu_nodes[node_id]
+    shaders/lut1d.wgsl — existing shader for fused LUT GPU path
+    shaders/lut3d.wgsl — existing shader for fused CLUT GPU path
+  acceptance_criteria:
+    - After optimize_point_ops, fused LUT nodes have gpu_nodes entry populated
+    - After optimize_color_ops, fused CLUT nodes have gpu_nodes entry populated
+    - GPU dispatch uses lut1d.wgsl shader for fused point-op chains
+    - Consecutive brightness+contrast+gamma applies via GPU, not CPU fallback
+    - Existing fused_lut_gpu_ops_serialize test passes
+  out_of_scope: |
+    Adding new GPU shaders. The lut1d.wgsl and lut3d.wgsl shaders already exist.
+    This is purely about wiring — registering the existing GPU capability after fusion.
+  technical_notes: |
+    In optimize_point_ops(), after self.nodes[i] = Box::new(FusedLutNode { ... }),
+    add: self.gpu_nodes[i] = Some(Box::new(FusedLutNode { upstream, source_info, lut })).
+    Same pattern for optimize_color_ops() with FusedClutNode.
+    Note: FusedLutNode/FusedClutNode must derive Clone or be constructed twice
+    (once for nodes, once for gpu_nodes) since they go into different Vec slots.
+plan:
+  - phase: Fix GPU registration
+    tasks:
+      - text: In optimize_point_ops, register GPU for FusedLutNode after replacing self.nodes[i]
+        done: false
+      - text: In optimize_color_ops, register GPU for FusedClutNode after replacing self.nodes[i]
+        done: false
+      - text: Ensure FusedLutNode and FusedClutNode can be constructed for both nodes and gpu_nodes slots
+        done: false
+  - phase: Verify
+    tasks:
+      - text: Run existing fused_lut_gpu_ops_serialize test
+        done: false
+extra: {}
