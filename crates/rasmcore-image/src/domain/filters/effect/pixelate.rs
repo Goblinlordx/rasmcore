@@ -13,6 +13,7 @@ use crate::domain::filters::common::*;
 
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct PixelateParams {
+    #[param(min = 1, max = 128, step = 1, default = 8)]
     pub block_size: u32,
 }
 

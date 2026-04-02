@@ -655,3 +655,72 @@ mod add_noise_tests {
     }
 }
 
+#[cfg(test)]
+mod pixelate_tests {
+    use super::*;
+
+    #[test]
+    fn default_block_size_is_visible() {
+        let params = PixelateParams::default();
+        assert!(
+            params.block_size >= 2,
+            "default block_size should produce a visible mosaic, got {}",
+            params.block_size
+        );
+    }
+
+    #[test]
+    fn default_produces_mosaic() {
+        // 16x16 gradient image, RGB — default params should visibly pixelate
+        let w = 16u32;
+        let h = 16u32;
+        let ch = 3;
+        let mut pixels = vec![0u8; (w * h) as usize * ch];
+        for y in 0..h {
+            for x in 0..w {
+                let off = ((y * w + x) as usize) * ch;
+                pixels[off] = (x * 16) as u8;
+                pixels[off + 1] = (y * 16) as u8;
+                pixels[off + 2] = 128;
+            }
+        }
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
+        let rect = Rect::new(0, 0, w, h);
+        let params = PixelateParams::default();
+        let input = pixels.clone();
+        let result = pixelate(
+            rect,
+            &mut |_| Ok(input.clone()),
+            &info,
+            &params,
+        )
+        .unwrap();
+        // With a visible block_size (>=2), output should differ from input
+        assert_ne!(
+            result, pixels,
+            "pixelate with default params should alter the image"
+        );
+    }
+
+    #[test]
+    fn param_descriptor_has_range() {
+        let descriptors = PixelateParams::param_descriptors();
+        let bs = descriptors
+            .iter()
+            .find(|d| d.name == "block_size")
+            .expect("block_size descriptor missing");
+        assert!(!bs.min.is_empty(), "block_size should have min");
+        assert!(!bs.max.is_empty(), "block_size should have max");
+        assert!(!bs.step.is_empty(), "block_size should have step");
+        assert!(
+            bs.default_val != "0",
+            "block_size default should not be 0"
+        );
+    }
+}
+
