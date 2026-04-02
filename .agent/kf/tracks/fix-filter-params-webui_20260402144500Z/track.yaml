@@ -69,6 +69,7 @@ spec:
     - Changing pixelate block_size produces visible different output
     - WASM component builds successfully (cargo component build)
     - No regression in other filter parameter passthrough
+    - Build-time assertion in build.rs that no filter with a config_struct gets a zero-param WIT signature (compile error if violated)
   out_of_scope: |
     Migrating pixelate to derive(Filter) pattern (covered by filter-migrate-remaining track).
     Fixing the 12 positional-arg filters (covered by codegen-extra-params-in-config track).
@@ -105,6 +106,8 @@ plan:
       - text: "Investigate pixelate manifest metadata — clean WASM rebuild to determine if stale or code bug"
         done: false
       - text: "If pixelate manifest still wrong after rebuild, fix config_params.rs param parsing"
+        done: false
+      - text: "Add build-time assertion that panics if any filter has config_struct but generates a zero-param WIT signature"
         done: false
   - phase: "Verification"
     tasks:
