@@ -35,7 +35,13 @@ pub fn generate(
             for field in fields {
                 if param_structs.contains_key(&field.param_type) {
                     let nested_wit = to_wit_name(&field.param_type);
-                    emit_record(&field.param_type, &nested_wit, param_structs, records, emitted);
+                    emit_record(
+                        &field.param_type,
+                        &nested_wit,
+                        param_structs,
+                        records,
+                        emitted,
+                    );
                 }
             }
 
@@ -57,19 +63,30 @@ pub fn generate(
     }
 
     for f in filters {
-        let has_config_param = f.params.iter().any(|(_n, t)| t.starts_with('&') && t.ends_with("Params"));
+        let has_config_param = f
+            .params
+            .iter()
+            .any(|(_n, t)| t.starts_with('&') && t.ends_with("Params"));
         // derive(Filter) filters have config_struct but no entries in params vec.
         // Only true when the config struct has actual fields in param_structs.
-        let has_derive_config = f.config_struct.as_ref()
+        let has_derive_config = f
+            .config_struct
+            .as_ref()
             .filter(|_| f.params.is_empty())
             .and_then(|name| param_structs.get(name.as_str()))
-            .map_or(false, |fields| !fields.is_empty());
+            .is_some_and(|fields| !fields.is_empty());
 
         // Get config struct field names to avoid duplicating fields
         let config_field_names: std::collections::HashSet<String> = if has_config_param {
             if let Some(config_name) = &f.config_struct {
-                param_structs.get(config_name.as_str())
-                    .map(|fields| fields.iter().map(|f| f.name.trim_start_matches('_').to_string()).collect())
+                param_structs
+                    .get(config_name.as_str())
+                    .map(|fields| {
+                        fields
+                            .iter()
+                            .map(|f| f.name.trim_start_matches('_').to_string())
+                            .collect()
+                    })
                     .unwrap_or_default()
             } else {
                 std::collections::HashSet::new()
@@ -79,9 +96,12 @@ pub fn generate(
         };
 
         // Extra params that are NOT already fields in the ConfigParams struct
-        let extra_params: Vec<&(String, String)> = f.params.iter()
+        let extra_params: Vec<&(String, String)> = f
+            .params
+            .iter()
             .filter(|(n, t)| {
-                !(config_field_names.contains(n.trim_start_matches('_')) || t.starts_with('&') && t.ends_with("Params"))
+                !(config_field_names.contains(n.trim_start_matches('_'))
+                    || t.starts_with('&') && t.ends_with("Params"))
             })
             .collect();
         let record_name = format!("{}-config", to_wit_name(&f.name));
@@ -89,7 +109,13 @@ pub fn generate(
         // Emit config record — old-style (has_config_param) or derive-style (has_derive_config)
         if has_config_param || has_derive_config {
             if let Some(config_name) = &f.config_struct {
-                emit_record(config_name, &record_name, param_structs, &mut records, &mut emitted_records);
+                emit_record(
+                    config_name,
+                    &record_name,
+                    param_structs,
+                    &mut records,
+                    &mut emitted_records,
+                );
             }
         }
 
@@ -114,7 +140,8 @@ pub fn generate(
                     let after = &records[pos..];
                     if let Some(close_pos) = after.find("    }\n\n") {
                         let insert_at = pos + close_pos;
-                        let extra_fields: String = extra_params.iter()
+                        let extra_fields: String = extra_params
+                            .iter()
                             .map(|(n, t)| {
                                 let wn = to_wit_name(n.trim_start_matches('_'));
                                 format!("        {}: {},\n", wn, to_wit_type(t))
@@ -229,9 +256,20 @@ mod tests {
             derive_style: false,
         }];
         let mut param_structs = std::collections::HashMap::new();
-        param_structs.insert("BlurParams".to_string(), vec![
-            ParamField { name: "radius".to_string(), param_type: "f32".to_string(), default_val: String::new(), min: String::new(), max: String::new(), step: String::new(), label: String::new(), hint: String::new(), options: Vec::new() },
-        ]);
+        param_structs.insert(
+            "BlurParams".to_string(),
+            vec![ParamField {
+                name: "radius".to_string(),
+                param_type: "f32".to_string(),
+                default_val: String::new(),
+                min: String::new(),
+                max: String::new(),
+                step: String::new(),
+                label: String::new(),
+                hint: String::new(),
+                options: Vec::new(),
+            }],
+        );
         let wit = generate(&filters, &param_structs);
         assert!(
             wit.contains("record blur-config {"),
@@ -267,10 +305,33 @@ mod tests {
             derive_style: true,
         }];
         let mut param_structs = std::collections::HashMap::new();
-        param_structs.insert("WaveParams".to_string(), vec![
-            ParamField { name: "amplitude".to_string(), param_type: "f32".to_string(), default_val: String::new(), min: String::new(), max: String::new(), step: String::new(), label: String::new(), hint: String::new(), options: Vec::new() },
-            ParamField { name: "wavelength".to_string(), param_type: "f32".to_string(), default_val: String::new(), min: String::new(), max: String::new(), step: String::new(), label: String::new(), hint: String::new(), options: Vec::new() },
-        ]);
+        param_structs.insert(
+            "WaveParams".to_string(),
+            vec![
+                ParamField {
+                    name: "amplitude".to_string(),
+                    param_type: "f32".to_string(),
+                    default_val: String::new(),
+                    min: String::new(),
+                    max: String::new(),
+                    step: String::new(),
+                    label: String::new(),
+                    hint: String::new(),
+                    options: Vec::new(),
+                },
+                ParamField {
+                    name: "wavelength".to_string(),
+                    param_type: "f32".to_string(),
+                    default_val: String::new(),
+                    min: String::new(),
+                    max: String::new(),
+                    step: String::new(),
+                    label: String::new(),
+                    hint: String::new(),
+                    options: Vec::new(),
+                },
+            ],
+        );
         let wit = generate(&filters, &param_structs);
         assert!(
             wit.contains("record wave-config {"),

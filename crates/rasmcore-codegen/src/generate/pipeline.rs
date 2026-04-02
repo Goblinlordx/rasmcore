@@ -22,7 +22,6 @@ pub fn generate_nodes(filters: &[FilterReg]) -> String {
     code.push_str("#[allow(unused_imports)] use crate::domain::types::*;\n");
     code.push_str("#[allow(unused_imports)] use rasmcore_pipeline::Rect;\n\n");
 
-
     for f in filters {
         let node_name = format!("{}Node", to_pascal_case(&f.name));
 
@@ -104,11 +103,12 @@ pub fn generate_nodes(filters: &[FilterReg]) -> String {
                 code.push_str("    fn gpu_ops_with_format(&self, width: u32, height: u32, buffer_format: rasmcore_pipeline::gpu::BufferFormat) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {\n");
                 code.push_str("        if self.source_info.format != crate::domain::types::PixelFormat::Rgba8 { return None; }\n");
                 code.push_str("        use crate::domain::filter_traits::GpuFilter;\n");
-                code.push_str("        self.config.gpu_ops_with_format(width, height, buffer_format)\n");
+                code.push_str(
+                    "        self.config.gpu_ops_with_format(width, height, buffer_format)\n",
+                );
                 code.push_str("    }\n");
                 code.push_str("}\n\n");
             }
-
         } else {
             // ── Old-style: bare function with #[register_filter] ───────────
             let domain_fn = &f.fn_name;
@@ -119,7 +119,10 @@ pub fn generate_nodes(filters: &[FilterReg]) -> String {
             code.push_str("    pub(crate) source_info: ImageInfo,\n");
             for (pname, ptype) in &f.params {
                 let clean_n = pname.trim_start_matches('_');
-                code.push_str(&format!("    pub(crate) {clean_n}: {},\n", to_owned_type(ptype)));
+                code.push_str(&format!(
+                    "    pub(crate) {clean_n}: {},\n",
+                    to_owned_type(ptype)
+                ));
             }
             code.push_str("}\n\n");
 
@@ -187,7 +190,9 @@ pub fn generate_nodes(filters: &[FilterReg]) -> String {
                 format!(", {}", call_args.join(", "))
             };
             code.push_str("        let upstream_id = self.upstream;\n");
-            code.push_str("        let mut upstream = |rect: Rect| upstream_fn(upstream_id, rect);\n");
+            code.push_str(
+                "        let mut upstream = |rect: Rect| upstream_fn(upstream_id, rect);\n",
+            );
             code.push_str(&format!(
                 "        filters::{domain_fn}(request, &mut upstream, &self.source_info{extra_args})\n"
             ));
@@ -246,17 +251,28 @@ pub fn generate_adapter_macro(
         let mut hash_args = Vec::new();
 
         // All params come from a single WIT config record.
-        let has_config_param = f.params.iter().any(|(_n, t)| t.starts_with('&') && t.ends_with("Params"));
+        let has_config_param = f
+            .params
+            .iter()
+            .any(|(_n, t)| t.starts_with('&') && t.ends_with("Params"));
         // derive(Filter) filters have config_struct but no entries in params vec
-        let has_derive_config = f.derive_style && f.config_struct.as_ref()
-            .and_then(|name| param_structs.get(name.as_str()))
-            .map_or(false, |fields| !fields.is_empty());
+        let has_derive_config = f.derive_style
+            && f.config_struct
+                .as_ref()
+                .and_then(|name| param_structs.get(name.as_str()))
+                .is_some_and(|fields| !fields.is_empty());
         let has_any_params = !f.params.is_empty() || has_derive_config;
         // Config struct field names — extra params with same name are already in the struct
         let config_field_names: std::collections::HashSet<String> = if has_config_param {
             if let Some(config_name) = &f.config_struct {
-                param_structs.get(config_name.as_str())
-                    .map(|fields| fields.iter().map(|f| f.name.trim_start_matches('_').to_string()).collect())
+                param_structs
+                    .get(config_name.as_str())
+                    .map(|fields| {
+                        fields
+                            .iter()
+                            .map(|f| f.name.trim_start_matches('_').to_string())
+                            .collect()
+                    })
                     .unwrap_or_default()
             } else {
                 std::collections::HashSet::new()
@@ -279,7 +295,8 @@ pub fn generate_adapter_macro(
             if let Some(config_name) = &f.config_struct {
                 let domain_type = to_qualified_binding_type(config_name);
                 if let Some(fields) = param_structs.get(config_name.as_str()) {
-                    let field_inits: Vec<String> = fields.iter()
+                    let field_inits: Vec<String> = fields
+                        .iter()
                         .map(|field| {
                             let fname = field.name.trim_start_matches('_');
                             format!("            {fname}: wit_config.{fname}")
@@ -340,7 +357,9 @@ pub fn generate_adapter_macro(
                 // Clone if the param is also in the config struct (both read wit_config.field)
                 let needs_clone = config_field_names.contains(clean_n);
                 if needs_clone {
-                    body_lines.push(format!("        let {clean_n} = wit_config.{clean_n}.clone();"));
+                    body_lines.push(format!(
+                        "        let {clean_n} = wit_config.{clean_n}.clone();"
+                    ));
                 } else {
                     body_lines.push(format!("        let {clean_n} = wit_config.{clean_n};"));
                 }

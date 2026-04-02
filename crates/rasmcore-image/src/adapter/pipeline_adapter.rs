@@ -18,8 +18,14 @@ use super::{to_domain_frame_selection, to_wit_error, to_wit_image_info};
 
 // Import generated macros that provide pipeline filter + write + transform methods
 include!(concat!(env!("OUT_DIR"), "/generated_pipeline_adapter.rs"));
-include!(concat!(env!("OUT_DIR"), "/generated_pipeline_write_adapter.rs"));
-include!(concat!(env!("OUT_DIR"), "/generated_pipeline_transform_adapter.rs"));
+include!(concat!(
+    env!("OUT_DIR"),
+    "/generated_pipeline_write_adapter.rs"
+));
+include!(concat!(
+    env!("OUT_DIR"),
+    "/generated_pipeline_transform_adapter.rs"
+));
 
 fn to_domain_png_filter_type_pipeline(
     f: Option<pipeline::PngFilterType>,
@@ -316,9 +322,15 @@ impl GuestImagePipeline for PipelineResource {
 
     fn set_precision(&self, precision: pipeline::PipelinePrecision) {
         let domain_precision = match precision {
-            pipeline::PipelinePrecision::Standard => domain::pixel_sample::PipelinePrecision::Standard,
-            pipeline::PipelinePrecision::HalfPrecision => domain::pixel_sample::PipelinePrecision::HalfPrecision,
-            pipeline::PipelinePrecision::HighPrecision => domain::pixel_sample::PipelinePrecision::HighPrecision,
+            pipeline::PipelinePrecision::Standard => {
+                domain::pixel_sample::PipelinePrecision::Standard
+            }
+            pipeline::PipelinePrecision::HalfPrecision => {
+                domain::pixel_sample::PipelinePrecision::HalfPrecision
+            }
+            pipeline::PipelinePrecision::HighPrecision => {
+                domain::pixel_sample::PipelinePrecision::HighPrecision
+            }
         };
         self.precision.set(domain_precision);
     }
@@ -408,12 +420,10 @@ impl GuestImagePipeline for PipelineResource {
         // Create source node with content hash and metadata
         let source_hash = rasmcore_pipeline::compute_source_hash(&data);
         let node = source::SourceNode::new(data).map_err(to_wit_error)?;
-        let id = self.graph.borrow_mut().add_source_node(
-            Box::new(node),
-            source_hash,
-            meta,
-            "source",
-        );
+        let id =
+            self.graph
+                .borrow_mut()
+                .add_source_node(Box::new(node), source_hash, meta, "source");
         Ok(id)
     }
 
@@ -619,9 +629,7 @@ impl GuestImagePipeline for PipelineResource {
 
         let info = {
             let graph = self.graph.borrow();
-            graph
-                .node_info(source_node)
-                .map_err(|e| to_wit_error(e))?
+            graph.node_info(source_node).map_err(|e| to_wit_error(e))?
         };
 
         let params: std::collections::HashMap<String, String> = config.into_iter().collect();
@@ -668,10 +676,9 @@ impl GuestImagePipeline for PipelineResource {
         format: String,
         quality: Option<u8>,
     ) -> Result<Vec<u8>, RasmcoreError> {
-        use crate::domain::pipeline::graph::{execute_from_description, GraphDescription};
+        use crate::domain::pipeline::graph::{GraphDescription, execute_from_description};
 
-        let desc =
-            GraphDescription::deserialize(&description).map_err(to_wit_error)?;
+        let desc = GraphDescription::deserialize(&description).map_err(to_wit_error)?;
         execute_from_description(&desc, &source_data, terminal_node, &format, quality)
             .map_err(to_wit_error)
     }
@@ -688,9 +695,7 @@ pub fn dispatch_chain_op(
     name: &str,
     params: &[f32],
 ) -> Result<NodeId, RasmcoreError> {
-    use crate::bindings::exports::rasmcore::image::pipeline::{
-        self as p, GuestImagePipeline as P,
-    };
+    use crate::bindings::exports::rasmcore::image::pipeline::{self as p, GuestImagePipeline as P};
 
     // Helper to get param at index or return default
     let f = |i: usize, default: f32| -> f32 { params.get(i).copied().unwrap_or(default) };
@@ -760,7 +765,13 @@ pub fn dispatch_chain_op(
         "blur" => P::blur(pipe, source, p::BlurConfig { radius: f(0, 3.0) }),
         "brightness" => P::brightness(pipe, source, p::BrightnessConfig { amount: f(0, 0.0) }),
         "contrast" => P::contrast(pipe, source, p::ContrastConfig { amount: f(0, 0.0) }),
-        "gamma" => P::gamma(pipe, source, p::GammaConfig { gamma_value: f(0, 1.0) }),
+        "gamma" => P::gamma(
+            pipe,
+            source,
+            p::GammaConfig {
+                gamma_value: f(0, 1.0),
+            },
+        ),
         "exposure" => P::exposure(
             pipe,
             source,
@@ -770,34 +781,115 @@ pub fn dispatch_chain_op(
                 gamma_correction: f(2, 1.0),
             },
         ),
-        "sepia" => P::sepia(pipe, source, p::SepiaConfig { intensity: f(0, 1.0) }),
+        "sepia" => P::sepia(
+            pipe,
+            source,
+            p::SepiaConfig {
+                intensity: f(0, 1.0),
+            },
+        ),
         "saturate" => P::saturate(pipe, source, p::SaturateConfig { factor: f(0, 1.0) }),
         "hue_rotate" | "hue-rotate" => {
             P::hue_rotate(pipe, source, p::HueRotateConfig { degrees: f(0, 0.0) })
         }
         "vibrance" => P::vibrance(pipe, source, p::VibranceConfig { amount: f(0, 0.0) }),
         "sharpen" => P::sharpen(pipe, source, p::SharpenConfig { amount: f(0, 1.0) }),
-        "solarize" => {
-            P::solarize(pipe, source, p::SolarizeConfig { threshold: f(0, 128.0) as u8 })
-        }
-        "posterize" => {
-            P::posterize(pipe, source, p::PosterizeConfig { levels: f(0, 4.0) as u8 })
-        }
-        "pixelate" => {
-            P::pixelate(pipe, source, p::PixelateConfig { block_size: f(0, 10.0) as u32 })
-        }
-        "oil_paint" | "oil-paint" => {
-            P::oil_paint(pipe, source, p::OilPaintConfig { radius: f(0, 4.0) as u32 })
-        }
-        "median" => P::median(pipe, source, p::MedianConfig { radius: f(0, 3.0) as u32 }),
-        "box_blur" | "box-blur" => P::box_blur(pipe, source, p::BoxBlurConfig { radius: f(0, 3.0) as u32 }),
-        "motion_blur" | "motion-blur" => P::motion_blur(pipe, source, p::MotionBlurConfig { length: f(0, 10.0) as u32, angle_degrees: f(1, 0.0) }),
-        "spin_blur" | "spin-blur" => P::spin_blur(pipe, source, p::SpinBlurConfig { center_x: f(0, 0.5), center_y: f(1, 0.5), angle: f(2, 10.0) }),
+        "solarize" => P::solarize(
+            pipe,
+            source,
+            p::SolarizeConfig {
+                threshold: f(0, 128.0) as u8,
+            },
+        ),
+        "posterize" => P::posterize(
+            pipe,
+            source,
+            p::PosterizeConfig {
+                levels: f(0, 4.0) as u8,
+            },
+        ),
+        "pixelate" => P::pixelate(
+            pipe,
+            source,
+            p::PixelateConfig {
+                block_size: f(0, 10.0) as u32,
+            },
+        ),
+        "oil_paint" | "oil-paint" => P::oil_paint(
+            pipe,
+            source,
+            p::OilPaintConfig {
+                radius: f(0, 4.0) as u32,
+            },
+        ),
+        "median" => P::median(
+            pipe,
+            source,
+            p::MedianConfig {
+                radius: f(0, 3.0) as u32,
+            },
+        ),
+        "box_blur" | "box-blur" => P::box_blur(
+            pipe,
+            source,
+            p::BoxBlurConfig {
+                radius: f(0, 3.0) as u32,
+            },
+        ),
+        "motion_blur" | "motion-blur" => P::motion_blur(
+            pipe,
+            source,
+            p::MotionBlurConfig {
+                length: f(0, 10.0) as u32,
+                angle_degrees: f(1, 0.0),
+            },
+        ),
+        "spin_blur" | "spin-blur" => P::spin_blur(
+            pipe,
+            source,
+            p::SpinBlurConfig {
+                center_x: f(0, 0.5),
+                center_y: f(1, 0.5),
+                angle: f(2, 10.0),
+            },
+        ),
         "spherize" => P::spherize(pipe, source, p::SpherizeConfig { amount: f(0, 1.0) }),
-        "swirl" => P::swirl(pipe, source, p::SwirlConfig { angle: f(0, 1.0), radius: f(1, 0.5) }),
-        "ripple" => P::ripple(pipe, source, p::RippleConfig { amplitude: f(0, 10.0), wavelength: f(1, 50.0), center_x: f(2, 0.5), center_y: f(3, 0.5) }),
-        "wave" => P::wave(pipe, source, p::WaveConfig { amplitude: f(0, 10.0), wavelength: f(1, 50.0), vertical: f(2, 0.0) }),
-        "bilateral" => P::bilateral(pipe, source, p::BilateralConfig { diameter: f(0, 9.0) as u32, sigma_color: f(1, 75.0), sigma_space: f(2, 75.0) }),
+        "swirl" => P::swirl(
+            pipe,
+            source,
+            p::SwirlConfig {
+                angle: f(0, 1.0),
+                radius: f(1, 0.5),
+            },
+        ),
+        "ripple" => P::ripple(
+            pipe,
+            source,
+            p::RippleConfig {
+                amplitude: f(0, 10.0),
+                wavelength: f(1, 50.0),
+                center_x: f(2, 0.5),
+                center_y: f(3, 0.5),
+            },
+        ),
+        "wave" => P::wave(
+            pipe,
+            source,
+            p::WaveConfig {
+                amplitude: f(0, 10.0),
+                wavelength: f(1, 50.0),
+                vertical: f(2, 0.0),
+            },
+        ),
+        "bilateral" => P::bilateral(
+            pipe,
+            source,
+            p::BilateralConfig {
+                diameter: f(0, 9.0) as u32,
+                sigma_color: f(1, 75.0),
+                sigma_space: f(2, 75.0),
+            },
+        ),
         "gaussian_noise" | "gaussian-noise" => P::gaussian_noise(
             pipe,
             source,

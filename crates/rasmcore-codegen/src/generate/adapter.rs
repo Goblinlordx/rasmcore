@@ -37,9 +37,11 @@ fn generate_derive_style_method(
     param_structs: &HashMap<String, Vec<ParamField>>,
 ) {
     let config_type = f.config_struct.as_deref().unwrap_or("()");
-    let has_config_fields = f.config_struct.as_ref()
+    let has_config_fields = f
+        .config_struct
+        .as_ref()
         .and_then(|name| param_structs.get(name.as_str()))
-        .map_or(false, |fields| !fields.is_empty());
+        .is_some_and(|fields| !fields.is_empty());
 
     if has_config_fields {
         let wit_config_type = format!("filters::{}Config", super::helpers::to_pascal_case(&f.name));
@@ -47,7 +49,9 @@ fn generate_derive_style_method(
             "    fn {trait_method}(pixels: Vec<u8>, info: types::ImageInfo, wit_config: {wit_config_type}) -> Result<Vec<u8>, RasmcoreError> {{\n"
         ));
         code.push_str("        let di = to_domain_image_info(&info);\n");
-        code.push_str("        let full_rect = rasmcore_pipeline::Rect::new(0, 0, di.width, di.height);\n");
+        code.push_str(
+            "        let full_rect = rasmcore_pipeline::Rect::new(0, 0, di.width, di.height);\n",
+        );
         code.push_str("        let mut upstream = |_rect: rasmcore_pipeline::Rect| -> Result<Vec<u8>, crate::domain::error::ImageError> { Ok(pixels.clone()) };\n");
         code.push_str("        use crate::domain::filter_traits::CpuFilter;\n");
 
@@ -55,7 +59,8 @@ fn generate_derive_style_method(
         let qualified = super::helpers::to_qualified_binding_type;
         let domain_type = qualified(&format!("&{config_type}"));
         if let Some(fields) = param_structs.get(config_type) {
-            let field_inits: Vec<String> = fields.iter()
+            let field_inits: Vec<String> = fields
+                .iter()
                 .map(|field| {
                     let fname = field.name.trim_start_matches('_');
                     format!("            {fname}: wit_config.{fname}")
@@ -74,7 +79,9 @@ fn generate_derive_style_method(
             "    fn {trait_method}(pixels: Vec<u8>, info: types::ImageInfo) -> Result<Vec<u8>, RasmcoreError> {{\n"
         ));
         code.push_str("        let di = to_domain_image_info(&info);\n");
-        code.push_str("        let full_rect = rasmcore_pipeline::Rect::new(0, 0, di.width, di.height);\n");
+        code.push_str(
+            "        let full_rect = rasmcore_pipeline::Rect::new(0, 0, di.width, di.height);\n",
+        );
         code.push_str("        let mut upstream = |_rect: rasmcore_pipeline::Rect| -> Result<Vec<u8>, crate::domain::error::ImageError> { Ok(pixels.clone()) };\n");
         code.push_str("        use crate::domain::filter_traits::CpuFilter;\n");
         code.push_str(&format!(
@@ -101,12 +108,20 @@ fn generate_config_method(
     let has_any_params = !f.params.is_empty();
 
     // Config struct field names — skip extra params already in the struct
-    let config_field_names: std::collections::HashSet<String> = f.params.iter()
+    let config_field_names: std::collections::HashSet<String> = f
+        .params
+        .iter()
         .filter(|(_n, t)| t.starts_with('&') && t.ends_with("Params"))
         .flat_map(|(_n, t)| {
             let struct_name = &t[1..];
-            param_structs.get(struct_name)
-                .map(|fields| fields.iter().map(|f| f.name.trim_start_matches('_').to_string()).collect::<Vec<_>>())
+            param_structs
+                .get(struct_name)
+                .map(|fields| {
+                    fields
+                        .iter()
+                        .map(|f| f.name.trim_start_matches('_').to_string())
+                        .collect::<Vec<_>>()
+                })
                 .unwrap_or_default()
         })
         .collect();
@@ -290,10 +305,19 @@ mod tests {
             rect_request: true,
         }];
         let code = generate(&filters, &HashMap::new());
-        assert!(code.contains("fn blur("), "should generate blur method: {code}");
+        assert!(
+            code.contains("fn blur("),
+            "should generate blur method: {code}"
+        );
         // All params come via a single config record
-        assert!(code.contains("wit_config"), "should accept wit_config: {code}");
-        assert!(code.contains("let radius = wit_config.radius"), "should extract radius from config: {code}");
+        assert!(
+            code.contains("wit_config"),
+            "should accept wit_config: {code}"
+        );
+        assert!(
+            code.contains("let radius = wit_config.radius"),
+            "should extract radius from config: {code}"
+        );
     }
 
     #[test]
@@ -314,8 +338,14 @@ mod tests {
             rect_request: true,
         }];
         let code = generate(&filters, &HashMap::new());
-        assert!(code.contains("wit_config"), "should accept wit_config: {code}");
-        assert!(code.contains("let data = wit_config.data"), "should extract data from config: {code}");
+        assert!(
+            code.contains("wit_config"),
+            "should accept wit_config: {code}"
+        );
+        assert!(
+            code.contains("let data = wit_config.data"),
+            "should extract data from config: {code}"
+        );
     }
 
     #[test]

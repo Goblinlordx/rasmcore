@@ -1,7 +1,7 @@
 //! Generate param-manifest.json from structured data.
 
 use crate::types::{CodegenData, ParamField};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::helpers::{default_range_for_type, to_pascal_case};
 
@@ -226,9 +226,9 @@ fn field_to_json(field: &ParamField) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{CodegenData, FilterReg};
-    use crate::parse::transforms::TransformReg;
     use crate::parse::encoders::EncoderInfo;
+    use crate::parse::transforms::TransformReg;
+    use crate::types::{CodegenData, FilterReg};
 
     #[test]
     fn generate_manifest_basic() {

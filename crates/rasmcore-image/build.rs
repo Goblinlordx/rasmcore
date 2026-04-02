@@ -32,9 +32,10 @@ fn main() {
         filter_paths.push(filters_flat);
         println!("cargo:rerun-if-changed=src/domain/filters.rs");
     }
-    let filters_path = filter_paths.first().cloned().unwrap_or_else(|| {
-        Path::new(&manifest_dir).join("src/domain/filters.rs")
-    });
+    let filters_path = filter_paths
+        .first()
+        .cloned()
+        .unwrap_or_else(|| Path::new(&manifest_dir).join("src/domain/filters.rs"));
 
     let param_types_path = Path::new(&manifest_dir).join("src/domain/param_types.rs");
     let composite_path = Path::new(&manifest_dir).join("src/domain/composite.rs");
@@ -143,7 +144,10 @@ fn main() {
             }
         }
     }
-    eprintln!("rasmcore build.rs: {} GPU-capable node(s) detected", data.gpu_capable_nodes.len());
+    eprintln!(
+        "rasmcore build.rs: {} GPU-capable node(s) detected",
+        data.gpu_capable_nodes.len()
+    );
 
     // Duplicate filter name detection — fail at compile time
     {
@@ -201,7 +205,9 @@ fn main() {
                         for item in &file.items {
                             if let syn::Item::Fn(f) = item {
                                 let name = f.sig.ident.to_string();
-                                if name.starts_with("encode") && f.vis == syn::Visibility::Public(syn::token::Pub::default()) {
+                                if name.starts_with("encode")
+                                    && f.vis == syn::Visibility::Public(syn::token::Pub::default())
+                                {
                                     config.encode_fn = name;
                                     break;
                                 }
@@ -240,8 +246,9 @@ fn main() {
         .unwrap();
 
         // Generate encode dispatch macro from ALL encoders (not just sink-having ones)
-        let encode_dispatch =
-            rasmcore_codegen::generate::pipeline_write::generate_encode_dispatch(&all_encoder_configs);
+        let encode_dispatch = rasmcore_codegen::generate::pipeline_write::generate_encode_dispatch(
+            &all_encoder_configs,
+        );
         std::fs::write(
             out_dir.join("generated_encode_dispatch.rs"),
             &encode_dispatch,
@@ -291,9 +298,9 @@ fn main() {
         if enum_src_path.exists() {
             let source = std::fs::read_to_string(enum_src_path).unwrap_or_default();
             if let Ok(file) = syn::parse_file(&source) {
-                all_enums.extend(
-                    rasmcore_codegen::parse::transforms::extract_enums(&file, domain_mod),
-                );
+                all_enums.extend(rasmcore_codegen::parse::transforms::extract_enums(
+                    &file, domain_mod,
+                ));
             }
         }
     }
@@ -322,10 +329,9 @@ fn main() {
             if let Ok(entries) = std::fs::read_dir(&dir_path) {
                 for entry in entries.flatten() {
                     let fname = entry.file_name();
-                    if entry.path().extension().is_some_and(|e| e == "rs")
-                        && fname != "mod.rs"
-                    {
-                        combined.push_str(&std::fs::read_to_string(entry.path()).unwrap_or_default());
+                    if entry.path().extension().is_some_and(|e| e == "rs") && fname != "mod.rs" {
+                        combined
+                            .push_str(&std::fs::read_to_string(entry.path()).unwrap_or_default());
                         combined.push('\n');
                     }
                 }
@@ -348,7 +354,11 @@ fn main() {
             all_transforms.len()
         );
         for t in &all_transforms {
-            let params: Vec<String> = t.params.iter().map(|(n, ty)| format!("{n}: {ty}")).collect();
+            let params: Vec<String> = t
+                .params
+                .iter()
+                .map(|(n, ty)| format!("{n}: {ty}"))
+                .collect();
             eprintln!(
                 "  {} ({}) params=[{}] fallible={} multi_input={}",
                 t.name,
@@ -413,7 +423,10 @@ fn main() {
 
         // Regenerate CLI dispatch with transforms included
         let cli_dispatch = rasmcore_codegen::generate::cli_dispatch::generate(
-            &data.filters, &data.mappers, &data.transforms, &data.gpu_capable_nodes,
+            &data.filters,
+            &data.mappers,
+            &data.transforms,
+            &data.gpu_capable_nodes,
         );
         std::fs::write(out_dir.join("generated_cli_dispatch.rs"), &cli_dispatch).unwrap();
         eprintln!(
@@ -447,10 +460,7 @@ fn main() {
                 .filter_map(|line| {
                     let trimmed = line.trim();
                     if trimmed.starts_with("record ") {
-                        let name = trimmed
-                            .strip_prefix("record ")?
-                            .split_whitespace()
-                            .next()?;
+                        let name = trimmed.strip_prefix("record ")?.split_whitespace().next()?;
                         Some(name.to_string())
                     } else {
                         None
@@ -460,10 +470,7 @@ fn main() {
             let filter_import_line = if filter_record_names.is_empty() {
                 String::new()
             } else {
-                format!(
-                    "    use filters.{{{}}};",
-                    filter_record_names.join(", ")
-                )
+                format!("    use filters.{{{}}};", filter_record_names.join(", "))
             };
 
             eprintln!(
@@ -477,89 +484,102 @@ fn main() {
             if tmpl_path.exists() {
                 let tmpl = fs::read_to_string(&tmpl_path).unwrap();
 
-            // Generate transform WIT — split into types (enums + records) and methods
-            let mut transform_types = String::new(); // goes before resource (interface level)
-            let mut transform_methods = String::new(); // goes inside resource
-            if !all_transforms.is_empty() {
-                // Collect which enums are used by transforms.
-                // Exclude enums already defined in other WIT interfaces (imported).
-                let externally_defined = ["ExifOrientation"]; // defined in metadata.wit
-                let used_enums: Vec<String> = {
-                    let mut used = Vec::new();
-                    for t in &all_transforms {
-                        for (_, ptype) in &t.params {
-                            if all_enums.contains_key(ptype.as_str())
-                                && !used.contains(ptype)
-                                && !externally_defined.contains(&ptype.as_str())
-                            {
-                                used.push(ptype.clone());
-                            }
-                            if let Some(inner) = ptype.strip_prefix("Option<").and_then(|s| s.strip_suffix('>'))
-                                && all_enums.contains_key(inner)
-                                && !used.contains(&inner.to_string())
-                                && !externally_defined.contains(&inner)
-                            {
-                                used.push(inner.to_string());
+                // Generate transform WIT — split into types (enums + records) and methods
+                let mut transform_types = String::new(); // goes before resource (interface level)
+                let mut transform_methods = String::new(); // goes inside resource
+                if !all_transforms.is_empty() {
+                    // Collect which enums are used by transforms.
+                    // Exclude enums already defined in other WIT interfaces (imported).
+                    let externally_defined = ["ExifOrientation"]; // defined in metadata.wit
+                    let used_enums: Vec<String> = {
+                        let mut used = Vec::new();
+                        for t in &all_transforms {
+                            for (_, ptype) in &t.params {
+                                if all_enums.contains_key(ptype.as_str())
+                                    && !used.contains(ptype)
+                                    && !externally_defined.contains(&ptype.as_str())
+                                {
+                                    used.push(ptype.clone());
+                                }
+                                if let Some(inner) = ptype
+                                    .strip_prefix("Option<")
+                                    .and_then(|s| s.strip_suffix('>'))
+                                    && all_enums.contains_key(inner)
+                                    && !used.contains(&inner.to_string())
+                                    && !externally_defined.contains(&inner)
+                                {
+                                    used.push(inner.to_string());
+                                }
                             }
                         }
-                    }
-                    used
-                };
+                        used
+                    };
 
-                transform_types.push_str(&rasmcore_codegen::generate::transform::generate_wit_enums(
-                    &all_enums,
-                    &used_enums,
-                ));
-                transform_types.push_str(&rasmcore_codegen::generate::transform::generate_wit_configs(
-                    &all_transforms,
-                    &all_enums,
-                ));
-                transform_methods.push_str(&rasmcore_codegen::generate::transform::generate_wit_methods(
-                    &all_transforms,
-                ));
-            }
+                    transform_types.push_str(
+                        &rasmcore_codegen::generate::transform::generate_wit_enums(
+                            &all_enums,
+                            &used_enums,
+                        ),
+                    );
+                    transform_types.push_str(
+                        &rasmcore_codegen::generate::transform::generate_wit_configs(
+                            &all_transforms,
+                            &all_enums,
+                        ),
+                    );
+                    transform_methods.push_str(
+                        &rasmcore_codegen::generate::transform::generate_wit_methods(
+                            &all_transforms,
+                        ),
+                    );
+                }
 
-            // Generate pipeline filter methods — all use (source, config) or just (source) for zero-param
-            let mut filter_methods = String::new();
-            for f in &data.filters {
-                let wit_name = f.name.replace('_', "-");
-                // A filter has params if it has old-style params OR a derive(Filter) config struct with fields
-                let has_config = !f.params.is_empty() || (f.config_struct.is_some() && f.config_struct.as_ref()
-                    .and_then(|name| data.param_structs.get(name.as_str()))
-                    .map_or(false, |fields| !fields.is_empty()));
-                if has_config {
-                    filter_methods.push_str(&format!(
+                // Generate pipeline filter methods — all use (source, config) or just (source) for zero-param
+                let mut filter_methods = String::new();
+                for f in &data.filters {
+                    let wit_name = f.name.replace('_', "-");
+                    // A filter has params if it has old-style params OR a derive(Filter) config struct with fields
+                    let has_config = !f.params.is_empty()
+                        || (f.config_struct.is_some()
+                            && f.config_struct
+                                .as_ref()
+                                .and_then(|name| data.param_structs.get(name.as_str()))
+                                .is_some_and(|fields| !fields.is_empty()));
+                    if has_config {
+                        filter_methods.push_str(&format!(
                         "        {wit_name}: func(source: node-id, config: {wit_name}-config) -> result<node-id, rasmcore-error>;\n"
                     ));
-                } else {
-                    // Build-time assertion: catch derive(Filter) filters whose config_struct
-                    // has fields but those fields aren't in param_structs (parsing mismatch).
-                    // Empty config structs (e.g., DepolarParams {}) are legitimately zero-param.
-                    if let Some(cs) = &f.config_struct {
-                        let field_count = data.param_structs.get(cs.as_str())
-                            .map_or(0, |f| f.len());
-                        assert!(
-                            field_count == 0,
-                            "Filter '{}' has config_struct '{}' with {} field(s) in param_structs, \
+                    } else {
+                        // Build-time assertion: catch derive(Filter) filters whose config_struct
+                        // has fields but those fields aren't in param_structs (parsing mismatch).
+                        // Empty config structs (e.g., DepolarParams {}) are legitimately zero-param.
+                        if let Some(cs) = &f.config_struct {
+                            let field_count =
+                                data.param_structs.get(cs.as_str()).map_or(0, |f| f.len());
+                            assert!(
+                                field_count == 0,
+                                "Filter '{}' has config_struct '{}' with {} field(s) in param_structs, \
                              but WIT generation classified it as zero-param. This is a codegen bug.",
-                            f.name, cs, field_count
-                        );
-                    }
-                    filter_methods.push_str(&format!(
+                                f.name,
+                                cs,
+                                field_count
+                            );
+                        }
+                        filter_methods.push_str(&format!(
                         "        {wit_name}: func(source: node-id) -> result<node-id, rasmcore-error>;\n"
                     ));
+                    }
                 }
-            }
 
-            // Fill template
-            let pipeline_wit = tmpl
-                .replace("{{GENERATED_FILTER_IMPORTS}}", &filter_import_line)
-                .replace("{{GENERATED_TRANSFORM_TYPES}}", &transform_types)
-                .replace("{{GENERATED_PIPELINE_TRANSFORMS}}", &transform_methods)
-                .replace("{{GENERATED_PIPELINE_FILTERS}}", &filter_methods);
+                // Fill template
+                let pipeline_wit = tmpl
+                    .replace("{{GENERATED_FILTER_IMPORTS}}", &filter_import_line)
+                    .replace("{{GENERATED_TRANSFORM_TYPES}}", &transform_types)
+                    .replace("{{GENERATED_PIPELINE_TRANSFORMS}}", &transform_methods)
+                    .replace("{{GENERATED_PIPELINE_FILTERS}}", &filter_methods);
 
-            fs::write(wit_dir.join("pipeline.wit"), &pipeline_wit).unwrap();
-            eprintln!("rasmcore build.rs: Generated pipeline.wit from template");
+                fs::write(wit_dir.join("pipeline.wit"), &pipeline_wit).unwrap();
+                eprintln!("rasmcore build.rs: Generated pipeline.wit from template");
             }
         }
     }
@@ -576,7 +596,11 @@ fn main() {
                 eprintln!(
                     "rasmcore build.rs: Found {} metric(s): {}",
                     metrics.len(),
-                    metrics.iter().map(|m| m.name.as_str()).collect::<Vec<_>>().join(", ")
+                    metrics
+                        .iter()
+                        .map(|m| m.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 );
                 let compare_adapter =
                     rasmcore_codegen::generate::metrics::generate_compare_adapter(&metrics);
@@ -606,9 +630,12 @@ fn main() {
     // since shader body files no longer contain pack/unpack/sample_bilinear.
     let gpu_shaders_dir = Path::new(&manifest_dir).join("../rasmcore-gpu-shaders/src/wgsl");
     let pixel_ops = fs::read_to_string(gpu_shaders_dir.join("pixel_ops.wgsl")).unwrap_or_default();
-    let sample_bilinear_frag = fs::read_to_string(gpu_shaders_dir.join("sample_bilinear.wgsl")).unwrap_or_default();
-    let pixel_ops_f32 = fs::read_to_string(gpu_shaders_dir.join("pixel_ops_f32.wgsl")).unwrap_or_default();
-    let sample_bilinear_f32_frag = fs::read_to_string(gpu_shaders_dir.join("sample_bilinear_f32.wgsl")).unwrap_or_default();
+    let sample_bilinear_frag =
+        fs::read_to_string(gpu_shaders_dir.join("sample_bilinear.wgsl")).unwrap_or_default();
+    let pixel_ops_f32 =
+        fs::read_to_string(gpu_shaders_dir.join("pixel_ops_f32.wgsl")).unwrap_or_default();
+    let sample_bilinear_f32_frag =
+        fs::read_to_string(gpu_shaders_dir.join("sample_bilinear_f32.wgsl")).unwrap_or_default();
 
     let shaders_dir = Path::new(&manifest_dir).join("src/shaders");
     if shaders_dir.is_dir() {
@@ -618,9 +645,8 @@ fn main() {
         for entry in fs::read_dir(&shaders_dir).unwrap().flatten() {
             let path = entry.path();
             if path.extension().is_some_and(|e| e == "wgsl") {
-                let body = fs::read_to_string(&path).unwrap_or_else(|e| {
-                    panic!("Failed to read shader {}: {e}", path.display())
-                });
+                let body = fs::read_to_string(&path)
+                    .unwrap_or_else(|e| panic!("Failed to read shader {}: {e}", path.display()));
                 let fname = path.file_name().unwrap().to_str().unwrap();
                 let is_f32 = fname.ends_with("_f32.wgsl");
                 // Compose fragments needed by this shader body
@@ -635,8 +661,8 @@ fn main() {
                     }
                 } else {
                     // u32 shaders use u32 fragments
-                    let needs_sample = body.contains("sample_bilinear(")
-                        && !body.contains("fn sample_bilinear");
+                    let needs_sample =
+                        body.contains("sample_bilinear(") && !body.contains("fn sample_bilinear");
                     if needs_sample {
                         format!("{pixel_ops}\n{sample_bilinear_frag}\n{body}")
                     } else {
@@ -644,18 +670,13 @@ fn main() {
                     }
                 };
                 if let Err(e) = naga::front::wgsl::parse_str(&composed) {
-                    panic!(
-                        "WGSL validation failed for {}:\n{e}",
-                        path.display()
-                    );
+                    panic!("WGSL validation failed for {}:\n{e}", path.display());
                 }
                 shader_count += 1;
             }
         }
         if shader_count > 0 {
-            println!(
-                "cargo:warning=Validated {shader_count} WGSL shader(s) in src/shaders/"
-            );
+            println!("cargo:warning=Validated {shader_count} WGSL shader(s) in src/shaders/");
         }
     }
 }

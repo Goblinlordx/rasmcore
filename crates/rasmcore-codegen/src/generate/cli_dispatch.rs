@@ -14,7 +14,12 @@ use super::helpers::to_pascal_case;
 ///
 /// `gpu_capable_nodes` is the set of node names (e.g., "BlurNode") that have
 /// `GpuCapable` impls. For these, the dispatch creates a second instance for GPU registration.
-pub fn generate(filters: &[FilterReg], mappers: &[MapperReg], transforms: &[TransformReg], gpu_capable_nodes: &HashSet<String>) -> String {
+pub fn generate(
+    filters: &[FilterReg],
+    mappers: &[MapperReg],
+    transforms: &[TransformReg],
+    gpu_capable_nodes: &HashSet<String>,
+) -> String {
     let mut code = String::new();
     code.push_str(
         "// Auto-generated CLI dispatch — maps filter names to typed node constructors.\n",
@@ -139,7 +144,9 @@ pub fn generate(filters: &[FilterReg], mappers: &[MapperReg], transforms: &[Tran
 
     // Main dispatch function
     code.push_str("/// Dispatch a filter by name: parse string params, construct typed node.\n");
-    code.push_str("/// Returns (node, gpu_capable) — gpu_capable is Some for GPU-accelerated filters.\n");
+    code.push_str(
+        "/// Returns (node, gpu_capable) — gpu_capable is Some for GPU-accelerated filters.\n",
+    );
     code.push_str("pub fn dispatch_filter(\n");
     code.push_str("    name: &str,\n");
     code.push_str("    upstream: u32,\n");
@@ -176,9 +183,9 @@ pub fn generate(filters: &[FilterReg], mappers: &[MapperReg], transforms: &[Tran
                 // Config struct reference — construct from CLI params
                 // The struct type is e.g., &SpinBlurParams → SpinBlurParams
                 let struct_name = &ptype[1..]; // strip leading &
-                                               // Use Default::default() — the CLI will override via individual params
-                                               // This is a simplification; full CLI config struct support would
-                                               // parse each field from the HashMap.
+                // Use Default::default() — the CLI will override via individual params
+                // This is a simplification; full CLI config struct support would
+                // parse each field from the HashMap.
                 format!("domain_filters::{struct_name}::default()")
             } else {
                 match ptype.as_str() {
@@ -303,7 +310,9 @@ pub fn generate(filters: &[FilterReg], mappers: &[MapperReg], transforms: &[Tran
                         8 => crate::domain::metadata::ExifOrientation::Rotate270, \
                         _ => crate::domain::metadata::ExifOrientation::Normal }}"
                 ),
-                "Vec<u8>" => format!("Vec::new() /* {clean_name}: binary data not supported via string params */"),
+                "Vec<u8>" => format!(
+                    "Vec::new() /* {clean_name}: binary data not supported via string params */"
+                ),
                 _ => {
                     // Unknown enum or complex type — try f32 fallback
                     format!("get_f32(params, \"{clean_name}\", 0.0)")
@@ -431,9 +440,18 @@ mod tests {
         }];
 
         let code = generate(&filters, &[], &[], &HashSet::new());
-        assert!(code.contains("\"blur\" => Ok((Box::new("), "should generate blur dispatch arm: {code}");
-        assert!(code.contains("BlurNode::new"), "should reference BlurNode: {code}");
-        assert!(code.contains("get_f32(params, \"radius\""), "should extract radius: {code}");
+        assert!(
+            code.contains("\"blur\" => Ok((Box::new("),
+            "should generate blur dispatch arm: {code}"
+        );
+        assert!(
+            code.contains("BlurNode::new"),
+            "should reference BlurNode: {code}"
+        );
+        assert!(
+            code.contains("get_f32(params, \"radius\""),
+            "should extract radius: {code}"
+        );
         assert!(code.contains("pub fn dispatch_filter"));
         assert!(code.contains("pub fn list_filters"));
     }
@@ -453,7 +471,13 @@ mod tests {
         }];
 
         let code = generate(&[], &mappers, &[], &HashSet::new());
-        assert!(code.contains("\"grayscale\" => Ok((Box::new("), "should generate grayscale dispatch: {code}");
-        assert!(code.contains("GrayscaleMapperNode::new"), "should reference GrayscaleMapperNode: {code}");
+        assert!(
+            code.contains("\"grayscale\" => Ok((Box::new("),
+            "should generate grayscale dispatch: {code}"
+        );
+        assert!(
+            code.contains("GrayscaleMapperNode::new"),
+            "should reference GrayscaleMapperNode: {code}"
+        );
     }
 }
