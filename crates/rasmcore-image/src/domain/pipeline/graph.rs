@@ -984,6 +984,46 @@ impl NodeGraph {
             .ok_or_else(|| ImageError::InvalidParameters(format!("invalid node id: {node_id}")))
     }
 
+    /// Extract the fused 3D CLUT from the color op chain ending at `node_id`.
+    ///
+    /// Call `fuse_color_ops()` first to compose consecutive color ops.
+    /// Returns `None` if the terminal node is not a color op / FusedClutNode.
+    /// If the node IS a color op, returns the composed ColorLut3D.
+    /// If there are no color ops in the chain, returns an identity CLUT.
+    pub fn extract_fused_clut(&self, node_id: u32) -> Option<crate::domain::color_lut::ColorLut3D> {
+        // Walk backward from node_id to find any color op node
+        let mut current = node_id as usize;
+        loop {
+            if current >= self.nodes.len() {
+                break;
+            }
+            if let Some(clut) = self.nodes[current].as_color_lut_op() {
+                return Some(clut);
+            }
+            match self.nodes[current].upstream_id() {
+                Some(up) if (up as usize) < current => current = up as usize,
+                _ => break,
+            }
+        }
+        None
+    }
+
+    /// Extract the composed 3D CLUT from ALL color ops in the graph,
+    /// regardless of node position. Fuses first, then extracts.
+    ///
+    /// Returns an identity CLUT if no color ops are present.
+    pub fn extract_all_color_ops(&mut self) -> crate::domain::color_lut::ColorLut3D {
+        self.fuse_color_ops();
+        // Search all nodes for a FusedClutNode (or any color op node)
+        for node in self.nodes.iter().rev() {
+            if let Some(clut) = node.as_color_lut_op() {
+                return clut;
+            }
+        }
+        // No color ops found — return identity
+        crate::domain::color_lut::ColorLut3D::identity(33)
+    }
+
     /// Fuse consecutive per-channel point operations into single LUT nodes.
     ///
     /// Walks the graph and for each node that returns `as_point_op_lut()`,

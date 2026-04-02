@@ -224,6 +224,13 @@ pub fn write_tiled(
     // Fuse consecutive point/color operations before execution
     graph.fuse_point_ops();
     graph.fuse_color_ops();
+
+    // Short-circuit for LUT export: extract fused CLUT, skip pixel execution
+    if format == "cube" {
+        let clut = graph.extract_all_color_ops();
+        return encoder::cube::encode(&clut);
+    }
+
     let info = graph.node_info(node_id)?;
     let bpp = bytes_per_pixel(info.format);
 

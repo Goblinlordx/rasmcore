@@ -1,5 +1,6 @@
 pub mod avif;
 pub mod bmp;
+pub mod cube;
 pub mod dds;
 pub mod exr;
 pub mod fits;
