@@ -95,7 +95,6 @@ interface pipeline {
         read-frames: func(data: buffer, selection: frame-selection) -> result<node-id, rasmcore-error>;
         node-info: func(node: node-id) -> result<image-info, rasmcore-error>;
         set-layer-cache: func(cache: borrow<layer-cache>);
-        set-auto-cleanup: func(enabled: bool);
 
         // ─── Transforms (auto-generated from #[register_transform]) ───
 {{GENERATED_PIPELINE_TRANSFORMS}}

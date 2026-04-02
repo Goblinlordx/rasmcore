@@ -331,11 +331,6 @@ impl GuestImagePipeline for PipelineResource {
         self.precision.set(domain_precision);
     }
 
-    fn set_auto_cleanup(&self, _enabled: bool) {
-        // No-op: auto-cleanup is always on. Caching is controlled by
-        // whether a LayerCache is attached — the cache survives cleanup.
-    }
-
     fn set_layer_cache(&self, cache: LayerCacheBorrow<'_>) {
         let cache_resource = cache.get::<LayerCacheResource>();
         let lc = cache_resource.inner.clone();
