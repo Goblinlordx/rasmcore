@@ -3,7 +3,7 @@ title: GPU vs CPU parity tests for accelerated filters
 type: chore
 status: pending
 created: '2026-04-01'
-updated: '2026-04-01'
+updated: '2026-04-02'
 spec:
   summary: Add automated tests comparing GPU shader output vs CPU output for key accelerated filters (blur, bilateral, spherize,
     spin blur, 3D LUT) with tolerance-based comparison.
@@ -29,25 +29,25 @@ plan:
 - phase: Test Infrastructure
   tasks:
   - text: Add gpu-tests feature flag to rasmcore-image Cargo.toml with wgpu dep
-    done: false
+    done: true
   - text: Create test helper for GPU executor init with skip-on-no-GPU
-    done: false
+    done: true
 - phase: GPU Parity Tests
   tasks:
   - text: GPU vs CPU parity test for Gaussian blur
-    done: false
+    done: true
   - text: GPU vs CPU parity test for bilateral filter
-    done: false
+    done: true
   - text: GPU vs CPU parity test for spherize distortion
-    done: false
+    done: true
   - text: GPU vs CPU parity test for 3D LUT color op
-    done: false
+    done: true
 - phase: Benchmarks
   tasks:
   - text: Add GPU benchmark group to perf.rs for blur, bilateral, spherize
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: All GPU parity tests pass (or skip gracefully on no-GPU machines)
-    done: false
+    done: true
 extra: {}

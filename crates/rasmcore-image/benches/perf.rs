@@ -2234,22 +2234,41 @@ fn gpu_benchmarks(c: &mut Criterion) {
                 None,
             ))
             .map_err(|e| GpuError::NotAvailable(format!("{e}")))?;
-            Ok(Self { device, queue, shader_cache: std::cell::RefCell::new(HashMap::new()), max_buffer })
+            Ok(Self {
+                device,
+                queue,
+                shader_cache: std::cell::RefCell::new(HashMap::new()),
+                max_buffer,
+            })
         }
     }
 
     impl GpuExecutor for BenchGpuExecutor {
-        fn execute(&self, ops: &[GpuOp], input: &[u8], width: u32, height: u32) -> Result<Vec<u8>, GpuError> {
-            if ops.is_empty() { return Ok(input.to_vec()); }
+        fn execute(
+            &self,
+            ops: &[GpuOp],
+            input: &[u8],
+            width: u32,
+            height: u32,
+        ) -> Result<Vec<u8>, GpuError> {
+            if ops.is_empty() {
+                return Ok(input.to_vec());
+            }
             let buf_size = (width * height * 4) as u64;
             let buf_a = self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: None, size: buf_size,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+                label: None,
+                size: buf_size,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
                 mapped_at_creation: false,
             });
             let buf_b = self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: None, size: buf_size,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+                label: None,
+                size: buf_size,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
                 mapped_at_creation: false,
             });
             self.queue.write_buffer(&buf_a, 0, input);
@@ -2258,85 +2277,190 @@ fn gpu_benchmarks(c: &mut Criterion) {
             for (i, op) in ops.iter().enumerate() {
                 let hash = shader_hash(op.shader);
                 let mut cache = self.shader_cache.borrow_mut();
-                let shader = cache.entry(hash).or_insert_with(|| {
-                    self.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                        label: None, source: wgpu::ShaderSource::Wgsl(op.shader.into()),
+                let shader = cache
+                    .entry(hash)
+                    .or_insert_with(|| {
+                        self.device
+                            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                                label: None,
+                                source: wgpu::ShaderSource::Wgsl(op.shader.into()),
+                            })
                     })
-                }).clone();
+                    .clone();
                 drop(cache);
                 let uniform_buf = if !op.params.is_empty() {
                     let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
-                        label: None, size: op.params.len() as u64,
+                        label: None,
+                        size: op.params.len() as u64,
                         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                         mapped_at_creation: false,
                     });
                     self.queue.write_buffer(&buf, 0, &op.params);
                     Some(buf)
-                } else { None };
-                let extra_bufs: Vec<_> = op.extra_buffers.iter().map(|data| {
-                    let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
-                        label: None, size: data.len() as u64,
-                        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                        mapped_at_creation: false,
-                    });
-                    self.queue.write_buffer(&buf, 0, data);
-                    buf
-                }).collect();
+                } else {
+                    None
+                };
+                let extra_bufs: Vec<_> = op
+                    .extra_buffers
+                    .iter()
+                    .map(|data| {
+                        let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+                            label: None,
+                            size: data.len() as u64,
+                            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                            mapped_at_creation: false,
+                        });
+                        self.queue.write_buffer(&buf, 0, data);
+                        buf
+                    })
+                    .collect();
                 let mut layout_entries = vec![
-                    wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }, count: None },
-                    wgpu::BindGroupLayoutEntry { binding: 1, visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: false }, has_dynamic_offset: false, min_binding_size: None }, count: None },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
                 ];
                 let mut nb = 2u32;
                 if uniform_buf.is_some() {
-                    layout_entries.push(wgpu::BindGroupLayoutEntry { binding: nb, visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }, count: None });
+                    layout_entries.push(wgpu::BindGroupLayoutEntry {
+                        binding: nb,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    });
                     nb += 1;
                 }
                 for _ in &extra_bufs {
-                    layout_entries.push(wgpu::BindGroupLayoutEntry { binding: nb, visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }, count: None });
+                    layout_entries.push(wgpu::BindGroupLayoutEntry {
+                        binding: nb,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    });
                     nb += 1;
                 }
-                let bgl = self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: None, entries: &layout_entries });
+                let bgl = self
+                    .device
+                    .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                        label: None,
+                        entries: &layout_entries,
+                    });
                 let mut bg_entries = vec![
-                    wgpu::BindGroupEntry { binding: 0, resource: read_buf.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 1, resource: write_buf.as_entire_binding() },
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: read_buf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: write_buf.as_entire_binding(),
+                    },
                 ];
                 let mut bi = 2u32;
-                if let Some(ref ub) = uniform_buf { bg_entries.push(wgpu::BindGroupEntry { binding: bi, resource: ub.as_entire_binding() }); bi += 1; }
-                for eb in &extra_bufs { bg_entries.push(wgpu::BindGroupEntry { binding: bi, resource: eb.as_entire_binding() }); bi += 1; }
-                let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor { label: None, layout: &bgl, entries: &bg_entries });
-                let pl = self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: None, bind_group_layouts: &[&bgl], push_constant_ranges: &[] });
-                let pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                    label: None, layout: Some(&pl), module: &shader, entry_point: Some(op.entry_point),
-                    compilation_options: Default::default(), cache: None,
+                if let Some(ref ub) = uniform_buf {
+                    bg_entries.push(wgpu::BindGroupEntry {
+                        binding: bi,
+                        resource: ub.as_entire_binding(),
+                    });
+                    bi += 1;
+                }
+                for eb in &extra_bufs {
+                    bg_entries.push(wgpu::BindGroupEntry {
+                        binding: bi,
+                        resource: eb.as_entire_binding(),
+                    });
+                    bi += 1;
+                }
+                let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: None,
+                    layout: &bgl,
+                    entries: &bg_entries,
                 });
+                let pl = self
+                    .device
+                    .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                        label: None,
+                        bind_group_layouts: &[&bgl],
+                        push_constant_ranges: &[],
+                    });
+                let pipeline =
+                    self.device
+                        .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                            label: None,
+                            layout: Some(&pl),
+                            module: &shader,
+                            entry_point: Some(op.entry_point),
+                            compilation_options: Default::default(),
+                            cache: None,
+                        });
                 let [wg_x, wg_y, _] = op.workgroup_size;
-                let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-                { let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: None, timestamp_writes: None });
-                  pass.set_pipeline(&pipeline); pass.set_bind_group(0, &bg, &[]);
-                  pass.dispatch_workgroups((width + wg_x - 1) / wg_x, (height + wg_y - 1) / wg_y, 1); }
+                let mut encoder = self
+                    .device
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+                {
+                    let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                        label: None,
+                        timestamp_writes: None,
+                    });
+                    pass.set_pipeline(&pipeline);
+                    pass.set_bind_group(0, &bg, &[]);
+                    pass.dispatch_workgroups(
+                        (width + wg_x - 1) / wg_x,
+                        (height + wg_y - 1) / wg_y,
+                        1,
+                    );
+                }
                 self.queue.submit(std::iter::once(encoder.finish()));
-                if i < ops.len() - 1 { std::mem::swap(&mut read_buf, &mut write_buf); }
+                if i < ops.len() - 1 {
+                    std::mem::swap(&mut read_buf, &mut write_buf);
+                }
             }
             let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: None, size: buf_size,
+                label: None,
+                size: buf_size,
                 usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
-            let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
             encoder.copy_buffer_to_buffer(write_buf, 0, &staging, 0, buf_size);
             self.queue.submit(std::iter::once(encoder.finish()));
             let slice = staging.slice(..);
             let (tx, rx) = std::sync::mpsc::channel();
-            slice.map_async(wgpu::MapMode::Read, move |r| { tx.send(r).ok(); });
+            slice.map_async(wgpu::MapMode::Read, move |r| {
+                tx.send(r).ok();
+            });
             self.device.poll(wgpu::Maintain::Wait);
             rx.recv().unwrap().unwrap();
             Ok(slice.get_mapped_range().to_vec())
         }
-        fn max_buffer_size(&self) -> usize { self.max_buffer }
+        fn max_buffer_size(&self) -> usize {
+            self.max_buffer
+        }
     }
 
     let gpu = match BenchGpuExecutor::try_new() {
@@ -2363,7 +2487,12 @@ fn gpu_benchmarks(c: &mut Criterion) {
                 pixels.push(255u8);
             }
         }
-        let info = ImageInfo { width: size, height: size, format: PixelFormat::Rgba8, color_space: ColorSpace::Srgb };
+        let info = ImageInfo {
+            width: size,
+            height: size,
+            format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
+        };
 
         // Blur GPU
         let node = BlurNode::new(0, info.clone(), filters::BlurParams { radius: 5.0 });
@@ -2375,7 +2504,15 @@ fn gpu_benchmarks(c: &mut Criterion) {
         }
 
         // Bilateral GPU
-        let node = BilateralNode::new(0, info.clone(), filters::BilateralParams { diameter: 5, sigma_color: 75.0, sigma_space: 75.0 });
+        let node = BilateralNode::new(
+            0,
+            info.clone(),
+            filters::BilateralParams {
+                diameter: 5,
+                sigma_color: 75.0,
+                sigma_space: 75.0,
+            },
+        );
         if let Some(ops) = node.gpu_ops(size, size) {
             let px = pixels.clone();
             group.bench_function(BenchmarkId::new("bilateral/gpu", size), |b| {

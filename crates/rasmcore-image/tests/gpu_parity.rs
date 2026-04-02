@@ -7,8 +7,8 @@
 use rasmcore_image::domain::color_lut::ColorLut3D;
 use rasmcore_image::domain::filters;
 use rasmcore_image::domain::types::*;
-use rasmcore_pipeline::gpu::{GpuCapable, GpuError, GpuExecutor, GpuOp};
 use rasmcore_pipeline::Rect;
+use rasmcore_pipeline::gpu::{GpuCapable, GpuError, GpuExecutor, GpuOp};
 use std::collections::HashMap;
 
 // ─── Inline WgpuExecutor (mirrors rasmcore-cli gpu_executor.rs) ────────────
@@ -37,13 +37,12 @@ impl TestGpuExecutor {
             ..Default::default()
         });
 
-        let adapter =
-            pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: None,
-                force_fallback_adapter: false,
-            }))
-            .ok_or_else(|| GpuError::NotAvailable("no GPU adapter found".into()))?;
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            compatible_surface: None,
+            force_fallback_adapter: false,
+        }))
+        .ok_or_else(|| GpuError::NotAvailable("no GPU adapter found".into()))?;
 
         let adapter_name = adapter.get_info().name.clone();
         let max_buffer = adapter.limits().max_buffer_size as usize;
@@ -257,16 +256,16 @@ impl GpuExecutor for TestGpuExecutor {
                         push_constant_ranges: &[],
                     });
 
-            let pipeline =
-                self.device
-                    .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                        label: Some("gpu-pipeline"),
-                        layout: Some(&pipeline_layout),
-                        module: &shader,
-                        entry_point: Some(op.entry_point),
-                        compilation_options: Default::default(),
-                        cache: None,
-                    });
+            let pipeline = self
+                .device
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: Some("gpu-pipeline"),
+                    layout: Some(&pipeline_layout),
+                    module: &shader,
+                    entry_point: Some(op.entry_point),
+                    compilation_options: Default::default(),
+                    cache: None,
+                });
 
             let [wg_x, wg_y, _wg_z] = op.workgroup_size;
             let dispatch_x = (width + wg_x - 1) / wg_x;
@@ -367,7 +366,13 @@ fn info_rgba8(w: u32, h: u32) -> ImageInfo {
 }
 
 fn mean_absolute_error(a: &[u8], b: &[u8]) -> f64 {
-    assert_eq!(a.len(), b.len(), "buffer length mismatch: {} vs {}", a.len(), b.len());
+    assert_eq!(
+        a.len(),
+        b.len(),
+        "buffer length mismatch: {} vs {}",
+        a.len(),
+        b.len()
+    );
     if a.is_empty() {
         return 0.0;
     }
@@ -442,7 +447,9 @@ fn gpu_cpu_parity_gaussian_blur() {
 
     // GPU path
     let node = BlurNode::new(0, info.clone(), filters::BlurParams { radius: 3.0 });
-    let ops = node.gpu_ops(w, h).expect("blur should support GPU for RGBA8");
+    let ops = node
+        .gpu_ops(w, h)
+        .expect("blur should support GPU for RGBA8");
     let gpu_output = gpu.execute(&ops, &pixels, w, h).unwrap();
 
     // Tolerance accounts for edge-handling differences: CPU expands+crops
@@ -486,17 +493,14 @@ fn gpu_cpu_parity_bilateral() {
     };
 
     // CPU path (RGB8)
-    let cpu_rgb = filters::bilateral(
-        rect,
-        &mut |_| Ok(rgb_pixels.clone()),
-        &info_rgb,
-        &config,
-    )
-    .unwrap();
+    let cpu_rgb =
+        filters::bilateral(rect, &mut |_| Ok(rgb_pixels.clone()), &info_rgb, &config).unwrap();
 
     // GPU path (RGBA8)
     let node = BilateralNode::new(0, info_rgba.clone(), config.clone());
-    let ops = node.gpu_ops(w, h).expect("bilateral should support GPU for RGBA8");
+    let ops = node
+        .gpu_ops(w, h)
+        .expect("bilateral should support GPU for RGBA8");
     let gpu_rgba = gpu.execute(&ops, &rgba_pixels, w, h).unwrap();
 
     // Compare RGB channels only (GPU adds alpha passthrough)
@@ -528,17 +532,13 @@ fn gpu_cpu_parity_spherize() {
     let config = filters::SpherizeParams { amount: 0.15 };
 
     // CPU path
-    let cpu_output = filters::spherize(
-        rect,
-        &mut |_| Ok(pixels.clone()),
-        &info,
-        &config,
-    )
-    .unwrap();
+    let cpu_output = filters::spherize(rect, &mut |_| Ok(pixels.clone()), &info, &config).unwrap();
 
     // GPU path
     let node = SpherizeNode::new(0, info.clone(), config.clone());
-    let ops = node.gpu_ops(w, h).expect("spherize should support GPU for RGBA8");
+    let ops = node
+        .gpu_ops(w, h)
+        .expect("spherize should support GPU for RGBA8");
     let gpu_output = gpu.execute(&ops, &pixels, w, h).unwrap();
 
     // Wider tolerance: different distortion formulas (powf vs asin) and
