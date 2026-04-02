@@ -18,7 +18,7 @@ pub struct HighPassParams {
 }
 
 #[rasmcore_macros::register_filter(
-    name = "high_pass",
+    name = "high_pass", gpu = "true",
     category = "spatial",
     group = "detail",
     reference = "frequency separation high-pass"

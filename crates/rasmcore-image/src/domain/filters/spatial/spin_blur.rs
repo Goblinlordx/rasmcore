@@ -27,7 +27,7 @@ pub struct SpinBlurParams {
     pub angle: f32,
 }
 
-#[rasmcore_macros::register_filter(name = "spin_blur", category = "spatial")]
+#[rasmcore_macros::register_filter(name = "spin_blur", gpu = "true", category = "spatial")]
 pub fn spin_blur(
     request: Rect,
     upstream: &mut UpstreamFn,

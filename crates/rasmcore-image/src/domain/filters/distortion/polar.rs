@@ -12,7 +12,7 @@ use crate::domain::filters::common::*;
 /// Uses IM pixel-center convention (+0.5) and f64 precision.
 /// Equivalent to ImageMagick `-distort DePolar "max_radius"`.
 #[rasmcore_macros::register_filter(
-    name = "polar",
+    name = "polar", gpu = "true",
     category = "distortion",
     group = "distort_polar",
     variant = "to_polar",

@@ -27,7 +27,7 @@ pub struct RippleParams {
 }
 
 #[rasmcore_macros::register_filter(
-    name = "ripple",
+    name = "ripple", gpu = "true",
     category = "distortion",
     reference = "concentric ripple displacement"
 )]

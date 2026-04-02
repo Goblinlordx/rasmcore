@@ -26,7 +26,7 @@ pub struct GuidedFilterParams {
 }
 
 #[rasmcore_macros::register_filter(
-    name = "guided_filter",
+    name = "guided_filter", gpu = "true",
     category = "spatial",
     group = "denoise",
     variant = "guided",

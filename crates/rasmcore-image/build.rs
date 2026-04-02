@@ -118,12 +118,20 @@ fn main() {
         }
     }
 
-    // Detect GPU-capable nodes by scanning gpu_impls.rs for GpuCapable impls
+    // Detect GPU-capable nodes from filter `gpu = "true"` attributes
+    for f in &data.filters {
+        if f.gpu {
+            let pascal = rasmcore_codegen::generate::helpers::to_pascal_case(&f.name);
+            data.gpu_capable_nodes.insert(format!("{pascal}Node"));
+        }
+    }
+
+    // Also scan gpu_impls.rs for hand-written GpuCapable impls (transforms, fused nodes)
+    // that aren't registered filters (e.g., ComposedAffineNode, FusedClutNode, SkeletonizeParams)
     let gpu_impls_path = Path::new(&manifest_dir).join("src/domain/pipeline/nodes/gpu_impls.rs");
     println!("cargo:rerun-if-changed=src/domain/pipeline/nodes/gpu_impls.rs");
     if gpu_impls_path.exists() {
         let gpu_src = fs::read_to_string(&gpu_impls_path).unwrap_or_default();
-        // Match "impl GpuCapable for XyzNode" patterns
         for line in gpu_src.lines() {
             let trimmed = line.trim();
             if let Some(rest) = trimmed.strip_prefix("impl GpuCapable for ") {
@@ -134,8 +142,8 @@ fn main() {
                 }
             }
         }
-        eprintln!("rasmcore build.rs: {} GPU-capable node(s) detected", data.gpu_capable_nodes.len());
     }
+    eprintln!("rasmcore build.rs: {} GPU-capable node(s) detected", data.gpu_capable_nodes.len());
 
     // Duplicate filter name detection — fail at compile time
     {

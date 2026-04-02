@@ -24,7 +24,7 @@ pub struct BlurParams {
 }
 
 #[rasmcore_macros::register_filter(
-    name = "blur",
+    name = "blur", gpu = "true",
     category = "spatial",
     group = "blur",
     reference = "Gaussian convolution"

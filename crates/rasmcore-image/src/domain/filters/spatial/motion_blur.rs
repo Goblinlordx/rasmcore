@@ -11,7 +11,7 @@ pub struct MotionBlurParams {
 }
 
 #[rasmcore_macros::register_filter(
-    name = "motion_blur",
+    name = "motion_blur", gpu = "true",
     category = "spatial",
     group = "blur",
     variant = "motion",

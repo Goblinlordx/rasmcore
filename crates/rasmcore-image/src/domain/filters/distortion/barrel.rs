@@ -20,7 +20,7 @@ pub struct BarrelParams {
 }
 
 #[rasmcore_macros::register_filter(
-    name = "barrel",
+    name = "barrel", gpu = "true",
     category = "distortion",
     reference = "Brown-Conrady radial distortion model"
 )]

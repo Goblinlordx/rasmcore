@@ -11,7 +11,7 @@ use crate::domain::filters::common::*;
 ///
 /// Equivalent to ImageMagick `-distort DePolar "max_radius"`.
 #[rasmcore_macros::register_filter(
-    name = "depolar",
+    name = "depolar", gpu = "true",
     category = "distortion",
     group = "distort_polar",
     variant = "from_polar",

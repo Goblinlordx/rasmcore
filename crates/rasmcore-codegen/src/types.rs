@@ -17,6 +17,9 @@ pub struct FilterReg {
     /// Set via `point_op = "true"` in register_filter attributes.
     pub point_op: bool,
     pub color_op: bool,
+    /// Whether this filter has a GPU-accelerated implementation (GpuCapable).
+    /// Set via `gpu = "true"` in register_filter attributes.
+    pub gpu: bool,
     /// True if this filter uses the new rect-request signature:
     /// `fn(request: Rect, upstream: &mut UpstreamFn, info, ...)`
     /// False for legacy signature: `fn(pixels: &[u8], info, ...)`

@@ -18,7 +18,7 @@ pub struct MedianParams {
 }
 
 #[rasmcore_macros::register_filter(
-    name = "median",
+    name = "median", gpu = "true",
     category = "spatial",
     group = "denoise",
     variant = "median",

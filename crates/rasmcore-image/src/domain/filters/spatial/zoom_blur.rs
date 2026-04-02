@@ -12,7 +12,7 @@ pub struct ZoomBlurParams {
 }
 
 #[rasmcore_macros::register_filter(
-    name = "zoom_blur",
+    name = "zoom_blur", gpu = "true",
     category = "spatial",
     group = "blur",
     variant = "zoom",

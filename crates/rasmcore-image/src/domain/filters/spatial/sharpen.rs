@@ -17,7 +17,7 @@ pub struct SharpenParams {
 }
 
 #[rasmcore_macros::register_filter(
-    name = "sharpen",
+    name = "sharpen", gpu = "true",
     category = "spatial",
     reference = "unsharp mask"
 )]

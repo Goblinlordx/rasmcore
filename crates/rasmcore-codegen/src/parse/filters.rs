@@ -45,6 +45,9 @@ fn extract_filter_reg(func: &syn::ItemFn) -> Option<FilterReg> {
         let color_op = extract_kv(&tokens, "color_op")
             .map(|v| v == "true")
             .unwrap_or(false);
+        let gpu = extract_kv(&tokens, "gpu")
+            .map(|v| v == "true")
+            .unwrap_or(false);
 
         let fn_name = func.sig.ident.to_string();
         let rect_request = true;
@@ -58,6 +61,7 @@ fn extract_filter_reg(func: &syn::ItemFn) -> Option<FilterReg> {
             reference,
             point_op,
             color_op,
+            gpu,
             rect_request,
             fn_name,
             params,

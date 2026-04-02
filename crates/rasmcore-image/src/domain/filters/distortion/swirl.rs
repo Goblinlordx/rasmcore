@@ -26,7 +26,7 @@ pub struct SwirlParams {
 }
 
 #[rasmcore_macros::register_filter(
-    name = "swirl",
+    name = "swirl", gpu = "true",
     category = "distortion",
     reference = "vortex rotation distortion"
 )]

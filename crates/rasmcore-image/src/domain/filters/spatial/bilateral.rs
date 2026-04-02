@@ -39,7 +39,7 @@ pub struct BilateralParams {
 }
 
 #[rasmcore_macros::register_filter(
-    name = "bilateral",
+    name = "bilateral", gpu = "true",
     category = "spatial",
     group = "denoise",
     variant = "bilateral",

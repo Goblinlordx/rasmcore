@@ -24,7 +24,7 @@ pub struct WaveParams {
 }
 
 #[rasmcore_macros::register_filter(
-    name = "wave",
+    name = "wave", gpu = "true",
     category = "distortion",
     reference = "sinusoidal wave displacement"
 )]

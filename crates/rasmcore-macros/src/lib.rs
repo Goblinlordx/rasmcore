@@ -88,6 +88,11 @@ impl Parse for RegisterFilterArgs {
                     // The proc macro just skips it.
                     let _lit: LitStr = input.parse()?;
                 }
+                "gpu" => {
+                    // GPU flag is parsed by build.rs for GPU dispatch detection.
+                    // The proc macro just skips it.
+                    let _lit: LitStr = input.parse()?;
+                }
                 other => {
                     return Err(syn::Error::new(
                         ident.span(),

@@ -15,7 +15,7 @@ pub struct SpherizeParams {
 }
 
 #[rasmcore_macros::register_filter(
-    name = "spherize",
+    name = "spherize", gpu = "true",
     category = "distortion",
     reference = "spherical bulge distortion"
 )]
