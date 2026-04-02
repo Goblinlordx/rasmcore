@@ -38,6 +38,13 @@ pub struct BilateralParams {
     pub sigma_space: f32,
 }
 
+impl InputRectProvider for BilateralParams {
+    fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> Rect {
+        let overlap = self.diameter / 2 + 1;
+        output.expand_uniform(overlap, bounds_w, bounds_h)
+    }
+}
+
 #[rasmcore_macros::register_filter(
     name = "bilateral", gpu = "true",
     category = "spatial",

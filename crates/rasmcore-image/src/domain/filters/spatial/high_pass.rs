@@ -17,6 +17,14 @@ pub struct HighPassParams {
     pub radius: f32,
 }
 
+impl InputRectProvider for HighPassParams {
+    fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> Rect {
+        let radius = self.radius;
+        let overlap = if radius > 0.0 { ((radius * 3.0).ceil() as u32).max(1) } else { 0 };
+        output.expand_uniform(overlap, bounds_w, bounds_h)
+    }
+}
+
 #[rasmcore_macros::register_filter(
     name = "high_pass", gpu = "true",
     category = "spatial",

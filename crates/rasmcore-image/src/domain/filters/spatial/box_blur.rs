@@ -20,6 +20,13 @@ pub struct BoxBlurParams {
     pub radius: u32,
 }
 
+impl InputRectProvider for BoxBlurParams {
+    fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> Rect {
+        let overlap = self.radius;
+        output.expand_uniform(overlap, bounds_w, bounds_h)
+    }
+}
+
 #[rasmcore_macros::register_filter(
     name = "box_blur",
     category = "spatial",

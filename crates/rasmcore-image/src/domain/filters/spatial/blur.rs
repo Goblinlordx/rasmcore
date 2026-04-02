@@ -23,6 +23,13 @@ pub struct BlurParams {
     pub radius: f32,
 }
 
+impl InputRectProvider for BlurParams {
+    fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> Rect {
+        let overlap = if self.radius > 0.0 { ((self.radius * 3.0).ceil() as u32).max(1) } else { 0 };
+        output.expand_uniform(overlap, bounds_w, bounds_h)
+    }
+}
+
 #[rasmcore_macros::register_filter(
     name = "blur", gpu = "true",
     category = "spatial",

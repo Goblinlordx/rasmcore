@@ -52,6 +52,11 @@ impl ImageNode for FlipNode {
         Ok(result.pixels)
     }
 
+    fn input_rect(&self, _output: Rect, _bounds_w: u32, _bounds_h: u32) -> Rect {
+        // Flip needs full image (remaps all coordinates)
+        Rect::new(0, 0, self.source_info.width, self.source_info.height)
+    }
+
     fn access_pattern(&self) -> AccessPattern {
         AccessPattern::RandomAccess
     }

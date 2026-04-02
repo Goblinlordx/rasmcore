@@ -25,6 +25,13 @@ pub struct GuidedFilterParams {
     pub epsilon: f32,
 }
 
+impl InputRectProvider for GuidedFilterParams {
+    fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> Rect {
+        let overlap = 2 * self.radius;
+        output.expand_uniform(overlap, bounds_w, bounds_h)
+    }
+}
+
 #[rasmcore_macros::register_filter(
     name = "guided_filter", gpu = "true",
     category = "spatial",

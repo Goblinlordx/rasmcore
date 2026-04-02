@@ -10,6 +10,13 @@ pub struct MotionBlurParams {
     pub angle_degrees: f32,
 }
 
+impl InputRectProvider for MotionBlurParams {
+    fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> Rect {
+        let overlap = self.length;
+        output.expand_uniform(overlap, bounds_w, bounds_h)
+    }
+}
+
 #[rasmcore_macros::register_filter(
     name = "motion_blur", gpu = "true",
     category = "spatial",

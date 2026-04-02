@@ -75,6 +75,17 @@ impl ImageNode for CropNode {
         Ok(result.pixels)
     }
 
+    fn input_rect(&self, output: Rect, _bounds_w: u32, _bounds_h: u32) -> Rect {
+        // Offset output coords by crop origin to get source coords
+        Rect::new(
+            output.x + self.x,
+            output.y + self.y,
+            output.width,
+            output.height,
+        )
+        .clamp(self.source_info.width, self.source_info.height)
+    }
+
     fn access_pattern(&self) -> AccessPattern {
         AccessPattern::Sequential
     }

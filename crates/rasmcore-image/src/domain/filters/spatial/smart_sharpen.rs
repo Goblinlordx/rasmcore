@@ -28,6 +28,13 @@ pub struct SmartSharpenParams {
     pub threshold: f32,
 }
 
+impl InputRectProvider for SmartSharpenParams {
+    fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> Rect {
+        let overlap = self.radius + 4;
+        output.expand_uniform(overlap, bounds_w, bounds_h)
+    }
+}
+
 #[rasmcore_macros::register_filter(
     name = "smart_sharpen",
     category = "spatial",

@@ -23,6 +23,13 @@ pub struct BokehBlurParams {
     pub shape: u32,
 }
 
+impl InputRectProvider for BokehBlurParams {
+    fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> Rect {
+        let overlap = self.radius;
+        output.expand_uniform(overlap, bounds_w, bounds_h)
+    }
+}
+
 #[rasmcore_macros::register_filter(
     name = "bokeh_blur",
     category = "spatial",

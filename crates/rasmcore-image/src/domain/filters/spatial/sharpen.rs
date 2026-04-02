@@ -16,6 +16,13 @@ pub struct SharpenParams {
     pub amount: f32,
 }
 
+impl InputRectProvider for SharpenParams {
+    fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> Rect {
+        let overlap = 4u32;
+        output.expand_uniform(overlap, bounds_w, bounds_h)
+    }
+}
+
 #[rasmcore_macros::register_filter(
     name = "sharpen", gpu = "true",
     category = "spatial",

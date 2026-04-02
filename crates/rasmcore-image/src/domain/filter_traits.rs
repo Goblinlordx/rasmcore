@@ -32,6 +32,18 @@ pub trait CpuFilter {
         upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
         info: &ImageInfo,
     ) -> Result<Vec<u8>, ImageError>;
+
+    /// Compute the input rect needed to produce the given output rect.
+    ///
+    /// Spatial operations expand the output rect by their kernel/overlap size.
+    /// Point operations return the output rect unchanged (default).
+    /// Transform/distortion operations compute the bounding box of their
+    /// inverse coordinate mapping.
+    ///
+    /// `bounds_w`/`bounds_h` are the full image dimensions for clamping.
+    fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> Rect {
+        output.clamp(bounds_w, bounds_h)
+    }
 }
 
 /// Helper for codegen: dispatches CpuFilter::compute with proper borrow handling.
@@ -60,6 +72,18 @@ pub fn __cpu_filter_dispatch<F: CpuFilter>(
         unsafe { (&mut *ptr)(uid, rect) }
     };
     filter.compute(request, &mut up, info)
+}
+
+/// Input rect provider — declares the input region needed for an output region.
+///
+/// Config structs implement this to declare their kernel overlap.
+/// Default: identity (no expansion) — point-ops don't need to override.
+/// Spatial filters override with their kernel expansion logic.
+pub trait InputRectProvider {
+    /// Compute the input rect needed to produce the given output rect.
+    fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> Rect {
+        output.clamp(bounds_w, bounds_h)
+    }
 }
 
 /// GPU shader dispatch for a filter (optional).

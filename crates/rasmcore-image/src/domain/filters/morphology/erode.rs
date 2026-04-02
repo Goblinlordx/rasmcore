@@ -16,6 +16,13 @@ pub struct ErodeParams {
     pub shape: u32,
 }
 
+impl InputRectProvider for ErodeParams {
+    fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> Rect {
+        let overlap = self.ksize / 2;
+        output.expand_uniform(overlap, bounds_w, bounds_h)
+    }
+}
+
 #[rasmcore_macros::register_filter(
     name = "erode",
     category = "morphology",

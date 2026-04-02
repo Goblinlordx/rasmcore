@@ -30,6 +30,13 @@ pub struct GaussianBlurCvParams {
     pub sigma: f32,
 }
 
+impl InputRectProvider for GaussianBlurCvParams {
+    fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> Rect {
+        let overlap = (self.sigma * 3.0).ceil() as u32 + 1;
+        output.expand_uniform(overlap, bounds_w, bounds_h)
+    }
+}
+
 #[rasmcore_macros::register_filter(
     name = "gaussian_blur_cv",
     category = "spatial",

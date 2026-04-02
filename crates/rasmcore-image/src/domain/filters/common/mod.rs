@@ -44,6 +44,7 @@ pub use types::*;
 
 // Re-export upstream crate types used by all filters.
 pub use crate::domain::error::ImageError;
+pub use crate::domain::filter_traits::InputRectProvider;
 pub use crate::domain::types::{ImageInfo, PixelFormat, ColorSpace, DecodedImage};
 pub use rasmcore_pipeline::Rect;
 pub use crate::domain::point_ops::LutPointOp;

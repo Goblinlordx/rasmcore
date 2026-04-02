@@ -72,6 +72,19 @@ impl ImageNode for ResizeNode {
         Ok(result.pixels)
     }
 
+    fn input_rect(&self, output: Rect, _bounds_w: u32, _bounds_h: u32) -> Rect {
+        let sx = self.source_info.width as f64 / self.target_width as f64;
+        let sy = self.source_info.height as f64 / self.target_height as f64;
+        // Map output rect to source coords, add 2px margin for interpolation kernel
+        let x = ((output.x as f64 * sx).floor() as u32).saturating_sub(2);
+        let y = ((output.y as f64 * sy).floor() as u32).saturating_sub(2);
+        let x2 = (((output.x + output.width) as f64 * sx).ceil() as u32 + 2)
+            .min(self.source_info.width);
+        let y2 = (((output.y + output.height) as f64 * sy).ceil() as u32 + 2)
+            .min(self.source_info.height);
+        Rect::new(x, y, x2 - x, y2 - y)
+    }
+
     fn access_pattern(&self) -> AccessPattern {
         AccessPattern::LocalNeighborhood
     }
