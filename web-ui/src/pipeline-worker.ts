@@ -68,7 +68,6 @@ async function initSDK() {
 function attachCache(pipe) {
   if (layerCache && pipe.setLayerCache) {
     pipe.setLayerCache(layerCache);
-    pipe.setAutoCleanup(false);
   }
 }
 

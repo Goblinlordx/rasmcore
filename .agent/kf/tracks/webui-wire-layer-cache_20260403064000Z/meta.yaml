@@ -1,5 +1,5 @@
 title: Wire up LayerCache in web UI workers for cross-chain caching
-status: pending
+status: completed
 type: bug
 approved: false
 created: '2026-04-02'

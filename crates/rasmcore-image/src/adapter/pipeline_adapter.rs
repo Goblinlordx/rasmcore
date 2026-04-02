@@ -288,8 +288,6 @@ pub struct PipelineResource {
     layer_cache: RefCell<Option<std::rc::Rc<RefCell<rasmcore_pipeline::LayerCache>>>>,
     /// Metadata filter for write operations (default: drop all).
     metadata_filter: RefCell<rasmcore_pipeline::MetadataFilter>,
-    /// Whether to auto-cleanup graph state after write operations.
-    auto_cleanup: std::cell::Cell<bool>,
     /// Script plugin registry (loaded via load-scripts WIT method).
     script_registry: RefCell<Option<domain::script_plugin::ScriptRegistry>>,
     /// Pipeline precision mode (Standard or HighPrecision).
@@ -297,12 +295,11 @@ pub struct PipelineResource {
 }
 
 impl PipelineResource {
-    /// Finalize layer cache after any write operation.
+    /// Finalize layer cache after any write operation, then clean up graph state.
+    /// The layer cache itself is preserved — only transient graph nodes are cleared.
     fn finalize_cache(&self) {
         self.graph.borrow_mut().finalize_layer_cache();
-        if self.auto_cleanup.get() {
-            self.graph.borrow_mut().cleanup();
-        }
+        self.graph.borrow_mut().cleanup();
     }
 }
 
@@ -314,7 +311,6 @@ impl GuestImagePipeline for PipelineResource {
             frame_source: RefCell::new(None),
             layer_cache: RefCell::new(None),
             metadata_filter: RefCell::new(rasmcore_pipeline::MetadataFilter::DropAll),
-            auto_cleanup: std::cell::Cell::new(true),
             script_registry: RefCell::new(None),
             precision: std::cell::Cell::new(domain::pixel_sample::PipelinePrecision::Standard),
         }
@@ -335,8 +331,9 @@ impl GuestImagePipeline for PipelineResource {
         self.precision.set(domain_precision);
     }
 
-    fn set_auto_cleanup(&self, enabled: bool) {
-        self.auto_cleanup.set(enabled);
+    fn set_auto_cleanup(&self, _enabled: bool) {
+        // No-op: auto-cleanup is always on. Caching is controlled by
+        // whether a LayerCache is attached — the cache survives cleanup.
     }
 
     fn set_layer_cache(&self, cache: LayerCacheBorrow<'_>) {
