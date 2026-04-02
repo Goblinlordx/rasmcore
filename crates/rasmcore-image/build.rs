@@ -590,6 +590,8 @@ fn main() {
     let gpu_shaders_dir = Path::new(&manifest_dir).join("../rasmcore-gpu-shaders/src/wgsl");
     let pixel_ops = fs::read_to_string(gpu_shaders_dir.join("pixel_ops.wgsl")).unwrap_or_default();
     let sample_bilinear_frag = fs::read_to_string(gpu_shaders_dir.join("sample_bilinear.wgsl")).unwrap_or_default();
+    let pixel_ops_f32 = fs::read_to_string(gpu_shaders_dir.join("pixel_ops_f32.wgsl")).unwrap_or_default();
+    let sample_bilinear_f32_frag = fs::read_to_string(gpu_shaders_dir.join("sample_bilinear_f32.wgsl")).unwrap_or_default();
 
     let shaders_dir = Path::new(&manifest_dir).join("src/shaders");
     if shaders_dir.is_dir() {
@@ -602,13 +604,27 @@ fn main() {
                 let body = fs::read_to_string(&path).unwrap_or_else(|e| {
                     panic!("Failed to read shader {}: {e}", path.display())
                 });
+                let fname = path.file_name().unwrap().to_str().unwrap();
+                let is_f32 = fname.ends_with("_f32.wgsl");
                 // Compose fragments needed by this shader body
-                let needs_sample = body.contains("sample_bilinear(")
-                    && !body.contains("fn sample_bilinear");
-                let composed = if needs_sample {
-                    format!("{pixel_ops}\n{sample_bilinear_frag}\n{body}")
+                let composed = if is_f32 {
+                    // f32 shaders use f32 fragments
+                    let needs_sample = body.contains("sample_bilinear_f32(")
+                        && !body.contains("fn sample_bilinear_f32");
+                    if needs_sample {
+                        format!("{pixel_ops_f32}\n{sample_bilinear_f32_frag}\n{body}")
+                    } else {
+                        format!("{pixel_ops_f32}\n{body}")
+                    }
                 } else {
-                    format!("{pixel_ops}\n{body}")
+                    // u32 shaders use u32 fragments
+                    let needs_sample = body.contains("sample_bilinear(")
+                        && !body.contains("fn sample_bilinear");
+                    if needs_sample {
+                        format!("{pixel_ops}\n{sample_bilinear_frag}\n{body}")
+                    } else {
+                        format!("{pixel_ops}\n{body}")
+                    }
                 };
                 if let Err(e) = naga::front::wgsl::parse_str(&composed) {
                     panic!(

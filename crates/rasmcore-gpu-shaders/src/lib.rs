@@ -30,6 +30,22 @@ pub const PIXEL_OPS: &str = include_str!("wgsl/pixel_ops.wgsl");
 /// **Requires:** `@group(0) @binding(0) var<storage, read> input: array<u32>`.
 pub const SAMPLE_BILINEAR: &str = include_str!("wgsl/sample_bilinear.wgsl");
 
+/// Identity pack/unpack for f32 vec4 buffers.
+///
+/// Provides `fn unpack_f32(pixel: vec4<f32>) -> vec4<f32>` and
+/// `fn pack_f32(color: vec4<f32>) -> vec4<f32>`.
+///
+/// Used with `array<vec4<f32>>` storage buffers — no conversion needed.
+pub const PIXEL_OPS_F32: &str = include_str!("wgsl/pixel_ops_f32.wgsl");
+
+/// Bilinear sampling from f32 vec4 input buffer.
+///
+/// Provides `fn sample_bilinear_f32(fx: f32, fy: f32) -> vec4<f32>`.
+///
+/// **Requires:** Params struct with `width` and `height` as first two fields.
+/// **Requires:** `@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>`.
+pub const SAMPLE_BILINEAR_F32: &str = include_str!("wgsl/sample_bilinear_f32.wgsl");
+
 /// Compose a complete shader from library fragments and a filter body.
 ///
 /// Fragments are prepended in order, followed by the body. The body should
@@ -68,6 +84,23 @@ pub fn with_sampling(body: &str) -> String {
     compose(&[PIXEL_OPS, SAMPLE_BILINEAR], body)
 }
 
+/// Compose an f32-format shader that needs identity pack/unpack only.
+///
+/// Use for filters operating on `array<vec4<f32>>` storage buffers.
+/// The shader body should use `unpack_f32()`/`pack_f32()` and declare
+/// `input: array<vec4<f32>>` / `output: array<vec4<f32>>`.
+pub fn with_pixel_ops_f32(body: &str) -> String {
+    compose(&[PIXEL_OPS_F32], body)
+}
+
+/// Compose an f32-format shader that needs identity ops + bilinear sampling.
+///
+/// Use for distortion/transform filters operating on f32 buffers.
+/// The shader body should use `sample_bilinear_f32()` and `pack_f32()`.
+pub fn with_sampling_f32(body: &str) -> String {
+    compose(&[PIXEL_OPS_F32, SAMPLE_BILINEAR_F32], body)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -104,5 +137,33 @@ mod tests {
     #[test]
     fn sample_bilinear_fragment_is_valid() {
         assert!(SAMPLE_BILINEAR.contains("fn sample_bilinear(fx: f32, fy: f32) -> vec4<f32>"));
+    }
+
+    #[test]
+    fn pixel_ops_f32_fragment_is_valid() {
+        assert!(PIXEL_OPS_F32.contains("fn unpack_f32(pixel: vec4<f32>) -> vec4<f32>"));
+        assert!(PIXEL_OPS_F32.contains("fn pack_f32(color: vec4<f32>) -> vec4<f32>"));
+    }
+
+    #[test]
+    fn sample_bilinear_f32_fragment_is_valid() {
+        assert!(SAMPLE_BILINEAR_F32.contains("fn sample_bilinear_f32(fx: f32, fy: f32) -> vec4<f32>"));
+    }
+
+    #[test]
+    fn with_pixel_ops_f32_includes_identity() {
+        let shader = with_pixel_ops_f32("struct Params { width: u32 }");
+        assert!(shader.contains("fn unpack_f32("));
+        assert!(shader.contains("fn pack_f32("));
+        assert!(shader.contains("struct Params"));
+    }
+
+    #[test]
+    fn with_sampling_f32_includes_all() {
+        let shader = with_sampling_f32("struct Params { width: u32, height: u32 }");
+        assert!(shader.contains("fn unpack_f32("));
+        assert!(shader.contains("fn pack_f32("));
+        assert!(shader.contains("fn sample_bilinear_f32("));
+        assert!(shader.contains("struct Params"));
     }
 }
