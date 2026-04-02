@@ -1,0 +1,106 @@
+id: parity-coverage-refresh_20260402021154Z
+title: "Research: Refresh feature/format coverage gap report vs IM, libvips, sharp, Pillow, photon_rs"
+type: research
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Refresh the stale parity-matrix.md, format-gap-analysis.md, and parity-gap-audit.md
+    reports (last updated Mar 30-31) to reflect the significant progress since then.
+    Add photon_rs as a new comparison target. Output updated reports to
+    .agent/kf/_reports/.
+  context: |
+    Three existing gap reports in .agent/kf/_reports/ are outdated:
+    - parity-matrix.md (Mar 31) — lists shrink-on-load as missing (now done),
+      understates filter count, missing recent filters (high_pass, LAB ops,
+      mesh_warp, skeletonize, Harris corner, etc.)
+    - format-gap-analysis.md (Mar 30) — lists AVIF decode as missing (now done
+      via image crate), understates native codec count
+    - parity-gap-audit.md (Mar 31) — many items listed as gaps are now
+      implemented (APNG R/W, streaming encoders, GPU acceleration, etc.)
+
+    User also wants photon_rs (github.com/silvia-odwyer/photon) added as a
+    comparison target. photon_rs has ~96 functions (blur, sharpen, color adjust,
+    blend modes, 30+ preset filters, basic transforms, text/watermark). It is
+    WASM-first like rasmcore but significantly narrower in scope. rasmcore has
+    137+ registered operations, 19 decode / 17 encode formats, native codecs
+    (JPEG, WebP, HEVC), GPU acceleration, and a tile-based pipeline —
+    comprehensively surpassing photon_rs.
+  codebase_analysis: |
+    Key improvements since last reports (Mar 30-31):
+    FILTERS: high_pass, LAB channel ops (extract L/a/b, sharpen, adjust),
+      mesh_warp, skeletonize (Zhang-Suen), Harris corner detection,
+      template matching (NCC), GPU-accelerated spatial/distortion/LUT ops
+    CODECS: streaming encoders (BMP/QOI/TIFF/HDR/FITS), APNG R/W
+    INFRASTRUCTURE: GPU pipeline dispatch, stateless pipeline graph,
+      unified param manifest, fluent SDK codegen (Go/Python/TS/Rust),
+      C FFI shared library (librcimg), cross-compile for 6 desktop targets
+    TRANSFORMS: config struct codegen, dynamic codec dispatch
+    VALIDATION: reference parity tests for recent filters, GPU/CPU parity
+
+    Existing reports to update:
+    - .agent/kf/_reports/parity-matrix.md
+    - .agent/kf/_reports/format-gap-analysis.md
+    - .agent/kf/_reports/parity-gap-audit.md
+  acceptance_criteria:
+    - Updated parity-matrix.md with current rasmcore state (all done items correct)
+    - photon_rs column added to parity-matrix.md format and filter tables
+    - Updated format-gap-analysis.md reflecting current decode/encode counts
+    - Updated parity-gap-audit.md with gaps that are actually still open
+    - Each report has accurate updated date
+    - No source code, tests, or project files modified — reports only
+  out_of_scope: |
+    Implementing any missing features. Modifying source code or tests.
+    Codec-level three-way validation (separate concern). Performance benchmarks.
+  technical_notes: |
+    APPROACH:
+    1. Inventory current rasmcore capabilities by reading:
+       - param-manifest.json (all registered filters + params)
+       - supportedFormats() / supportedWriteFormats() from codec registry
+       - GPU-capable filter list from GpuCapable trait impls
+       - SDK/CLI feature list
+    2. Cross-reference photon_rs capabilities from:
+       - docs.rs/photon-rs module listing
+       - GitHub README feature list (~96 functions)
+    3. Update each report in-place, preserving structure
+    4. Mark items as done/partial/planned based on actual code state
+    5. Highlight areas where rasmcore surpasses all comparison targets
+
+    OUTPUT: Updated .md files in .agent/kf/_reports/
+plan:
+  - phase: Inventory rasmcore current state
+    tasks:
+      - text: Read param-manifest.json — catalog all registered filters with categories
+        done: false
+      - text: Read codec registry — count decode/encode formats, list native vs delegated
+        done: false
+      - text: Read GPU-capable filter list — identify all GpuCapable trait implementations
+        done: false
+      - text: List SDK targets (TS, Go, Python, Rust native, C FFI) and their status
+        done: false
+      - text: List infrastructure capabilities (pipeline, streaming, tiling, stateless graph)
+        done: false
+  - phase: Inventory comparison targets
+    tasks:
+      - text: Catalog photon_rs operations from docs.rs module listing (~96 functions)
+        done: false
+      - text: Cross-reference libvips, ImageMagick, sharp, Pillow capabilities against current reports
+        done: false
+  - phase: Update reports
+    tasks:
+      - text: Update parity-matrix.md — add photon_rs column, fix done/partial/planned status
+        done: false
+      - text: Update format-gap-analysis.md — correct decode/encode counts, remove closed gaps
+        done: false
+      - text: Update parity-gap-audit.md — mark resolved gaps, add newly identified gaps
+        done: false
+      - text: Add summary section highlighting areas where rasmcore surpasses all targets
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Cross-check every done item against actual code (grep for function names)
+        done: false
+      - text: Verify no source code or test files were modified
+        done: false
+extra: {}
