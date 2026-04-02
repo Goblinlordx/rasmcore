@@ -15,6 +15,8 @@ import { GpuHandler, createGpuExecuteImport } from './gpu-handler';
 import type { GpuOp, GpuResult } from './gpu-handler';
 
 let Pipeline = null;
+let LayerCache = null;
+let layerCache = null; // Shared cross-pipeline content-addressed cache
 let imageBytes = null;
 let thumbBytes = null;
 let cachedPipe = null; // Reused pipeline instance for graph caching
@@ -32,6 +34,12 @@ async function initSDK() {
   try {
     const sdk = await import('../sdk/rasmcore-image.js');
     Pipeline = sdk.pipeline.ImagePipeline;
+    LayerCache = sdk.pipeline.LayerCache;
+
+    // Create shared layer cache for cross-pipeline content-addressed caching
+    if (LayerCache) {
+      layerCache = new LayerCache(256); // 256 MB capacity
+    }
 
     // Build MIME map from backend format metadata
     try {
@@ -56,6 +64,13 @@ async function initSDK() {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+function attachCache(pipe) {
+  if (layerCache && pipe.setLayerCache) {
+    pipe.setLayerCache(layerCache);
+    pipe.setAutoCleanup(false);
+  }
+}
 
 function hexToRgb(hex) {
   const h = hex.replace('#', '');
@@ -126,6 +141,7 @@ function loadImage(bytes) {
   try {
     // Create a persistent pipeline for caching across process calls
     cachedPipe = new Pipeline();
+    attachCache(cachedPipe);
     cachedSourceNode = cachedPipe.read(imageBytes);
     info = cachedPipe.nodeInfo(cachedSourceNode);
 
@@ -174,6 +190,12 @@ function processChain(chain, mode) {
 
     const output = pipe.writePng(current, {}, undefined);
     const totalMs = Math.round(performance.now() - t0);
+
+    if (layerCache) {
+      const s = layerCache.stats();
+      console.log(`[pipeline-worker] ${totalMs}ms | cache: ${s.hits} hits, ${s.misses} misses, ${s.entries} entries`);
+    }
+
     const buf = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength);
 
     self.postMessage({ type: 'result', png: buf, timings, totalMs, mode }, [buf]);
@@ -220,6 +242,7 @@ function compositeLayers(layerDefs) {
   const t0 = performance.now();
   try {
     const pipe = new Pipeline();
+    attachCache(pipe);
 
     // Process each layer: load → apply chain → get node
     let resultNode = null;

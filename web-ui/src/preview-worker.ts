@@ -11,6 +11,8 @@
 const PREVIEW_MAX = 400;
 
 let Pipeline = null;
+let LayerCache = null;
+let layerCache = null; // Shared cross-pipeline content-addressed cache
 let previewBytes = null; // Downscaled image bytes
 let cachedPipe = null;
 let cachedSourceNode = null;
@@ -19,6 +21,10 @@ async function initSDK() {
   try {
     const sdk = await import('../sdk/rasmcore-image.js');
     Pipeline = sdk.pipeline.ImagePipeline;
+    LayerCache = sdk.pipeline.LayerCache;
+    if (LayerCache) {
+      layerCache = new LayerCache(64); // 64 MB — preview images are small
+    }
     self.postMessage({ type: 'ready' });
   } catch (e) {
     self.postMessage({ type: 'error', message: `Preview SDK init failed: ${e.message}` });
@@ -26,6 +32,13 @@ async function initSDK() {
 }
 
 // ─── Helpers (same as pipeline-worker) ──────────────────────────────────────
+
+function attachCache(pipe) {
+  if (layerCache && pipe.setLayerCache) {
+    pipe.setLayerCache(layerCache);
+    pipe.setAutoCleanup(false);
+  }
+}
 
 function hexToRgb(hex) {
   const h = hex.replace('#', '');
@@ -64,6 +77,7 @@ function loadImage(bytes) {
 
   try {
     cachedPipe = new Pipeline();
+    attachCache(cachedPipe);
     const src = cachedPipe.read(raw);
     info = cachedPipe.nodeInfo(src);
 
@@ -79,6 +93,7 @@ function loadImage(bytes) {
       previewBytes = png;
       // Re-create pipeline with downscaled source for caching
       cachedPipe = new Pipeline();
+      attachCache(cachedPipe);
       cachedSourceNode = cachedPipe.read(previewBytes);
       const pInfo = cachedPipe.nodeInfo(cachedSourceNode);
       info = { width: pInfo.width, height: pInfo.height };
@@ -117,6 +132,12 @@ function processChain(chain) {
 
     const output = pipe.writePng(current, {}, undefined);
     const totalMs = Math.round(performance.now() - t0);
+
+    if (layerCache) {
+      const s = layerCache.stats();
+      console.log(`[preview-worker] ${totalMs}ms | cache: ${s.hits} hits, ${s.misses} misses, ${s.entries} entries`);
+    }
+
     const buf = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength);
     self.postMessage({ type: 'result', png: buf, totalMs }, [buf]);
   } catch (e) {
