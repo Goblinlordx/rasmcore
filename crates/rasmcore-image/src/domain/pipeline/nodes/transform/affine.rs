@@ -9,7 +9,7 @@ use rasmcore_pipeline::{GpuCapable, GpuOp, Rect};
 use std::sync::LazyLock;
 
 static AFFINE_SHADER_U32: LazyLock<String> = LazyLock::new(|| {
-    rasmcore_gpu_shaders::with_sampling(include_str!("../../../../shaders/affine_resample.wgsl"))
+    rasmcore_gpu_shaders::with_pixel_ops(include_str!("../../../../shaders/affine_resample.wgsl"))
 });
 
 static AFFINE_SHADER_F32: LazyLock<String> = LazyLock::new(|| {

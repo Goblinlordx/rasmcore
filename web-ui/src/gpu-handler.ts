@@ -13,6 +13,9 @@
 
 // ─── Types matching WIT gpu-op record ──────────────────────────────────────
 
+/** Buffer element format for GPU storage buffers. */
+export type BufferFormat = 'u32-packed' | 'f32-vec4';
+
 export interface GpuOp {
   shader: string;
   entryPoint: string;
@@ -21,6 +24,7 @@ export interface GpuOp {
   workgroupZ: number;
   params: Uint8Array;
   extraBuffers: Uint8Array[];
+  bufferFormat: BufferFormat;
 }
 
 export type GpuError =
@@ -29,6 +33,11 @@ export type GpuError =
   | { tag: 'execution-error'; val: string };
 
 export type GpuResult = { ok: Uint8Array } | { err: GpuError };
+
+/** Bytes per pixel for a given buffer format. */
+function bytesPerPixel(format: BufferFormat): number {
+  return format === 'f32-vec4' ? 16 : 4;
+}
 
 // ─── Shader Cache ──────────────────────────────────────────────────────────
 
@@ -107,9 +116,10 @@ export class GpuHandler {
     this.device = device;
   }
 
-  /** Get or compile a shader module + compute pipeline for a given source + entry point. */
-  private getOrCreatePipeline(device: GPUDevice, shader: string, entryPoint: string, extraBufferCount: number): GPUComputePipeline {
-    const hash = hashShaderSource(shader);
+  /** Get or compile a shader module + compute pipeline for a given source + entry point + format. */
+  private getOrCreatePipeline(device: GPUDevice, shader: string, entryPoint: string, extraBufferCount: number, bufferFormat: BufferFormat = 'u32-packed'): GPUComputePipeline {
+    // Include buffer format in cache key to avoid collisions between u32/f32 variants
+    const hash = hashShaderSource(shader + ':' + bufferFormat);
     let cached = this.shaderCache.get(hash);
 
     if (!cached) {
@@ -162,7 +172,7 @@ export class GpuHandler {
    * All intermediate buffers stay in GPU memory via ping-pong.
    * Only the final output is read back to CPU.
    */
-  async execute(ops: GpuOp[], input: Uint8Array, width: number, height: number): Promise<GpuResult> {
+  async execute(ops: GpuOp[], input: Uint8Array, width: number, height: number, bufferFormat: BufferFormat = 'u32-packed'): Promise<GpuResult> {
     if (ops.length === 0) {
       return { ok: input };
     }
@@ -174,14 +184,15 @@ export class GpuHandler {
     }
 
     const device = this.device!;
-    const pixelBytes = width * height * 4;
+    const bpp = bytesPerPixel(bufferFormat);
+    const pixelBytes = width * height * bpp;
 
     // Validate input size
     if (input.byteLength !== pixelBytes) {
       return {
         err: {
           tag: 'execution-error',
-          val: `Input size ${input.byteLength} != expected ${pixelBytes} (${width}x${height}x4)`,
+          val: `Input size ${input.byteLength} != expected ${pixelBytes} (${width}x${height}x${bpp})`,
         },
       };
     }
@@ -210,7 +221,7 @@ export class GpuHandler {
         // Get or create pipeline
         let pipeline: GPUComputePipeline;
         try {
-          pipeline = this.getOrCreatePipeline(device, op.shader, op.entryPoint, op.extraBuffers.length);
+          pipeline = this.getOrCreatePipeline(device, op.shader, op.entryPoint, op.extraBuffers.length, bufferFormat);
         } catch (e) {
           bufferA.destroy();
           bufferB.destroy();
@@ -335,14 +346,14 @@ class GpuNotAvailableError extends Error {
  *
  * Returns null if WebGPU is not available (graceful fallback — pipeline uses CPU).
  */
-export function createGpuExecuteImport(): ((ops: GpuOp[], input: Uint8Array, width: number, height: number) => Promise<GpuResult>) | null {
+export function createGpuExecuteImport(): ((ops: GpuOp[], input: Uint8Array, width: number, height: number, bufferFormat: BufferFormat) => Promise<GpuResult>) | null {
   if (!GpuHandler.isAvailable()) {
     return null;
   }
 
   const handler = new GpuHandler();
 
-  return async (ops: GpuOp[], input: Uint8Array, width: number, height: number): Promise<GpuResult> => {
-    return handler.execute(ops, input, width, height);
+  return async (ops: GpuOp[], input: Uint8Array, width: number, height: number, bufferFormat: BufferFormat = 'u32-packed'): Promise<GpuResult> => {
+    return handler.execute(ops, input, width, height, bufferFormat);
   };
 }

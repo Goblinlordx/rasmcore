@@ -146,13 +146,13 @@ plan:
 - phase: Proof shaders — gaussian_blur and affine_resample
   tasks:
   - text: Create f32 variant of gaussian_blur.wgsl (H and V passes)
-    done: false
+    done: true
   - text: Create f32 variant of affine_resample.wgsl
-    done: false
+    done: true
   - text: Update BlurParams::gpu_ops to select u32 or f32 shader based on precision
-    done: false
+    done: true
   - text: Update ComposedAffineNode gpu_ops to select u32 or f32 shader based on precision
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: GPU f32 parity test — gaussian_blur f32 GPU vs CPU f32, verify improved precision over u32 multi-pass

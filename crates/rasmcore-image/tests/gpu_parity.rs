@@ -536,3 +536,140 @@ fn gpu_cpu_parity_lut3d() {
 
     assert_gpu_parity("lut3d warm_grade grid=17", &cpu_output, &gpu_output, 1.0);
 }
+
+// ─── f32 Buffer Format Parity Tests ────────────────────────────────────────
+
+/// Convert RGBA8 bytes to RGBA32f bytes (0–255 mapped to 0.0–255.0, like GPU unpack).
+fn rgba8_to_f32_bytes(rgba8: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(rgba8.len() * 4);
+    for &byte in rgba8 {
+        out.extend_from_slice(&(byte as f32).to_le_bytes());
+    }
+    out
+}
+
+/// Convert RGBA32f bytes back to RGBA8 bytes (clamp + round).
+fn f32_bytes_to_rgba8(f32_bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(f32_bytes.len() / 4);
+    for chunk in f32_bytes.chunks_exact(4) {
+        let val = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        out.push(val.round().clamp(0.0, 255.0) as u8);
+    }
+    out
+}
+
+#[test]
+fn gpu_f32_parity_gaussian_blur() {
+    use rasmcore_pipeline::gpu::BufferFormat;
+    use rasmcore_image::domain::filter_traits::GpuFilter;
+
+    let gpu = match try_gpu() {
+        Some(g) => g,
+        None => return,
+    };
+
+    let (w, h) = (64, 64);
+    let pixels_u8 = make_gradient_rgba(w, h);
+    let pixels_f32 = rgba8_to_f32_bytes(&pixels_u8);
+    let info = info_rgba8(w, h);
+    let rect = Rect::new(0, 0, w, h);
+
+    let config = filters::BlurParams { radius: 3.0 };
+
+    // CPU reference (u8 domain)
+    let cpu_output_u8 = config.compute(rect, &mut |_| Ok(pixels_u8.clone()), &info).unwrap();
+
+    // GPU u32-packed (baseline)
+    let ops_u32 = config.gpu_ops_with_format(w, h, BufferFormat::U32Packed)
+        .expect("blur should support u32 GPU");
+    let gpu_u32 = gpu.execute_with_format(&ops_u32, &pixels_u8, w, h, BufferFormat::U32Packed).unwrap();
+
+    // GPU f32 vec4
+    let ops_f32 = config.gpu_ops_with_format(w, h, BufferFormat::F32Vec4)
+        .expect("blur should support f32 GPU");
+    let gpu_f32_bytes = gpu.execute_with_format(&ops_f32, &pixels_f32, w, h, BufferFormat::F32Vec4).unwrap();
+
+    // Convert f32 GPU output back to u8 for comparison
+    let gpu_f32_as_u8 = f32_bytes_to_rgba8(&gpu_f32_bytes);
+
+    // Both GPU paths should match CPU output closely
+    assert_gpu_parity("blur_f32 vs cpu", &cpu_output_u8, &gpu_f32_as_u8, 2.0);
+    assert_gpu_parity("blur_u32 vs cpu", &cpu_output_u8, &gpu_u32, 2.0);
+
+    // f32 GPU vs u32 GPU: the f32 path preserves more precision across H+V passes.
+    // u32 packs to 8-bit between passes, losing ~0.4 bits/pass. This difference
+    // IS the precision improvement f32 provides. Allow up to 2.0 MAE.
+    assert_gpu_parity("blur_f32 vs u32", &gpu_u32, &gpu_f32_as_u8, 2.0);
+
+    eprintln!("  f32 blur parity: PASS");
+}
+
+#[test]
+fn gpu_f32_parity_affine_resample() {
+    use rasmcore_pipeline::gpu::BufferFormat;
+
+    let gpu = match try_gpu() {
+        Some(g) => g,
+        None => return,
+    };
+
+    let (w, h) = (64, 64);
+    let pixels_u8 = make_gradient_rgba(w, h);
+    let pixels_f32 = rgba8_to_f32_bytes(&pixels_u8);
+    let info_u8 = info_rgba8(w, h);
+    let info_f32 = ImageInfo {
+        width: w, height: h,
+        format: PixelFormat::Rgba32f,
+        color_space: ColorSpace::Srgb,
+    };
+
+    // 2x downscale matrix: x' = 0.5*x, y' = 0.5*y
+    let matrix = [0.5, 0.0, 0.0, 0.0, 0.5, 0.0];
+    let (out_w, out_h) = (32, 32);
+
+    // GPU u32
+    // Note: the graph walker passes OUTPUT dimensions to the executor
+    // (the node's info() returns output dims). Input pixels cover the full source.
+    let node_u32 = rasmcore_image::domain::pipeline::nodes::transform::ComposedAffineNode::new(
+        0, info_u8, matrix, out_w, out_h,
+    );
+    let ops_u32 = node_u32.gpu_ops_with_format(out_w, out_h, BufferFormat::U32Packed)
+        .expect("affine should support u32 GPU");
+    // Pad input to output-sized buffer (executor expects width*height*bpp input)
+    let mut input_u32_padded = vec![0u8; (out_w * out_h * 4) as usize];
+    // Copy source rows into padded buffer (source is larger, so just fill what fits)
+    for y in 0..out_h.min(h) {
+        let src_off = (y * w * 4) as usize;
+        let dst_off = (y * out_w * 4) as usize;
+        let row_bytes = (out_w.min(w) * 4) as usize;
+        input_u32_padded[dst_off..dst_off + row_bytes].copy_from_slice(&pixels_u8[src_off..src_off + row_bytes]);
+    }
+    let gpu_u32 = gpu.execute_with_format(&ops_u32, &input_u32_padded, out_w, out_h, BufferFormat::U32Packed).unwrap();
+
+    // GPU f32
+    let node_f32 = rasmcore_image::domain::pipeline::nodes::transform::ComposedAffineNode::new(
+        0, info_f32, matrix, out_w, out_h,
+    );
+    let ops_f32 = node_f32.gpu_ops_with_format(out_w, out_h, BufferFormat::F32Vec4)
+        .expect("affine should support f32 GPU");
+    let mut input_f32_padded = vec![0u8; (out_w * out_h * 16) as usize];
+    for y in 0..out_h.min(h) {
+        let src_off = (y * w * 16) as usize;
+        let dst_off = (y * out_w * 16) as usize;
+        let row_bytes = (out_w.min(w) * 16) as usize;
+        input_f32_padded[dst_off..dst_off + row_bytes].copy_from_slice(&pixels_f32[src_off..src_off + row_bytes]);
+    }
+    let gpu_f32_bytes = gpu.execute_with_format(&ops_f32, &input_f32_padded, out_w, out_h, BufferFormat::F32Vec4).unwrap();
+
+    // Convert f32 output to u8
+    let gpu_f32_as_u8 = f32_bytes_to_rgba8(&gpu_f32_bytes);
+
+    // Verify output sizes
+    assert_eq!(gpu_f32_bytes.len(), (out_w * out_h * 16) as usize, "f32 output size");
+    assert_eq!(gpu_u32.len(), (out_w * out_h * 4) as usize, "u32 output size");
+
+    // Both should produce similar results
+    assert_gpu_parity("affine_f32 vs u32", &gpu_u32, &gpu_f32_as_u8, 1.0);
+
+    eprintln!("  f32 affine resample parity: PASS");
+}
