@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Script Invert Self-Inverse Validation</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.4rem; margin-bottom: 1rem; }
+  .info { color: #666; margin-bottom: 1.5rem; font-size: 0.9rem; }
+  button { padding: 0.6rem 1.4rem; font-size: 1rem; cursor: pointer; border: 1px solid #333; border-radius: 4px; background: #f8f8f8; }
+  button:hover { background: #eee; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  #log { margin-top: 1.5rem; font-family: monospace; font-size: 0.85rem; white-space: pre-wrap; line-height: 1.6; }
+  .pass { color: #2a7; }
+  .fail { color: #c33; }
+  .info-line { color: #555; }
+  #summary { margin-top: 1rem; padding: 0.8rem; border-radius: 4px; font-weight: bold; font-size: 1.1rem; display: none; }
+  #summary.pass { background: #d4edda; color: #155724; display: block; }
+  #summary.fail { background: #f8d7da; color: #721c24; display: block; }
+</style>
+</head>
+<body>
+
+<h1>Script Invert Self-Inverse Validation</h1>
+<p class="info">
+  Loads a custom <code>my_script_invert</code> Rhai script via <code>loadScripts()</code>,
+  applies it once (should invert), applies it twice (should return to original).
+  Tests fusable strategy through the WASM pipeline.
+</p>
+<button id="run" onclick="runTest()">Run Test</button>
+<div id="summary"></div>
+<div id="log"></div>
+
+<script type="module">
+// SDK path — adjust if serving from a different location.
+// Default: assumes `npm run demo:build` has been run and we serve from project root.
+const SDK_PATH = '../../web-ui/sdk/rasmcore-image.js';
+
+let sdk;
+
+async function init() {
+  try {
+    sdk = await import(SDK_PATH);
+    log('SDK loaded', 'info-line');
+    document.getElementById('run').disabled = false;
+  } catch (e) {
+    log(`Failed to load SDK from ${SDK_PATH}: ${e.message}`, 'fail');
+    log('Run: npm run demo:build   then serve from project root', 'info-line');
+  }
+}
+
+function log(msg, cls = '') {
+  const el = document.getElementById('log');
+  const span = document.createElement('span');
+  span.className = cls;
+  span.textContent = msg + '\n';
+  el.appendChild(span);
+}
+
+function arraysEqual(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+// Encode a small test image as PNG
+function createTestPng() {
+  const w = 8, h = 8;
+  const pixels = new Uint8Array(w * h * 3);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 3;
+      pixels[i]     = Math.floor(x * 255 / w);   // R gradient
+      pixels[i + 1] = Math.floor(y * 255 / h);   // G gradient
+      pixels[i + 2] = 128;                        // B constant
+    }
+  }
+  return sdk.encoder.encode(pixels, {
+    width: w, height: h, format: 'rgb8', colorSpace: 'srgb',
+  }, 'png', undefined);
+}
+
+// Extract raw pixel bytes from a PNG via the pipeline
+function readPixels(pngBytes) {
+  // Use process-chain with no ops to decode → re-encode as raw PNG
+  // Then compare the PNGs byte-by-byte (lossless)
+  return pngBytes;
+}
+
+// The custom invert script — uses a unique name to prove it's the script, not the built-in
+const INVERT_SCRIPT = `
+//! name: my_script_invert
+//! category: test
+//! strategy: fusable
+
+fn lut(input, channel, params) {
+    255.0 - input
+}
+`;
+
+let passed = 0;
+let failed = 0;
+
+function assert(condition, label) {
+  if (condition) {
+    log(`  PASS: ${label}`, 'pass');
+    passed++;
+  } else {
+    log(`  FAIL: ${label}`, 'fail');
+    failed++;
+  }
+}
+
+async function runTest() {
+  const btn = document.getElementById('run');
+  btn.disabled = true;
+  document.getElementById('log').textContent = '';
+  document.getElementById('summary').className = '';
+  document.getElementById('summary').style.display = 'none';
+  passed = 0;
+  failed = 0;
+
+  try {
+    const Pipeline = sdk.pipeline.ImagePipeline;
+
+    log('--- Test 1: Load custom script ---', 'info-line');
+    const p1 = new Pipeline();
+    p1.loadScripts([INVERT_SCRIPT]);
+    const scriptNames = p1.listScriptFilters();
+    assert(scriptNames.includes('my_script_invert'), 'Script "my_script_invert" registered');
+    log(`  Registered scripts: [${scriptNames.join(', ')}]`, 'info-line');
+
+    log('--- Test 2: Single apply (odd) should differ from original ---', 'info-line');
+    const testPng = createTestPng();
+    const p2 = new Pipeline();
+    p2.loadScripts([INVERT_SCRIPT]);
+    const src = p2.read(testPng);
+    const inverted = p2.applyScriptFilter('my_script_invert', src, []);
+    const originalPng = p2.writePng(src, {}, undefined);
+    const invertedPng = p2.writePng(inverted, {}, undefined);
+    assert(!arraysEqual(originalPng, invertedPng), 'Inverted output differs from original');
+
+    log('--- Test 3: Double apply (even) should match original ---', 'info-line');
+    const p3 = new Pipeline();
+    p3.loadScripts([INVERT_SCRIPT]);
+    const s3 = p3.read(testPng);
+    const once = p3.applyScriptFilter('my_script_invert', s3, []);
+    const twice = p3.applyScriptFilter('my_script_invert', once, []);
+    const originalPng3 = p3.writePng(s3, {}, undefined);
+    const twicePng = p3.writePng(twice, {}, undefined);
+    assert(arraysEqual(originalPng3, twicePng), 'Double invert matches original (identity)');
+
+    log('--- Test 4: Script invert matches built-in invert ---', 'info-line');
+    const p4 = new Pipeline();
+    p4.loadScripts([INVERT_SCRIPT]);
+    const s4 = p4.read(testPng);
+    const scriptResult = p4.writePng(p4.applyScriptFilter('my_script_invert', s4, []), {}, undefined);
+    const builtinResult = p4.writePng(p4.invert(s4), {}, undefined);
+    assert(arraysEqual(scriptResult, builtinResult), 'Script invert == built-in invert');
+
+  } catch (e) {
+    log(`ERROR: ${e.message}`, 'fail');
+    log(e.stack || '', 'fail');
+    failed++;
+  }
+
+  const summary = document.getElementById('summary');
+  if (failed === 0) {
+    summary.textContent = `ALL ${passed} TESTS PASSED`;
+    summary.className = 'pass';
+  } else {
+    summary.textContent = `${failed} FAILED, ${passed} passed`;
+    summary.className = 'fail';
+  }
+
+  btn.disabled = false;
+}
+
+// Expose to onclick
+window.runTest = runTest;
+
+// Auto-init
+init();
+</script>
+</body>
+</html>
