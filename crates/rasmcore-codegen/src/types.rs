@@ -78,6 +78,9 @@ pub struct ParamField {
     pub default_val: String,
     pub label: String,
     pub hint: String,
+    /// Per-option descriptions for enum/choice params: `[(value, description)]`.
+    /// Parsed from `#[param(options = "val1:desc1|val2:desc2")]`.
+    pub options: Vec<(String, String)>,
 }
 
 /// A parsed `#[derive(ConfigParams)]` struct with its fields and metadata.

@@ -517,6 +517,7 @@ pub fn derive_config_params(input: TokenStream) -> TokenStream {
         let mut step_s = String::from("null");
         let mut default_s = String::new();
         let mut hint_s = String::new();
+        let mut options_s = String::new();
 
         for attr in &field.attrs {
             if !attr.path().is_ident("param") {
@@ -539,6 +540,7 @@ pub fn derive_config_params(input: TokenStream) -> TokenStream {
                     "step" => step_s = val,
                     "default" => default_s = val,
                     "hint" => hint_s = val,
+                    "options" => options_s = val,
                     _ => {}
                 }
                 Ok(())
@@ -597,6 +599,19 @@ pub fn derive_config_params(input: TokenStream) -> TokenStream {
 
             default_entries.push(quote! { #field_name: #default_expr });
 
+            // Parse options string "val1:desc1|val2:desc2" into Vec<(String, String)>
+            let options_pairs: Vec<(String, String)> = if options_s.is_empty() {
+                Vec::new()
+            } else {
+                options_s
+                    .split('|')
+                    .filter(|p| !p.is_empty())
+                    .filter_map(|p| p.split_once(':').map(|(v, d)| (v.trim().to_string(), d.trim().to_string())))
+                    .collect()
+            };
+            let opt_vals: Vec<&str> = options_pairs.iter().map(|(v, _)| v.as_str()).collect();
+            let opt_descs: Vec<&str> = options_pairs.iter().map(|(_, d)| d.as_str()).collect();
+
             descriptor_entries.push(quote! {
                 __descriptors.push(::rasmcore_image::domain::filter_registry::ParamDescriptorJson {
                     name: #field_name_str.to_string(),
@@ -607,6 +622,7 @@ pub fn derive_config_params(input: TokenStream) -> TokenStream {
                     default_val: #default_s.to_string(),
                     label: #label.to_string(),
                     hint: #hint_s.to_string(),
+                    options: vec![#((#opt_vals.to_string(), #opt_descs.to_string())),*],
                 });
             });
         }

@@ -210,7 +210,7 @@ mod tests {
         }];
         let mut param_structs = std::collections::HashMap::new();
         param_structs.insert("BlurParams".to_string(), vec![
-            ParamField { name: "radius".to_string(), param_type: "f32".to_string(), default: None, min: None, max: None, step: None, label: None, hint: None },
+            ParamField { name: "radius".to_string(), param_type: "f32".to_string(), default_val: String::new(), min: String::new(), max: String::new(), step: String::new(), label: String::new(), hint: String::new(), options: Vec::new() },
         ]);
         let wit = generate(&filters, &param_structs);
         assert!(

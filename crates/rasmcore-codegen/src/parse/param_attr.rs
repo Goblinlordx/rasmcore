@@ -12,6 +12,8 @@ pub struct ParamAttr {
     pub step: Option<LitValue>,
     pub default: Option<LitValue>,
     pub hint: Option<String>,
+    /// Per-option descriptions: `"val1:desc1|val2:desc2"`.
+    pub options: Option<String>,
 }
 
 /// A single key = value pair inside #[param(...)].
@@ -79,6 +81,11 @@ impl Parse for ParamAttr {
                         attr.hint = Some(s);
                     }
                 }
+                "options" => {
+                    if let LitValue::Str(s) = kv.value {
+                        attr.options = Some(s);
+                    }
+                }
                 _ => {} // ignore unknown keys
             }
 
@@ -90,6 +97,17 @@ impl Parse for ParamAttr {
 
         Ok(attr)
     }
+}
+
+/// Parse an options string `"val1:desc1|val2:desc2"` into `Vec<(value, description)>`.
+pub fn parse_options_string(s: &str) -> Vec<(String, String)> {
+    s.split('|')
+        .filter(|part| !part.is_empty())
+        .filter_map(|part| {
+            let (val, desc) = part.split_once(':')?;
+            Some((val.trim().to_string(), desc.trim().to_string()))
+        })
+        .collect()
 }
 
 #[cfg(test)]

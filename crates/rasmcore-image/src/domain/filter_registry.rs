@@ -38,6 +38,8 @@ pub struct ParamDescriptorJson {
     pub default_val: String,
     pub label: String,
     pub hint: String,
+    /// Per-option descriptions for enum/choice params: `[(value, description)]`.
+    pub options: Vec<(String, String)>,
 }
 
 // ─── Static Registration (for proc macro + inventory) ─────────────────────

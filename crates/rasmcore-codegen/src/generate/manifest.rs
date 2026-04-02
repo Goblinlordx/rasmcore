@@ -202,7 +202,7 @@ pub fn generate(data: &CodegenData) -> String {
 }
 
 fn field_to_json(field: &ParamField) -> Value {
-    json!({
+    let mut obj = json!({
         "name": field.name,
         "type": field.param_type,
         "min": parse_json_value(&field.min),
@@ -211,7 +211,16 @@ fn field_to_json(field: &ParamField) -> Value {
         "default": parse_json_value(&field.default_val),
         "label": field.label,
         "hint": field.hint,
-    })
+    });
+    if !field.options.is_empty() {
+        let options_json: Vec<Value> = field
+            .options
+            .iter()
+            .map(|(val, desc)| json!({"value": val, "description": desc}))
+            .collect();
+        obj["options"] = Value::Array(options_json);
+    }
+    obj
 }
 
 #[cfg(test)]

@@ -86,6 +86,7 @@ fn extract_raw(file: &syn::File) -> HashMap<String, ParsedStruct> {
                     let mut step = "null".to_string();
                     let mut default_val = String::new();
                     let mut hint = String::new();
+                    let mut options = Vec::new();
 
                     for attr in &field.attrs {
                         if attr.path().is_ident("param") {
@@ -105,6 +106,9 @@ fn extract_raw(file: &syn::File) -> HashMap<String, ParsedStruct> {
                                 if let Some(h) = &param_attr.hint {
                                     hint = h.clone();
                                 }
+                                if let Some(o) = &param_attr.options {
+                                    options = super::param_attr::parse_options_string(o);
+                                }
                             }
                         }
                     }
@@ -122,6 +126,7 @@ fn extract_raw(file: &syn::File) -> HashMap<String, ParsedStruct> {
                         default_val,
                         label,
                         hint,
+                        options,
                     });
                 }
             }
@@ -176,6 +181,7 @@ fn resolve_nested_fields(
                     } else {
                         hint.to_string()
                     },
+                    options: nf.options.clone(),
                 });
             }
         } else {
