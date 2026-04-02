@@ -59,15 +59,6 @@ impl CpuFilter for LiquifyPushParams {
         info: &ImageInfo,
     ) -> Result<Vec<u8>, ImageError> {
         validate_format(info.format)?;
-        if is_16bit(info.format) || is_float(info.format) {
-            let full = Rect::new(0, 0, info.width, info.height);
-            let pixels = upstream(full)?;
-            let cfg = self.clone();
-            return process_via_standard(&pixels, info, |px, i8| {
-                let r = Rect::new(0, 0, i8.width, i8.height);
-                cfg.compute(r, &mut |_| Ok(px.to_vec()), i8)
-            });
-        }
 
         let cx = self.center_x * info.width as f32;
         let cy = self.center_y * info.height as f32;
@@ -178,15 +169,6 @@ impl CpuFilter for LiquifyPinchParams {
         info: &ImageInfo,
     ) -> Result<Vec<u8>, ImageError> {
         validate_format(info.format)?;
-        if is_16bit(info.format) || is_float(info.format) {
-            let full = Rect::new(0, 0, info.width, info.height);
-            let pixels = upstream(full)?;
-            let cfg = self.clone();
-            return process_via_standard(&pixels, info, |px, i8| {
-                let r = Rect::new(0, 0, i8.width, i8.height);
-                cfg.compute(r, &mut |_| Ok(px.to_vec()), i8)
-            });
-        }
 
         let cx = self.center_x * info.width as f32;
         let cy = self.center_y * info.height as f32;
@@ -290,15 +272,6 @@ impl CpuFilter for LiquifyExpandParams {
         info: &ImageInfo,
     ) -> Result<Vec<u8>, ImageError> {
         validate_format(info.format)?;
-        if is_16bit(info.format) || is_float(info.format) {
-            let full = Rect::new(0, 0, info.width, info.height);
-            let pixels = upstream(full)?;
-            let cfg = self.clone();
-            return process_via_standard(&pixels, info, |px, i8| {
-                let r = Rect::new(0, 0, i8.width, i8.height);
-                cfg.compute(r, &mut |_| Ok(px.to_vec()), i8)
-            });
-        }
 
         let cx = self.center_x * info.width as f32;
         let cy = self.center_y * info.height as f32;
@@ -407,15 +380,6 @@ impl CpuFilter for LiquifyTwirlParams {
         info: &ImageInfo,
     ) -> Result<Vec<u8>, ImageError> {
         validate_format(info.format)?;
-        if is_16bit(info.format) || is_float(info.format) {
-            let full = Rect::new(0, 0, info.width, info.height);
-            let pixels = upstream(full)?;
-            let cfg = self.clone();
-            return process_via_standard(&pixels, info, |px, i8| {
-                let r = Rect::new(0, 0, i8.width, i8.height);
-                cfg.compute(r, &mut |_| Ok(px.to_vec()), i8)
-            });
-        }
 
         let cx = self.center_x * info.width as f32;
         let cy = self.center_y * info.height as f32;
@@ -528,15 +492,6 @@ impl CpuFilter for LiquifySmoothParams {
         info: &ImageInfo,
     ) -> Result<Vec<u8>, ImageError> {
         validate_format(info.format)?;
-        if is_16bit(info.format) || is_float(info.format) {
-            let full = Rect::new(0, 0, info.width, info.height);
-            let pixels = upstream(full)?;
-            let cfg = self.clone();
-            return process_via_standard(&pixels, info, |px, i8| {
-                let r = Rect::new(0, 0, i8.width, i8.height);
-                cfg.compute(r, &mut |_| Ok(px.to_vec()), i8)
-            });
-        }
 
         // As a pixel filter, smooth just returns identity mapping (source = output).
         // The smooth effect only manifests in the displacement field accumulation API.

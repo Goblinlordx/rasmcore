@@ -35,13 +35,17 @@ pub fn apply_distortion(
     let ch = channels(info.format);
     let src_w = source_rect.width as usize;
     let src_h = source_rect.height as usize;
+    let sample_fmt = crate::domain::ewa::SampleFormat::from_pixel_format(info.format);
+    let bpc = sample_fmt.bytes_per_channel();
 
-    let sampler = crate::domain::ewa::EwaSampler::new(&pixels, src_w, src_h, ch);
+    let sampler =
+        crate::domain::ewa::EwaSampler::new_with_format(&pixels, src_w, src_h, ch, sample_fmt);
 
-    // Output buffer for the requested tile only
+    // Output buffer — sized by actual bytes per pixel (ch * bytes_per_channel)
     let out_w = request.width as usize;
     let out_h = request.height as usize;
-    let mut out = vec![0u8; out_w * out_h * ch];
+    let out_bpp = ch * bpc;
+    let mut out = vec![0u8; out_w * out_h * out_bpp];
 
     // Iterate in IMAGE-SPACE coordinates (not tile-local)
     for oy in 0..out_h {
@@ -49,39 +53,42 @@ pub fn apply_distortion(
         for ox in 0..out_w {
             let img_x = (request.x as usize + ox) as f32;
 
-            // Inverse transform in image space
             let (sx, sy) = inverse_fn(img_x, img_y);
-
-            // Adjust source coords to be relative to source_rect
             let local_sx = sx - source_rect.x as f32;
             let local_sy = sy - source_rect.y as f32;
 
-            let off = (oy * out_w + ox) * ch;
-            match sampling {
-                DistortionSampling::Bilinear => {
-                    for c in 0..ch {
-                        out[off + c] = sampler
-                            .bilinear_pub(local_sx, local_sy, c)
-                            .round()
-                            .clamp(0.0, 255.0) as u8;
+            let pixel_off = (oy * out_w + ox) * out_bpp;
+            for c in 0..ch {
+                // Sample returns value in native format range
+                let v = match sampling {
+                    DistortionSampling::Bilinear => {
+                        sampler.bilinear_pub(local_sx, local_sy, c)
                     }
-                }
-                DistortionSampling::Ewa => {
-                    let j = jacobian_fn(img_x, img_y);
-                    for c in 0..ch {
-                        out[off + c] = sampler
-                            .sample(local_sx, local_sy, &j, c)
-                            .round()
-                            .clamp(0.0, 255.0) as u8;
+                    DistortionSampling::Ewa => {
+                        let j = jacobian_fn(img_x, img_y);
+                        sampler.sample(local_sx, local_sy, &j, c)
                     }
-                }
-                DistortionSampling::EwaClamp => {
-                    let j = jacobian_fn(img_x, img_y);
-                    for c in 0..ch {
-                        out[off + c] = sampler
-                            .sample_clamp(local_sx, local_sy, &j, c)
-                            .round()
-                            .clamp(0.0, 255.0) as u8;
+                    DistortionSampling::EwaClamp => {
+                        let j = jacobian_fn(img_x, img_y);
+                        sampler.sample_clamp(local_sx, local_sy, &j, c)
+                    }
+                };
+                // Write channel value in native format
+                let ch_off = pixel_off + c * bpc;
+                match sample_fmt {
+                    crate::domain::ewa::SampleFormat::U8 => {
+                        out[ch_off] = v.round().clamp(0.0, 255.0) as u8;
+                    }
+                    crate::domain::ewa::SampleFormat::U16 => {
+                        let u = v.round().clamp(0.0, 65535.0) as u16;
+                        out[ch_off..ch_off + 2].copy_from_slice(&u.to_le_bytes());
+                    }
+                    crate::domain::ewa::SampleFormat::F16 => {
+                        let h = half::f16::from_f32(v);
+                        out[ch_off..ch_off + 2].copy_from_slice(&h.to_le_bytes());
+                    }
+                    crate::domain::ewa::SampleFormat::F32 => {
+                        out[ch_off..ch_off + 4].copy_from_slice(&v.to_le_bytes());
                     }
                 }
             }
