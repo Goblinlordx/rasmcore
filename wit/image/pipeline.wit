@@ -109,21 +109,10 @@ interface pipeline {
         size-bytes: u64,
     }
 
-    /// Cache storage quality — controls memory/precision tradeoff.
-    enum cache-quality {
-        /// Full precision (default). 16 bytes/pixel for Rgba32f.
-        full,
-        /// Quantize to u16 on store, promote on read. 8 bytes/pixel (2x saving).
-        q16,
-        /// Quantize to u8 on store, promote on read. 4 bytes/pixel (4x saving).
-        q8,
-    }
-
     resource layer-cache {
         constructor(capacity: u32);
         stats: func() -> cache-stats;
         clear: func();
-        set-cache-quality: func(quality: cache-quality);
     }
 
     /// Pipeline precision mode.
@@ -141,6 +130,10 @@ interface pipeline {
 
         // ─── Configuration ───
         set-precision: func(precision: pipeline-precision);
+        /// Set proxy scale factor for automatic spatial parameter scaling.
+        /// Spatial params (hint = rc.pixels) are multiplied by this factor.
+        /// Default 1.0 = full resolution. Use 0.5 for half-resolution proxy.
+        set-proxy-scale: func(scale: f32);
 
         // ─── Source ───
         read: func(data: buffer) -> result<node-id, rasmcore-error>;
