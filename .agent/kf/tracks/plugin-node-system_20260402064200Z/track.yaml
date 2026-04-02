@@ -1,188 +1,111 @@
 id: plugin-node-system_20260402064200Z
-title: "Research: Plugin node system — external .wasm components as pipeline nodes"
+title: 'Research: Plugin node system — external .wasm components as pipeline nodes'
 type: research
 status: pending
 created: '2026-04-02'
 updated: '2026-04-02'
 spec:
-  summary: |
-    Design the plugin node system that allows external .wasm components to be
+  summary: 'Design the plugin node system that allows external .wasm components to be
+
     loaded as pipeline nodes at runtime. Plugin nodes implement the same
+
     interface as built-in Rust nodes and can declare all the same capabilities
+
     (point-op/LUT fusion, GpuCapable, MlCapable).
-  context: |
-    Currently all pipeline nodes are compiled-in Rust code. Compiled-in is
-    excellent for WASM distribution — single component, high performance,
-    everything baked in. But it means adding a new filter requires rebuilding
-    the entire component.
 
-    A plugin node system would allow:
-    - Third-party filter development without rebuilding rasmcore
-    - Large/specialized filters distributed as remote bundles
-    - Community plugin ecosystem
-    - Hot-loading new capabilities at runtime
-
-    A plugin node is NOT a lesser node. It implements the exact same WIT
-    interface as built-in nodes. The pipeline graph treats plugin nodes
-    identically to built-in nodes. The only difference is WHERE the
-    implementation comes from:
-    - Built-in: compiled into the core .wasm component
-    - Plugin: loaded from a separate .wasm file at runtime
-
-    Node execution model (same for built-in and plugin):
-
-    Every node has a CPU implementation (compute_region). This is the
-    baseline — always present. On top of that, nodes declare orthogonal
-    properties:
-
-    1. FUSABLE (optimization property):
-       Node is a point-op that can be collapsed into a [u8; 256] LUT.
-       Multiple adjacent fusable nodes are fused into a single LUT.
-       The fused LUT node automatically gets CPU and GPU implementations
-       (the engine provides a generic LUT shader). The individual node's
-       compute_region is never called — the fused LUT replaces it.
-
-    2. GPU (execution acceleration):
-       Node provides an explicit WGSL shader for its specific operation.
-       This is for non-fusable operations (spatial ops, distortions, etc.)
-       that need custom GPU code. Mutually exclusive with fusable — if a
-       node is fusable, the fused LUT handles GPU automatically.
-
-    3. ML (external inference):
-       Node provides a model reference for ML runtime dispatch.
-       No CPU fallback — ML features are ML-only.
-
-    These are mutually exclusive execution strategies:
-    - Fusable point-op -> fused LUT -> CPU or GPU (automatic)
-    - Non-fusable with GPU shader -> GPU or CPU fallback
-    - ML op -> ML runtime only
-    - CPU-only -> compute_region only
-
-    The host already has a WASM runtime (wasmtime for CLI, browser native
-    WASM for web). Loading a second .wasm module is not embedding an
-    interpreter — it uses the same runtime that runs the core component.
-    Zero size overhead in the core component.
-  codebase_analysis: |
-    Current node interface (what plugins must implement):
-
-    Pipeline node contract:
-    - compute_region(request: Rect, upstream: fn(Rect) -> pixels) -> pixels
-    - Config params (ConfigParams struct with typed fields)
-    - Node metadata (name, category, point_op flag, reference description)
-
-    Capability declarations (optional, plugins can declare any/all):
-    - LutPointOp: build_point_lut() -> [u8; 256] — enables LUT fusion
-    - GpuCapable: gpu_ops(w, h) -> Option<Vec<GpuOp>> — enables GPU dispatch
-    - MlCapable: ml_op(input, w, h) -> Option<MlOp> — enables ML dispatch
-      (proposed in separate ML execution track)
-
-    Registration system:
-    - Built-in: #[register_filter] macro + inventory::submit! at compile time
-    - Plugin: host registers the plugin node at runtime via discovery
-
-    Discovery/introspection:
-    - list_filters() returns all registered filters
-    - get-filter-manifest() returns JSON with param schemas
-    - Plugin nodes would appear in these lists after loading
-
-    WIT interface for plugins (new — defines what a plugin .wasm exports):
-    - Same types as the core pipeline node interface
-    - Plugin exports: compute-region, get-manifest, get-config-schema
-    - Plugin imports: upstream pixel access (host provides)
-    - Plugin optionally exports: build-point-lut, gpu-ops, ml-op
+    '
+  context: "Currently all pipeline nodes are compiled-in Rust code. Compiled-in is\nexcellent for WASM distribution — single\
+    \ component, high performance,\neverything baked in. But it means adding a new filter requires rebuilding\nthe entire\
+    \ component.\n\nA plugin node system would allow:\n- Third-party filter development without rebuilding rasmcore\n- Large/specialized\
+    \ filters distributed as remote bundles\n- Community plugin ecosystem\n- Hot-loading new capabilities at runtime\n\nA\
+    \ plugin node is NOT a lesser node. It implements the exact same WIT\ninterface as built-in nodes. The pipeline graph\
+    \ treats plugin nodes\nidentically to built-in nodes. The only difference is WHERE the\nimplementation comes from:\n-\
+    \ Built-in: compiled into the core .wasm component\n- Plugin: loaded from a separate .wasm file at runtime\n\nNode execution\
+    \ model (same for built-in and plugin):\n\nEvery node has a CPU implementation (compute_region). This is the\nbaseline\
+    \ — always present. On top of that, nodes declare orthogonal\nproperties:\n\n1. FUSABLE (optimization property):\n   Node\
+    \ is a point-op that can be collapsed into a [u8; 256] LUT.\n   Multiple adjacent fusable nodes are fused into a single\
+    \ LUT.\n   The fused LUT node automatically gets CPU and GPU implementations\n   (the engine provides a generic LUT shader).\
+    \ The individual node's\n   compute_region is never called — the fused LUT replaces it.\n\n2. GPU (execution acceleration):\n\
+    \   Node provides an explicit WGSL shader for its specific operation.\n   This is for non-fusable operations (spatial\
+    \ ops, distortions, etc.)\n   that need custom GPU code. Mutually exclusive with fusable — if a\n   node is fusable, the\
+    \ fused LUT handles GPU automatically.\n\n3. ML (external inference):\n   Node provides a model reference for ML runtime\
+    \ dispatch.\n   No CPU fallback — ML features are ML-only.\n\nThese are mutually exclusive execution strategies:\n- Fusable\
+    \ point-op -> fused LUT -> CPU or GPU (automatic)\n- Non-fusable with GPU shader -> GPU or CPU fallback\n- ML op -> ML\
+    \ runtime only\n- CPU-only -> compute_region only\n\nThe host already has a WASM runtime (wasmtime for CLI, browser native\n\
+    WASM for web). Loading a second .wasm module is not embedding an\ninterpreter — it uses the same runtime that runs the\
+    \ core component.\nZero size overhead in the core component.\n"
+  codebase_analysis: "Current node interface (what plugins must implement):\n\nPipeline node contract:\n- compute_region(request:\
+    \ Rect, upstream: fn(Rect) -> pixels) -> pixels\n- Config params (ConfigParams struct with typed fields)\n- Node metadata\
+    \ (name, category, point_op flag, reference description)\n\nCapability declarations (optional, plugins can declare any/all):\n\
+    - LutPointOp: build_point_lut() -> [u8; 256] — enables LUT fusion\n- GpuCapable: gpu_ops(w, h) -> Option<Vec<GpuOp>> —\
+    \ enables GPU dispatch\n- MlCapable: ml_op(input, w, h) -> Option<MlOp> — enables ML dispatch\n  (proposed in separate\
+    \ ML execution track)\n\nRegistration system:\n- Built-in: #[register_filter] macro + inventory::submit! at compile time\n\
+    - Plugin: host registers the plugin node at runtime via discovery\n\nDiscovery/introspection:\n- list_filters() returns\
+    \ all registered filters\n- get-filter-manifest() returns JSON with param schemas\n- Plugin nodes would appear in these\
+    \ lists after loading\n\nWIT interface for plugins (new — defines what a plugin .wasm exports):\n- Same types as the core\
+    \ pipeline node interface\n- Plugin exports: compute-region, get-manifest, get-config-schema\n- Plugin imports: upstream\
+    \ pixel access (host provides)\n- Plugin optionally exports: build-point-lut, gpu-ops, ml-op\n"
   acceptance_criteria:
-    - Plugin node WIT interface specification (what a plugin .wasm must export)
-    - Plugin discovery protocol (how host finds and loads plugins)
-    - Remote plugin bundle format (.wasm + manifest with name, version, sha256, params schema)
-    - Plugin loading flow for CLI host (wasmtime component loading)
-    - Plugin loading flow for browser host (WebAssembly.instantiate)
-    - How plugin nodes integrate with pipeline graph (identical to built-in nodes)
-    - How plugins declare execution strategy (fusable / GPU / ML / CPU-only)
-    - Verification that strategies are mutually exclusive
-    - How fusable plugin point-ops participate in LUT fusion chain
-    - Security model (sandboxing, resource limits, capability permissions)
-    - Performance analysis (cross-component call overhead for pixel buffers)
-    - Concrete example showing a custom filter plugin end-to-end
-    - Architecture document to .agent/kf/_reports/plugin-node-architecture.md
-  out_of_scope: |
-    ML execution system (separate track — ml-plugin-architecture).
+  - Plugin node WIT interface specification (what a plugin .wasm must export)
+  - Plugin discovery protocol (how host finds and loads plugins)
+  - Remote plugin bundle format (.wasm + manifest with name, version, sha256, params schema)
+  - Plugin loading flow for CLI host (wasmtime component loading)
+  - Plugin loading flow for browser host (WebAssembly.instantiate)
+  - How plugin nodes integrate with pipeline graph (identical to built-in nodes)
+  - How plugins declare execution strategy (fusable / GPU / ML / CPU-only)
+  - Verification that strategies are mutually exclusive
+  - How fusable plugin point-ops participate in LUT fusion chain
+  - Security model (sandboxing, resource limits, capability permissions)
+  - Performance analysis (cross-component call overhead for pixel buffers)
+  - Concrete example showing a custom filter plugin end-to-end
+  - Architecture document to .agent/kf/_reports/plugin-node-architecture.md
+  out_of_scope: 'ML execution system (separate track — ml-plugin-architecture).
+
     Implementing code. Building plugin SDK/toolchain.
+
     Plugin marketplace/registry infrastructure.
+
     Scripting languages (Lua, Rhai) — plugins are compiled .wasm, not scripts.
-  technical_notes: |
-    Key design questions:
 
-    1. Plugin WIT interface granularity:
-       - Option A: Plugin exports a single "filter" interface (1 filter per .wasm)
-       - Option B: Plugin exports a "filter-pack" interface (N filters per .wasm)
-       -> Likely B for distribution efficiency, A for simplicity
-
-    2. Pixel buffer transfer:
-       - Cross-component calls in WASM Component Model copy data
-       - For large images this is significant overhead
-       - Mitigation: shared-nothing is the security model, copying is correct
-       - Mitigation: tile-based pipeline means buffers are tile-sized, not full image
-       -> Tile pipeline naturally limits copy overhead
-
-    3. Plugin execution strategy (mutually exclusive):
-       A plugin declares ONE strategy via its exports:
-
-       a) Fusable point-op:
-          Plugin exports build-point-lut(config) -> list<u8> (256 entries)
-          Engine fuses with adjacent point-ops into single LUT.
-          Fused LUT runs on GPU (engine provides LUT shader) or CPU.
-          compute-region NOT required — engine applies LUT directly.
-
-       b) Non-fusable with GPU shader:
-          Plugin exports gpu-ops(w, h) -> option<list<gpu-op>>
-          Returns WGSL shader source + params, host dispatches to GPU.
-          Plugin's compute-region is CPU fallback.
-          Cannot also be fusable — spatial/complex ops need explicit shaders.
-
-       c) ML operation:
-          Plugin exports ml-op(w, h) -> option<ml-op>
-          Returns model-ref + params, host dispatches to ML runtime.
-          No CPU fallback. Plugin's compute-region is not used.
-
-       d) CPU-only (default):
-          No additional exports. compute-region handles everything.
-
-       These are mutually exclusive. A node is exactly one of: fusable,
-       GPU-accelerated, ML-accelerated, or CPU-only.
-
-    4. Config params:
-       - Plugin exports get-config-schema() -> JSON schema
-       - Host validates config against schema before passing to plugin
-       - Same param types as built-in ConfigParams (f32, u8, bool, enum, etc.)
-
-    5. Plugin loading:
-       - CLI: wasmtime Component::from_file("plugin.wasm")
-       - Browser: fetch("plugin.wasm") -> WebAssembly.instantiate()
-       - Both: plugin appears in filter list, available to pipeline graph
-
-    6. Distribution:
-       - Plugin bundle = .wasm file + manifest.json
-       - Manifest: name, version, author, filters[], sha256, size, min-engine-version
-       - Hosted at configurable registry URL
-       - Downloaded on demand, cached locally
-       - Same bundle format as ML model bundles (unified remote bundle system)
+    '
+  technical_notes: "Key design questions:\n\n1. Plugin WIT interface granularity:\n   - Option A: Plugin exports a single\
+    \ \"filter\" interface (1 filter per .wasm)\n   - Option B: Plugin exports a \"filter-pack\" interface (N filters per\
+    \ .wasm)\n   -> Likely B for distribution efficiency, A for simplicity\n\n2. Pixel buffer transfer:\n   - Cross-component\
+    \ calls in WASM Component Model copy data\n   - For large images this is significant overhead\n   - Mitigation: shared-nothing\
+    \ is the security model, copying is correct\n   - Mitigation: tile-based pipeline means buffers are tile-sized, not full\
+    \ image\n   -> Tile pipeline naturally limits copy overhead\n\n3. Plugin execution strategy (mutually exclusive):\n  \
+    \ A plugin declares ONE strategy via its exports:\n\n   a) Fusable point-op:\n      Plugin exports build-point-lut(config)\
+    \ -> list<u8> (256 entries)\n      Engine fuses with adjacent point-ops into single LUT.\n      Fused LUT runs on GPU\
+    \ (engine provides LUT shader) or CPU.\n      compute-region NOT required — engine applies LUT directly.\n\n   b) Non-fusable\
+    \ with GPU shader:\n      Plugin exports gpu-ops(w, h) -> option<list<gpu-op>>\n      Returns WGSL shader source + params,\
+    \ host dispatches to GPU.\n      Plugin's compute-region is CPU fallback.\n      Cannot also be fusable — spatial/complex\
+    \ ops need explicit shaders.\n\n   c) ML operation:\n      Plugin exports ml-op(w, h) -> option<ml-op>\n      Returns\
+    \ model-ref + params, host dispatches to ML runtime.\n      No CPU fallback. Plugin's compute-region is not used.\n\n\
+    \   d) CPU-only (default):\n      No additional exports. compute-region handles everything.\n\n   These are mutually exclusive.\
+    \ A node is exactly one of: fusable,\n   GPU-accelerated, ML-accelerated, or CPU-only.\n\n4. Config params:\n   - Plugin\
+    \ exports get-config-schema() -> JSON schema\n   - Host validates config against schema before passing to plugin\n   -\
+    \ Same param types as built-in ConfigParams (f32, u8, bool, enum, etc.)\n\n5. Plugin loading:\n   - CLI: wasmtime Component::from_file(\"\
+    plugin.wasm\")\n   - Browser: fetch(\"plugin.wasm\") -> WebAssembly.instantiate()\n   - Both: plugin appears in filter\
+    \ list, available to pipeline graph\n\n6. Distribution:\n   - Plugin bundle = .wasm file + manifest.json\n   - Manifest:\
+    \ name, version, author, filters[], sha256, size, min-engine-version\n   - Hosted at configurable registry URL\n   - Downloaded\
+    \ on demand, cached locally\n   - Same bundle format as ML model bundles (unified remote bundle system)\n"
 plan:
-  - phase: Research
-    tasks:
-      - text: Document current node interface contract (compute_region, ConfigParams, capabilities)
-        done: false
-      - text: Analyze WASM Component Model cross-component call overhead for pixel buffers
-        done: false
-      - text: Survey WASM component composition patterns (wasmtime, browser)
-        done: false
-  - phase: Design and document
-    tasks:
-      - text: Design plugin node WIT interface (exports, imports, capability declarations)
-        done: false
-      - text: Design plugin bundle format and loading protocol
-        done: false
-      - text: Design plugin integration with LUT fusion, GPU, and ML capability systems
-        done: false
-      - text: Write architecture document to .agent/kf/_reports/plugin-node-architecture.md
-        done: false
+- phase: Research
+  tasks:
+  - text: Document current node interface contract (compute_region, ConfigParams, capabilities)
+    done: true
+  - text: Analyze WASM Component Model cross-component call overhead for pixel buffers
+    done: true
+  - text: Survey WASM component composition patterns (wasmtime, browser)
+    done: true
+- phase: Design and document
+  tasks:
+  - text: Design plugin node WIT interface (exports, imports, capability declarations)
+    done: true
+  - text: Design plugin bundle format and loading protocol
+    done: true
+  - text: Design plugin integration with LUT fusion, GPU, and ML capability systems
+    done: true
+  - text: Write architecture document to .agent/kf/_reports/plugin-node-architecture.md
+    done: true
 extra: {}
