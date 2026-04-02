@@ -1242,11 +1242,21 @@ impl NodeGraph {
 
                 self.nodes[i] = Box::new(ComposedAffineNode::new(
                     upstream,
-                    source_info,
+                    source_info.clone(),
                     matrix,
                     use_w,
                     use_h,
                 ));
+                // Register GPU capability for the fused affine node
+                if let Some(slot) = self.gpu_nodes.get_mut(i) {
+                    *slot = Some(Box::new(ComposedAffineNode::new(
+                        upstream,
+                        source_info,
+                        matrix,
+                        use_w,
+                        use_h,
+                    )));
+                }
             }
         }
     }
@@ -3535,6 +3545,42 @@ mod affine_composition_tests {
         let (w, h) = affine_output_dims(&composed, 100, 100);
         assert_eq!(w, 50);
         assert_eq!(h, 50);
+    }
+
+    #[test]
+    fn fuse_affine_transforms_registers_gpu() {
+        // Must use Rgba8 — GPU path only supports RGBA8
+        let info = ImageInfo {
+            width: 64,
+            height: 64,
+            format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
+        };
+        let pixels: Vec<u8> = vec![128u8; 64 * 64 * 4];
+
+        let mut g = NodeGraph::new(1024 * 1024);
+        let src = g.add_node(Box::new(RawSource::new(pixels, info.clone())));
+
+        let resize = g.add_node(Box::new(ResizeNode::new(
+            src,
+            info.clone(),
+            32,
+            32,
+            ResizeFilter::Bilinear,
+        )));
+        let resize_info = g.node_info(resize).unwrap();
+
+        let rotate = g.add_node(Box::new(RotateNode::new(
+            resize,
+            resize_info,
+            Rotation::R90,
+        )));
+
+        assert!(!g.has_gpu(rotate), "should not have GPU before fusion");
+
+        g.fuse_affine_transforms();
+
+        assert!(g.has_gpu(rotate), "fused affine node must have GPU capability registered");
     }
 }
 
