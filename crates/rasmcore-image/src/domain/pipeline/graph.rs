@@ -1159,6 +1159,14 @@ impl NodeGraph {
                     source_info: info,
                     lut,
                 });
+                // Register GPU capability for the fused node (lut is Copy)
+                if let Some(slot) = self.gpu_nodes.get_mut(i) {
+                    *slot = Some(Box::new(FusedLutNode {
+                        upstream,
+                        source_info: self.nodes[i].info(),
+                        lut,
+                    }));
+                }
                 // Reallocate accumulator for the fused node
                 let fused_info = self.nodes[i].info();
                 let bpp = bytes_per_pixel(fused_info.format) as usize;
@@ -1276,11 +1284,20 @@ impl NodeGraph {
             if current != i {
                 let upstream = chain_root_upstream.unwrap_or(0);
                 let info = self.nodes[i].info();
+                let clut_for_gpu = clut.clone();
                 self.nodes[i] = Box::new(FusedClutNode {
                     upstream,
                     source_info: info,
                     clut,
                 });
+                // Register GPU capability for the fused CLUT node
+                if let Some(slot) = self.gpu_nodes.get_mut(i) {
+                    *slot = Some(Box::new(FusedClutNode {
+                        upstream,
+                        source_info: self.nodes[i].info(),
+                        clut: clut_for_gpu,
+                    }));
+                }
                 // Reallocate accumulator for the fused node
                 let fused_info = self.nodes[i].info();
                 let bpp = bytes_per_pixel(fused_info.format) as usize;
@@ -3013,6 +3030,33 @@ mod lut_fusion_tests {
 
         assert_eq!(build_graph(false), build_graph(true));
     }
+
+    #[test]
+    fn fuse_point_ops_registers_gpu() {
+        let w = 16;
+        let h = 16;
+        let info = make_info(w, h);
+        let pixels = gradient_pixels(w, h);
+
+        let mut g = NodeGraph::new(1024 * 1024);
+        let src = g.add_node(Box::new(RawSource::new(pixels, info.clone())));
+        let b = g.add_node(Box::new(BrightnessNode::new(
+            src,
+            info.clone(),
+            BrightnessParams { amount: 0.2 },
+        )));
+        let c = g.add_node(Box::new(ContrastNode::new(
+            b,
+            info.clone(),
+            ContrastParams { amount: 0.3 },
+        )));
+
+        assert!(!g.has_gpu(c), "should not have GPU before fusion");
+
+        g.fuse_point_ops();
+
+        assert!(g.has_gpu(c), "fused LUT node must have GPU capability registered");
+    }
 }
 
 #[cfg(test)]
@@ -3103,6 +3147,37 @@ mod color_clut_fusion_tests {
             .sum::<f64>()
             / unfused.len() as f64;
         assert!(mae < 1.0, "3D CLUT fusion MAE: {mae} (expected < 1.0)");
+    }
+
+    #[test]
+    fn fuse_color_ops_registers_gpu() {
+        let (w, h) = (16, 16);
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
+        let pixels = gradient_rgb(w, h);
+
+        let mut g = NodeGraph::new(1024 * 1024);
+        let src = g.add_node(Box::new(RawSource::new(pixels, info.clone())));
+        let n1 = g.add_node(Box::new(HueRotateNode::new(
+            src,
+            info.clone(),
+            HueRotateParams { degrees: 30.0 },
+        )));
+        let n2 = g.add_node(Box::new(SaturateNode::new(
+            n1,
+            info.clone(),
+            SaturateParams { factor: 1.5 },
+        )));
+
+        assert!(!g.has_gpu(n2), "should not have GPU before fusion");
+
+        g.fuse_color_ops();
+
+        assert!(g.has_gpu(n2), "fused CLUT node must have GPU capability registered");
     }
 }
 
