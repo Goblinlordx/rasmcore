@@ -608,7 +608,85 @@ drive execution identically.
 
 ---
 
-### 3.3c Node Trait (Revised)
+### 3.3c Composite Nodes (Pipeline-as-Node)
+
+A composite node is a node whose implementation is itself a pipeline. It
+contains an internal graph with special input/output reference nodes:
+
+- **Input ref**: placeholder node that receives pixels from the outer pipeline
+  (acts as the source within the internal graph)
+- **Output ref**: the final node whose output becomes the composite's output
+- **Internal graph**: arbitrary pipeline between input and output refs
+
+```
+Outer pipeline:  Source → [CompositeNode] → Resize → Encoder
+
+CompositeNode internals:
+  InputRef → NodeA → NodeB → ... → OutputRef
+```
+
+From the outer pipeline's perspective, a composite node is just a node. It
+has `info()`, `input_rect()`, and `compute_region()`. These are derived from
+its internal graph — `info()` returns the output ref's info, `input_rect()`
+traces backward through the internal graph to determine what the input ref
+needs.
+
+#### Analysis + Processing Composites
+
+Composite nodes naturally support the analysis sink pattern. The internal
+graph can contain both analysis (materialize and inspect) and processing:
+
+```
+// auto_crop composite:
+InputRef → analyze_edges(InputRef)        // analysis: scans pixels, determines crop rect
+         → crop(InputRef, analyzed_rect)  // processing: crops using determined params
+         → OutputRef
+```
+
+The composition is opaque to the outer pipeline. `auto_crop` is just a node
+that takes an image and produces a cropped image.
+
+#### Composites as Presets/Recipes
+
+Presets and filter recipes are composite nodes with fixed params:
+
+```
+// "Vintage Film" preset composite:
+InputRef → curves(vintage_curve_params)
+         → color_balance(warm_shift)
+         → film_grain(amount=0.3, size=1.5)
+         → vignette(strength=0.4)
+         → OutputRef
+```
+
+A preset is a serialized composite node definition — a pipeline fragment with
+input/output refs and predetermined configuration. Loading a preset creates
+a composite node. This unifies presets, recipes, macros, and multi-step
+operations under one mechanism.
+
+#### Nested Composition
+
+Composite nodes can contain other composite nodes. The three-phase execution
+model works recursively:
+
+```
+// "Portrait Enhance" composite contains the "Auto Levels" composite:
+InputRef → [AutoLevels composite] → [SkinSmooth composite] → Sharpen → OutputRef
+```
+
+Each level resolves its own info/input_rect/compute_region through its
+internal graph. The outer pipeline doesn't know or care about nesting depth.
+
+#### Plugin Composites
+
+Plugins (external .wasm components) can define composite nodes. The plugin
+exports a composite definition (internal graph description), and the host
+constructs the graph. This allows plugins to provide multi-step operations
+without the host knowing the implementation details.
+
+---
+
+### 3.3d Node Trait (Revised)
 
 ```rust
 /// The core trait every pipeline node implements.
