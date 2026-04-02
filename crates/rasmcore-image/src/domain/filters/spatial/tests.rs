@@ -441,6 +441,7 @@ mod tests {
             &ColorizeParams {
                 target: crate::domain::param_types::ColorRgb { r: 255, g: 0, b: 0 },
                 amount: 0.5,
+                method: "w3c".to_string(),
             },
         )
         .unwrap();
@@ -457,6 +458,7 @@ mod tests {
             &ColorizeParams {
                 target: crate::domain::param_types::ColorRgb { r: 255, g: 0, b: 0 },
                 amount: 0.0,
+                method: "w3c".to_string(),
             },
         )
         .unwrap();
@@ -658,7 +660,8 @@ mod tests {
                         g: 128,
                         b: 255
                     },
-                    amount: 0.5
+                    amount: 0.5,
+                    method: "w3c".to_string(),
                 }
             )
             .is_ok()
