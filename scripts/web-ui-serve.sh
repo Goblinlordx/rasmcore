@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 WEB_UI="$ROOT/web-ui"
 
-SDK_PATH="${1:-$ROOT/demo/sdk}"
+SDK_PATH="${1:-$ROOT/sdk/typescript/generated}"
 PORT="${2:-3000}"
 
 cd "$WEB_UI"

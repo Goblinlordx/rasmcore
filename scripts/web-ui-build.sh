@@ -8,7 +8,7 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 WEB_UI="$ROOT/web-ui"
 
 # Parse args
-SDK_PATH="${1:-$ROOT/demo/sdk}"
+SDK_PATH="${1:-$ROOT/sdk/typescript/generated}"
 
 echo "=== Building web-ui ==="
 echo "  SDK path: $SDK_PATH"
