@@ -5,42 +5,60 @@ status: pending
 created: '2026-04-02'
 updated: '2026-04-02'
 spec:
-  summary: |
-    fuse_affine_transforms() replaces nodes with ComposedAffineNode but never
+  summary: 'fuse_affine_transforms() replaces nodes with ComposedAffineNode but never
+
     updates gpu_nodes, so GPU dispatch falls back to CPU for all fused affine chains.
-  context: |
-    The pipeline optimizer fuses consecutive affine transforms into a single
+
+    '
+  context: 'The pipeline optimizer fuses consecutive affine transforms into a single
+
     ComposedAffineNode (graph.rs:969). ComposedAffineNode has a GpuCapable impl
+
     with an affine_resample.wgsl shader (nodes/transform/affine.rs:152-197).
+
     But the optimizer only replaces self.nodes[i] -- it never updates
+
     self.gpu_nodes[i]. Same bug pattern as fusion-gpu-register_20260402130002Z.
-  codebase_analysis: |
-    graph.rs:969-1033 -- fuse_affine_transforms() replaces nodes but not gpu_nodes
+
+    '
+  codebase_analysis: 'graph.rs:969-1033 -- fuse_affine_transforms() replaces nodes but not gpu_nodes
+
     nodes/transform/affine.rs:81-147 -- ComposedAffineNode struct + ImageNode impl
+
     nodes/transform/affine.rs:152-197 -- GpuCapable impl with affine_resample.wgsl
+
     shaders/affine_resample.wgsl -- bilinear resample shader (already exists)
+
     graph.rs:836 -- register_gpu(node_id, gpu) updates gpu_nodes
+
+    '
   acceptance_criteria:
-    - After fuse_affine_transforms, fused affine nodes have gpu_nodes entry populated
-    - GPU dispatch uses affine_resample.wgsl shader for fused affine chains
-    - Existing affine fusion tests continue to pass
-  out_of_scope: |
-    Adding new GPU shaders. The affine_resample.wgsl shader already exists.
+  - After fuse_affine_transforms, fused affine nodes have gpu_nodes entry populated
+  - GPU dispatch uses affine_resample.wgsl shader for fused affine chains
+  - Existing affine fusion tests continue to pass
+  out_of_scope: 'Adding new GPU shaders. The affine_resample.wgsl shader already exists.
+
     This is purely about wiring -- registering the existing GPU capability after fusion.
-  technical_notes: |
-    In fuse_affine_transforms(), after self.nodes[i] = Box::new(ComposedAffineNode::new(...)),
+
+    '
+  technical_notes: 'In fuse_affine_transforms(), after self.nodes[i] = Box::new(ComposedAffineNode::new(...)),
+
     add: if let Some(slot) = self.gpu_nodes.get_mut(i) { *slot = Some(Box::new(ComposedAffineNode::new(...))); }
+
     ComposedAffineNode::new takes (upstream, source_info, matrix, out_width, out_height) --
+
     all are Copy or Clone so a second construction is straightforward.
+
+    '
 plan:
-  - phase: Fix GPU registration
-    tasks:
-      - text: In fuse_affine_transforms, register GPU for ComposedAffineNode after replacing self.nodes[i]
-        done: false
-      - text: Add test verifying has_gpu returns true after fuse_affine_transforms
-        done: false
-  - phase: Verify
-    tasks:
-      - text: Run existing affine fusion tests and full test suite
-        done: false
+- phase: Fix GPU registration
+  tasks:
+  - text: In fuse_affine_transforms, register GPU for ComposedAffineNode after replacing self.nodes[i]
+    done: true
+  - text: Add test verifying has_gpu returns true after fuse_affine_transforms
+    done: true
+- phase: Verify
+  tasks:
+  - text: Run existing affine fusion tests and full test suite
+    done: true
 extra: {}
