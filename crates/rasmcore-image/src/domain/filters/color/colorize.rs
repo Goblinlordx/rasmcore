@@ -3,7 +3,14 @@
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
-/// Tint image toward `target_color` (RGB) by `amount` (0=none, 1=full tint).
+/// Colorize using the Photoshop/W3C Color blend mode algorithm.
+///
+/// Replaces hue and chroma of each pixel with those of `target_color`
+/// while preserving the pixel's original luminance (BT.601 luma).
+/// `amount` controls blend strength: 0=none, 1=full colorize.
+///
+/// Reference: W3C Compositing and Blending Level 1, Section 10.2
+/// (SetLum/ClipColor with Lum = 0.299R + 0.587G + 0.114B).
 
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct ColorizeParams {
@@ -30,7 +37,7 @@ impl ColorLutOp for ColorizeParams {
 #[rasmcore_macros::register_filter(
     name = "colorize",
     category = "color",
-    reference = "linear color tint blend",
+    reference = "W3C Compositing Level 1 / Photoshop Color blend mode",
     color_op = "true"
 )]
 pub fn colorize(

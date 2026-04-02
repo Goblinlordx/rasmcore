@@ -24,6 +24,9 @@ These filters produce identical output to OpenCV/ImageMagick on every pixel:
 | **Perspective warp** | OpenCV | 1/1 exact | Byte-exact |
 | **pyrUp** | OpenCV | 7/7 exact | Byte-exact |
 | **Gray-world WB** | Reference | 1/1 exact | Byte-exact |
+| **Colorize** | W3C/Photoshop spec | 7/7 exact | W3C SetLum/ClipColor, BT.601 luma |
+| **White balance temp** | ImageMagick -evaluate | 1/1 exact | Byte-exact channel multiply |
+| **Photo filter** | ImageMagick -colorize | 1/1 exact | Byte-exact color blend |
 
 ## Near-Exact Filters (max_err <= 1)
 
@@ -38,10 +41,7 @@ These filters produce identical output to OpenCV/ImageMagick on every pixel:
 |--------|-----------|-----------|---------------|-------|
 | **Grayscale (BT.709)** | ImageMagick -fx | 0.50 | — | f32 rounding vs IM double precision |
 | **Hue rotate** | ImageMagick -modulate | < 5.0 | — | HSL model differences at 270° |
-| **Colorize** | ImageMagick -colorize | 19.5 | — | Design difference: luminance-weighted tint vs IM straight blend |
 | **Gradient map** | ImageMagick -clut | 0.003 | — | Near-exact against IM CLUT pipeline |
-| **White balance temp** | ImageMagick -evaluate | 0.0 | 0 | Byte-exact channel multiply |
-| **Photo filter** | ImageMagick -colorize | 0.0 | 0 | Byte-exact color blend |
 | **Canny** | OpenCV | 5.65 | 255 | f32 vs int16 tangent precision in NMS; 4/7 byte-exact |
 | **Vignette** | ImageMagick | 1.26 | 5 | Different radial falloff formula |
 | **Mertens fusion** | OpenCV | 5.76 (u8) | 29 | Checker image at exposure extremes; f32 MAE=0.024 |
@@ -60,7 +60,7 @@ These filters produce identical output to OpenCV/ImageMagick on every pixel:
 
 ## Summary
 
-- **13 filter operations** are byte-exact against OpenCV/ImageMagick reference
+- **16 filter operations** are byte-exact against OpenCV/ImageMagick/W3C reference
 - **2 filter operations** within max_err=1 (CLAHE, guided filter)
-- **9 filter operations** have documented divergence with root causes
+- **6 filter operations** have documented divergence with root causes
 - **7 codec paths** validated with parity tests
