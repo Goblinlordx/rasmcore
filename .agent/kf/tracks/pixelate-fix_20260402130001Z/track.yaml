@@ -5,32 +5,44 @@ status: pending
 created: '2026-04-02'
 updated: '2026-04-02'
 spec:
-  summary: |
-    block_size has no #[param] annotation, defaults to 0 which means 1x1
+  summary: 'block_size has no #[param] annotation, defaults to 0 which means 1x1
+
     blocks (no visible effect). Add proper param range and default.
-  context: |
-    The pixelate filter at crates/rasmcore-image/src/domain/filters/effect/pixelate.rs
+
+    '
+  context: 'The pixelate filter at crates/rasmcore-image/src/domain/filters/effect/pixelate.rs
+
     uses old-style ConfigParams + register_filter. The block_size field has no #[param]
+
     annotation, so default is 0, min/max/step are null in the manifest, and the web-ui
+
     has no useful slider range.
-  codebase_analysis: |
-    pixelate.rs line 15-17: pub struct PixelateParams { pub block_size: u32 } — no #[param].
+
+    '
+  codebase_analysis: 'pixelate.rs line 15-17: pub struct PixelateParams { pub block_size: u32 } — no #[param].
+
     Line 49: let bs = block_size.max(1) — converts 0 to 1, meaning 1x1 blocks = identity.
+
     The web-ui sends default params from the manifest, which has block_size=0.
+
+    '
   acceptance_criteria:
-    - block_size has #[param(min = 2, max = 64, step = 1, default = 8)] annotation
-    - param-manifest.json shows correct range for pixelate block_size
-    - Applying pixelate with default settings produces visible mosaic effect
-  out_of_scope: |
-    Migrating pixelate to derive(Filter) pattern (separate track).
-  technical_notes: |
-    Add #[param] annotation to block_size field in PixelateParams struct.
+  - block_size has
+  - param-manifest.json shows correct range for pixelate block_size
+  - Applying pixelate with default settings produces visible mosaic effect
+  out_of_scope: 'Migrating pixelate to derive(Filter) pattern (separate track).
+
+    '
+  technical_notes: 'Add #[param] annotation to block_size field in PixelateParams struct.
+
     The .max(1) guard on line 49 can stay — it handles edge cases.
+
+    '
 plan:
-  - phase: Fix
-    tasks:
-      - text: Add #[param(min = 2, max = 64, step = 1, default = 8)] to block_size in pixelate.rs
-        done: false
-      - text: Verify param-manifest.json has correct pixelate entry with min/max/step/default
-        done: false
+- phase: Fix
+  tasks:
+  - text: Add
+    done: true
+  - text: Verify param-manifest.json has correct pixelate entry with min/max/step/default
+    done: true
 extra: {}
