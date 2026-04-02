@@ -10,6 +10,7 @@ use std::io::BufWriter;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use rasmcore_image::domain::color_spaces;
 use rasmcore_image::domain::pipeline::Rect;
 use rasmcore_image::domain::types::*;
 
@@ -3157,4 +3158,235 @@ fn algorithm_high_pass_vs_magick() {
     }
 
     cleanup(&[&input_path]);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// COLOR OPERATION PARITY (IM reference)
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn close_grayscale_vs_im() {
+    // IM -fx can replicate our BT.709 formula exactly.
+    if !magick_available() {
+        eprintln!("SKIP grayscale: magick not available");
+        return;
+    }
+
+    let w = 64u32;
+    let h = 64;
+    let pixels = gradient_rgb(w, h);
+    let info = test_info(w, h, PixelFormat::Rgb8);
+
+    let ours_decoded = rasmcore_image::domain::filters::grayscale(&pixels, &info).unwrap();
+    // Our output is Gray8 — expand to RGB for comparison
+    let ours: Vec<u8> = ours_decoded.pixels.iter().flat_map(|&g| [g, g, g]).collect();
+
+    // Use IM -fx for BT.709 luminance (same weights as our code)
+    let input_path = write_png(&pixels, w, h, 3);
+    if let Some(ref_path) = magick_op(&input_path, &["-fx", "0.2126*r+0.7152*g+0.0722*b"]) {
+        let magick_output = read_png_rgb(&ref_path);
+        let error = mae(&ours, &magick_output);
+        eprintln!("  grayscale BT.709 vs IM -fx: MAE = {error:.4}");
+        assert!(
+            error < 1.0,
+            "grayscale vs IM: MAE={error:.4} exceeds 1.0"
+        );
+        cleanup(&[&input_path, &ref_path]);
+    } else {
+        cleanup(&[&input_path]);
+    }
+}
+
+#[test]
+fn close_colorize_vs_im() {
+    // IM -colorize blends a fill color at given percentage.
+    // Our colorize uses luminance-weighted tint — different formula,
+    // so we expect divergence but both should produce a similar warm cast.
+    if let Some(error) = check_parity_rgb(
+        64,
+        64,
+        |px, info| {
+            let r = Rect::new(0, 0, info.width, info.height);
+            rasmcore_image::domain::filters::colorize(
+                r,
+                &mut |_| Ok(px.to_vec()),
+                info,
+                &rasmcore_image::domain::filters::ColorizeParams {
+                    target: rasmcore_image::domain::param_types::ColorRgb { r: 255, g: 128, b: 0 },
+                    amount: 0.3,
+                },
+            )
+            .unwrap()
+        },
+        &["-fill", "rgb(255,128,0)", "-colorize", "30%"],
+        "colorize warm 30% vs IM",
+    ) {
+        // Different blending formulas: ours uses luminance-weighted tint,
+        // IM uses straight color blend. Expect larger divergence.
+        assert!(
+            error < 20.0,
+            "colorize warm 30% vs IM: MAE={error:.4} exceeds 20.0"
+        );
+    }
+}
+
+#[test]
+fn close_gradient_map_color_vs_im() {
+    // Test gradient map with a color gradient (blue→red) vs IM CLUT
+    if !magick_available() {
+        eprintln!("SKIP gradient_map color: magick not available");
+        return;
+    }
+
+    let w = 64u32;
+    let h = 64;
+    let pixels = gradient_rgb(w, h);
+    let info = test_info(w, h, PixelFormat::Rgb8);
+
+    let ours = {
+        let r = Rect::new(0, 0, w, h);
+        rasmcore_image::domain::filters::gradient_map(
+            r,
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            "0.0:0000FF,1.0:FF0000".to_string(),
+        )
+        .unwrap()
+    };
+
+    // IM: create a 256x1 gradient CLUT, convert input to grayscale, then -clut
+    let input_path = write_png(&pixels, w, h, 3);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let clut_path = std::env::temp_dir().join(format!("refaudit_clut_{id}.png"));
+    let ref_path = std::env::temp_dir().join(format!("refaudit_gmap_{id}.png"));
+
+    let clut_ok = Command::new("magick")
+        .args([
+            "convert", "-size", "256x1",
+            "gradient:blue-red",
+            clut_path.to_str().unwrap(),
+        ])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if !clut_ok {
+        eprintln!("SKIP gradient_map color: failed to create CLUT");
+        cleanup(&[&input_path]);
+        return;
+    }
+
+    // IM -clut maps grayscale intensity through the CLUT gradient
+    let gmap_ok = Command::new("magick")
+        .args([
+            "convert",
+            input_path.to_str().unwrap(),
+            "-colorspace", "Gray",
+            clut_path.to_str().unwrap(),
+            "-clut",
+            ref_path.to_str().unwrap(),
+        ])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if !gmap_ok {
+        eprintln!("SKIP gradient_map color: IM -clut failed");
+        cleanup(&[&input_path, &clut_path]);
+        return;
+    }
+
+    let magick_output = read_png_rgb(&ref_path);
+    let error = mae(&ours, &magick_output);
+    eprintln!("  gradient_map blue→red vs IM -clut: MAE = {error:.4}");
+    // IM -colorspace Gray uses Rec.601 vs our Rec.709,
+    // plus potential sRGB linearization differences
+    assert!(
+        error < 5.0,
+        "gradient_map blue→red vs IM: MAE={error:.4} exceeds 5.0"
+    );
+    cleanup(&[&input_path, &clut_path, &ref_path]);
+}
+
+#[test]
+fn close_white_balance_temperature_vs_im() {
+    // White balance: scales R/B channels based on color temperature.
+    // IM equivalent: per-channel multiply via -fx.
+    if !magick_available() {
+        eprintln!("SKIP white_balance_temperature: magick not available");
+        return;
+    }
+
+    let w = 64u32;
+    let h = 64;
+    let pixels = gradient_rgb(w, h);
+    let info = test_info(w, h, PixelFormat::Rgb8);
+
+    // Our formula: temp_norm = temp / 100, scale_r = 1 + tn*0.1, scale_b = 1 - tn*0.1
+    let temperature = 7500.0f64;
+    let tint = 0.0f64;
+    let ours = color_spaces::white_balance_temperature(
+        &pixels, &info, temperature, tint,
+    )
+    .unwrap();
+
+    let temp_norm = temperature / 100.0;
+    let scale_r = 1.0 + temp_norm * 0.1;
+    let scale_b = 1.0 - temp_norm * 0.1;
+
+    // IM -fx for per-channel scaling (IM -fx operates in [0,1] range)
+    let input_path = write_png(&pixels, w, h, 3);
+    let fx_expr = format!(
+        "(i%3==0)?u*{scale_r:.6}:(i%3==2)?u*{scale_b:.6}:u"
+    );
+    if let Some(ref_path) = magick_op(
+        &input_path,
+        &["-channel", "R", "-evaluate", "multiply", &format!("{scale_r:.6}"),
+          "-channel", "B", "-evaluate", "multiply", &format!("{scale_b:.6}"),
+          "+channel"],
+    ) {
+        let magick_output = read_png_rgb(&ref_path);
+        let error = mae(&ours, &magick_output);
+        eprintln!("  white_balance temp=7500K vs IM -evaluate: MAE = {error:.4}");
+        assert!(
+            error < 2.0,
+            "white_balance temp=7500K vs IM: MAE={error:.4} exceeds 2.0"
+        );
+        cleanup(&[&input_path, &ref_path]);
+    } else {
+        cleanup(&[&input_path]);
+    }
+}
+
+#[test]
+fn close_photo_filter_cool_vs_im() {
+    // Photo filter with cooling color, no preserve luminosity.
+    // IM equivalent: -fill + -colorize (same as warm test but different color).
+    if let Some(error) = check_parity_rgb(
+        64,
+        64,
+        |px, info| {
+            let r = Rect::new(0, 0, info.width, info.height);
+            rasmcore_image::domain::filters::photo_filter(
+                r,
+                &mut |_| Ok(px.to_vec()),
+                info,
+                &rasmcore_image::domain::filters::PhotoFilterParams {
+                    color_r: 0,
+                    color_g: 100,
+                    color_b: 200,
+                    density: 40.0,
+                    preserve_luminosity: 0,
+                },
+            )
+            .unwrap()
+        },
+        &["-fill", "rgb(0,100,200)", "-colorize", "40%"],
+        "photo_filter cool 40% vs IM",
+    ) {
+        assert!(
+            error < 2.0,
+            "CLOSE: photo_filter cool MAE should be < 2.0, got {error:.4}"
+        );
+    }
 }
