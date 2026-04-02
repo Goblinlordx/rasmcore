@@ -5,81 +5,114 @@ status: pending
 created: '2026-04-02'
 updated: '2026-04-02'
 spec:
-  summary: |
-    Add reference parity tests for the distortion filter suite against OpenCV
+  summary: 'Add reference parity tests for the distortion filter suite against OpenCV
+
     and ImageMagick. Currently at 12% coverage — only mesh_warp is validated.
-  context: |
-    Distortion filters are high-impact creative effects (PS Liquify, Lens
+
+    '
+  context: 'Distortion filters are high-impact creative effects (PS Liquify, Lens
+
     Correction, etc.). 7 of 8 distortion operations have no reference validation.
+
     These filters involve coordinate transforms + interpolation — subtle bugs
+
     (off-by-one, wrong interpolation order, incorrect center normalization)
+
     are common and invisible without reference testing.
-  codebase_analysis: |
-    Implementations in crates/rasmcore-image/src/domain/filters/distortion/:
+
+    '
+  codebase_analysis: 'Implementations in crates/rasmcore-image/src/domain/filters/distortion/:
+
     - barrel.rs: barrel/pincushion distortion (k1, k2 coefficients)
+
     - spherize.rs: spherical bulge/pinch
+
     - swirl.rs: angular rotation proportional to radius
+
     - ripple.rs: radial sinusoidal displacement
+
     - wave.rs: horizontal/vertical sinusoidal displacement
+
     - polar.rs: cartesian to polar coordinate transform
+
     - depolar.rs: polar to cartesian coordinate transform
 
+
     All use apply_distortion() helper with EWA sampling (CPU) or bilinear (GPU).
+
     Reference tools:
+
     - OpenCV: remap, warpPolar (for polar/depolar)
+
     - ImageMagick: -distort Barrel, -distort Arc, -distort SRT
+
     - scipy.ndimage: map_coordinates for arbitrary distortion
 
+
     Known: GPU spherize uses a different formula (asin-based) than CPU (powf-based).
+
     MAE ~1.3 between GPU and CPU is documented and acceptable.
+
+    '
   acceptance_criteria:
-    - Barrel distortion parity test against OpenCV undistort or scipy map_coordinates
-    - Spherize parity test against ImageMagick -distort Barrel equivalent
-    - Swirl parity test against scipy swirl or ImageMagick -swirl
-    - Ripple parity test against scipy sinusoidal displacement
-    - Wave parity test against numpy/scipy sinusoidal shift
-    - Polar/depolar roundtrip test (polar then depolar recovers original within tolerance)
-    - All tests MAE < 2.0 (interpolation differences expected)
-  out_of_scope: |
-    GPU vs CPU parity (already covered in gpu_parity.rs).
+  - Barrel distortion parity test against OpenCV undistort or scipy map_coordinates
+  - Spherize parity test against ImageMagick -distort Barrel equivalent
+  - Swirl parity test against scipy swirl or ImageMagick -swirl
+  - Ripple parity test against scipy sinusoidal displacement
+  - Wave parity test against numpy/scipy sinusoidal shift
+  - Polar/depolar roundtrip test (polar then depolar recovers original within tolerance)
+  - All tests MAE < 2.0 (interpolation differences expected)
+  out_of_scope: 'GPU vs CPU parity (already covered in gpu_parity.rs).
+
     mesh_warp (already has parity test).
+
     Fixing interpolation algorithms (document differences if found).
-  technical_notes: |
-    Distortion filters have inherent differences from references due to:
+
+    '
+  technical_notes: 'Distortion filters have inherent differences from references due to:
+
     - Different interpolation methods (EWA vs bilinear vs bicubic)
+
     - Different border handling (clamp vs reflect vs black)
+
     - Different center normalization conventions
 
+
     Use MAE < 2.0 as threshold (not exact match). For polar/depolar, test
+
     roundtrip identity within MAE < 3.0 (two interpolation passes).
 
+
     scipy.ndimage.map_coordinates is the most flexible reference — can
+
     implement any distortion via coordinate arrays.
+
+    '
 plan:
-  - phase: Distortion parity tests
-    tasks:
-      - text: Add barrel distortion parity test against scipy map_coordinates
-        done: false
-      - text: Add spherize parity test against scipy/ImageMagick
-        done: false
-      - text: Add swirl parity test against scipy rotation-by-radius
-        done: false
-      - text: Add ripple parity test against numpy sinusoidal displacement
-        done: false
-      - text: Add wave parity test against numpy sinusoidal shift
-        done: false
-      - text: Add polar/depolar roundtrip identity test
-        done: false
-  - phase: Fix any discovered issues
-    tasks:
-      - text: If any test reveals a bug, fix the implementation or document the algorithmic difference
-        done: false
-  - phase: Verification
-    tasks:
-      - text: All new parity tests pass within documented MAE thresholds
-        done: false
-      - text: Existing tests still pass (no regressions)
-        done: false
-      - text: Document any algorithmic differences vs reference in test comments
-        done: false
+- phase: Distortion parity tests
+  tasks:
+  - text: Add barrel distortion parity test against scipy map_coordinates
+    done: true
+  - text: Add spherize parity test against scipy/ImageMagick
+    done: true
+  - text: Add swirl parity test against scipy rotation-by-radius
+    done: true
+  - text: Add ripple parity test against numpy sinusoidal displacement
+    done: true
+  - text: Add wave parity test against numpy sinusoidal shift
+    done: true
+  - text: Add polar/depolar roundtrip identity test
+    done: true
+- phase: Fix any discovered issues
+  tasks:
+  - text: If any test reveals a bug, fix the implementation or document the algorithmic difference
+    done: true
+- phase: Verification
+  tasks:
+  - text: All new parity tests pass within documented MAE thresholds
+    done: true
+  - text: Existing tests still pass (no regressions)
+    done: true
+  - text: Document any algorithmic differences vs reference in test comments
+    done: true
 extra: {}
