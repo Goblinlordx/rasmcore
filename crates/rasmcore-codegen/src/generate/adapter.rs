@@ -14,7 +14,10 @@ pub fn generate(filters: &[FilterReg], param_structs: &HashMap<String, Vec<Param
         let trait_method = &f.name;
         let domain_fn = &f.fn_name;
 
-        if !f.params.is_empty() {
+        if f.derive_style {
+            // Derive-style filters: delegate to CpuFilter::compute() on a Default config
+            generate_derive_style_method(&mut code, f, trait_method);
+        } else if !f.params.is_empty() {
             // All filters with params use a single config record in WIT
             generate_config_method(&mut code, f, trait_method, domain_fn, param_structs);
         } else {
@@ -25,6 +28,27 @@ pub fn generate(filters: &[FilterReg], param_structs: &HashMap<String, Vec<Param
 
     code.push_str("}\n");
     code
+}
+
+fn generate_derive_style_method(
+    code: &mut String,
+    f: &FilterReg,
+    trait_method: &str,
+) {
+    let config_type = f.config_struct.as_deref().unwrap_or("()");
+
+    code.push_str(&format!(
+        "    fn {trait_method}(pixels: Vec<u8>, info: types::ImageInfo) -> Result<Vec<u8>, RasmcoreError> {{\n"
+    ));
+    code.push_str("        let di = to_domain_image_info(&info);\n");
+    code.push_str("        let full_rect = rasmcore_pipeline::Rect::new(0, 0, di.width, di.height);\n");
+    code.push_str("        let mut upstream = |_rect: rasmcore_pipeline::Rect| -> Result<Vec<u8>, crate::domain::error::ImageError> { Ok(pixels.clone()) };\n");
+    code.push_str("        use crate::domain::filter_traits::CpuFilter;\n");
+    code.push_str(&format!(
+        "        let cfg = crate::domain::filters::{config_type}::default();\n"
+    ));
+    code.push_str("        cfg.compute(full_rect, &mut upstream, &di).map_err(to_wit_error)\n");
+    code.push_str("    }\n\n");
 }
 
 fn generate_config_method(

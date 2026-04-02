@@ -326,7 +326,12 @@ pub fn generate_adapter_macro(
         };
 
         let ctor_call = if node_ctor_args.is_empty() {
-            format!("filters::{node_name}::new(source, src_info)")
+            if f.derive_style {
+                // Derive-style filters always take a config param (Default::default())
+                format!("filters::{node_name}::new(source, src_info, Default::default())")
+            } else {
+                format!("filters::{node_name}::new(source, src_info)")
+            }
         } else {
             format!(
                 "filters::{node_name}::new(source, src_info, {})",
