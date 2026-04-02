@@ -1,5 +1,5 @@
 title: Analysis-to-params mapper bridge with two-pass pipeline orchestration
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-02'

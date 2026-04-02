@@ -5,100 +5,89 @@ status: pending
 created: '2026-04-02'
 updated: '2026-04-02'
 spec:
-  summary: |
-    Add a two-pass pipeline orchestration pattern where analysis results
+  summary: 'Add a two-pass pipeline orchestration pattern where analysis results
+
     from pass 1 are mapped to node params for pass 2. Nodes are declared
+
     statically; only param values are computed at runtime. Layer cache
+
     is preserved across passes (no pruning between runs).
-  context: |
-    The composite/sub-graph node system can execute internal pipelines,
+
+    '
+  context: 'The composite/sub-graph node system can execute internal pipelines,
+
     but there is no mechanism to feed analysis results (auto-crop rect,
+
     auto-levels values) back into processing node configs. This requires
+
     two full pipeline executions:
 
+
     Pass 1: full execution through analysis sink -> AnalysisResult
+
     Mapper: pure function mapping AnalysisResult -> processing node config
+
     Pass 2: full execution with configured processing nodes
 
+
     The graph topology is static in both passes. Only param values change.
+
     Layer cache must persist between passes so shared upstream nodes
+
     are not recomputed.
-  codebase_analysis: |
-    Existing infrastructure:
-    - SubGraphNode, AnalysisSink, AnalysisResult in pipeline/nodes/subgraph.rs
-    - LayerCache in rasmcore-pipeline/src/layer_cache.rs with
-      store(), mark_referenced(), reset_references(), cleanup_unreferenced()
-    - finalize_layer_cache() in graph.rs does: reset refs -> mark -> cleanup
-    - Layer cache is Rc<RefCell<LayerCache>> shared across pipeline runs
 
-    Gap: finalize_layer_cache() prunes after each run. Between analysis
-    and processing runs, cached upstream nodes would be evicted.
-
-    Fix: add store_to_layer_cache() that pushes computed nodes without
-    pruning. The final run calls normal finalize_layer_cache().
-
-    ParamMapper trait: pure function AnalysisResult -> Box<dyn Any>.
-    Built-in mappers: LevelsToCurves, CropRectToCrop, etc.
-
-    Orchestrator: AnalyzeAndProcess struct that holds analysis pipeline
-    definition + mapper + processing pipeline builder.
-
-    Files to modify:
-    - crates/rasmcore-image/src/domain/pipeline/graph.rs (add store-only finalization)
-    - crates/rasmcore-image/src/domain/pipeline/nodes/subgraph.rs (add ParamMapper + orchestrator)
+    '
+  codebase_analysis: "Existing infrastructure:\n- SubGraphNode, AnalysisSink, AnalysisResult in pipeline/nodes/subgraph.rs\n\
+    - LayerCache in rasmcore-pipeline/src/layer_cache.rs with\n  store(), mark_referenced(), reset_references(), cleanup_unreferenced()\n\
+    - finalize_layer_cache() in graph.rs does: reset refs -> mark -> cleanup\n- Layer cache is Rc<RefCell<LayerCache>> shared\
+    \ across pipeline runs\n\nGap: finalize_layer_cache() prunes after each run. Between analysis\nand processing runs, cached\
+    \ upstream nodes would be evicted.\n\nFix: add store_to_layer_cache() that pushes computed nodes without\npruning. The\
+    \ final run calls normal finalize_layer_cache().\n\nParamMapper trait: pure function AnalysisResult -> Box<dyn Any>.\n\
+    Built-in mappers: LevelsToCurves, CropRectToCrop, etc.\n\nOrchestrator: AnalyzeAndProcess struct that holds analysis pipeline\n\
+    definition + mapper + processing pipeline builder.\n\nFiles to modify:\n- crates/rasmcore-image/src/domain/pipeline/graph.rs\
+    \ (add store-only finalization)\n- crates/rasmcore-image/src/domain/pipeline/nodes/subgraph.rs (add ParamMapper + orchestrator)\n"
   acceptance_criteria:
-    - ParamMapper trait maps AnalysisResult to typed config
-    - Two-pass orchestrator executes analysis then processing
-    - Layer cache preserved between passes (no pruning until final pass)
-    - Built-in CropRectToCrop mapper (AnalysisResult::CropRect -> crop params)
-    - Built-in LevelsToLevels mapper (AnalysisResult::Levels -> levels params)
-    - End-to-end test with auto-levels analysis feeding into levels adjustment
-    - Cache hit verification in pass 2 for shared upstream nodes
-  out_of_scope: |
-    Plugin-defined mappers (future plugin system concern).
+  - ParamMapper trait maps AnalysisResult to typed config
+  - Two-pass orchestrator executes analysis then processing
+  - Layer cache preserved between passes (no pruning until final pass)
+  - Built-in CropRectToCrop mapper (AnalysisResult::CropRect -> crop params)
+  - Built-in LevelsToLevels mapper (AnalysisResult::Levels -> levels params)
+  - End-to-end test with auto-levels analysis feeding into levels adjustment
+  - Cache hit verification in pass 2 for shared upstream nodes
+  out_of_scope: 'Plugin-defined mappers (future plugin system concern).
+
     Incremental/streaming analysis (requires architecture changes).
-  technical_notes: |
-    The two-pass pattern is an orchestration concern, not a graph concern.
-    The graph stays static and simple. The orchestrator controls:
-    1. When to execute
-    2. When to store cache (without pruning)
-    3. When to finalize cache (with pruning)
 
-    New graph method needed:
-      pub fn store_layer_cache_no_prune(&mut self)
-    Same as finalize_layer_cache but skips reset_references + cleanup.
-    Just pushes computed node outputs to cache for the next run to find.
-
-    ParamMapper is generic over output type:
-      trait ParamMapper { type Output; fn map(&self, r: &AnalysisResult) -> Self::Output; }
-
-    Orchestrator struct:
-      struct AnalyzeAndProcess<M: ParamMapper> {
-          analysis_builder: Box<dyn Fn(&LayerCache) -> (NodeGraph, u32)>,
-          mapper: M,
-          process_builder: Box<dyn Fn(M::Output, &LayerCache) -> (NodeGraph, u32)>,
-      }
+    '
+  technical_notes: "The two-pass pattern is an orchestration concern, not a graph concern.\nThe graph stays static and simple.\
+    \ The orchestrator controls:\n1. When to execute\n2. When to store cache (without pruning)\n3. When to finalize cache\
+    \ (with pruning)\n\nNew graph method needed:\n  pub fn store_layer_cache_no_prune(&mut self)\nSame as finalize_layer_cache\
+    \ but skips reset_references + cleanup.\nJust pushes computed node outputs to cache for the next run to find.\n\nParamMapper\
+    \ is generic over output type:\n  trait ParamMapper { type Output; fn map(&self, r: &AnalysisResult) -> Self::Output;\
+    \ }\n\nOrchestrator struct:\n  struct AnalyzeAndProcess<M: ParamMapper> {\n      analysis_builder: Box<dyn Fn(&LayerCache)\
+    \ -> (NodeGraph, u32)>,\n      mapper: M,\n      process_builder: Box<dyn Fn(M::Output, &LayerCache) -> (NodeGraph, u32)>,\n\
+    \  }\n"
 plan:
-  - phase: Cache preservation
-    tasks:
-      - text: Add store_layer_cache_no_prune() to NodeGraph
-        done: false
-      - text: Test that cached nodes survive across two graph executions
-        done: false
-  - phase: Mapper trait and built-in mappers
-    tasks:
-      - text: Define ParamMapper trait in subgraph.rs
-        done: false
-      - text: Implement LevelsToLevels mapper (AnalysisResult::Levels -> LevelsConfig)
-        done: false
-      - text: Implement CropRectToCrop mapper (AnalysisResult::CropRect -> crop params)
-        done: false
-  - phase: Two-pass orchestrator
-    tasks:
-      - text: Implement AnalyzeAndProcess orchestrator struct
-        done: false
-      - text: End-to-end test with auto-levels analysis -> levels adjustment
-        done: false
-      - text: Verify cache hits in pass 2 for shared upstream nodes
-        done: false
+- phase: Cache preservation
+  tasks:
+  - text: Add store_layer_cache_no_prune() to NodeGraph
+    done: true
+  - text: Test that cached nodes survive across two graph executions
+    done: true
+- phase: Mapper trait and built-in mappers
+  tasks:
+  - text: Define ParamMapper trait in subgraph.rs
+    done: true
+  - text: Implement LevelsToLevels mapper (AnalysisResult::Levels -> LevelsConfig)
+    done: true
+  - text: Implement CropRectToCrop mapper (AnalysisResult::CropRect -> crop params)
+    done: true
+- phase: Two-pass orchestrator
+  tasks:
+  - text: Implement AnalyzeAndProcess orchestrator struct
+    done: true
+  - text: End-to-end test with auto-levels analysis -> levels adjustment
+    done: true
+  - text: Verify cache hits in pass 2 for shared upstream nodes
+    done: true
 extra: {}
