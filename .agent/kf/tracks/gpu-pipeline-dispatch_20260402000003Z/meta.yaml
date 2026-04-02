@@ -1,6 +1,6 @@
 title: GPU pipeline dispatch — graph walker integration with input snapshot support
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-01'
-updated: '2026-04-01'
+updated: '2026-04-02'

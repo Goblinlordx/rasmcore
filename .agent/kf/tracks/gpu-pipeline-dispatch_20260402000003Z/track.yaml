@@ -5,135 +5,94 @@ status: pending
 created: '2026-04-02'
 updated: '2026-04-02'
 spec:
-  summary: |
-    Wire GpuExecutor into NodeGraph.request_region(), add GPU-capable node
+  summary: 'Wire GpuExecutor into NodeGraph.request_region(), add GPU-capable node
+
     detection, implement snapshot command for multi-op chains, and add CPU
+
     fallback. Enables GPU acceleration for all filters with GpuCapable impls.
-  context: |
-    The GPU infrastructure is 95% built but 0% integrated:
-    - GpuOp, GpuCapable, GpuExecutor traits are complete (rasmcore-pipeline/src/gpu.rs)
-    - WgpuExecutor with ping-pong buffering is complete (rasmcore-cli/src/gpu_executor.rs)
-    - 19 WGSL shaders and 15+ GpuCapable filter impls exist
-    - BUT the graph walker (NodeGraph.request_region) always calls compute_region (CPU)
-    - The executor is initialized in main.rs but never passed to the graph (TODO at line 313)
-    - Filters like high-pass need "input snapshot" — the original image must survive
-      through blur passes so the subtraction shader can reference it
-  codebase_analysis: |
-    GRAPH WALKER (graph.rs:1160-1212):
-      request_region() only calls node.compute_region() — no GPU path.
-      Needs: check GpuCapable, batch consecutive GPU nodes, dispatch via executor.
 
-    GPU EXECUTOR (gpu_executor.rs:95-348):
-      Ping-pong buffer strategy: buf_a/buf_b swap after each op.
-      Original input is uploaded to buf_a, then overwritten by op[1].
-      No mechanism to preserve original for later ops.
-
-    IMAGE NODE TRAIT (graph.rs:23-91):
-      Has as_point_op_lut(), as_color_lut_op(), as_affine_op() — but no as_gpu_capable().
-      Need to add gpu_ops() dispatch method with default None.
-
-    HIGH-PASS SHADER (shaders/high_pass.wgsl):
-      Already designed with binding(3) = original image buffer.
-      Shader is ready — just needs node-level integration via snapshot command.
-
-    CLI INIT (main.rs:304-327):
-      WgpuExecutor::try_new() is called but result is dropped (let _ = exec).
-      Need to pass it to the graph walker.
+    '
+  context: "The GPU infrastructure is 95% built but 0% integrated:\n- GpuOp, GpuCapable, GpuExecutor traits are complete (rasmcore-pipeline/src/gpu.rs)\n\
+    - WgpuExecutor with ping-pong buffering is complete (rasmcore-cli/src/gpu_executor.rs)\n- 19 WGSL shaders and 15+ GpuCapable\
+    \ filter impls exist\n- BUT the graph walker (NodeGraph.request_region) always calls compute_region (CPU)\n- The executor\
+    \ is initialized in main.rs but never passed to the graph (TODO at line 313)\n- Filters like high-pass need \"input snapshot\"\
+    \ — the original image must survive\n  through blur passes so the subtraction shader can reference it\n"
+  codebase_analysis: "GRAPH WALKER (graph.rs:1160-1212):\n  request_region() only calls node.compute_region() — no GPU path.\n\
+    \  Needs: check GpuCapable, batch consecutive GPU nodes, dispatch via executor.\n\nGPU EXECUTOR (gpu_executor.rs:95-348):\n\
+    \  Ping-pong buffer strategy: buf_a/buf_b swap after each op.\n  Original input is uploaded to buf_a, then overwritten\
+    \ by op[1].\n  No mechanism to preserve original for later ops.\n\nIMAGE NODE TRAIT (graph.rs:23-91):\n  Has as_point_op_lut(),\
+    \ as_color_lut_op(), as_affine_op() — but no as_gpu_capable().\n  Need to add gpu_ops() dispatch method with default None.\n\
+    \nHIGH-PASS SHADER (shaders/high_pass.wgsl):\n  Already designed with binding(3) = original image buffer.\n  Shader is\
+    \ ready — just needs node-level integration via snapshot command.\n\nCLI INIT (main.rs:304-327):\n  WgpuExecutor::try_new()\
+    \ is called but result is dropped (let _ = exec).\n  Need to pass it to the graph walker.\n"
   acceptance_criteria:
-    - GpuOp refactored to enum with Snapshot and Compute variants
-    - Snapshot command creates read-only GPU buffer copy at specified binding
-    - WgpuExecutor handles Snapshot commands in the op chain
-    - GpuExecutor passed from CLI to NodeGraph via new field
-    - request_region checks GpuCapable before compute_region
-    - GPU dispatch with automatic CPU fallback on failure
-    - HighPassNode GpuCapable impl using Snapshot command
-    - as_gpu_capable() default method on ImageNode trait
-    - Existing tests still pass (CPU path unchanged)
-  out_of_scope: |
-    Cross-node GPU batching (batching consecutive GPU-capable nodes into one dispatch).
+  - GpuOp refactored to enum with Snapshot and Compute variants
+  - Snapshot command creates read-only GPU buffer copy at specified binding
+  - WgpuExecutor handles Snapshot commands in the op chain
+  - GpuExecutor passed from CLI to NodeGraph via new field
+  - request_region checks GpuCapable before compute_region
+  - GPU dispatch with automatic CPU fallback on failure
+  - HighPassNode GpuCapable impl using Snapshot command
+  - as_gpu_capable() default method on ImageNode trait
+  - Existing tests still pass (CPU path unchanged)
+  out_of_scope: 'Cross-node GPU batching (batching consecutive GPU-capable nodes into one dispatch).
+
     GPU-aware tiling for images exceeding max_buffer_size.
+
     Browser WebGPU executor (separate track).
+
     New WGSL shaders (existing shaders are sufficient).
-  technical_notes: |
-    SNAPSHOT AS GPU COMMAND (not a flag):
-    Refactor GpuOp from struct to enum with two variants:
 
-      pub enum GpuOp {
-          Snapshot { binding: u32 },
-          Compute {
-              shader: &'static str,
-              entry_point: &'static str,
-              workgroup_size: [u32; 3],
-              params: Vec<u8>,
-              extra_buffers: Vec<Vec<u8>>,
-          },
-      }
-
-    Snapshot creates a read-only copy of the current ping-pong buffer and
-    maps it to the specified binding index for ALL subsequent Compute ops
-    in the chain. Multiple snapshots can coexist at different bindings.
-
-    The executor maintains a HashMap<u32, wgpu::Buffer> of active snapshots.
-    When building bind group entries for a Compute op, snapshot buffers are
-    included alongside extra_buffers at their declared binding indices.
-
-    HIGH-PASS GPU CHAIN:
-    HighPassNode.gpu_ops() returns:
-      GpuOp::Snapshot { binding: 3 }         — save original at binding 3
-      GpuOp::Compute { blur_h, ... }         — horizontal blur
-      GpuOp::Compute { blur_v, ... }         — vertical blur
-      GpuOp::Compute { high_pass, ... }      — shader reads binding 3 (original)
-
-    This is composable — any multi-op filter can snapshot at any point.
-    No flag pollution on compute ops. Clean separation of concerns.
-
-    MIGRATION: All existing GpuCapable impls return Vec<GpuOp> which was
-    previously a struct. Convert to Vec<GpuOp::Compute { ... }> — mechanical
-    find-and-replace. No behavioral change for single-pass filters.
-
-    GRAPH INTEGRATION:
-    In request_region(), before compute_region():
-      if let Some(gpu) = self.gpu_executor.as_ref() {
-          if let Some(ops) = node.gpu_ops(info.width, info.height) {
-              let input = upstream_fn(node.upstream_id()?, full_rect)?;
-              match gpu.execute(&ops, &input, info.width, info.height) {
-                  Ok(result) => return Ok(result),
-                  Err(_) => { /* fall through to CPU */ }
-              }
-          }
-      }
-      node.compute_region(request, &mut upstream_fn)
+    '
+  technical_notes: "SNAPSHOT AS GPU COMMAND (not a flag):\nRefactor GpuOp from struct to enum with two variants:\n\n  pub\
+    \ enum GpuOp {\n      Snapshot { binding: u32 },\n      Compute {\n          shader: &'static str,\n          entry_point:\
+    \ &'static str,\n          workgroup_size: [u32; 3],\n          params: Vec<u8>,\n          extra_buffers: Vec<Vec<u8>>,\n\
+    \      },\n  }\n\nSnapshot creates a read-only copy of the current ping-pong buffer and\nmaps it to the specified binding\
+    \ index for ALL subsequent Compute ops\nin the chain. Multiple snapshots can coexist at different bindings.\n\nThe executor\
+    \ maintains a HashMap<u32, wgpu::Buffer> of active snapshots.\nWhen building bind group entries for a Compute op, snapshot\
+    \ buffers are\nincluded alongside extra_buffers at their declared binding indices.\n\nHIGH-PASS GPU CHAIN:\nHighPassNode.gpu_ops()\
+    \ returns:\n  GpuOp::Snapshot { binding: 3 }         — save original at binding 3\n  GpuOp::Compute { blur_h, ... }  \
+    \       — horizontal blur\n  GpuOp::Compute { blur_v, ... }         — vertical blur\n  GpuOp::Compute { high_pass, ...\
+    \ }      — shader reads binding 3 (original)\n\nThis is composable — any multi-op filter can snapshot at any point.\n\
+    No flag pollution on compute ops. Clean separation of concerns.\n\nMIGRATION: All existing GpuCapable impls return Vec<GpuOp>\
+    \ which was\npreviously a struct. Convert to Vec<GpuOp::Compute { ... }> — mechanical\nfind-and-replace. No behavioral\
+    \ change for single-pass filters.\n\nGRAPH INTEGRATION:\nIn request_region(), before compute_region():\n  if let Some(gpu)\
+    \ = self.gpu_executor.as_ref() {\n      if let Some(ops) = node.gpu_ops(info.width, info.height) {\n          let input\
+    \ = upstream_fn(node.upstream_id()?, full_rect)?;\n          match gpu.execute(&ops, &input, info.width, info.height)\
+    \ {\n              Ok(result) => return Ok(result),\n              Err(_) => { /* fall through to CPU */ }\n         \
+    \ }\n      }\n  }\n  node.compute_region(request, &mut upstream_fn)\n"
 plan:
-  - phase: Core infrastructure
-    tasks:
-      - text: Refactor GpuOp from struct to enum with Snapshot and Compute variants in rasmcore-pipeline/src/gpu.rs
-        done: false
-      - text: Update all existing GpuCapable impls to use GpuOp::Compute variant (mechanical migration)
-        done: false
-      - text: Implement snapshot buffer handling in WgpuExecutor — HashMap of binding->buffer, copy on Snapshot, include in Compute bind groups
-        done: false
-      - text: Add as_gpu_capable() default method to ImageNode trait returning None
-        done: false
-  - phase: Graph integration
-    tasks:
-      - text: Add gpu_executor field to NodeGraph
-        done: false
-      - text: Implement GPU dispatch in request_region — check gpu_ops before compute_region with CPU fallback
-        done: false
-      - text: Wire GpuExecutor from CLI main.rs into NodeGraph construction
-        done: false
-  - phase: High-pass GPU support
-    tasks:
-      - text: Implement GpuCapable for HighPassNode — Snapshot at binding 3, blur_h, blur_v, high_pass_subtract
-        done: false
-      - text: Override as_gpu_capable() for HighPassNode in gpu_impls.rs
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Test GPU dispatch path — verify GpuCapable node uses GPU when executor is available
-        done: false
-      - text: Test CPU fallback — verify graceful fallback when GPU fails or is unavailable
-        done: false
-      - text: Test Snapshot command — verify snapshot buffer persists across multiple Compute ops
-        done: false
+- phase: Core infrastructure
+  tasks:
+  - text: Refactor GpuOp from struct to enum with Snapshot and Compute variants in rasmcore-pipeline/src/gpu.rs
+    done: true
+  - text: Update all existing GpuCapable impls to use GpuOp::Compute variant (mechanical migration)
+    done: true
+  - text: Implement snapshot buffer handling in WgpuExecutor — HashMap of binding->buffer, copy on Snapshot, include in Compute
+      bind groups
+    done: true
+  - text: Add as_gpu_capable() default method to ImageNode trait returning None
+    done: true
+- phase: Graph integration
+  tasks:
+  - text: Add gpu_executor field to NodeGraph
+    done: true
+  - text: Implement GPU dispatch in request_region — check gpu_ops before compute_region with CPU fallback
+    done: true
+  - text: Wire GpuExecutor from CLI main.rs into NodeGraph construction
+    done: true
+- phase: High-pass GPU support
+  tasks:
+  - text: Implement GpuCapable for HighPassNode — Snapshot at binding 3, blur_h, blur_v, high_pass_subtract
+    done: true
+  - text: Override as_gpu_capable() for HighPassNode in gpu_impls.rs
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test GPU dispatch path — verify GpuCapable node uses GPU when executor is available
+    done: true
+  - text: Test CPU fallback — verify graceful fallback when GPU fails or is unavailable
+    done: true
+  - text: Test Snapshot command — verify snapshot buffer persists across multiple Compute ops
+    done: true
 extra: {}
