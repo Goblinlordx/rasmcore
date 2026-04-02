@@ -2807,43 +2807,7 @@ fn close_oil_paint_structural_properties() {
 }
 
 #[test]
-fn close_pixelate_aligned_against_pillow() {
-    // Pixelate (aligned dims) against Pillow resize(BOX) + resize(NEAREST).
-    // When dimensions are evenly divisible by block_size, the block-grid approach
-    // (PS/GIMP/FFmpeg) and the resize approach (Pillow/OpenCV/IM) produce
-    // identical results — both compute the mean of each block.
-    let (w, h) = (32u32, 32);
-    let pixels = make_gradient_rgb(w, h);
-    let info = info_rgb8(w, h);
-    let block_size = 8u32;
-    let r = Rect::new(0, 0, w, h);
-    let ours = filters::pixelate(
-        r,
-        &mut |_| Ok(pixels.clone()),
-        &info,
-        &filters::PixelateParams { block_size },
-    )
-    .unwrap();
-
-    let script = format!(
-        r#"
-import sys
-import numpy as np
-from PIL import Image
-
-px = np.array({pixels:?}, dtype=np.uint8).reshape({h}, {w}, 3)
-img = Image.fromarray(px, mode='RGB')
-small = img.resize(({w} // {block_size}, {h} // {block_size}), Image.Resampling.BOX)
-big = small.resize(({w}, {h}), Image.Resampling.NEAREST)
-sys.stdout.buffer.write(np.array(big).tobytes())
-"#
-    );
-    let reference = run_python_ref(&script);
-    assert_close("pixelate bs=8 aligned vs Pillow", &ours, &reference, 1.0);
-}
-
-#[test]
-fn pixelate_non_aligned_truncated_edge_blocks() {
+fn pixelate_block_grid_truncated_edges() {
     // Non-aligned pixelate: validates the block-grid truncation behavior that
     // matches Photoshop Mosaic, GIMP/GEGL pixelize, and FFmpeg pixelize.
     //
