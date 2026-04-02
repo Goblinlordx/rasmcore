@@ -709,7 +709,7 @@ impl NodeGraph {
         if let Some(lc) = &self.layer_cache {
             let mut lc = lc.borrow_mut();
             if let Some((pixels, w, h, _bpp)) = lc.get(&hash) {
-                self.cache_hit_pixels.insert(id, (pixels.to_vec(), w, h));
+                self.cache_hit_pixels.insert(id, (pixels, w, h));
                 self.cache_hit_nodes.insert(id);
                 hit = true;
             }
@@ -803,7 +803,7 @@ impl NodeGraph {
         if let Some(lc) = &self.layer_cache {
             let mut lc = lc.borrow_mut();
             if let Some((pixels, w, h, _bpp)) = lc.get(&hash) {
-                self.cache_hit_pixels.insert(id, (pixels.to_vec(), w, h));
+                self.cache_hit_pixels.insert(id, (pixels, w, h));
                 self.cache_hit_nodes.insert(id);
                 hit = true;
             }
@@ -941,7 +941,7 @@ impl NodeGraph {
         if let Some(lc) = &self.layer_cache {
             let mut lc = lc.borrow_mut();
             if let Some((pixels, w, h, _bpp)) = lc.get(&hash) {
-                self.cache_hit_pixels.insert(id, (pixels.to_vec(), w, h));
+                self.cache_hit_pixels.insert(id, (pixels, w, h));
                 self.cache_hit_nodes.insert(id);
                 hit = true;
             }
