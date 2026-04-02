@@ -1,5 +1,9 @@
 //! effect filters
 
+mod chromatic_aberration;
+pub use chromatic_aberration::*;
+mod chromatic_split;
+pub use chromatic_split::*;
 mod charcoal;
 pub use charcoal::*;
 mod emboss;
