@@ -1,133 +1,166 @@
 id: unified-codec-registry_20260402042201Z
-title: "Unified CodecRegistration — one struct per format for encode + decode + LUT + detect"
+title: Unified CodecRegistration — one struct per format for encode + decode + LUT + detect
 type: refactor
 status: pending
 created: '2026-04-02'
 updated: '2026-04-02'
 spec:
-  summary: |
-    Merge 4 separate codec registrations into one CodecRegistration struct per
+  summary: 'Merge 4 separate codec registrations into one CodecRegistration struct per
+
     format. Each format registers ONCE with all capabilities as Optional fn
+
     pointers. Replace codegen encode dispatch with inventory-based lookup.
-  context: |
-    The project currently has 4 separate codec registration patterns:
+
+    '
+  context: 'The project currently has 4 separate codec registration patterns:
+
     1. StaticEncoderRegistration — pixel encoder metadata (inventory + codegen dispatch)
+
     2. StaticLutEncoderRegistration — LUT encoder fn pointers (inventory dispatch)
+
     3. StaticDecoderRegistration — decoder metadata (inventory, unused for dispatch)
+
     4. DecoderDispatchEntry — decoder fn pointers + detect (inventory dispatch)
 
+
     This means PNG has TWO registrations (encoder + decoder), .cube has TWO
+
     (LUT encoder + decoder detection), and adding a new format requires editing
+
     multiple files. The generated_encode_dispatch! macro duplicates what
+
     inventory can do at runtime.
 
+
     Target: ONE registration per format, ONE registry, ONE dispatch path.
-  codebase_analysis: |
-    FILES TO MODIFY:
-    - domain/codec.rs (new) — CodecRegistration struct + dispatch functions
-    - domain/encoder/mod.rs — remove StaticEncoderRegistration, StaticLutEncoderRegistration
-    - domain/decoder/mod.rs — remove StaticDecoderRegistration, DecoderDispatchEntry
-    - domain/encoder/*.rs — migrate each encoder to CodecRegistration
-    - domain/decoder/mod.rs — migrate each decoder to CodecRegistration
-    - domain/pipeline/nodes/sink.rs — use unified dispatch
-    - build.rs — remove generated_encode_dispatch generation (keep WIT/SDK codegen)
 
-    FORMATS TO MIGRATE (~20):
-    Image codecs: png, jpeg, gif, webp, bmp, tiff, qoi, ico, tga, hdr, pnm,
-      exr, dds, jp2, jxl, heic, fits, svg, dng, avif
-    LUT codecs: cube, 3dl, csp, hald
-
-    CODEGEN IMPACT:
-    - generated_encode_dispatch.rs — ELIMINATED (replaced by registry lookup)
-    - generated_pipeline_write_adapter.rs — still needed (WIT adapter methods)
-    - param-manifest.json encoders section — read from CodecRegistration instead
-    - build.rs encoder scanning — simplified (no dispatch generation needed)
+    '
+  codebase_analysis: "FILES TO MODIFY:\n- domain/codec.rs (new) — CodecRegistration struct + dispatch functions\n- domain/encoder/mod.rs\
+    \ — remove StaticEncoderRegistration, StaticLutEncoderRegistration\n- domain/decoder/mod.rs — remove StaticDecoderRegistration,\
+    \ DecoderDispatchEntry\n- domain/encoder/*.rs — migrate each encoder to CodecRegistration\n- domain/decoder/mod.rs — migrate\
+    \ each decoder to CodecRegistration\n- domain/pipeline/nodes/sink.rs — use unified dispatch\n- build.rs — remove generated_encode_dispatch\
+    \ generation (keep WIT/SDK codegen)\n\nFORMATS TO MIGRATE (~20):\nImage codecs: png, jpeg, gif, webp, bmp, tiff, qoi,\
+    \ ico, tga, hdr, pnm,\n  exr, dds, jp2, jxl, heic, fits, svg, dng, avif\nLUT codecs: cube, 3dl, csp, hald\n\nCODEGEN IMPACT:\n\
+    - generated_encode_dispatch.rs — ELIMINATED (replaced by registry lookup)\n- generated_pipeline_write_adapter.rs — still\
+    \ needed (WIT adapter methods)\n- param-manifest.json encoders section — read from CodecRegistration instead\n- build.rs\
+    \ encoder scanning — simplified (no dispatch generation needed)\n"
   acceptance_criteria:
-    - CodecRegistration struct with format, extensions, mime, detect_fn, detection_priority, decode_fn, encode_fn, decode_lut_fn, encode_lut_fn (all Optional)
-    - All ~24 formats registered via single inventory::submit! each
-    - decode() and encode() use registry lookup (no codegen dispatch macro)
-    - decode_with_hint(data, format) preserved with detect_fn validation
-    - encode_lut() and decode_lut() dispatch via same registry
-    - supported_formats(), supported_decode_formats(), supported_encode_formats() all derived from registry
-    - generated_encode_dispatch! macro eliminated
-    - StaticEncoderRegistration, StaticLutEncoderRegistration, DecoderDispatchEntry eliminated
-    - All existing tests pass unchanged (pure refactor)
-    - cargo build + cargo component build succeed
-    - param-manifest.json still correct (codegen reads from registry)
-  out_of_scope: |
-    Filter registration changes (separate track). GPU registration changes
+  - CodecRegistration struct with format, extensions, mime, detect_fn, detection_priority, decode_fn, encode_fn, decode_lut_fn,
+    encode_lut_fn (all Optional)
+  - All ~24 formats registered via single inventory::submit! each
+  - decode() and encode() use registry lookup (no codegen dispatch macro)
+  - decode_with_hint(data, format) preserved with detect_fn validation
+  - encode_lut() and decode_lut() dispatch via same registry
+  - supported_formats(), supported_decode_formats(), supported_encode_formats() all derived from registry
+  - generated_encode_dispatch! macro eliminated
+  - StaticEncoderRegistration, StaticLutEncoderRegistration, DecoderDispatchEntry eliminated
+  - All existing tests pass unchanged (pure refactor)
+  - cargo build + cargo component build succeed
+  - param-manifest.json still correct (codegen reads from registry)
+  out_of_scope: 'Filter registration changes (separate track). GPU registration changes
+
     (separate track). Transform registration. Codegen for WIT/SDK (keep as-is,
+
     just change its data source from AST scanning to registry).
-  technical_notes: |
-    APPROACH:
+
+    '
+  technical_notes: 'APPROACH:
+
 
     Phase 1 — Define CodecRegistration:
+
     Create domain/codec.rs with the struct, inventory::collect!, and dispatch
+
     functions (find_codec, detect_format, decode, decode_with_hint, encode,
+
     decode_lut, encode_lut, supported_formats, etc.)
 
+
     Phase 2 — Migrate image codecs:
+
     For each format, create ONE inventory::submit! block that combines
+
     the encode_fn from the encoder module and the decode_fn + detect_fn
+
     from the decoder module. Remove the old separate registrations.
 
+
     For formats where encode and decode are in different modules, the
+
     registration can live in either (or in codec.rs as a central registry
+
     file). Prefer the encoder module since that has the config struct.
 
+
     Phase 3 — Migrate LUT codecs:
+
     Same pattern. .cube, .3dl, .csp, hald each get one registration with
+
     encode_lut_fn and decode_lut_fn.
 
+
     Phase 4 — Wire dispatch:
+
     - sink.rs: replace is_lut_format() + encode_lut() with codec::encode_lut()
+
     - encoder/mod.rs: replace generated_encode_dispatch! with codec::encode()
+
     - decoder/mod.rs: delegate detect_format() and decode() to codec module
+
     - build.rs: remove encode dispatch generation, keep WIT/SDK codegen
 
+
     MIGRATION ORDER:
+
     1. Create codec.rs with CodecRegistration + helpers
+
     2. Register all formats (can coexist with old registrations temporarily)
+
     3. Switch dispatch to new registry
+
     4. Remove old registration structs
+
     5. Remove codegen encode dispatch
+
+    '
 plan:
-  - phase: Define CodecRegistration
-    tasks:
-      - text: Create domain/codec.rs with CodecRegistration struct and inventory::collect!
-        done: false
-      - text: Add dispatch functions — find_codec, detect_format, encode, decode, decode_with_hint, encode_lut, decode_lut
-        done: false
-      - text: Add query functions — supported_formats, supported_decode_formats, supported_encode_formats, supported_lut_formats
-        done: false
-  - phase: Migrate image codecs
-    tasks:
-      - text: Register all image formats via CodecRegistration (png, jpeg, gif, webp, bmp, tiff, qoi, ico, tga, hdr, pnm, exr, dds, jp2, jxl, heic, fits, svg, dng, avif)
-        done: false
-      - text: Wire encoder/mod.rs encode() to use codec::encode() dispatch
-        done: false
-      - text: Wire decoder/mod.rs decode()/detect_format() to use codec module
-        done: false
-      - text: Verify all image codec tests pass
-        done: false
-  - phase: Migrate LUT codecs
-    tasks:
-      - text: Register LUT formats via CodecRegistration (cube, 3dl, csp, hald)
-        done: false
-      - text: Wire sink.rs LUT short-circuit to use codec::encode_lut()
-        done: false
-      - text: Verify all LUT codec tests pass
-        done: false
-  - phase: Cleanup and verification
-    tasks:
-      - text: Remove StaticEncoderRegistration, StaticLutEncoderRegistration, DecoderDispatchEntry
-        done: false
-      - text: Remove generated_encode_dispatch! from build.rs (keep WIT/SDK codegen)
-        done: false
-      - text: Remove old SUPPORTED_FORMATS constants if any remain
-        done: false
-      - text: Full test suite — cargo test -p rasmcore-image (all ~1036 tests)
-        done: false
-      - text: WASM build — cargo component build -p rasmcore-image
-        done: false
+- phase: Define CodecRegistration
+  tasks:
+  - text: Create domain/codec.rs with CodecRegistration struct and inventory::collect!
+    done: true
+  - text: Add dispatch functions — find_codec, detect_format, encode, decode, decode_with_hint, encode_lut, decode_lut
+    done: true
+  - text: Add query functions — supported_formats, supported_decode_formats, supported_encode_formats, supported_lut_formats
+    done: true
+- phase: Migrate image codecs
+  tasks:
+  - text: Register all image formats via CodecRegistration (png, jpeg, gif, webp, bmp, tiff, qoi, ico, tga, hdr, pnm, exr,
+      dds, jp2, jxl, heic, fits, svg, dng, avif)
+    done: true
+  - text: Wire encoder/mod.rs encode() to use codec::encode() dispatch
+    done: true
+  - text: Wire decoder/mod.rs decode()/detect_format() to use codec module
+    done: true
+  - text: Verify all image codec tests pass
+    done: true
+- phase: Migrate LUT codecs
+  tasks:
+  - text: Register LUT formats via CodecRegistration (cube, 3dl, csp, hald)
+    done: true
+  - text: Wire sink.rs LUT short-circuit to use codec::encode_lut()
+    done: true
+  - text: Verify all LUT codec tests pass
+    done: true
+- phase: Cleanup and verification
+  tasks:
+  - text: Remove StaticEncoderRegistration, StaticLutEncoderRegistration, DecoderDispatchEntry
+    done: true
+  - text: Remove generated_encode_dispatch! from build.rs (keep WIT/SDK codegen)
+    done: true
+  - text: Remove old SUPPORTED_FORMATS constants if any remain
+    done: true
+  - text: Full test suite — cargo test -p rasmcore-image (all ~1036 tests)
+    done: true
+  - text: WASM build — cargo component build -p rasmcore-image
+    done: true
 extra: {}
