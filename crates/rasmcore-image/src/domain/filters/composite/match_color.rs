@@ -3,9 +3,9 @@
 //! Reinhard 2001 color transfer — match color statistics from a reference
 //! image onto a target image in CIE LAB space.
 
+use crate::domain::color_spaces::{lab_to_rgb, rgb_to_lab};
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
-use crate::domain::color_spaces::{rgb_to_lab, lab_to_rgb};
 
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Match color — transfer color statistics from reference to target (Reinhard 2001).
@@ -62,9 +62,21 @@ pub fn match_color(
         lab_stats(ref_pixels, ref_n, ref_ch);
 
     // Compute scale factors (guard against zero std)
-    let scale_l = if t_std_l > 1e-10 { r_std_l / t_std_l } else { 1.0 };
-    let scale_a = if t_std_a > 1e-10 { r_std_a / t_std_a } else { 1.0 };
-    let scale_b = if t_std_b > 1e-10 { r_std_b / t_std_b } else { 1.0 };
+    let scale_l = if t_std_l > 1e-10 {
+        r_std_l / t_std_l
+    } else {
+        1.0
+    };
+    let scale_a = if t_std_a > 1e-10 {
+        r_std_a / t_std_a
+    } else {
+        1.0
+    };
+    let scale_b = if t_std_b > 1e-10 {
+        r_std_b / t_std_b
+    } else {
+        1.0
+    };
 
     // Apply Reinhard transfer to each target pixel
     let mut result = vec![0u8; target_pixels.len()];
@@ -154,9 +166,7 @@ mod tests {
     #[test]
     fn match_color_identity_same_image() {
         // Matching an image to itself should be near-identity
-        let pixels = vec![
-            200, 100, 50, 100, 150, 200, 50, 200, 100, 180, 80, 140,
-        ];
+        let pixels = vec![200, 100, 50, 100, 150, 200, 50, 200, 100, 180, 80, 140];
         let info = info_rgb8(2, 2);
         let result = match_color(&pixels, &info, &pixels, &info, 1.0).unwrap();
         for (i, (&orig, &res)) in pixels.iter().zip(result.iter()).enumerate() {

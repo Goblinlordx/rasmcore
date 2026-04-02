@@ -4,15 +4,21 @@
 //! lightness range) and shift their hue/saturation/lightness with smooth
 //! falloff at boundaries.
 
+use crate::domain::color_grading::{hsl_to_rgb, rgb_to_hsl};
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
-use crate::domain::color_grading::{rgb_to_hsl, hsl_to_rgb};
 
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Replace color — select by HSL range and shift H/S/L.
 pub struct ReplaceColorParams {
     /// Center hue to target (degrees 0-360)
-    #[param(min = 0.0, max = 360.0, step = 1.0, default = 0.0, hint = "rc.angle_deg")]
+    #[param(
+        min = 0.0,
+        max = 360.0,
+        step = 1.0,
+        default = 0.0,
+        hint = "rc.angle_deg"
+    )]
     pub center_hue: f32,
     /// Hue range width (degrees, total spread around center)
     #[param(min = 1.0, max = 180.0, step = 1.0, default = 30.0)]
@@ -269,11 +275,7 @@ mod tests {
         )
         .unwrap();
         // Should be darker red
-        assert!(
-            result[0] < 255,
-            "red should darken: got {}",
-            result[0]
-        );
+        assert!(result[0] < 255, "red should darken: got {}", result[0]);
     }
 
     #[test]

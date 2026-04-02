@@ -46,7 +46,13 @@ fn run_python_ref(script: &str) -> Vec<u8> {
 }
 
 fn mean_absolute_error(a: &[u8], b: &[u8]) -> f64 {
-    assert_eq!(a.len(), b.len(), "buffer length mismatch: {} vs {}", a.len(), b.len());
+    assert_eq!(
+        a.len(),
+        b.len(),
+        "buffer length mismatch: {} vs {}",
+        a.len(),
+        b.len()
+    );
     if a.is_empty() {
         return 0.0;
     }
@@ -101,11 +107,7 @@ fn match_color_parity_numpy_lab_transfer() {
         .flat_map(|i| {
             let x = (i % w) as u8;
             let y = (i / w) as u8;
-            [
-                200u8.saturating_add(x / 8),
-                100u8.saturating_add(y / 4),
-                50,
-            ]
+            [200u8.saturating_add(x / 8), 100u8.saturating_add(y / 4), 50]
         })
         .collect();
 
@@ -220,9 +222,18 @@ sys.stdout.buffer.write(result_u8.tobytes())
 fn replace_color_targeted_hue_shift() {
     // Build a test image: 4 red pixels, 4 green pixels, 4 blue pixels
     let pixels: Vec<u8> = [
-        [255u8, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], // red row
-        [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0],     // green row
-        [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255],     // blue row
+        [255u8, 0, 0],
+        [255, 0, 0],
+        [255, 0, 0],
+        [255, 0, 0], // red row
+        [0, 255, 0],
+        [0, 255, 0],
+        [0, 255, 0],
+        [0, 255, 0], // green row
+        [0, 0, 255],
+        [0, 0, 255],
+        [0, 0, 255],
+        [0, 0, 255], // blue row
     ]
     .concat();
     let info = ImageInfo {
@@ -264,17 +275,49 @@ fn replace_color_targeted_hue_shift() {
     // Green pixels (bytes 12-23) should be UNCHANGED (hue ~120, outside range)
     for i in 4..8 {
         let pi = i * 3;
-        assert_eq!(result[pi], 0, "green pixel {}: R should stay 0, got {}", i, result[pi]);
-        assert_eq!(result[pi + 1], 255, "green pixel {}: G should stay 255, got {}", i, result[pi + 1]);
-        assert_eq!(result[pi + 2], 0, "green pixel {}: B should stay 0, got {}", i, result[pi + 2]);
+        assert_eq!(
+            result[pi], 0,
+            "green pixel {}: R should stay 0, got {}",
+            i, result[pi]
+        );
+        assert_eq!(
+            result[pi + 1],
+            255,
+            "green pixel {}: G should stay 255, got {}",
+            i,
+            result[pi + 1]
+        );
+        assert_eq!(
+            result[pi + 2],
+            0,
+            "green pixel {}: B should stay 0, got {}",
+            i,
+            result[pi + 2]
+        );
     }
 
     // Blue pixels (bytes 24-35) should be UNCHANGED (hue ~240, outside range)
     for i in 8..12 {
         let pi = i * 3;
-        assert_eq!(result[pi], 0, "blue pixel {}: R should stay 0, got {}", i, result[pi]);
-        assert_eq!(result[pi + 1], 0, "blue pixel {}: G should stay 0, got {}", i, result[pi + 1]);
-        assert_eq!(result[pi + 2], 255, "blue pixel {}: B should stay 255, got {}", i, result[pi + 2]);
+        assert_eq!(
+            result[pi], 0,
+            "blue pixel {}: R should stay 0, got {}",
+            i, result[pi]
+        );
+        assert_eq!(
+            result[pi + 1],
+            0,
+            "blue pixel {}: G should stay 0, got {}",
+            i,
+            result[pi + 1]
+        );
+        assert_eq!(
+            result[pi + 2],
+            255,
+            "blue pixel {}: B should stay 255, got {}",
+            i,
+            result[pi + 2]
+        );
     }
 
     eprintln!("  replace_color targeted hue shift: all assertions passed");
