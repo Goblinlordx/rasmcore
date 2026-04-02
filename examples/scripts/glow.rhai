@@ -1,17 +1,15 @@
 //! name: glow
 //! category: effect
-//! strategy: compute
+//! strategy: composite
 //! param radius: f32 = 5.0 [0.1, 50.0]
 //! param intensity: f32 = 0.5 [0.0, 1.0]
 
-// Compute strategy: composes built-in filters eagerly per tile.
-// Calls builtin() to invoke blur and blend from the built-in registry.
+// Composite strategy: builds a lazy pipeline DAG with multi-input blend.
+// 'input' is a NodeRef — passing it as a config value to blend creates
+// a second upstream connection. The engine resolves the full graph with
+// pipeline optimizations (tiling, caching).
 
-fn compute(pixels, info, params) {
-    let blurred = builtin("blur", pixels, info, #{ radius: params.radius * 3.0 });
-    builtin("blend", pixels, blurred, info, #{ mode: "screen", opacity: params.intensity })
-}
-
-fn input_rect(output, bounds_w, bounds_h, params) {
-    expand_uniform(output, (params.radius * 9.0).ceil(), bounds_w, bounds_h)
+fn graph(input, params) {
+    let blurred = input.apply("blur", #{ radius: params.radius * 3.0 });
+    blurred.apply("blend", #{ source: input, mode: "screen", opacity: params.intensity })
 }

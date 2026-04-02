@@ -90,7 +90,20 @@ strategy determines performance characteristics:
 - The composed graph gets **full pipeline optimizations**: LUT fusion across
   the chain, GPU dispatch for supported nodes, tiling, caching
 - `.apply(name, config)` is the only method — names are runtime strings
+- **Multi-input operations**: pass a `NodeRef` as a config value to create
+  DAG branches. E.g., `blurred.apply("blend", #{ source: input })` — the
+  engine recognizes `input` as a `NodeRef` and wires it as a second upstream.
+  This enables fork-and-merge patterns (glow, double exposure, etc.)
 - **Best for**: presets, recipes, multi-step effects (vintage look, HDR tone, etc.)
+
+Example — glow effect with DAG (blur + blend with original):
+```rhai
+fn graph(input, params) {
+    let blurred = input.apply("blur", #{ radius: params.radius * 3.0 });
+    blurred.apply("blend", #{ source: input, mode: "screen", opacity: params.intensity })
+}
+```
+Here `input` feeds both `blur` and `blend` — a true DAG, not a linear chain.
 
 **4. CPU compute** (escape hatch) — script provides `compute(pixels, info, params)`:
 - Called **eagerly** per-tile during pipeline execution

@@ -52,12 +52,22 @@ pub struct ScriptMetadata {
     pub params: Vec<ScriptParam>,
 }
 
+/// A config value in a composite graph — either a scalar or a node reference.
+#[derive(Debug, Clone)]
+pub enum ConfigValue {
+    Float(f64),
+    Int(i64),
+    Bool(bool),
+    Str(String),
+    NodeRef(u32), // references another node by ID
+}
+
 /// A node reference in a composite graph (returned by .apply() chains).
 #[derive(Debug, Clone)]
 pub struct NodeRef {
     pub id: u32,
     pub filter_name: String,
-    pub config: HashMap<String, f64>,
+    pub config: HashMap<String, ConfigValue>,
     pub upstream_id: u32,
 }
 
@@ -251,17 +261,30 @@ fn create_engine() -> Engine {
 }
 
 /// NodeRef.apply("filter_name", #{ param: value }) -> NodeRef
+///
+/// Config values can be scalars (f64, i64, bool, string) or NodeRef values.
+/// When a NodeRef is passed as a config value (e.g., `source: other_node`),
+/// the engine wires it as an additional upstream connection in the graph.
 fn node_ref_apply(node: &mut NodeRef, name: &str, config: Map) -> NodeRef {
     static NEXT_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
     let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
     let mut cfg = HashMap::new();
     for (k, v) in &config {
-        if let Ok(f) = v.as_float() {
-            cfg.insert(k.to_string(), f);
+        let cv = if let Ok(f) = v.as_float() {
+            ConfigValue::Float(f)
         } else if let Ok(i) = v.as_int() {
-            cfg.insert(k.to_string(), i as f64);
-        }
+            ConfigValue::Int(i)
+        } else if let Ok(b) = v.as_bool() {
+            ConfigValue::Bool(b)
+        } else if let Ok(s) = v.clone().into_string() {
+            ConfigValue::Str(s.to_string())
+        } else if let Some(nr) = v.clone().try_cast::<NodeRef>() {
+            ConfigValue::NodeRef(nr.id)
+        } else {
+            continue;
+        };
+        cfg.insert(k.to_string(), cv);
     }
 
     NodeRef {
@@ -735,6 +758,55 @@ fn graph(input, params) {
         assert_eq!(graph.len(), 1);
         // The returned node is the last in the chain (contrast)
         assert_eq!(graph[0].filter_name, "contrast");
+    }
+
+    #[test]
+    fn composite_multi_input_blend() {
+        let scripts = vec![
+            r#"
+//! name: test_glow_composite
+//! category: test
+//! strategy: composite
+//! param radius: f32 = 5.0 [0.1, 50.0]
+//! param intensity: f32 = 0.5 [0.0, 1.0]
+
+fn graph(input, params) {
+    let blurred = input.apply("blur", #{ radius: params.radius * 3.0 });
+    blurred.apply("blend", #{ source: input, mode: "screen", opacity: params.intensity })
+}
+"#
+            .to_string(),
+        ];
+
+        let registry = ScriptRegistry::new(&scripts).unwrap();
+        let script = registry.get("test_glow_composite").unwrap().clone();
+
+        let config: HashMap<String, String> = HashMap::new();
+        let node = ScriptNode::new(
+            script,
+            0,
+            ImageInfo {
+                width: 100,
+                height: 100,
+                format: PixelFormat::Rgb8,
+                color_space: ColorSpace::Srgb,
+            },
+            &config,
+        );
+
+        let engine = create_engine();
+        let graph = node.build_graph(&engine).unwrap();
+        assert_eq!(graph.len(), 1);
+        // The returned node is the blend
+        assert_eq!(graph[0].filter_name, "blend");
+        // The blend node's config should contain a NodeRef for "source"
+        match &graph[0].config["source"] {
+            ConfigValue::NodeRef(id) => {
+                // Should reference the input node (id=0)
+                assert_eq!(*id, 0);
+            }
+            other => panic!("expected NodeRef, got {:?}", other),
+        }
     }
 
     #[test]
