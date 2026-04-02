@@ -3,67 +3,73 @@ title: Harris corner detection + template matching
 type: feature
 status: pending
 created: '2026-03-31'
-updated: '2026-03-31'
+updated: '2026-04-02'
 spec:
-  summary: |
-    Harris/Shi-Tomasi corner detection and normalized cross-correlation
+  summary: 'Harris/Shi-Tomasi corner detection and normalized cross-correlation
+
     template matching. Core feature detection primitives for the analysis toolkit.
-  context: |
-    ImageMagick provides -morphology ConvexHull and various feature detection.
-    OpenCV's cornerHarris and matchTemplate are standard reference implementations.
+
+    '
+  context: 'ImageMagick provides -morphology ConvexHull and various feature detection.
+
+    OpenCV''s cornerHarris and matchTemplate are standard reference implementations.
+
 
     rasmcore has Hough line detection but no corner detection or template
-    matching. These are fundamental building blocks for image alignment,
-    stitching, object detection, and registration.
-  codebase_analysis: |
-    EXISTING:
-    - hough_lines() in filters.rs: probabilistic line detection (OpenCV port)
-    - sobel/scharr: gradient computation (needed for Harris)
-    - convolve(): arbitrary kernel convolution
-    - CvRng: OpenCV-compatible PRNG already ported
 
-    APPROACH:
-    - Harris: compute Ix, Iy gradients (Sobel), build structure tensor,
-      compute R = det(M) - k*trace(M)^2, threshold, non-max suppression
-    - Template matching: normalized cross-correlation (NCC) sliding window
-    - Both follow OpenCV formulations for parity testing
+    matching. These are fundamental building blocks for image alignment,
+
+    stitching, object detection, and registration.
+
+    '
+  codebase_analysis: "EXISTING:\n- hough_lines() in filters.rs: probabilistic line detection (OpenCV port)\n- sobel/scharr:\
+    \ gradient computation (needed for Harris)\n- convolve(): arbitrary kernel convolution\n- CvRng: OpenCV-compatible PRNG\
+    \ already ported\n\nAPPROACH:\n- Harris: compute Ix, Iy gradients (Sobel), build structure tensor,\n  compute R = det(M)\
+    \ - k*trace(M)^2, threshold, non-max suppression\n- Template matching: normalized cross-correlation (NCC) sliding window\n\
+    - Both follow OpenCV formulations for parity testing\n"
   acceptance_criteria:
-    - harris_corners(pixels, info, k, threshold, block_size) returns Vec<(x,y,response)>
-    - Non-maximum suppression to avoid clustered detections
-    - template_match(image, template) returns (x, y, score) of best match
-    - Deterministic output
-    - Validated against OpenCV cornerHarris for basic test images
-  out_of_scope: |
-    FAST, ORB, SIFT, SURF. Sub-pixel refinement. Multi-scale detection.
+  - harris_corners(pixels, info, k, threshold, block_size) returns Vec<(x,y,response)>
+  - Non-maximum suppression to avoid clustered detections
+  - template_match(image, template) returns (x, y, score) of best match
+  - Deterministic output
+  - Validated against OpenCV cornerHarris for basic test images
+  out_of_scope: 'FAST, ORB, SIFT, SURF. Sub-pixel refinement. Multi-scale detection.
+
     Feature descriptors or matching pipelines.
-  technical_notes: |
-    Harris corner response: R = det(M) - k * trace(M)^2
+
+    '
+  technical_notes: 'Harris corner response: R = det(M) - k * trace(M)^2
+
     where M = [sum(Ix*Ix) sum(Ix*Iy); sum(Ix*Iy) sum(Iy*Iy)] over block_size window.
+
 
     Template matching: NCC = sum((I-mean_I)*(T-mean_T)) / sqrt(sum((I-mean_I)^2) * sum((T-mean_T)^2))
 
+
     Reference: OpenCV cornerHarris (imgproc/corner.cpp), matchTemplate (imgproc/templmatch.cpp)
+
+    '
 plan:
-  - phase: Corner detection
-    tasks:
-      - text: Implement Harris corner response computation using Sobel gradients
-        done: false
-      - text: Add non-maximum suppression (3x3 or configurable window)
-        done: false
-      - text: Register harris_corners as filter returning annotated image
-        done: false
-  - phase: Template matching
-    tasks:
-      - text: Implement normalized cross-correlation sliding window
-        done: false
-      - text: Add template_match public function returning best match location
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Unit test — detects corners of a synthetic rectangle
-        done: false
-      - text: Unit test — template_match finds exact sub-image location
-        done: false
-      - text: Parity test against OpenCV cornerHarris on test patterns
-        done: false
+- phase: Corner detection
+  tasks:
+  - text: Implement Harris corner response computation using Sobel gradients
+    done: true
+  - text: Add non-maximum suppression (3x3 or configurable window)
+    done: true
+  - text: Register harris_corners as filter returning annotated image
+    done: true
+- phase: Template matching
+  tasks:
+  - text: Implement normalized cross-correlation sliding window
+    done: true
+  - text: Add template_match public function returning best match location
+    done: true
+- phase: Verification
+  tasks:
+  - text: Unit test — detects corners of a synthetic rectangle
+    done: true
+  - text: Unit test — template_match finds exact sub-image location
+    done: true
+  - text: Parity test against OpenCV cornerHarris on test patterns
+    done: true
 extra: {}
