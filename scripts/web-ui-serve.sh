@@ -38,4 +38,4 @@ if [ ! -d node_modules ]; then
 fi
 
 echo "Starting dev server on http://localhost:$PORT"
-VITE_SDK_PATH=./sdk npx vite --port "$PORT"
+npx vite --port "$PORT"
