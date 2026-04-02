@@ -115,8 +115,21 @@ interface pipeline {
         clear: func();
     }
 
+    /// Pipeline precision mode.
+    enum pipeline-precision {
+        /// Standard 8-bit processing (default).
+        standard,
+        /// High-precision 32-bit float processing. 4x memory per pixel.
+        high-precision,
+    }
+
     resource image-pipeline {
         constructor();
+
+        // ─── Configuration ───
+        /// Set pipeline precision mode. Call before adding nodes.
+        /// HighPrecision enables f32 processing with auto-promote/demote at boundaries.
+        set-precision: func(precision: pipeline-precision);
 
         // ─── Source ───
         read: func(data: buffer) -> result<node-id, rasmcore-error>;

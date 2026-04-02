@@ -19,6 +19,9 @@ interface types {
         yuv422p,
         yuv444p,
         nv12,
+        rgb32f,
+        rgba32f,
+        gray32f,
     }
 
     /// Color space identifiers
