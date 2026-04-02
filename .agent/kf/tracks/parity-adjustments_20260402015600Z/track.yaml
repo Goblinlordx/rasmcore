@@ -1,5 +1,5 @@
 id: parity-adjustments_20260402015600Z
-title: Parity tests for adjustment operations — contrast, gamma, levels, invert, posterize
+title: Parity tests for adjustment operations — contrast, gamma, levels, invert, posterize, sigmoidal_contrast
 type: chore
 status: pending
 created: '2026-04-02'
@@ -35,9 +35,10 @@ spec:
     - Parity test for levels against Pillow autocontrast / numpy equivalent
     - Parity test for invert — exact match (MAE=0) against numpy 255-pixel
     - Parity test for posterize against Pillow posterize
+    - Parity test for sigmoidal_contrast against ImageMagick -sigmoidal-contrast
     - All tests use the existing venv Python infrastructure
+    - 100% adjustment operation coverage (6/6)
   out_of_scope: |
-    Sigmoidal contrast (complex formula, no standard reference — document as custom).
     Fixing any bugs found (separate bug-fix tracks if needed).
     Encoder/decoder parity.
   technical_notes: |
@@ -56,6 +57,8 @@ plan:
       - text: Add levels parity test against numpy input/output levels mapping
         done: false
       - text: Add posterize parity test against Pillow posterize
+        done: false
+      - text: Add sigmoidal_contrast parity test against ImageMagick -sigmoidal-contrast
         done: false
   - phase: Fix any discovered issues
     tasks:
