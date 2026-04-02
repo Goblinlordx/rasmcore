@@ -1,5 +1,5 @@
 title: GPU buffer pool — pre-allocate max needed buffers and reuse across ops
-status: pending
+status: completed
 type: chore
 approved: false
 created: '2026-04-02'
