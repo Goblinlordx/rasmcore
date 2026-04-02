@@ -1,6 +1,6 @@
 title: Filter derive foundation — derive(Filter) + CpuFilter/GpuFilter/PointOp/ColorOp
   traits
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-02'
