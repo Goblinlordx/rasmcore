@@ -374,6 +374,7 @@ interface filters {
     record colorize-config {
         target: color-rgb,
         amount: f32,
+        method: string,
     }
 
     record kmeans-quantize-config {
