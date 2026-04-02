@@ -156,11 +156,11 @@ plan:
 - phase: Verification
   tasks:
   - text: GPU f32 parity test — gaussian_blur f32 GPU vs CPU f32, verify improved precision over u32 multi-pass
-    done: false
+    done: true
   - text: GPU f32 parity test — affine_resample f32 GPU vs CPU f32
-    done: false
+    done: true
   - text: Regression — all existing u32 GPU tests pass unchanged
-    done: false
+    done: true
   - text: Update WebGPU executor (gpu-handler.ts) for dual-format support
-    done: false
+    done: true
 extra: {}
