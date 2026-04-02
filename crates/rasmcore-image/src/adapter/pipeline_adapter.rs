@@ -274,6 +274,15 @@ impl GuestLayerCache for LayerCacheResource {
     fn clear(&self) {
         self.inner.borrow_mut().clear();
     }
+
+    fn set_cache_quality(&self, quality: pipeline::CacheQuality) {
+        let q = match quality {
+            pipeline::CacheQuality::Full => rasmcore_pipeline::CacheQuality::Full,
+            pipeline::CacheQuality::Q16 => rasmcore_pipeline::CacheQuality::Q16,
+            pipeline::CacheQuality::Q8 => rasmcore_pipeline::CacheQuality::Q8,
+        };
+        self.inner.borrow_mut().set_cache_quality(q);
+    }
 }
 
 // ─── Pipeline Resource ──────────────────────────────────────────────────
