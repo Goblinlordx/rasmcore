@@ -1,0 +1,84 @@
+id: parity-color-ops_20260402015602Z
+title: Parity tests for color operations — colorize, hue_rotate, gradient_map, white_balance
+type: chore
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Add reference parity tests for color operations against numpy/Pillow.
+    Currently at 42% coverage — 11 operations lack validation.
+  context: |
+    Color operations are core Photoshop/Lightroom features (Hue/Saturation,
+    Color Balance, Photo Filter, Gradient Map). Without parity tests, color
+    math bugs (wrong color space, rounding, clipping) go undetected.
+  codebase_analysis: |
+    Implementations in crates/rasmcore-image/src/domain/filters/color/:
+    - colorize.rs: tint image with a hue + saturation
+    - gradient_map.rs: map luminance to color gradient
+    - grayscale.rs: weighted RGB to gray (BT.601 or BT.709)
+    - hue_rotate.rs: rotate hue in HSL space
+    - white_balance.rs: temperature/tint adjustment
+    - dither_floyd_steinberg.rs: error diffusion dithering
+    - dither_ordered.rs: Bayer matrix ordered dithering
+    - quantize.rs: median-cut color quantization
+    - kmeans_quantize.rs: k-means color quantization
+    - photo_filter.rs: warming/cooling color overlay
+
+    Already tested: channel_mixer, color_balance, vibrance, selective_color,
+    replace_color, match_color, auto_color, desaturate
+
+    Reference tools:
+    - Pillow: ImageOps.grayscale, ImageOps.posterize, ImageEnhance.Color
+    - numpy: direct matrix math for hue rotation, colorize
+    - colour-science: precise color space conversions
+  acceptance_criteria:
+    - Grayscale parity test against Pillow (BT.601 weights)
+    - Hue rotate parity test against numpy HSL rotation
+    - Colorize parity test against Pillow ImageOps.colorize or numpy equivalent
+    - Gradient map parity test against numpy luminance-to-gradient mapping
+    - White balance temperature parity test against known color temperature formulas
+    - Photo filter parity test against Photoshop Photo Filter reference values
+    - Dither tests produce visually correct output (statistical distribution test)
+    - All point-op tests MAE < 1.0, spatial/interpolation MAE < 2.0
+  out_of_scope: |
+    Quantization quality tests (k-means is non-deterministic by nature).
+    Color space conversion parity (already 100% covered in color_space_parity.rs).
+    Encoder/decoder related color operations.
+  technical_notes: |
+    Point operations (grayscale, hue_rotate, colorize, invert) should be
+    exact or near-exact (MAE < 0.5) since they're pure math on pixel values.
+
+    White balance uses Planckian locus approximation — compare against the
+    same formula in numpy, not against camera-specific implementations.
+
+    Dithering is inherently lossy — test by verifying the mean luminance is
+    preserved and the error distribution is uniform.
+plan:
+  - phase: Color operation parity tests
+    tasks:
+      - text: Add grayscale parity test against Pillow/numpy BT.601 weights
+        done: false
+      - text: Add hue_rotate parity test against numpy HSL math
+        done: false
+      - text: Add colorize parity test against numpy tint formula
+        done: false
+      - text: Add gradient_map parity test against numpy luminance mapping
+        done: false
+      - text: Add white_balance_temperature parity test against Planckian locus formula
+        done: false
+      - text: Add photo_filter parity test against PS reference values
+        done: false
+  - phase: Fix any discovered issues
+    tasks:
+      - text: If any test reveals a bug, fix the implementation to match reference
+        done: false
+  - phase: Verification
+    tasks:
+      - text: All new parity tests pass within documented thresholds
+        done: false
+      - text: Existing color parity tests still pass
+        done: false
+      - text: Update PARITY.md scorecard with new coverage percentages
+        done: false
+extra: {}

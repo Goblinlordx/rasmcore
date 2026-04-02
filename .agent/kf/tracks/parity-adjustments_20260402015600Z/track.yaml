@@ -1,0 +1,70 @@
+id: parity-adjustments_20260402015600Z
+title: Parity tests for adjustment operations — contrast, gamma, levels, invert, posterize
+type: chore
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Add reference-validated parity tests for core adjustment panel operations
+    against numpy/Pillow. These are fundamental PS-equivalent operations with
+    no current validation.
+  context: |
+    The adjustment category has only 33% parity coverage (3/9 operations tested).
+    Missing: contrast, gamma, levels, invert, posterize, sigmoidal_contrast.
+    These are the most basic image editing operations — every user expects them
+    to produce correct results. Without validation, regressions go undetected.
+  codebase_analysis: |
+    Existing implementations in crates/rasmcore-image/src/domain/filters/adjustment/:
+    - contrast.rs: linear contrast stretch
+    - gamma.rs: gamma curve (power law)
+    - levels.rs: input/output levels mapping (black point, white point, midtone gamma)
+    - invert.rs: channel inversion (255 - pixel)
+    - posterize.rs: reduce bit depth per channel
+    - sigmoidal_contrast.rs: S-curve contrast enhancement
+
+    Existing parity test infrastructure:
+    - tests/filter_reference_parity.rs: Python venv with numpy/Pillow, exact MAE comparison
+    - Pattern: run Python script → compare raw bytes → assert MAE < threshold
+
+    All operations are point ops (per-pixel, no spatial neighborhood) so exact
+    match (MAE=0) is expected for most, with MAE < 0.5 for rounding differences.
+  acceptance_criteria:
+    - Parity test for contrast against numpy (linear stretch)
+    - Parity test for gamma against numpy power law
+    - Parity test for levels against Pillow autocontrast / numpy equivalent
+    - Parity test for invert — exact match (MAE=0) against numpy 255-pixel
+    - Parity test for posterize against Pillow posterize
+    - All tests use the existing venv Python infrastructure
+  out_of_scope: |
+    Sigmoidal contrast (complex formula, no standard reference — document as custom).
+    Fixing any bugs found (separate bug-fix tracks if needed).
+    Encoder/decoder parity.
+  technical_notes: |
+    Use filter_reference_parity.rs pattern with venv Python.
+    Point ops should be pixel-exact (MAE=0) or within MAE < 0.5.
+    Test on gradient + random pixel data to cover full value range.
+plan:
+  - phase: Adjustment parity tests
+    tasks:
+      - text: Add invert parity test — exact match against numpy (255 - pixel)
+        done: false
+      - text: Add contrast parity test against numpy linear stretch formula
+        done: false
+      - text: Add gamma parity test against numpy power law (pixel/255)^gamma * 255
+        done: false
+      - text: Add levels parity test against numpy input/output levels mapping
+        done: false
+      - text: Add posterize parity test against Pillow posterize
+        done: false
+  - phase: Fix any discovered issues
+    tasks:
+      - text: If any test reveals a bug, fix the implementation to match reference
+        done: false
+  - phase: Verification
+    tasks:
+      - text: All new parity tests pass with MAE within documented thresholds
+        done: false
+      - text: Existing tests still pass (no regressions)
+        done: false
+extra: {}
