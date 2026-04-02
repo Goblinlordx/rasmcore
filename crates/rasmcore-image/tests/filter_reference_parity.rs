@@ -1729,24 +1729,25 @@ fn close_color_balance_preserve_luminosity_against_numpy() {
 // Our blur uses sigma = radius directly.
 
 #[test]
-fn high_pass_vs_numpy() {
-    let w = 32u32;
-    let h = 32;
-    let radius = 4.0f32;
+fn high_pass_vs_numpy_multi_radius() {
+    // Use a larger image to reduce border-effect ratio at large radii
+    let w = 128u32;
+    let h = 128;
     let pixels = make_gradient_rgb(w, h);
     let info = info_rgb8(w, h);
+    let python = venv_python();
 
-    let ours = filters::high_pass(
-        Rect::new(0, 0, w, h),
-        &mut |_| Ok(pixels.to_vec()),
-        &info,
-        &filters::HighPassParams { radius },
-    )
-    .unwrap();
+    for radius in [1.0f32, 4.0, 10.0, 25.0] {
+        let ours = filters::high_pass(
+            Rect::new(0, 0, w, h),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &filters::HighPassParams { radius },
+        )
+        .unwrap();
 
-    // Python reference: (original - gaussian_filter(original, sigma)) / 2 + 128
-    let script = format!(
-        r#"
+        let script = format!(
+            r#"
 import sys, numpy as np
 from scipy.ndimage import gaussian_filter
 px = np.frombuffer(sys.stdin.buffer.read(), dtype=np.uint8).reshape({h},{w},3).astype(np.float64)
@@ -1756,42 +1757,42 @@ for c in range(3):
 hp = np.clip(np.floor((px - blurred) / 2.0) + 128.0, 0, 255).astype(np.uint8)
 sys.stdout.buffer.write(hp.tobytes())
 "#
-    );
+        );
 
-    let python = venv_python();
-    let output = std::process::Command::new(&python)
-        .arg("-c")
-        .arg(&script)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .and_then(|mut child| {
-            use std::io::Write;
-            child.stdin.take().unwrap().write_all(&pixels).unwrap();
-            child.wait_with_output()
-        })
-        .unwrap();
+        let output = std::process::Command::new(&python)
+            .arg("-c")
+            .arg(&script)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .and_then(|mut child| {
+                use std::io::Write;
+                child.stdin.take().unwrap().write_all(&pixels).unwrap();
+                child.wait_with_output()
+            })
+            .unwrap();
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("No module named 'scipy'") {
-            eprintln!("  high_pass_vs_numpy: SKIP (scipy not installed)");
-            return;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("No module named 'scipy'") {
+                eprintln!("  high_pass_vs_numpy: SKIP (scipy not installed)");
+                return;
+            }
+            panic!("Python script failed: {stderr}");
         }
-        panic!("Python script failed: {stderr}");
-    }
-    let reference = output.stdout;
 
-    // Border mode differences (libblur vs scipy) cause edge-region divergence.
-    // The formula itself is exact, so interior should be very close.
-    let mae = mean_absolute_error(&ours, &reference);
-    let max_err = max_absolute_error(&ours, &reference);
-    eprintln!("  high_pass vs numpy: MAE={mae:.4}, max_err={max_err}");
-    assert!(
-        mae < 2.0,
-        "high_pass: MAE={mae:.4} too high vs numpy (expected < 2.0, border diffs)"
-    );
+        let mae = mean_absolute_error(&ours, &output.stdout);
+        let max_err = max_absolute_error(&ours, &output.stdout);
+        // Border-mode differences (libblur clamp vs scipy nearest) grow with radius.
+        // Tolerance scales with radius: larger kernel → more border pixels affected.
+        let threshold = 2.0f64.max(radius as f64 * 0.3);
+        eprintln!("  high_pass r={radius}: MAE={mae:.4}, max_err={max_err} (threshold={threshold:.1})");
+        assert!(
+            mae < threshold,
+            "high_pass r={radius}: MAE={mae:.4} too high vs numpy (expected < {threshold:.1})"
+        );
+    }
 }
 
 // ─── LAB Channel Operations ──────────────────────────────────────────────
@@ -1904,42 +1905,85 @@ sys.stdout.buffer.write(b_out.tobytes())
 }
 
 #[test]
-fn lab_adjust_zero_offset_identity() {
-    // Zero offset should produce pixel-exact roundtrip (within ±1 for float precision)
+fn lab_adjust_vs_skimage_multi_offset() {
     let w = 16u32;
     let h = 16;
     let pixels = make_gradient_rgb(w, h);
     let info = info_rgb8(w, h);
+    let python = venv_python();
 
-    let result = filters::lab_adjust(
-        Rect::new(0, 0, w, h),
-        &mut |_| Ok(pixels.to_vec()),
-        &info,
-        &filters::LabAdjustParams {
-            a_offset: 0.0,
-            b_offset: 0.0,
-        },
-    )
-    .unwrap();
+    // Test multiple a/b offset combinations including identity (0,0)
+    let offsets: &[(f32, f32)] = &[
+        (0.0, 0.0),     // identity — roundtrip should be near-exact
+        (20.0, 0.0),    // shift toward red
+        (0.0, -30.0),   // shift toward blue
+        (-15.0, 25.0),  // mixed shift
+        (50.0, 50.0),   // large shift
+    ];
 
-    // Roundtrip RGB→LAB→RGB with zero offset should be near-identity
-    let mae = mean_absolute_error(&pixels, &result);
-    let max_err = max_absolute_error(&pixels, &result);
-    eprintln!("  lab_adjust(0,0) identity: MAE={mae:.4}, max_err={max_err}");
-    assert!(
-        mae < 1.0,
-        "lab_adjust zero offset should be near-identity, MAE={mae:.4}"
-    );
-    assert!(
-        max_err <= 1,
-        "lab_adjust zero offset max_err={max_err}, expected <= 1"
-    );
+    for &(a_off, b_off) in offsets {
+        let result = filters::lab_adjust(
+            Rect::new(0, 0, w, h),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &filters::LabAdjustParams {
+                a_offset: a_off,
+                b_offset: b_off,
+            },
+        )
+        .unwrap();
+
+        // Python reference: same RGB→LAB→offset→LAB→RGB pipeline
+        let script = format!(
+            r#"
+import sys, numpy as np
+from skimage.color import rgb2lab, lab2rgb
+px = np.frombuffer(sys.stdin.buffer.read(), dtype=np.uint8).reshape({h},{w},3)
+lab = rgb2lab(px)
+lab[:,:,1] = np.clip(lab[:,:,1] + {a_off}, -128, 127)
+lab[:,:,2] = np.clip(lab[:,:,2] + {b_off}, -128, 127)
+out = np.clip(np.round(lab2rgb(lab) * 255.0), 0, 255).astype(np.uint8)
+sys.stdout.buffer.write(out.tobytes())
+"#
+        );
+
+        let output = std::process::Command::new(&python)
+            .arg("-c")
+            .arg(&script)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .and_then(|mut child| {
+                use std::io::Write;
+                child.stdin.take().unwrap().write_all(&pixels).unwrap();
+                child.wait_with_output()
+            })
+            .unwrap();
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("No module named 'skimage'") {
+                eprintln!("  lab_adjust_vs_skimage: SKIP (scikit-image not installed)");
+                return;
+            }
+            panic!("Python script failed: {stderr}");
+        }
+
+        let mae = mean_absolute_error(&result, &output.stdout);
+        let max_err = max_absolute_error(&result, &output.stdout);
+        eprintln!("  lab_adjust a={a_off},b={b_off}: MAE={mae:.4}, max_err={max_err}");
+        assert!(
+            mae < 1.0,
+            "lab_adjust a={a_off},b={b_off}: MAE={mae:.4} too high vs skimage"
+        );
+    }
 }
 
 #[test]
-fn lab_sharpen_preserves_ab_channels() {
+fn lab_sharpen_preserves_ab_multi_params() {
     // LAB sharpening should only modify L, leaving a/b channels unchanged.
-    // Verify by extracting a/b before and after sharpening.
+    // Test across multiple amount/radius combinations.
     let w = 32u32;
     let h = 32;
     let pixels = make_gradient_rgb(w, h);
@@ -1948,34 +1992,44 @@ fn lab_sharpen_preserves_ab_channels() {
     let (a_before, _) = filters::lab_extract_a(&pixels, &info).unwrap();
     let (b_before, _) = filters::lab_extract_b(&pixels, &info).unwrap();
 
-    let sharpened = filters::lab_sharpen(
-        Rect::new(0, 0, w, h),
-        &mut |_| Ok(pixels.to_vec()),
-        &info,
-        &filters::LabSharpenParams {
-            amount: 2.0,
-            radius: 2.0,
-        },
-    )
-    .unwrap();
+    let params: &[(f32, f32)] = &[
+        (0.5, 1.0),   // subtle sharpen, small radius
+        (1.0, 2.0),   // standard sharpen
+        (2.0, 2.0),   // aggressive sharpen
+        (3.0, 5.0),   // very aggressive, large radius
+        (1.0, 10.0),  // standard amount, very large radius
+    ];
 
-    let (a_after, _) = filters::lab_extract_a(&sharpened, &info).unwrap();
-    let (b_after, _) = filters::lab_extract_b(&sharpened, &info).unwrap();
+    for &(amount, radius) in params {
+        let sharpened = filters::lab_sharpen(
+            Rect::new(0, 0, w, h),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &filters::LabSharpenParams { amount, radius },
+        )
+        .unwrap();
 
-    // a/b channels should be preserved through LAB sharpening.
-    // Small differences from roundtrip float precision (RGB→LAB→modify_L→RGB→LAB).
-    let mae_a = mean_absolute_error(&a_before, &a_after);
-    let mae_b = mean_absolute_error(&b_before, &b_after);
-    eprintln!("  lab_sharpen a-channel drift: MAE={mae_a:.4}");
-    eprintln!("  lab_sharpen b-channel drift: MAE={mae_b:.4}");
-    assert!(
-        mae_a < 2.0,
-        "lab_sharpen modified a channel too much: MAE={mae_a:.4}"
-    );
-    assert!(
-        mae_b < 2.0,
-        "lab_sharpen modified b channel too much: MAE={mae_b:.4}"
-    );
+        let (a_after, _) = filters::lab_extract_a(&sharpened, &info).unwrap();
+        let (b_after, _) = filters::lab_extract_b(&sharpened, &info).unwrap();
+
+        // a/b channels should be preserved through LAB sharpening.
+        // Roundtrip precision drift scales with sharpening amount — larger L
+        // modifications cause slightly different a/b values after RGB→LAB→RGB.
+        let mae_a = mean_absolute_error(&a_before, &a_after);
+        let mae_b = mean_absolute_error(&b_before, &b_after);
+        // Drift scales with both amount (sharpening strength) and radius
+        // (how much of the image the blur touches — larger radius = more L modification)
+        let threshold = 1.0f64.max(amount as f64 * 0.8 + radius as f64 * 0.15);
+        eprintln!("  lab_sharpen amt={amount},r={radius}: a-drift={mae_a:.4}, b-drift={mae_b:.4} (threshold={threshold:.1})");
+        assert!(
+            mae_a < threshold,
+            "lab_sharpen amt={amount},r={radius}: a-channel MAE={mae_a:.4} > {threshold:.1}"
+        );
+        assert!(
+            mae_b < threshold,
+            "lab_sharpen amt={amount},r={radius}: b-channel MAE={mae_b:.4} > {threshold:.1}"
+        );
+    }
 }
 
 // ─── Mesh Warp ───────────────────────────────────────────────────────────

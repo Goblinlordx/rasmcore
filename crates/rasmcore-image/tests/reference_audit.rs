@@ -3113,46 +3113,48 @@ fn algorithm_high_pass_vs_magick() {
         return;
     }
 
-    let w = 64u32;
-    let h = 64;
-    let radius = 4.0f32;
+    let w = 128u32;
+    let h = 128;
     let pixels = gradient_rgb(w, h);
     let info = test_info(w, h, PixelFormat::Rgb8);
-
-    // Our output
-    let ours = rasmcore_image::domain::filters::high_pass(
-        rasmcore_image::domain::pipeline::Rect::new(0, 0, w, h),
-        &mut |_| Ok(pixels.to_vec()),
-        &info,
-        &rasmcore_image::domain::filters::HighPassParams { radius },
-    )
-    .unwrap();
-
-    // ImageMagick reference
     let input_path = write_png(&pixels, w, h, 3);
-    let sigma = format!("{radius}");
-    let ref_path = magick_op(
-        &input_path,
-        &[
-            "(", "+clone", "-blur", &format!("0x{sigma}"), ")",
-            "-compose", "Mathematics",
-            "-define", "compose:args=0,0.5,-0.5,0.5",
-            "-composite",
-        ],
-    );
 
-    if let Some(ref_path) = ref_path {
-        let magick_output = read_png_rgb(&ref_path);
-        let error = mae(&ours, &magick_output);
-        eprintln!("  high_pass vs ImageMagick: MAE = {error:.4}");
-        // ALGORITHM tier: border handling and blur kernel may differ
-        assert!(
-            error < 5.0,
-            "ALGORITHM: high_pass MAE should be < 5.0, got {error:.4}"
+    for radius in [1.0f32, 4.0, 10.0, 25.0] {
+        let ours = rasmcore_image::domain::filters::high_pass(
+            rasmcore_image::domain::pipeline::Rect::new(0, 0, w, h),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
+            &rasmcore_image::domain::filters::HighPassParams { radius },
+        )
+        .unwrap();
+
+        let sigma = format!("{radius}");
+        let ref_path = magick_op(
+            &input_path,
+            &[
+                "(", "+clone", "-blur", &format!("0x{sigma}"), ")",
+                "-compose", "Mathematics",
+                "-define", "compose:args=0,0.5,-0.5,0.5",
+                "-composite",
+            ],
         );
-        cleanup(&[&input_path, &ref_path]);
-    } else {
-        cleanup(&[&input_path]);
-        eprintln!("SKIP algorithm_high_pass_vs_magick: magick Mathematics compose failed");
+
+        if let Some(ref_path) = ref_path {
+            let magick_output = read_png_rgb(&ref_path);
+            let error = mae(&ours, &magick_output);
+            // ALGORITHM tier: IM uses different blur kernel (IIR vs FIR).
+            // Divergence grows with radius due to kernel tail differences.
+            let threshold = 5.0f64.max(radius as f64 * 0.6);
+            eprintln!("  high_pass r={radius} vs IM: MAE = {error:.4} (threshold={threshold:.1})");
+            assert!(
+                error < threshold,
+                "ALGORITHM: high_pass r={radius} MAE={error:.4} > {threshold:.1}"
+            );
+            cleanup(&[&ref_path]);
+        } else {
+            eprintln!("SKIP high_pass r={radius}: magick Mathematics compose failed");
+        }
     }
+
+    cleanup(&[&input_path]);
 }
