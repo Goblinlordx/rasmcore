@@ -51,7 +51,10 @@ export type ControlType =
   | 'signed_slider' // bipolar slider centered at 0
   | 'opacity' // thin slider + text input
   | 'temperature' // slider with gradient track
-  | 'enum'; // dropdown select
+  | 'enum' // dropdown select
+  | 'point' // canvas point selector (click to place)
+  | 'path' // canvas path drawer (freehand stroke)
+  | 'box_select'; // canvas rectangle selector (drag to define)
 
 /** Resolved parameter for UI rendering. */
 export interface UiParam {

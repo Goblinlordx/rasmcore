@@ -112,6 +112,9 @@ function mapParam(p: ManifestRawParam): UiParam | null {
     'rc.signed_slider': 'signed_slider',
     'rc.opacity': 'opacity',
     'rc.temperature_k': 'temperature',
+    'rc.point': 'point',
+    'rc.path': 'path',
+    'rc.box_select': 'box_select',
   };
   const mapped = p.hint ? hintMap[p.hint] : undefined;
   // u64/i64 types default to spinner (large integer fields like seeds)

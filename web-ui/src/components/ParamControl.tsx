@@ -208,6 +208,78 @@ export default function ParamControl({ param, value, onChange }: Props) {
     );
   }
 
+  if (p.type === 'point') {
+    return (
+      <div className="param-row">
+        <label>
+          {p.label} <span className="param-value">{String(value)}</span>
+        </label>
+        <div className="canvas-control point-control">
+          <input
+            type="number"
+            className="spinner-input"
+            min={p.min}
+            max={p.max}
+            step={p.step}
+            value={value as number}
+            onPointerDown={guardDrag}
+            onMouseDown={guardDrag}
+            onInput={(e) => onChange(parseFloat(e.currentTarget.value))}
+          />
+          <span className="canvas-hint">click canvas to set</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (p.type === 'path') {
+    return (
+      <div className="param-row">
+        <label>
+          {p.label} <span className="param-value">{String(value)}</span>
+        </label>
+        <div className="canvas-control path-control">
+          <input
+            type="number"
+            className="spinner-input"
+            min={p.min}
+            max={p.max}
+            step={p.step}
+            value={value as number}
+            onPointerDown={guardDrag}
+            onMouseDown={guardDrag}
+            onInput={(e) => onChange(parseFloat(e.currentTarget.value))}
+          />
+          <span className="canvas-hint">draw on canvas</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (p.type === 'box_select') {
+    return (
+      <div className="param-row">
+        <label>
+          {p.label} <span className="param-value">{String(value)}</span>
+        </label>
+        <div className="canvas-control box-control">
+          <input
+            type="number"
+            className="spinner-input"
+            min={p.min}
+            max={p.max}
+            step={p.step}
+            value={value as number}
+            onPointerDown={guardDrag}
+            onMouseDown={guardDrag}
+            onInput={(e) => onChange(parseFloat(e.currentTarget.value))}
+          />
+          <span className="canvas-hint">drag on canvas</span>
+        </div>
+      </div>
+    );
+  }
+
   // Default: linear range slider
   return (
     <div className="param-row">
