@@ -24,7 +24,8 @@ These filters produce identical output to OpenCV/ImageMagick on every pixel:
 | **Perspective warp** | OpenCV | 1/1 exact | Byte-exact |
 | **pyrUp** | OpenCV | 7/7 exact | Byte-exact |
 | **Gray-world WB** | Reference | 1/1 exact | Byte-exact |
-| **Colorize** | W3C/Photoshop spec | 7/7 exact | W3C SetLum/ClipColor, BT.601 luma |
+| **Colorize (w3c)** | W3C/Photoshop spec | 7/7 exact | W3C SetLum/ClipColor, BT.601 luma |
+| **Colorize (lab)** | libvips/sharp tint | tested | CIELAB a*b* replacement, parabolic L* weight |
 | **White balance temp** | ImageMagick -evaluate | 1/1 exact | Byte-exact channel multiply |
 | **Photo filter** | ImageMagick -colorize | 1/1 exact | Byte-exact color blend |
 
@@ -60,7 +61,7 @@ These filters produce identical output to OpenCV/ImageMagick on every pixel:
 
 ## Summary
 
-- **16 filter operations** are byte-exact against OpenCV/ImageMagick/W3C reference
+- **17 filter operations** are byte-exact against OpenCV/ImageMagick/W3C reference
 - **2 filter operations** within max_err=1 (CLAHE, guided filter)
 - **6 filter operations** have documented divergence with root causes
 - **7 codec paths** validated with parity tests
