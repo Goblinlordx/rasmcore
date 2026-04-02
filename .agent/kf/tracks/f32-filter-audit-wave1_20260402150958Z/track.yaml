@@ -113,23 +113,23 @@ plan:
 - phase: Wave 1 filter migration
   tasks:
   - text: Migrate ~10 adjustment filters to PixelSample generic (brightness, contrast, gamma, exposure, levels, etc.)
-    done: false
+    done: true
   - text: Migrate ~10 color filters to PixelSample generic (hue_rotate, saturate, vibrance, etc.)
-    done: false
+    done: true
   - text: Migrate ~9 evaluate filters to PixelSample generic
-    done: false
+    done: true
   - text: Migrate ~7 color grading filters (curves, lift_gamma_gain, asc_cdl, split_toning)
-    done: false
+    done: true
   - text: Migrate ~3 tone mapping filters (reinhard, drago, filmic)
-    done: false
+    done: true
   - text: Migrate remaining wave 1 filters (solarize, dodge, burn, vignette, hue-vs curves)
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Per-filter f32 test — each migrated filter with f32 input produces f32 output without precision loss
-    done: false
+    done: true
   - text: Parity test — f32 result vs u8 result for representative filters, within precision bounds
-    done: false
+    done: true
   - text: Regression — all existing filter tests pass unchanged in standard mode
-    done: false
+    done: true
 extra: {}
