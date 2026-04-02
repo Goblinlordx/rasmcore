@@ -272,3 +272,6 @@ script-invert-validation_20260402102600Z: []
 
 # Fix derive(Filter) WIT codegen + pixelate manifest — no deps
 fix-filter-params-webui_20260402144500Z: []
+
+# Wire up LayerCache in web UI workers — no deps (WASM infrastructure completed)
+webui-wire-layer-cache_20260403064000Z: []
