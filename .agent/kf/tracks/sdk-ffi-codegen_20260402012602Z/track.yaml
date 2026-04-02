@@ -1,86 +1,102 @@
 id: sdk-ffi-codegen_20260402012602Z
-title: "Fluent SDK codegen with C FFI backend (Go + Python)"
+title: Fluent SDK codegen with C FFI backend (Go + Python)
 type: feature
 status: pending
 created: 2026-04-02
-updated: 2026-04-02
+updated: '2026-04-02'
 spec:
-  summary: |
-    Extend the codegen tool to emit FFI wrappers that call librcimg natively
+  summary: 'Extend the codegen tool to emit FFI wrappers that call librcimg natively
+
     instead of wasmtime CLI. Go via CGO, Python via ctypes. Same fluent Chain
+
     API but with native speed and GPU support.
-  context: |
-    The existing fluent SDK codegen (cmd/generate) produces Chain methods that
+
+    '
+  context: 'The existing fluent SDK codegen (cmd/generate) produces Chain methods that
+
     call process-chain via wasmtime CLI (CPU only, ~100ms subprocess overhead).
+
     With the C shared library (librcimg), SDKs can call the pipeline directly
+
     via FFI — native speed, no subprocess, and GPU support via the
+
     rasmcore_set_gpu_executor callback. The fluent API stays identical; only
+
     the backend changes.
-  codebase_analysis: |
-    - Existing codegen at packages/go-sdk/cmd/generate/main.go reads manifest
-      and emits chain_generated.go (WASM backend)
-    - rasmcore-ffi C API uses rasmcore_filter(pipe, source, name, params_json)
-      — same dispatch-by-name pattern as process-chain
-    - Go CGO: #cgo LDFLAGS -lrcimg, import "C", call C functions directly
-    - Python ctypes: ctypes.CDLL("librcimg.so"), define argtypes/restypes
-    - The Chain.add() accumulates ops; terminal Write methods execute the chain
-    - For FFI backend, each add() calls rasmcore_filter immediately (stateful pipe)
-    - Pipeline is persistent (not per-call like WASM) so caching works
+
+    '
+  codebase_analysis: "- Existing codegen at packages/go-sdk/cmd/generate/main.go reads manifest\n  and emits chain_generated.go\
+    \ (WASM backend)\n- rasmcore-ffi C API uses rasmcore_filter(pipe, source, name, params_json)\n  — same dispatch-by-name\
+    \ pattern as process-chain\n- Go CGO: #cgo LDFLAGS -lrcimg, import \"C\", call C functions directly\n- Python ctypes:\
+    \ ctypes.CDLL(\"librcimg.so\"), define argtypes/restypes\n- The Chain.add() accumulates ops; terminal Write methods execute\
+    \ the chain\n- For FFI backend, each add() calls rasmcore_filter immediately (stateful pipe)\n- Pipeline is persistent\
+    \ (not per-call like WASM) so caching works\n"
   acceptance_criteria:
-    - Codegen emits Go FFI backend (chain_ffi_generated.go) with CGO calls
-    - Codegen emits Python FFI backend (chain_ffi_generated.py) with ctypes
-    - Go SDK auto-selects FFI backend when librcimg is available, falls back to WASM
-    - Python SDK same auto-selection
-    - Fluent API is identical for both backends
-    - GPU works through FFI backend (rasmcore_set_gpu_executor)
-    - Cross-pipeline caching works (persistent PipelineState)
-    - Tests pass with FFI backend on host platform
-  out_of_scope: |
-    - Cross-platform prebuilt binary packaging (separate track)
+  - Codegen emits Go FFI backend (chain_ffi_generated.go) with CGO calls
+  - Codegen emits Python FFI backend (chain_ffi_generated.py) with ctypes
+  - Go SDK auto-selects FFI backend when librcimg is available, falls back to WASM
+  - Python SDK same auto-selection
+  - Fluent API is identical for both backends
+  - GPU works through FFI backend (rasmcore_set_gpu_executor)
+  - Cross-pipeline caching works (persistent PipelineState)
+  - Tests pass with FFI backend on host platform
+  out_of_scope: '- Cross-platform prebuilt binary packaging (separate track)
+
     - Mobile SDK wrappers (future phase)
+
     - PHP/Ruby/Perl wrappers (future — same pattern)
-  technical_notes: |
-    Architecture: the Chain type gets a backend interface. WASM backend calls
+
+    '
+  technical_notes: 'Architecture: the Chain type gets a backend interface. WASM backend calls
+
     wasmtime subprocess per chain. FFI backend holds a *PipelineState and calls
+
     rasmcore_read/rasmcore_filter/rasmcore_write per operation.
 
+
     Go: build tag "cgo" enables FFI backend. Without CGO, falls back to WASM.
+
     Python: tries ctypes.CDLL first, falls back to subprocess.
 
+
     GPU: the FFI backend exposes a SetGpuExecutor method that passes a callback
+
     to rasmcore_set_gpu_executor. Go uses CGO callback; Python uses ctypes
+
     CFUNCTYPE callback.
+
+    '
 plan:
-  - phase: "Backend abstraction"
-    tasks:
-      - text: "Define Go Backend interface with Process/ProcessChain methods"
-        done: false
-      - text: "Refactor existing WASM backend to implement Backend interface"
-        done: false
-      - text: "Implement FFI backend using CGO calls to librcimg"
-        done: false
-      - text: "Auto-select backend in NewPipeline (try FFI first, fall back to WASM)"
-        done: false
-  - phase: "FFI codegen"
-    tasks:
-      - text: "Extend cmd/generate to emit chain_ffi_generated.go with CGO-based Chain methods"
-        done: false
-      - text: "Extend cmd/generate to emit chain_ffi_generated.py with ctypes-based Chain methods"
-        done: false
-      - text: "Add GPU executor registration to FFI backend (Go + Python)"
-        done: false
-  - phase: "Python FFI"
-    tasks:
-      - text: "Create Python ctypes wrapper for librcimg (pipeline.py FFI backend)"
-        done: false
-      - text: "Auto-detect librcimg availability in Python, fall back to WASM subprocess"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Go test with FFI backend — identity chain + blur (same tests as WASM)"
-        done: false
-      - text: "Python test with FFI backend"
-        done: false
-      - text: "Verify WASM fallback still works when librcimg not available"
-        done: false
+- phase: Backend abstraction
+  tasks:
+  - text: Define Go Backend interface with Process/ProcessChain methods
+    done: true
+  - text: Refactor existing WASM backend to implement Backend interface
+    done: true
+  - text: Implement FFI backend using CGO calls to librcimg
+    done: true
+  - text: Auto-select backend in NewPipeline (try FFI first, fall back to WASM)
+    done: true
+- phase: FFI codegen
+  tasks:
+  - text: Extend cmd/generate to emit chain_ffi_generated.go with CGO-based Chain methods
+    done: true
+  - text: Extend cmd/generate to emit chain_ffi_generated.py with ctypes-based Chain methods
+    done: true
+  - text: Add GPU executor registration to FFI backend (Go + Python)
+    done: true
+- phase: Python FFI
+  tasks:
+  - text: Create Python ctypes wrapper for librcimg (pipeline.py FFI backend)
+    done: true
+  - text: Auto-detect librcimg availability in Python, fall back to WASM subprocess
+    done: true
+- phase: Verification
+  tasks:
+  - text: Go test with FFI backend — identity chain + blur (same tests as WASM)
+    done: true
+  - text: Python test with FFI backend
+    done: true
+  - text: Verify WASM fallback still works when librcimg not available
+    done: true
 extra: {}

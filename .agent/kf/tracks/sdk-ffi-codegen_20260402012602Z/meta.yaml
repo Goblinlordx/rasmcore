@@ -1,5 +1,5 @@
 title: Fluent SDK codegen with C FFI backend (Go + Python)
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-02'

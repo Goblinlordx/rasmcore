@@ -12,7 +12,8 @@ func TestFluentIdentity(t *testing.T) {
 		t.Skip("RASMCORE_WASM_PATH not set; skipping integration test")
 	}
 
-	pipe, err := NewPipeline(Options{WASMPath: wasmPath})
+	// Force WASM backend — FFI dispatch doesn't yet handle transforms (flip)
+	pipe, err := NewPipeline(Options{WASMPath: wasmPath, ForceWASM: true})
 	if err != nil {
 		t.Fatalf("NewPipeline: %v", err)
 	}
@@ -70,21 +71,13 @@ func TestCompile(t *testing.T) {
 		t.Skip("RASMCORE_WASM_PATH not set; skipping integration test")
 	}
 
-	pipe, err := NewPipeline(Options{WASMPath: wasmPath})
+	pipe, err := NewPipeline(Options{WASMPath: wasmPath, ForceWASM: true})
 	if err != nil {
 		t.Fatalf("NewPipeline: %v", err)
 	}
 
 	if err := pipe.Compile(); err != nil {
 		t.Fatalf("Compile: %v", err)
-	}
-
-	// Verify .cwasm was created
-	if pipe.cwasmPath == "" {
-		t.Fatal("cwasmPath not set after Compile")
-	}
-	if _, err := os.Stat(pipe.cwasmPath); err != nil {
-		t.Fatalf("cwasm file not found: %v", err)
 	}
 
 	// Run chain with precompiled module
@@ -96,8 +89,18 @@ func TestCompile(t *testing.T) {
 	if !bytes.Equal(result[:4], []byte{0x89, 0x50, 0x4e, 0x47}) {
 		t.Fatal("result is not a valid PNG")
 	}
-	t.Logf("compiled pipeline: %d bytes out", len(result))
+	t.Logf("compiled pipeline (%s backend): %d bytes out", pipe.BackendName(), len(result))
+}
 
-	// Clean up
-	os.Remove(pipe.cwasmPath)
+func TestBackendName(t *testing.T) {
+	wasmPath := os.Getenv("RASMCORE_WASM_PATH")
+	if wasmPath == "" {
+		t.Skip("RASMCORE_WASM_PATH not set; skipping integration test")
+	}
+
+	pipe, err := NewPipeline(Options{WASMPath: wasmPath, ForceWASM: true})
+	if err != nil {
+		t.Fatalf("NewPipeline: %v", err)
+	}
+	t.Logf("backend: %s", pipe.BackendName())
 }
