@@ -1,0 +1,8 @@
+title: Fluent SDK codegen from unified manifest (Go + Python)
+status: pending
+type: feature
+approved: false
+created: '2026-04-02'
+updated: '2026-04-02'
+deps:
+- unified-manifest_20260402003400Z

@@ -1,0 +1,69 @@
+id: unified-manifest_20260402003400Z
+title: "Add transforms and encoders to param-manifest.json"
+type: feature
+status: pending
+created: 2026-04-02
+updated: 2026-04-02
+spec:
+  summary: |
+    Extend the build-time param-manifest.json to include transforms and encoders
+    so SDK codegen has a single complete source of truth for all pipeline operations.
+  context: |
+    The get-filter-manifest() WIT function returns a JSON manifest used by the web UI
+    and SDK codegen. Currently it only includes filters, compositors, generators, and
+    mappers. Transforms (flip, rotate, resize, crop, auto-orient, icc-to-srgb, composite)
+    and encoders (write-jpeg, write-png, write-webp, etc.) are missing. The fluent SDK
+    codegen needs a complete manifest to generate typed methods for every operation.
+  codebase_analysis: |
+    - Manifest generation lives in crates/rasmcore-codegen/src/generate/manifest.rs
+    - Transform metadata already parsed via TransformReg in parse/transforms.rs
+      (has name, params as (name, type) pairs, multi_input, fallible)
+    - Encoder metadata already parsed via EncoderInfo in parse/encoders.rs
+      (has format, config_struct, fields with name/type/default/is_enum/variants)
+    - Both data sources flow through CodegenData but manifest.rs only emits
+      filters/generators/compositors/mappers
+    - TransformReg params lack min/max/default metadata (use nulls)
+    - EncoderField has defaults from doc comments — map to manifest param format
+  acceptance_criteria:
+    - param-manifest.json includes a "transforms" section with all registered transforms
+    - param-manifest.json includes an "encoders" section with all registered encoders
+    - Each transform entry has name, params with types, and multi_input flag
+    - Each encoder entry has format name, params with types/defaults, and metadata flag
+    - get-filter-manifest() returns the extended manifest
+    - Existing filter/compositor/generator/mapper entries are unchanged
+    - Web UI demo still works (filter manifest is backward compatible)
+  out_of_scope: |
+    - Changing the process-chain dispatch (downstream work)
+    - Generating SDK code (fluent-sdk-codegen track)
+    - Adding new operations to the pipeline
+  technical_notes: |
+    Extend manifest.rs generate() to process data.transforms and data.encoders.
+    For transforms, map TransformReg params to manifest JSON format (name, type,
+    min/max/step as null, default as null). For encoders, map EncoderField to
+    manifest param format. Add "transforms" and "encoders" keys to root JSON.
+plan:
+  - phase: "Extend manifest generation"
+    tasks:
+      - text: "Add transforms section to manifest.rs generate() — iterate data.transforms, emit name/params/multi_input"
+        done: false
+      - text: "Add encoders section to manifest.rs generate() — iterate data.encoders, emit format/params/metadata_flag"
+        done: false
+      - text: "Map TransformReg params to manifest JSON param format (name, type, nulls for min/max/step/default)"
+        done: false
+      - text: "Map EncoderField to manifest JSON param format (name, type, default, is_enum with variants)"
+        done: false
+  - phase: "Wire up data flow"
+    tasks:
+      - text: "Ensure CodegenData includes transforms and encoders (verify build.rs passes them)"
+        done: false
+      - text: "Add transforms and encoders fields to CodegenData if not present"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "cargo component build — verify manifest includes transforms and encoders"
+        done: false
+      - text: "Verify manifest JSON is valid and backward compatible"
+        done: false
+      - text: "Verify web UI demo still loads filter manifest correctly"
+        done: false
+extra: {}

@@ -1,0 +1,91 @@
+id: fluent-sdk-codegen_20260402003401Z
+title: "Fluent SDK codegen from unified manifest (Go + Python)"
+type: feature
+status: pending
+created: 2026-04-02
+updated: 2026-04-02
+spec:
+  summary: |
+    Build a codegen tool that reads the unified param-manifest.json and generates
+    language-specific fluent Chain APIs. Start with Go, then Python. Include
+    wasmtime compile pre-warm for cold-start elimination.
+  context: |
+    The process-chain WIT function enables any language to use the pipeline via
+    wasmtime CLI, but the raw Op{Name, Params} API is untyped. A codegen step
+    can read the complete manifest (filters + transforms + encoders) and generate
+    typed fluent methods per language. This gives users IDE autocomplete, type
+    safety, and discoverable APIs while the underlying transport remains the same.
+  codebase_analysis: |
+    - param-manifest.json (after unified-manifest track) contains all operations
+    - Current Go SDK at packages/go-sdk/rcimg/pipeline.go uses Process(input, ops, output)
+    - Python SDK at packages/python-sdk/ uses wasmtime-py directly (not process-chain yet)
+    - The codegen tool should be a standalone Go program (or script) that reads
+      the manifest JSON and emits language-specific source files
+    - Go fluent API pattern: Chain type with method per op, terminal Write methods
+    - Python fluent API pattern: same Chain pattern with __getattr__ or explicit methods
+    - wasmtime compile produces a .cwasm precompiled module for near-zero cold start
+  acceptance_criteria:
+    - Codegen tool reads param-manifest.json and outputs Go source files
+    - Generated Go API provides a Chain type with a typed method per operation
+    - Generated Go API provides terminal Write methods (WritePNG, WriteJPEG, etc.)
+    - Generated code compiles and passes tests
+    - Pipeline.Compile() method pre-compiles WASM via wasmtime compile
+    - Process() uses .cwasm when available for fast startup
+    - Codegen also outputs Python fluent wrapper
+    - go generate command wired up to run codegen
+  out_of_scope: |
+    - Modifying the WASM component or WIT interface
+    - Adding new operations to the pipeline
+    - PHP/Perl/Ruby codegen (future tracks)
+    - GPU integration in the SDK
+  technical_notes: |
+    Codegen tool at packages/go-sdk/cmd/generate/main.go reads manifest JSON,
+    emits packages/go-sdk/rcimg/chain_generated.go with Chain type and methods.
+    Each filter method returns *Chain (builder pattern). Terminal methods call
+    Process() internally. Pipeline.Compile() runs wasmtime compile, Process()
+    checks for .cwasm and uses --allow-precompiled flag.
+
+    Go method naming: snake_case manifest names -> PascalCase Go methods.
+    Params: each param becomes a named argument with its Go type.
+    No-param ops: method takes no arguments.
+
+    Python output: packages/python-sdk/rasmcore/chain_generated.py with same
+    pattern adapted to Python conventions.
+plan:
+  - phase: "Go Chain type foundation"
+    tasks:
+      - text: "Create packages/go-sdk/rcimg/chain.go with Chain struct, Read(), and internal add() method"
+        done: false
+      - text: "Add terminal methods WritePNG(), WriteJPEG(), WriteWebP() that call Process()"
+        done: false
+      - text: "Add Pipeline.Compile() that runs wasmtime compile to produce .cwasm"
+        done: false
+      - text: "Update Process() to use .cwasm with --allow-precompiled when available"
+        done: false
+  - phase: "Codegen tool"
+    tasks:
+      - text: "Create packages/go-sdk/cmd/generate/main.go — reads manifest JSON path from args"
+        done: false
+      - text: "Implement Go code generation — Chain method per filter/transform with typed params"
+        done: false
+      - text: "Implement Go encoder terminal methods from manifest encoders section"
+        done: false
+      - text: "Add go:generate directive to chain.go that invokes the codegen tool"
+        done: false
+  - phase: "Python codegen"
+    tasks:
+      - text: "Add Python output mode to codegen tool (or separate script)"
+        done: false
+      - text: "Generate packages/python-sdk/rasmcore/chain_generated.py with Chain class"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "go generate and verify generated code compiles"
+        done: false
+      - text: "Write Go test using fluent API — pipe.Read(img).Invert().Invert().WritePNG()"
+        done: false
+      - text: "Write Python test using fluent API"
+        done: false
+      - text: "Test Pipeline.Compile() produces .cwasm and Process() uses it"
+        done: false
+extra: {}
