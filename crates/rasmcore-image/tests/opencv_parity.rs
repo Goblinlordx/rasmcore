@@ -1510,3 +1510,112 @@ fn pyr_up_all_images_match_opencv() {
         assert!(m <= 5, "pyr_up {name}: max_err={m} > 5");
     }
 }
+
+// ─── Harris Corner Detection Parity ──────────────────────────────────────
+
+#[test]
+fn harris_corners_vs_opencv() {
+    let venv = format!(
+        "{}/../../tests/fixtures/.venv/bin/python3",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    if !std::path::Path::new(&venv).exists() {
+        eprintln!("SKIP: venv not found for Harris parity test");
+        return;
+    }
+
+    // Generate a test image: white rectangle on black background
+    let w = 64u32;
+    let h = 64u32;
+    let mut pixels = vec![0u8; (w * h) as usize];
+    for y in 15..49u32 {
+        for x in 15..49u32 {
+            pixels[(y * w + x) as usize] = 255;
+        }
+    }
+
+    let info = ImageInfo {
+        width: w, height: h,
+        format: PixelFormat::Gray8,
+        color_space: ColorSpace::Srgb,
+    };
+
+    // Our Harris corners
+    let our_corners = rasmcore_image::domain::filters::harris_corners(
+        &pixels, &info, 0.04, 1000.0, 3, 3,
+    ).unwrap();
+
+    // OpenCV Harris corners via Python
+    let pixel_hex: String = pixels.iter().map(|b| format!("{b:02x}")).collect();
+    let script = format!(
+        r#"
+import sys, numpy as np, cv2
+px = bytes.fromhex("{pixel_hex}")
+img = np.frombuffer(px, dtype=np.uint8).reshape({h}, {w})
+dst = cv2.cornerHarris(img.astype(np.float32), blockSize=3, ksize=3, k=0.04)
+# Threshold and find corner positions
+threshold = 1000.0
+corners = np.argwhere(dst > threshold)
+# Output as "y x response\n" lines
+for (y, x) in corners:
+    sys.stdout.write(f"{{y}} {{x}} {{dst[y,x]:.1f}}\n")
+"#,
+        pixel_hex = pixel_hex,
+        h = h,
+        w = w,
+    );
+
+    let output = std::process::Command::new(&venv)
+        .arg("-c")
+        .arg(&script)
+        .output()
+        .expect("Failed to run Python");
+
+    if !output.status.success() {
+        eprintln!("Python stderr: {}", String::from_utf8_lossy(&output.stderr));
+        panic!("OpenCV Harris reference failed");
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let cv_corners: Vec<(u32, u32)> = stdout
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(|l| {
+            let parts: Vec<&str> = l.split_whitespace().collect();
+            (parts[0].parse().unwrap(), parts[1].parse().unwrap())
+        })
+        .collect();
+
+    eprintln!("  harris_vs_opencv: ours={} corners, opencv={} corners",
+        our_corners.len(), cv_corners.len());
+
+    // Verify that each of our corners is near an OpenCV corner (within 5px)
+    for c in &our_corners {
+        let near_cv = cv_corners.iter().any(|&(cy, cx)| {
+            let dx = (c.x as i32 - cx as i32).unsigned_abs();
+            let dy = (c.y as i32 - cy as i32).unsigned_abs();
+            dx <= 5 && dy <= 5
+        });
+        assert!(
+            near_cv,
+            "Our corner ({},{}) not found near any OpenCV corner",
+            c.x, c.y
+        );
+    }
+
+    // Verify OpenCV found corners in roughly the same regions
+    // (we use NMS so may have fewer, but should cover all 4 rectangle corners)
+    let expected_regions = [(15, 15), (48, 15), (15, 48), (48, 48)];
+    for (ex, ey) in &expected_regions {
+        let found_ours = our_corners.iter().any(|c| {
+            (c.x as i32 - *ex as i32).unsigned_abs() <= 5
+                && (c.y as i32 - *ey as i32).unsigned_abs() <= 5
+        });
+        let found_cv = cv_corners.iter().any(|&(cy, cx)| {
+            (cx as i32 - *ex as i32).unsigned_abs() <= 5
+                && (cy as i32 - *ey as i32).unsigned_abs() <= 5
+        });
+        eprintln!("  corner region ({ex},{ey}): ours={found_ours}, opencv={found_cv}");
+        assert!(found_ours, "Our Harris missed corner region ({ex},{ey})");
+    }
+}
