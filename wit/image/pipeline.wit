@@ -308,6 +308,20 @@ interface pipeline {
         // ─── Multi-Frame ───
         execute-sequence: func(source: node-id, output: node-id) -> result<u32, rasmcore-error>;
 
+        // ─── Script Plugins ───
+        /// Load script plugin sources. Each string is a complete Rhai script
+        /// with metadata header (//! name, //! strategy, etc.).
+        /// Scripts are compiled and validated; errors are returned immediately.
+        /// Call this before apply-script-filter.
+        load-scripts: func(sources: list<string>) -> result<_, rasmcore-error>;
+
+        /// Apply a previously loaded script filter by name.
+        /// Config is a list of (key, value) string pairs parsed by the script.
+        apply-script-filter: func(name: string, source: node-id, config: list<tuple<string, string>>) -> result<node-id, rasmcore-error>;
+
+        /// List the names of all loaded script filters.
+        list-script-filters: func() -> list<string>;
+
         // ─── Graph Description ───
         /// Return the graph description as a JSON string.
         /// Lists all nodes with their kind, name, upstreams, and output info.

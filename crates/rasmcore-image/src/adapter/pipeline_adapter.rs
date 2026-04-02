@@ -284,6 +284,8 @@ pub struct PipelineResource {
     metadata_filter: RefCell<rasmcore_pipeline::MetadataFilter>,
     /// Whether to auto-cleanup graph state after write operations.
     auto_cleanup: std::cell::Cell<bool>,
+    /// Script plugin registry (loaded via load-scripts WIT method).
+    script_registry: RefCell<Option<domain::script_plugin::ScriptRegistry>>,
 }
 
 impl PipelineResource {
@@ -305,6 +307,7 @@ impl GuestImagePipeline for PipelineResource {
             layer_cache: RefCell::new(None),
             metadata_filter: RefCell::new(rasmcore_pipeline::MetadataFilter::DropAll),
             auto_cleanup: std::cell::Cell::new(true),
+            script_registry: RefCell::new(None),
         }
     }
 
@@ -578,6 +581,57 @@ impl GuestImagePipeline for PipelineResource {
             .strips
             .push((parts[0].to_string(), parts[1].to_string()));
         Ok(0)
+    }
+
+    // ─── Script Plugins ───
+
+    fn load_scripts(&self, sources: Vec<String>) -> Result<(), RasmcoreError> {
+        let registry = domain::script_plugin::ScriptRegistry::new(&sources)
+            .map_err(|e| to_wit_error(domain::error::ImageError::ScriptError(e)))?;
+        *self.script_registry.borrow_mut() = Some(registry);
+        Ok(())
+    }
+
+    fn apply_script_filter(
+        &self,
+        name: String,
+        source_node: NodeId,
+        config: Vec<(String, String)>,
+    ) -> Result<NodeId, RasmcoreError> {
+        let registry_ref = self.script_registry.borrow();
+        let registry = registry_ref.as_ref().ok_or_else(|| {
+            to_wit_error(domain::error::ImageError::ScriptError(
+                "no scripts loaded — call load-scripts first".to_string(),
+            ))
+        })?;
+
+        let info = {
+            let graph = self.graph.borrow();
+            graph
+                .node_info(source_node)
+                .map_err(|e| to_wit_error(e))?
+        };
+
+        let params: std::collections::HashMap<String, String> = config.into_iter().collect();
+        let node = domain::script_plugin::dispatch_script_filter(
+            registry,
+            &name,
+            source_node,
+            info,
+            &params,
+        )
+        .map_err(|e| to_wit_error(domain::error::ImageError::ScriptError(e)))?;
+
+        let id = self.graph.borrow_mut().add_node(node);
+        Ok(id)
+    }
+
+    fn list_script_filters(&self) -> Vec<String> {
+        self.script_registry
+            .borrow()
+            .as_ref()
+            .map(|r| r.list().into_iter().map(|s| s.to_string()).collect())
+            .unwrap_or_default()
     }
 
     // ─── Graph Description ───
