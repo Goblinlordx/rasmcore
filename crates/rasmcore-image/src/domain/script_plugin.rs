@@ -577,6 +577,33 @@ impl ImageNode for ScriptNode {
     }
 }
 
+impl rasmcore_pipeline::gpu::GpuCapable for ScriptNode {
+    fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        if self.script.metadata.strategy != ScriptStrategy::Gpu {
+            return None;
+        }
+
+        let engine = create_engine();
+        let mut scope = Scope::new();
+        let shader_src = engine
+            .call_fn::<String>(&mut scope, &self.script.ast, "gpu_shader", ())
+            .ok()?;
+
+        // Pack width/height as uniform params (8 bytes, little-endian)
+        let mut params = Vec::with_capacity(8);
+        params.extend_from_slice(&width.to_le_bytes());
+        params.extend_from_slice(&height.to_le_bytes());
+
+        Some(vec![rasmcore_pipeline::gpu::GpuOp::Compute {
+            shader: shader_src,
+            entry_point: "main",
+            workgroup_size: [256, 1, 1],
+            params,
+            extra_buffers: vec![],
+        }])
+    }
+}
+
 // ─── Pipeline Dispatch Integration ─────────────────────────────────────────
 
 /// Dispatch a script filter by name, returning a boxed ImageNode.
@@ -889,6 +916,68 @@ fn compute(pixels, info, params) {
         let config: HashMap<String, String> = HashMap::new();
         let node = ScriptNode::new(script, 0, info, &config);
 
+        let input_pixels = vec![0u8, 64, 128, 255];
+        let result = node
+            .compute_region(
+                Rect::new(0, 0, 4, 1),
+                &mut |_, _| Ok(input_pixels.clone()),
+            )
+            .unwrap();
+
+        assert_eq!(result, vec![255, 191, 127, 0]);
+    }
+
+    #[test]
+    fn gpu_invert_cpu_fallback_single_application() {
+        let scripts = vec![
+            r#"
+//! name: invert_gpu
+//! category: test
+//! strategy: gpu
+
+fn gpu_shader() {
+    `@group(0) @binding(0) var<storage, read> input: array<u32>;
+@group(0) @binding(1) var<storage, read_write> output: array<u32>;
+@group(0) @binding(2) var<uniform> dims: vec2<u32>;
+
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+    let idx = id.x;
+    let total = dims.x * dims.y;
+    if (idx >= total) { return; }
+    let p = input[idx];
+    let r = 255u - (p & 0xFFu);
+    let g = 255u - ((p >> 8u) & 0xFFu);
+    let b = 255u - ((p >> 16u) & 0xFFu);
+    let a = (p >> 24u) & 0xFFu;
+    output[idx] = r | (g << 8u) | (b << 16u) | (a << 24u);
+}`
+}
+
+fn compute(pixels, info, params) {
+    let out = pixels;
+    for i in range(0, out.len()) {
+        out[i] = 255 - out[i];
+    }
+    out
+}
+"#
+            .to_string(),
+        ];
+
+        let registry = ScriptRegistry::new(&scripts).unwrap();
+        let script = registry.get("invert_gpu").unwrap().clone();
+
+        let info = ImageInfo {
+            width: 4,
+            height: 1,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
+        let config: HashMap<String, String> = HashMap::new();
+        let node = ScriptNode::new(script, 0, info, &config);
+
+        // CPU fallback path (compute_region for GPU strategy)
         let input_pixels = vec![0u8, 64, 128, 255];
         let result = node
             .compute_region(
