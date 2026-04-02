@@ -394,6 +394,214 @@ impl AnalysisSink for AutoLevelsAnalysis {
     }
 }
 
+// ─── ParamMapper ─────────────────────────────────────────────────────────────
+
+/// Maps an analysis result to processing node configuration.
+///
+/// Implementors define how analysis output (histogram, crop rect, levels)
+/// translates into concrete filter parameters. This is the "bridge" between
+/// the analysis pass and the processing pass in a two-pass pipeline.
+pub trait ParamMapper {
+    /// The output config type produced by this mapper.
+    type Output;
+
+    /// Map an analysis result to a processing config.
+    fn map(&self, result: &AnalysisResult) -> Result<Self::Output, ImageError>;
+}
+
+/// Maps auto-levels analysis to (black, white, gamma) processing params.
+pub struct LevelsToLevels;
+
+/// Output of LevelsToLevels mapper.
+#[derive(Debug, Clone, Copy)]
+pub struct LevelsParams {
+    pub black: f32,
+    pub white: f32,
+    pub gamma: f32,
+}
+
+impl ParamMapper for LevelsToLevels {
+    type Output = LevelsParams;
+
+    fn map(&self, result: &AnalysisResult) -> Result<LevelsParams, ImageError> {
+        match result {
+            AnalysisResult::Levels {
+                black,
+                white,
+                gamma,
+            } => Ok(LevelsParams {
+                black: *black,
+                white: *white,
+                gamma: *gamma,
+            }),
+            _ => Err(ImageError::InvalidInput(
+                "LevelsToLevels: expected AnalysisResult::Levels".into(),
+            )),
+        }
+    }
+}
+
+/// Maps auto-crop analysis to crop rectangle params.
+pub struct CropRectToCrop;
+
+/// Output of CropRectToCrop mapper.
+#[derive(Debug, Clone, Copy)]
+pub struct CropParams {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl ParamMapper for CropRectToCrop {
+    type Output = CropParams;
+
+    fn map(&self, result: &AnalysisResult) -> Result<CropParams, ImageError> {
+        match result {
+            AnalysisResult::CropRect {
+                x,
+                y,
+                width,
+                height,
+            } => Ok(CropParams {
+                x: *x,
+                y: *y,
+                width: *width,
+                height: *height,
+            }),
+            _ => Err(ImageError::InvalidInput(
+                "CropRectToCrop: expected AnalysisResult::CropRect".into(),
+            )),
+        }
+    }
+}
+
+// ─── Two-Pass Orchestrator ───────────────────────────────────────────────────
+
+/// Two-pass pipeline orchestrator: analysis → map → process.
+///
+/// Pass 1: Executes an analysis pipeline to produce an `AnalysisResult`.
+///         Stores computed nodes to the layer cache **without pruning**.
+/// Bridge: Mapper converts the analysis result to processing params.
+/// Pass 2: Builds and executes a processing pipeline using the mapped params.
+///         Cache hits for shared upstream nodes (source, early filters).
+///         Finalizes cache with normal pruning after completion.
+///
+/// # Example
+///
+/// ```ignore
+/// let result = AnalyzeAndProcess::new()
+///     .analysis(|cache| {
+///         // Build analysis graph, return (graph, sink_node_id)
+///     })
+///     .analyze_with(AutoLevelsAnalysis::default())
+///     .mapper(LevelsToLevels)
+///     .process(|params, cache| {
+///         // Build processing graph using params, return (graph, output_node_id)
+///     })
+///     .execute()?;
+/// ```
+pub struct AnalyzeAndProcess<A, M>
+where
+    A: AnalysisSink,
+    M: ParamMapper,
+{
+    /// Builds the analysis graph. Returns (graph, terminal_node_id).
+    analysis_builder:
+        Box<dyn FnOnce(&std::rc::Rc<RefCell<rasmcore_pipeline::LayerCache>>) -> (NodeGraph, u32)>,
+    /// The analysis sink that consumes pixels and produces results.
+    analyzer: A,
+    /// Maps analysis result to processing params.
+    mapper: M,
+    /// Builds the processing graph using mapped params. Returns (graph, output_node_id).
+    process_builder: Box<
+        dyn FnOnce(
+            M::Output,
+            &std::rc::Rc<RefCell<rasmcore_pipeline::LayerCache>>,
+        ) -> (NodeGraph, u32),
+    >,
+}
+
+impl<A: AnalysisSink, M: ParamMapper> AnalyzeAndProcess<A, M> {
+    pub fn new(
+        analysis_builder: impl FnOnce(&Rc<RefCell<rasmcore_pipeline::LayerCache>>) -> (NodeGraph, u32)
+            + 'static,
+        analyzer: A,
+        mapper: M,
+        process_builder: impl FnOnce(
+                M::Output,
+                &Rc<RefCell<rasmcore_pipeline::LayerCache>>,
+            ) -> (NodeGraph, u32)
+            + 'static,
+    ) -> Self {
+        Self {
+            analysis_builder: Box::new(analysis_builder),
+            analyzer,
+            mapper,
+            process_builder: Box::new(process_builder),
+        }
+    }
+
+    /// Execute the two-pass pipeline.
+    ///
+    /// Returns the final pixel output from the processing pass.
+    pub fn execute(self) -> Result<Vec<u8>, ImageError> {
+        let cache = Rc::new(RefCell::new(rasmcore_pipeline::LayerCache::new(
+            64 * 1024 * 1024, // 64MB cache budget
+        )));
+
+        // ── Pass 1: Analysis ──
+        let (mut analysis_graph, analysis_node_id) = (self.analysis_builder)(&cache);
+        let analysis_info = analysis_graph.node_info(analysis_node_id)?;
+        let full_rect = Rect::new(0, 0, analysis_info.width, analysis_info.height);
+        let analysis_pixels = analysis_graph.request_region(analysis_node_id, full_rect)?;
+
+        // Store to cache WITHOUT pruning — pass 2 needs these entries
+        analysis_graph.store_layer_cache_no_prune();
+
+        // Run analysis sink on the materialized pixels
+        let analysis_result = self.analyzer.analyze(&analysis_pixels, &analysis_info)?;
+
+        // ── Bridge: Map result to params ──
+        let params = self.mapper.map(&analysis_result)?;
+
+        // ── Pass 2: Processing ──
+        let (mut process_graph, output_node_id) = (self.process_builder)(params, &cache);
+        let output_info = process_graph.node_info(output_node_id)?;
+        let output_rect = Rect::new(0, 0, output_info.width, output_info.height);
+        let output_pixels = process_graph.request_region(output_node_id, output_rect)?;
+
+        // Finalize with normal pruning — both passes' nodes are now in cache
+        process_graph.finalize_layer_cache();
+
+        Ok(output_pixels)
+    }
+
+    /// Execute and also return the analysis result alongside the pixels.
+    pub fn execute_with_result(self) -> Result<(Vec<u8>, AnalysisResult), ImageError> {
+        let cache = Rc::new(RefCell::new(rasmcore_pipeline::LayerCache::new(
+            64 * 1024 * 1024,
+        )));
+
+        let (mut analysis_graph, analysis_node_id) = (self.analysis_builder)(&cache);
+        let analysis_info = analysis_graph.node_info(analysis_node_id)?;
+        let full_rect = Rect::new(0, 0, analysis_info.width, analysis_info.height);
+        let analysis_pixels = analysis_graph.request_region(analysis_node_id, full_rect)?;
+        analysis_graph.store_layer_cache_no_prune();
+
+        let analysis_result = self.analyzer.analyze(&analysis_pixels, &analysis_info)?;
+        let params = self.mapper.map(&analysis_result)?;
+
+        let (mut process_graph, output_node_id) = (self.process_builder)(params, &cache);
+        let output_info = process_graph.node_info(output_node_id)?;
+        let output_rect = Rect::new(0, 0, output_info.width, output_info.height);
+        let output_pixels = process_graph.request_region(output_node_id, output_rect)?;
+        process_graph.finalize_layer_cache();
+
+        Ok((output_pixels, analysis_result))
+    }
+}
+
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
