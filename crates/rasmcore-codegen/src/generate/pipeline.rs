@@ -524,4 +524,66 @@ mod tests {
         assert!(code.contains("fn blur("));
         assert!(code.contains("filters::BlurNode::new(source, src_info, radius)"));
     }
+
+    #[test]
+    fn proxy_scale_applied_to_spatial_params() {
+        use crate::types::ParamField;
+        let filters = vec![FilterReg {
+            name: "draw_rect".to_string(),
+            category: "draw".to_string(),
+            group: String::new(),
+            variant: String::new(),
+            reference: String::new(),
+            fn_name: "draw_rect".to_string(),
+            params: vec![("config".to_string(), "&DrawRectParams".to_string())],
+            config_struct: Some("DrawRectParams".to_string()),
+            point_op: false,
+            color_op: false,
+            gpu: false,
+            derive_style: false,
+            f32_native: false,
+            rect_request: true,
+        }];
+        let mut param_structs = HashMap::new();
+        param_structs.insert(
+            "DrawRectParams".to_string(),
+            vec![
+                ParamField {
+                    name: "x".to_string(),
+                    param_type: "u32".to_string(),
+                    min: "0".to_string(),
+                    max: "8000".to_string(),
+                    step: "1".to_string(),
+                    default_val: "0".to_string(),
+                    label: String::new(),
+                    hint: "rc.pixels".to_string(),
+                    spatial: true,
+                    options: Vec::new(),
+                },
+                ParamField {
+                    name: "color_r".to_string(),
+                    param_type: "u32".to_string(),
+                    min: "0".to_string(),
+                    max: "255".to_string(),
+                    step: "1".to_string(),
+                    default_val: "0".to_string(),
+                    label: String::new(),
+                    hint: "rc.color_rgb".to_string(),
+                    spatial: false,
+                    options: Vec::new(),
+                },
+            ],
+        );
+        let code = generate_adapter_macro(&filters, &param_structs);
+        // Spatial param should have proxy_scale multiplication
+        assert!(
+            code.contains("self.proxy_scale.get()"),
+            "spatial param 'x' should be scaled by proxy_scale: {code}"
+        );
+        // Non-spatial param should NOT have proxy_scale
+        assert!(
+            code.contains("color_r: wit_config.color_r"),
+            "non-spatial param 'color_r' should NOT be scaled: {code}"
+        );
+    }
 }
