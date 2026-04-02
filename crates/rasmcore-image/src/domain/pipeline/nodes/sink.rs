@@ -225,32 +225,13 @@ pub fn write_tiled(
     graph.fuse_point_ops();
     graph.fuse_color_ops();
 
-    // Short-circuit for LUT export: extract fused CLUT, skip pixel execution
-    match format {
-        "cube" => {
-            let clut = graph.extract_all_color_ops();
-            return encoder::cube::encode(&clut);
+    // Short-circuit for LUT export: if a LUT encoder is registered for this
+    // format, extract the fused CLUT and encode directly — no pixel execution.
+    if encoder::is_lut_format(format) {
+        let clut = graph.extract_all_color_ops();
+        if let Some(result) = encoder::encode_lut(&clut, format) {
+            return result;
         }
-        "3dl" => {
-            let clut = graph.extract_all_color_ops();
-            return Ok(crate::domain::color_lut::serialize_3dl(&clut).into_bytes());
-        }
-        "csp" => {
-            let clut = graph.extract_all_color_ops();
-            return Ok(crate::domain::color_lut::serialize_csp(&clut).into_bytes());
-        }
-        "hald" => {
-            let clut = graph.extract_all_color_ops();
-            let (pixels, w, h) = crate::domain::color_lut::serialize_hald(&clut);
-            let info = crate::domain::types::ImageInfo {
-                width: w,
-                height: h,
-                format: crate::domain::types::PixelFormat::Rgb8,
-                color_space: crate::domain::types::ColorSpace::Srgb,
-            };
-            return encoder::encode(&pixels, &info, "png", None);
-        }
-        _ => {}
     }
 
     let info = graph.node_info(node_id)?;

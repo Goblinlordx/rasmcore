@@ -70,10 +70,13 @@ pub fn encode(lut: &ColorLut3D) -> Result<Vec<u8>, ImageError> {
     Ok(serialize_cube_bytes(lut, &config))
 }
 
-// NOTE: No inventory::submit! registration here. The .cube encoder takes
-// a ColorLut3D, not pixels — it doesn't fit the standard encode(pixels, info,
-// format, quality) dispatch signature. The short-circuit is handled in
-// sink::write_tiled() which calls encode() directly when format == "cube".
+inventory::submit! {
+    &crate::domain::encoder::StaticLutEncoderRegistration {
+        format: "cube",
+        extensions: &["cube"],
+        encode_fn: encode,
+    }
+}
 
 #[cfg(test)]
 mod tests {

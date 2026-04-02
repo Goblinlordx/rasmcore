@@ -2,6 +2,10 @@ pub mod avif;
 pub mod bmp;
 pub mod cube;
 pub mod dds;
+// LUT encoder modules (registered via StaticLutEncoderRegistration, not pixel encoders)
+pub mod hald;
+pub mod lut3dl;
+pub mod lutcsp;
 pub mod exr;
 pub mod fits;
 pub mod gif;
@@ -47,6 +51,44 @@ pub fn registered_encoders() -> Vec<&'static StaticEncoderRegistration> {
         .collect()
 }
 
+
+// ─── LUT Encoder Registry ───────────────────────────────────────────────────
+
+/// Static LUT encoder registration — for formats that encode a ColorLut3D
+/// instead of pixel data (e.g., .cube, .3dl, .csp, Hald CLUT).
+///
+/// LUT encoders short-circuit the pixel pipeline: they extract the fused
+/// ColorLut3D from the color op chain and serialize directly.
+pub struct StaticLutEncoderRegistration {
+    pub format: &'static str,
+    pub extensions: &'static [&'static str],
+    pub encode_fn: fn(&super::color_lut::ColorLut3D) -> Result<Vec<u8>, ImageError>,
+}
+
+inventory::collect!(&'static StaticLutEncoderRegistration);
+
+/// Try to encode a ColorLut3D using a registered LUT encoder.
+///
+/// Returns `Some(Ok(bytes))` if a LUT encoder is registered for this format,
+/// `Some(Err(...))` if the encoder failed, or `None` if no LUT encoder matches.
+pub fn encode_lut(
+    lut: &super::color_lut::ColorLut3D,
+    format: &str,
+) -> Option<Result<Vec<u8>, ImageError>> {
+    for reg in inventory::iter::<&'static StaticLutEncoderRegistration> {
+        if reg.format == format || reg.extensions.contains(&format) {
+            return Some((reg.encode_fn)(lut));
+        }
+    }
+    None
+}
+
+/// Check if a format is a registered LUT encoder format.
+pub fn is_lut_format(format: &str) -> bool {
+    inventory::iter::<&'static StaticLutEncoderRegistration>
+        .into_iter()
+        .any(|r| r.format == format || r.extensions.contains(&format))
+}
 
 /// Encode pixel data to a specific image format (convenience wrapper).
 ///
