@@ -1,29 +1,34 @@
 #!/usr/bin/env bash
 # Build the web-ui package.
-# Usage: ./scripts/web-ui-build.sh [--sdk-path PATH]
+# Usage: ./scripts/web-ui-build.sh [SDK_PATH]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 WEB_UI="$ROOT/web-ui"
 
-# Parse args
 SDK_PATH="${1:-$ROOT/sdk/typescript/generated}"
 
 echo "=== Building web-ui ==="
 echo "  SDK path: $SDK_PATH"
+
+# Verify SDK exists — rebuild if missing
+if [ ! -f "$SDK_PATH/rasmcore-image.js" ]; then
+  echo "  SDK not found — building WASM component and generating SDK..."
+  cargo component build -p rasmcore-image
+  "$ROOT/scripts/generate-ts-sdk.sh"
+fi
+
+# Copy SDK files into web-ui/sdk/ (workers import from ../sdk/)
+echo "  Syncing SDK into web-ui/sdk/..."
+mkdir -p "$WEB_UI/sdk"
+rsync -a --delete --exclude='.gitignore' "$SDK_PATH/" "$WEB_UI/sdk/"
 
 # Ensure dependencies installed
 cd "$WEB_UI"
 if [ ! -d node_modules ]; then
   echo "  Installing dependencies..."
   npm install --silent
-fi
-
-# Symlink SDK into web-ui for dev/build
-if [ -d "$SDK_PATH" ] && [ ! -e "$WEB_UI/sdk" ]; then
-  ln -sf "$SDK_PATH" "$WEB_UI/sdk"
-  echo "  Linked SDK: $SDK_PATH -> web-ui/sdk"
 fi
 
 # Type check + build
