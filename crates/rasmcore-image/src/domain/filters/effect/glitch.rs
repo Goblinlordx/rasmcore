@@ -1,0 +1,133 @@
+//! Filter: glitch (category: effect)
+//!
+//! Digital glitch / bad TV effect: horizontal scanline displacement with
+//! RGB channel offset and optional noise band corruption.
+//! Reference: PicsArt/Pixlr glitch effect.
+
+#[allow(unused_imports)]
+use crate::domain::filters::common::*;
+
+/// Deterministic hash noise — returns value in [-1.0, 1.0].
+#[inline]
+fn hash_noise(x: u32, seed: u32) -> f32 {
+    let mut h = x
+        .wrapping_mul(374761393)
+        .wrapping_add(seed.wrapping_mul(1274126177));
+    h = (h ^ (h >> 13)).wrapping_mul(1103515245);
+    h = h ^ (h >> 16);
+    (h as f32 / u32::MAX as f32) * 2.0 - 1.0
+}
+
+/// Parameters for the glitch effect.
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct GlitchParams {
+    /// Maximum horizontal displacement in pixels
+    #[param(min = 1.0, max = 100.0, step = 1.0, default = 20.0)]
+    pub shift_amount: f32,
+    /// RGB channel separation offset in pixels
+    #[param(min = 0.0, max = 30.0, step = 1.0, default = 5.0)]
+    pub channel_offset: f32,
+    /// Fraction of scanlines affected (0.0-1.0)
+    #[param(min = 0.0, max = 1.0, step = 0.05, default = 0.3)]
+    pub intensity: f32,
+    /// Band height range in scanlines
+    #[param(min = 1, max = 50, step = 1, default = 8)]
+    pub band_height: u32,
+    /// Random seed for deterministic output
+    #[param(min = 0, max = 999999, step = 1, default = 42, hint = "rc.seed")]
+    pub seed: u32,
+}
+
+#[rasmcore_macros::register_filter(
+    name = "glitch",
+    category = "effect",
+    reference = "digital glitch / bad TV scanline displacement"
+)]
+pub fn glitch(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+    config: &GlitchParams,
+) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
+    let pixels = pixels.as_slice();
+    validate_format(info.format)?;
+
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            glitch(r, &mut u, i8, config)
+        });
+    }
+    if is_f32(info.format) {
+        return process_via_standard(pixels, info, |p8, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            glitch(r, &mut u, i8, config)
+        });
+    }
+
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let ch = channels(info.format);
+    if ch < 3 {
+        return Err(ImageError::UnsupportedFormat("glitch requires RGB".into()));
+    }
+
+    let shift_amount = config.shift_amount;
+    let channel_offset = config.channel_offset as isize;
+    let intensity = config.intensity;
+    let band_h = config.band_height.max(1) as usize;
+    let seed = config.seed;
+
+    let mut out = pixels.to_vec();
+
+    // Process in horizontal bands
+    let mut y = 0;
+    let mut band_idx = 0u32;
+    while y < h {
+        let band_end = (y + band_h).min(h);
+
+        // Decide if this band is glitched (based on deterministic hash)
+        let band_noise = hash_noise(band_idx, seed);
+        let is_glitched = band_noise.abs() < intensity;
+
+        if is_glitched {
+            // Horizontal shift amount for this band
+            let shift = (hash_noise(band_idx, seed.wrapping_add(100)) * shift_amount) as isize;
+
+            for row in y..band_end {
+                for x in 0..w {
+                    let dst_idx = (row * w + x) * ch;
+
+                    // Shifted source for RGB channels with per-channel offset
+                    for c in 0..3 {
+                        let c_offset = match c {
+                            0 => channel_offset,  // Red shifts extra
+                            2 => -channel_offset, // Blue shifts opposite
+                            _ => 0,               // Green stays with main shift
+                        };
+                        let sx = (x as isize + shift + c_offset).clamp(0, w as isize - 1) as usize;
+                        let src_idx = (row * w + sx) * ch;
+                        out[dst_idx + c] = pixels[src_idx + c];
+                    }
+                    // Alpha unchanged
+                    if ch == 4 {
+                        out[dst_idx + 3] = pixels[(row * w + x) * ch + 3];
+                    }
+                }
+            }
+        }
+
+        y = band_end;
+        band_idx += 1;
+    }
+
+    Ok(out)
+}
