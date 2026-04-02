@@ -1,0 +1,142 @@
+id: lut-encoder-decoder_20260402030023Z
+title: ".cube LUT encoder + decoder — export/import color op chains as 3D LUT files"
+type: feature
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Add .cube file encoder and decoder. The encoder short-circuits the pipeline:
+    instead of executing the graph and encoding pixels, it runs fuse_color_ops(),
+    extracts the fused ColorLut3D, and serializes to .cube format. The decoder
+    parses a .cube file and injects a FusedClutNode into the graph. No pixels
+    are involved in either direction.
+  context: |
+    DaVinci Resolve can "Generate LUT" from a color grading node chain. No
+    open-source image library offers this. rasmcore already has all the building
+    blocks:
+    - fuse_color_ops() walks the graph and composes consecutive color_op nodes
+      into a single FusedClutNode (graph.rs:1127-1173)
+    - ColorLut3D with compose_cluts(), from_fn(), lookup() (color_lut.rs)
+    - parse_cube_lut() reads .cube files (color_lut.rs:262-355)
+    - 13 filters registered with color_op="true" that produce CLUTs
+    - as_color_lut_op() trait method on ImageNode
+
+    The missing piece is trivial: serialize ColorLut3D back to .cube text,
+    and wire the encoder/decoder to short-circuit the pixel pipeline.
+
+    This gives rasmcore a unique capability among image processing libraries:
+    programmatic LUT generation from composable color operations.
+  codebase_analysis: |
+    ENCODER SIDE:
+    - sink.rs write_tiled() calls fuse_color_ops() at line 226 before encoding
+    - After fusion, color_op chains become FusedClutNode with as_color_lut_op()
+    - The encoder needs a new branch: if format=="cube", skip pixel execution,
+      extract the fused CLUT, serialize to .cube text
+    - .cube format is trivial text: header + RGB triplets (one per line)
+    - Existing parse_cube_lut shows the format (LUT_3D_SIZE N, then N^3 lines)
+    - R varies fastest, then G, then B — matches ColorLut3D internal order
+
+    DECODER SIDE:
+    - parse_cube_lut() already returns ColorLut3D (color_lut.rs:262-355)
+    - Need to register .cube as a decodable format
+    - Decoder returns a FusedClutNode (or equivalent) that can be composed
+      with further color ops in the pipeline
+    - No pixels produced — the CLUT IS the decoded data
+
+    PIPELINE BEHAVIOR:
+    - read("input.cube") → injects FusedClutNode as source
+    - color_op nodes chain on top → compose via fuse_color_ops()
+    - write("output.cube") → extract fused CLUT → serialize
+    - write("output.png") from a .cube source → ERROR or apply to identity image
+    - read("photo.jpg") + color ops + write("output.cube") → ignore image source,
+      fuse color ops only, serialize CLUT
+
+    REGISTRATION:
+    - Encoder: StaticEncoderRegistration (name="cube", format="cube",
+      mime="application/cube-lut", extensions=["cube"])
+    - Decoder: detect_format should recognize .cube by "LUT_3D_SIZE" header text
+  acceptance_criteria:
+    - write("output.cube") produces valid .cube file from color op chain
+    - Round-trip test passes — parse .cube, re-export, parse again, CLUTs match
+    - Composed color ops (hue_rotate + asc_cdl + saturate) produce correct fused .cube
+    - read("input.cube") correctly injects CLUT into pipeline
+    - read("input.cube") + more color ops + write("output.cube") composes correctly
+    - Grid size defaults to 33 (industry standard), configurable
+    - .cube output matches parse_cube_lut input format exactly
+    - No pixel execution occurs for .cube → .cube pipeline
+    - cargo build + cargo component build succeed
+  out_of_scope: |
+    Hald CLUT image export (future — trivial given ColorLut3D + PNG encoder).
+    1D LUT export (3D captures everything including cross-channel ops).
+    Other LUT formats (.csp, .3dl, .spi3d) — can add later as separate encoders.
+    LUT visualization or preview. LUT optimization/reduction.
+  technical_notes: |
+    ENCODER IMPLEMENTATION:
+    1. Add encoder/cube.rs with:
+       - CubeEncodeConfig { grid_size: usize, title: Option<String> }
+       - fn serialize_cube(lut: &ColorLut3D, config: &CubeEncodeConfig) -> String
+       - Format: "LUT_3D_SIZE {N}\n" then N^3 lines of "R G B\n" (6 decimal places)
+       - inventory::submit! registration
+    2. Modify sink.rs write path:
+       - After fuse_color_ops(), if format == "cube":
+         - Walk graph to find the terminal FusedClutNode (or compose all color_op nodes)
+         - If no color ops found, export identity CLUT
+         - Call serialize_cube() and return bytes
+         - Skip pixel execution entirely
+
+    DECODER IMPLEMENTATION:
+    1. Add decoder support for .cube format detection:
+       - detect_format: check for "LUT_3D_SIZE" in first 512 bytes of text
+    2. When .cube is decoded:
+       - Call existing parse_cube_lut()
+       - Return a special decoded result that carries a ColorLut3D
+       - Pipeline source node wraps this as a FusedClutNode
+    3. Pipeline behavior:
+       - If source is CLUT and sink is .cube: pure CLUT composition, no pixels
+       - If source is CLUT and sink is image format: apply CLUT to identity
+         gradient or error (TBD)
+
+    TESTING:
+    - Unit test: serialize identity CLUT → parse back → exact match
+    - Unit test: serialize composed ops → parse back → apply to test pixels →
+      compare vs applying ops directly
+    - Round-trip: .cube file → parse → serialize → byte-equal
+    - Integration: pipeline with color ops → write .cube → read .cube →
+      apply to image → compare vs original pipeline
+plan:
+  - phase: Encoder
+    tasks:
+      - text: Add encoder/cube.rs with serialize_cube(lut, config) -> String
+        done: false
+      - text: Add CubeEncodeConfig with grid_size (default 33) and optional title
+        done: false
+      - text: Register .cube encoder via inventory::submit!
+        done: false
+      - text: Modify sink write path to short-circuit for format=="cube" — extract fused CLUT, skip pixel execution
+        done: false
+      - text: Unit test — identity CLUT serializes to valid .cube, round-trips through parse_cube_lut
+        done: false
+      - text: Unit test — composed color ops (hue_rotate + saturate) produce correct .cube output
+        done: false
+  - phase: Decoder
+    tasks:
+      - text: Add .cube format detection in detect_format (check for LUT_3D_SIZE header)
+        done: false
+      - text: Add decoder path that returns ColorLut3D from .cube file via parse_cube_lut
+        done: false
+      - text: Wire decoded CLUT as FusedClutNode source in pipeline graph
+        done: false
+      - text: Unit test — read .cube, chain color ops, write .cube produces correct composed output
+        done: false
+  - phase: Integration and verification
+    tasks:
+      - text: Integration test — full pipeline with mixed ops, write .cube only captures color ops
+        done: false
+      - text: Parity test — apply exported .cube to image vs applying ops directly, pixel-exact match
+        done: false
+      - text: cargo build + cargo component build succeed
+        done: false
+      - text: Verify all existing tests pass (no regressions)
+        done: false
+extra: {}
