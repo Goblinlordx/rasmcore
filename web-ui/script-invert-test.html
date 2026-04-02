@@ -26,36 +26,26 @@
 <p class="info">
   Loads a custom <code>my_script_invert</code> Rhai script via <code>loadScripts()</code>,
   applies it once (should invert), applies it twice (should return to original).
-  Tests fusable strategy through the WASM pipeline.
+  Tests fusable strategy through the WASM pipeline.<br><br>
+  <strong>Prerequisites:</strong> <code>npm run demo:build</code> then <code>cd web-ui && npm run dev</code>
 </p>
-<button id="run" onclick="runTest()">Run Test</button>
+<button id="run" disabled>Loading SDK...</button>
 <div id="summary"></div>
 <div id="log"></div>
 
 <script type="module">
-// SDK path — adjust if serving from a different location.
-// Default: assumes `npm run demo:build` has been run and we serve from project root.
-const SDK_PATH = '../../web-ui/sdk/rasmcore-image.js';
+// Import SDK via Vite — resolves bare specifiers through node_modules
+const sdk = await import('./sdk/rasmcore-image.js');
 
-let sdk;
-
-async function init() {
-  try {
-    sdk = await import(SDK_PATH);
-    log('SDK loaded', 'info-line');
-    document.getElementById('run').disabled = false;
-  } catch (e) {
-    log(`Failed to load SDK from ${SDK_PATH}: ${e.message}`, 'fail');
-    log('Run: npm run demo:build   then serve from project root', 'info-line');
-  }
-}
+const logEl = document.getElementById('log');
+const summaryEl = document.getElementById('summary');
+const btn = document.getElementById('run');
 
 function log(msg, cls = '') {
-  const el = document.getElementById('log');
   const span = document.createElement('span');
   span.className = cls;
   span.textContent = msg + '\n';
-  el.appendChild(span);
+  logEl.appendChild(span);
 }
 
 function arraysEqual(a, b) {
@@ -66,16 +56,15 @@ function arraysEqual(a, b) {
   return true;
 }
 
-// Encode a small test image as PNG
 function createTestPng() {
   const w = 8, h = 8;
   const pixels = new Uint8Array(w * h * 3);
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const i = (y * w + x) * 3;
-      pixels[i]     = Math.floor(x * 255 / w);   // R gradient
-      pixels[i + 1] = Math.floor(y * 255 / h);   // G gradient
-      pixels[i + 2] = 128;                        // B constant
+      pixels[i]     = Math.floor(x * 255 / w);
+      pixels[i + 1] = Math.floor(y * 255 / h);
+      pixels[i + 2] = 128;
     }
   }
   return sdk.encoder.encode(pixels, {
@@ -83,14 +72,6 @@ function createTestPng() {
   }, 'png', undefined);
 }
 
-// Extract raw pixel bytes from a PNG via the pipeline
-function readPixels(pngBytes) {
-  // Use process-chain with no ops to decode → re-encode as raw PNG
-  // Then compare the PNGs byte-by-byte (lossless)
-  return pngBytes;
-}
-
-// The custom invert script — uses a unique name to prove it's the script, not the built-in
 const INVERT_SCRIPT = `
 //! name: my_script_invert
 //! category: test
@@ -106,32 +87,31 @@ let failed = 0;
 
 function assert(condition, label) {
   if (condition) {
-    log(`  PASS: ${label}`, 'pass');
+    log('  PASS: ' + label, 'pass');
     passed++;
   } else {
-    log(`  FAIL: ${label}`, 'fail');
+    log('  FAIL: ' + label, 'fail');
     failed++;
   }
 }
 
-async function runTest() {
-  const btn = document.getElementById('run');
+function runTest() {
   btn.disabled = true;
-  document.getElementById('log').textContent = '';
-  document.getElementById('summary').className = '';
-  document.getElementById('summary').style.display = 'none';
+  logEl.textContent = '';
+  summaryEl.className = '';
+  summaryEl.style.display = 'none';
   passed = 0;
   failed = 0;
 
-  try {
-    const Pipeline = sdk.pipeline.ImagePipeline;
+  const Pipeline = sdk.pipeline.ImagePipeline;
 
+  try {
     log('--- Test 1: Load custom script ---', 'info-line');
     const p1 = new Pipeline();
     p1.loadScripts([INVERT_SCRIPT]);
     const scriptNames = p1.listScriptFilters();
     assert(scriptNames.includes('my_script_invert'), 'Script "my_script_invert" registered');
-    log(`  Registered scripts: [${scriptNames.join(', ')}]`, 'info-line');
+    log('  Registered scripts: [' + scriptNames.join(', ') + ']', 'info-line');
 
     log('--- Test 2: Single apply (odd) should differ from original ---', 'info-line');
     const testPng = createTestPng();
@@ -162,28 +142,27 @@ async function runTest() {
     assert(arraysEqual(scriptResult, builtinResult), 'Script invert == built-in invert');
 
   } catch (e) {
-    log(`ERROR: ${e.message}`, 'fail');
-    log(e.stack || '', 'fail');
+    log('ERROR: ' + e.message, 'fail');
+    if (e.stack) log(e.stack, 'fail');
     failed++;
   }
 
-  const summary = document.getElementById('summary');
   if (failed === 0) {
-    summary.textContent = `ALL ${passed} TESTS PASSED`;
-    summary.className = 'pass';
+    summaryEl.textContent = 'ALL ' + passed + ' TESTS PASSED';
+    summaryEl.className = 'pass';
   } else {
-    summary.textContent = `${failed} FAILED, ${passed} passed`;
-    summary.className = 'fail';
+    summaryEl.textContent = failed + ' FAILED, ' + passed + ' passed';
+    summaryEl.className = 'fail';
   }
 
   btn.disabled = false;
 }
 
-// Expose to onclick
-window.runTest = runTest;
-
-// Auto-init
-init();
+// Ready
+btn.textContent = 'Run Test';
+btn.disabled = false;
+btn.onclick = runTest;
+log('SDK loaded — click "Run Test" to begin.', 'info-line');
 </script>
 </body>
 </html>
