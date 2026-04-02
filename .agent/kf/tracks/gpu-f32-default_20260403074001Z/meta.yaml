@@ -1,5 +1,5 @@
 title: GPU default f32 — switch GPU buffer format to F32Vec4
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-02'
