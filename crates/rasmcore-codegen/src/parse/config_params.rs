@@ -24,7 +24,10 @@ fn extract_raw(file: &syn::File) -> HashMap<String, ParsedStruct> {
         if let syn::Item::Struct(s) = item {
             let has_config_params = s.attrs.iter().any(|attr| {
                 if let syn::Meta::List(ml) = &attr.meta {
-                    ml.tokens.to_string().contains("ConfigParams")
+                    let tokens = ml.tokens.to_string();
+                    // Detect both #[derive(ConfigParams)] and #[derive(Filter)]
+                    // (the Filter derive internally generates ConfigParams functionality)
+                    tokens.contains("ConfigParams") || tokens.contains("Filter")
                 } else {
                     false
                 }
