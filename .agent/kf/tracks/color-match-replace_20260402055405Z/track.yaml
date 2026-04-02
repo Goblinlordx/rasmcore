@@ -1,58 +1,62 @@
 id: color-match-replace_20260402055405Z
-title: "Color match and replace color operations"
+title: Color match and replace color operations
 type: feature
 status: pending
 created: '2026-04-02'
 updated: '2026-04-02'
 spec:
-  summary: |
-    Add two color operations: match_color (transfer color statistics from a
+  summary: 'Add two color operations: match_color (transfer color statistics from a
+
     reference image to target) and replace_color (select pixels by HSL range
+
     and shift their hue/saturation/lightness).
-  context: |
-    Match color is in Photopea and Photoshop. Replace color is in Pixlr and
+
+    '
+  context: 'Match color is in Photopea and Photoshop. Replace color is in Pixlr and
+
     Photopea. Both are per-pixel color operations that fit the existing
+
     point-op / LUT pattern.
-  codebase_analysis: |
-    Existing color infrastructure:
+
+    '
+  codebase_analysis: 'Existing color infrastructure:
+
     - Color space conversions (HSL, LAB, etc.) in domain/color/conversions.rs
+
     - Selective color filter does per-hue-range adjustments (similar to replace_color)
+
     - hue_rotate, saturate already do global hue/sat shifts
 
-    match_color is conceptually different: it uses statistical transfer
-    (Reinhard 2001 — mean/std in LAB space) between two images.
-  acceptance_criteria:
-    - match_color filter: transfer color statistics from reference to target using Reinhard LAB method
-    - replace_color filter: select by HSL range (center hue, hue range, sat range, lum range) and shift H/S/L
-    - match_color parity test against numpy LAB statistics transfer
-    - replace_color test verifying targeted hue shift
-  out_of_scope: |
-    AI-based color harmonization. Multi-reference color matching.
-  technical_notes: |
-    match_color (Reinhard 2001):
-    1. Convert both images to LAB
-    2. Compute mean and std of L, a, b channels for source and target
-    3. For each pixel: lab_out = (lab_in - mean_src) * (std_tgt / std_src) + mean_tgt
-    4. Convert back to RGB
 
-    replace_color:
-    1. Convert pixel to HSL
-    2. If pixel falls within (center_hue +/- hue_range, sat_range, lum_range):
-       weight = smoothstep falloff at range boundaries
-       apply hue_shift, sat_shift, lum_shift scaled by weight
-    3. Convert back to RGB
-    This is similar to selective_color but with explicit center+range selection.
+    match_color is conceptually different: it uses statistical transfer
+
+    (Reinhard 2001 — mean/std in LAB space) between two images.
+
+    '
+  acceptance_criteria:
+  - match_color filter: transfer color statistics from reference to target using Reinhard LAB method
+  - replace_color filter: select by HSL range (center hue, hue range, sat range, lum range) and shift H/S/L
+  - match_color parity test against numpy LAB statistics transfer
+  - replace_color test verifying targeted hue shift
+  out_of_scope: 'AI-based color harmonization. Multi-reference color matching.
+
+    '
+  technical_notes: "match_color (Reinhard 2001):\n1. Convert both images to LAB\n2. Compute mean and std of L, a, b channels\
+    \ for source and target\n3. For each pixel: lab_out = (lab_in - mean_src) * (std_tgt / std_src) + mean_tgt\n4. Convert\
+    \ back to RGB\n\nreplace_color:\n1. Convert pixel to HSL\n2. If pixel falls within (center_hue +/- hue_range, sat_range,\
+    \ lum_range):\n   weight = smoothstep falloff at range boundaries\n   apply hue_shift, sat_shift, lum_shift scaled by\
+    \ weight\n3. Convert back to RGB\nThis is similar to selective_color but with explicit center+range selection.\n"
 plan:
-  - phase: Implementation
-    tasks:
-      - text: Implement match_color using Reinhard LAB statistics transfer
-        done: false
-      - text: Implement replace_color with HSL range selection and shift
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Parity test for match_color against numpy LAB mean/std transfer
-        done: false
-      - text: Test replace_color targeted hue shift, full suite passes
-        done: false
+- phase: Implementation
+  tasks:
+  - text: Implement match_color using Reinhard LAB statistics transfer
+    done: true
+  - text: Implement replace_color with HSL range selection and shift
+    done: true
+- phase: Verification
+  tasks:
+  - text: Parity test for match_color against numpy LAB mean/std transfer
+    done: true
+  - text: Test replace_color targeted hue shift, full suite passes
+    done: true
 extra: {}
