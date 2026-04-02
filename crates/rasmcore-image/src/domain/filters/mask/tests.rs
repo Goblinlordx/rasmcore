@@ -172,7 +172,7 @@ fn mask_invert_gray8() {
         Rect::new(0, 0, 3, 1),
         &mut |_| Ok(pixels.clone()),
         &info,
-        &MaskInvertParams {},
+        &MaskInvertParams { strength: 1.0 },
     )
     .unwrap();
     assert_eq!(result, vec![255, 127, 0]);
@@ -186,7 +186,7 @@ fn mask_invert_rgb8() {
         Rect::new(0, 0, 2, 1),
         &mut |_| Ok(pixels.clone()),
         &info,
-        &MaskInvertParams {},
+        &MaskInvertParams { strength: 1.0 },
     )
     .unwrap();
     assert_eq!(result[0], 155); // 255 - 100
