@@ -14,6 +14,8 @@ PORT="${2:-3000}"
 
 # Build WASM (release) if missing
 if [ ! -f "$WASM_FILE" ]; then
+  echo "Regenerating WIT (native build)..."
+  cargo build -p rasmcore-image --release 2>&1 | tail -3
   echo "Building WASM component (release)..."
   cargo component build -p rasmcore-image --release
 fi
