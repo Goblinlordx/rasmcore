@@ -95,9 +95,9 @@ plan:
 - phase: Integration and verification
   tasks:
   - text: Register all liquify operations as filters with appropriate params
-    done: false
+    done: true
   - text: Visual test — verify push/pinch/twirl produce expected deformation
-    done: false
+    done: true
   - text: Full test suite passes, WASM build clean
-    done: false
+    done: true
 extra: {}
