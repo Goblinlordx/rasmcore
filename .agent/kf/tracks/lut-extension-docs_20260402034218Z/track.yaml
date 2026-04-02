@@ -5,52 +5,73 @@ status: pending
 created: '2026-04-02'
 updated: '2026-04-02'
 spec:
-  summary: |
-    Add sections for LUT encoder and LUT decoder extension to docs/extending.md.
+  summary: 'Add sections for LUT encoder and LUT decoder extension to docs/extending.md.
+
     Cross-reference from agent style guide. Covers the StaticLutEncoderRegistration
+
     registry pattern, format detection, ColorLut3D parse/serialize, and the
+
     automatic pipeline short-circuit.
-  context: |
-    docs/extending.md is the unified developer guide for adding filters, codecs,
+
+    '
+  context: 'docs/extending.md is the unified developer guide for adding filters, codecs,
+
     transforms, etc. It already has sections for Adding a Filter, Adding a Decoder,
+
     Adding an Encoder. The new LUT encoder/decoder pattern (StaticLutEncoderRegistration
+
     via inventory) needs equivalent documentation so developers can add new LUT
+
     formats (.spi1d/.spi3d, etc.) without reading the implementation.
+
+    '
   acceptance_criteria:
-    - New section in docs/extending.md for Adding a LUT Encoder
-    - New section in docs/extending.md for Adding a LUT Decoder
-    - Both sections include step-by-step instructions with code examples
-    - Cross-reference from .agent/kf/code_styleguides/ pointing to docs/extending.md
-    - Table of contents updated in extending.md
-    - No source code changes
-  out_of_scope: |
-    Modifying the LUT encoder/decoder implementation. Adding new LUT formats.
-  technical_notes: |
-    LUT Encoder section should cover:
+  - New section in docs/extending.md for Adding a LUT Encoder
+  - New section in docs/extending.md for Adding a LUT Decoder
+  - Both sections include step-by-step instructions with code examples
+  - Cross-reference from .agent/kf/code_styleguides/ pointing to docs/extending.md
+  - Table of contents updated in extending.md
+  - No source code changes
+  out_of_scope: 'Modifying the LUT encoder/decoder implementation. Adding new LUT formats.
+
+    '
+  technical_notes: 'LUT Encoder section should cover:
+
     1. Create encoder module (e.g., encoder/lutspi3d.rs)
+
     2. Implement fn encode(lut: &ColorLut3D) -> Result<Vec<u8>, ImageError>
+
     3. Register via inventory::submit! with StaticLutEncoderRegistration
+
     4. Add pub mod to encoder/mod.rs
+
     5. Pipeline short-circuit is automatic (sink.rs checks is_lut_format())
 
+
     LUT Decoder section should cover:
+
     1. Add parse function to color_lut.rs (e.g., parse_spi3d)
+
     2. Add format detection in decoder/mod.rs detect_format()
+
     3. Add decode convenience function (e.g., decode_spi3d)
+
     4. Pipeline integration via NodeGraph::add_clut_source()
+
+    '
 plan:
-  - phase: Documentation
-    tasks:
-      - text: Read existing docs/extending.md structure and encoder/decoder sections
-        done: false
-      - text: Add Adding a LUT Encoder section with code examples and registration pattern
-        done: false
-      - text: Add Adding a LUT Decoder section with format detection and parse function examples
-        done: false
-      - text: Update table of contents in extending.md
-        done: false
-  - phase: Cross-reference
-    tasks:
-      - text: Add brief cross-reference in code_styleguides/ pointing to docs/extending.md LUT sections
-        done: false
+- phase: Documentation
+  tasks:
+  - text: Read existing docs/extending.md structure and encoder/decoder sections
+    done: true
+  - text: Add Adding a LUT Encoder section with code examples and registration pattern
+    done: true
+  - text: Add Adding a LUT Decoder section with format detection and parse function examples
+    done: true
+  - text: Update table of contents in extending.md
+    done: true
+- phase: Cross-reference
+  tasks:
+  - text: Add brief cross-reference in code_styleguides/ pointing to docs/extending.md LUT sections
+    done: true
 extra: {}
