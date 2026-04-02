@@ -1,0 +1,8 @@
+title: GPU default f32 — switch GPU buffer format to F32Vec4
+status: pending
+type: feature
+approved: false
+created: '2026-04-02'
+updated: '2026-04-02'
+deps:
+- f32-pipeline-infra_20260403074000Z

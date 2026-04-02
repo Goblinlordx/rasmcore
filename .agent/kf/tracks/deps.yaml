@@ -276,5 +276,14 @@ fix-filter-params-webui_20260402144500Z: []
 # Wire up LayerCache in web UI workers — no deps (WASM infrastructure completed)
 webui-wire-layer-cache_20260403064000Z: []
 
-# Bit depth handling audit — research, no deps
-bitdepth-audit_20260403070500Z: []
+# f32 pipeline — sequential dependency chain
+f32-pipeline-infra_20260403074000Z: []
+
+gpu-f32-default_20260403074001Z:
+  - f32-pipeline-infra_20260403074000Z
+
+f32-migrate-filters-wave1_20260403074002Z:
+  - f32-pipeline-infra_20260403074000Z
+
+gpu-shaders-wave1_20260403074003Z:
+  - gpu-f32-default_20260403074001Z

@@ -1,0 +1,8 @@
+title: Migrate spatial + distortion filters to native f32 compute
+status: pending
+type: refactor
+approved: false
+created: '2026-04-02'
+updated: '2026-04-02'
+deps:
+- f32-pipeline-infra_20260403074000Z

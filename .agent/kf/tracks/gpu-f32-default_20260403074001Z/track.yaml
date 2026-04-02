@@ -1,0 +1,74 @@
+id: gpu-f32-default_20260403074001Z
+title: "GPU default f32 — switch GPU buffer format to F32Vec4"
+type: feature
+status: pending
+created: '2026-04-03'
+updated: '2026-04-03'
+spec:
+  summary: |
+    Switch GPU buffer format default from U32Packed (RGBA8) to F32Vec4.
+    Existing 17 GPU-capable filters immediately get native f32 compute.
+  context: |
+    The GPU infrastructure already supports BufferFormat::F32Vec4 (defined
+    in rasmcore-pipeline/src/gpu.rs). However the default execution path
+    uses U32Packed (RGBA8 packed into u32). With the f32 pipeline, all
+    data flowing into GPU is already Rgba32f — the GPU should use F32Vec4
+    to avoid unnecessary f32-to-u8-to-f32 conversion at GPU boundaries.
+  codebase_analysis: |
+    Key files:
+    - rasmcore-pipeline/src/gpu.rs:19-24 — BufferFormat enum (U32Packed, F32Vec4)
+    - rasmcore-pipeline/src/gpu.rs:162 — execute() defaults to U32Packed
+    - rasmcore-pipeline/src/gpu.rs:172 — execute_with_format() takes explicit format
+    - domain/filter_traits.rs:107-116 — gpu_ops_with_format() defaults to gpu_ops()
+    - web-ui/src/gpu-handler.ts — browser-side WebGPU handler
+
+    17 filters have GpuFilter impls with WGSL shaders. Most shaders
+    currently unpack u32 to vec4<f32>, compute, repack. With F32Vec4
+    the unpack/repack is eliminated — data is already vec4<f32>.
+  acceptance_criteria:
+    - GPU execution defaults to F32Vec4 buffer format
+    - All 17 existing GPU shaders work with F32Vec4 input/output
+    - WGSL shaders updated to remove u32 unpack/repack where needed
+    - GPU parity tests pass (GPU output matches CPU output)
+    - Browser WebGPU handler updated for f32 buffer transfer
+    - Fallback to CPU f32 works when WebGPU unavailable
+  out_of_scope: |
+    Writing new GPU shaders for filters that lack them (separate tracks).
+    CPU filter f32 migration (separate tracks).
+  technical_notes: |
+    Most existing WGSL shaders do:
+      let packed = input[idx];
+      let r = f32((packed >> 0u) & 0xFFu) / 255.0;
+      // ... compute ...
+      output[idx] = (u32(r * 255.0) << 0u) | ...;
+
+    With F32Vec4:
+      let pixel = input[idx]; // already vec4<f32>
+      // ... compute on pixel directly ...
+      output[idx] = result; // write vec4<f32>
+
+    Simpler shaders, no precision loss from u8 quantization in intermediate steps.
+plan:
+  - phase: "GPU format switch"
+    tasks:
+      - text: "Change default BufferFormat from U32Packed to F32Vec4 in GPU executor"
+        done: false
+      - text: "Update pipeline graph GPU dispatch to pass F32Vec4 format"
+        done: false
+      - text: "Update web-ui gpu-handler.ts for f32 buffer layout (4 floats per pixel)"
+        done: false
+  - phase: "Shader updates"
+    tasks:
+      - text: "Update all 17 existing WGSL shaders to work with vec4<f32> instead of packed u32"
+        done: false
+      - text: "Remove u32 unpack/repack boilerplate from each shader"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "GPU parity tests pass — GPU f32 output matches CPU f32 output"
+        done: false
+      - text: "Web UI GPU path works with f32 buffers"
+        done: false
+      - text: "WASM component builds"
+        done: false
+extra: {}
