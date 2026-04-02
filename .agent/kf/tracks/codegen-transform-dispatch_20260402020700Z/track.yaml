@@ -1,0 +1,67 @@
+id: codegen-transform-dispatch_20260402020700Z
+title: "Add transforms to generated CLI dispatch table"
+type: feature
+status: pending
+created: 2026-04-02
+updated: 2026-04-02
+spec:
+  summary: |
+    Extend cli_dispatch.rs codegen to include transforms (flip, rotate, resize,
+    crop, auto-orient, icc-to-srgb, composite) so the C API dispatch_filter
+    handles all pipeline operations — not just filters/mappers.
+  context: |
+    The generated dispatch_filter function in domain/pipeline/dispatch.rs only
+    handles filters and mappers. Transforms (flip, rotate, resize, crop,
+    auto-orient, icc-to-srgb, composite) are not dispatchable by name. This
+    means the C FFI rasmcore_filter function cannot apply transforms, breaking
+    the FFI SDK backend for any chain that includes transforms.
+  codebase_analysis: |
+    - cli_dispatch.rs codegen at crates/rasmcore-codegen/src/generate/cli_dispatch.rs
+    - Currently takes (filters, mappers, gpu_capable_nodes) — no transforms
+    - TransformReg is already parsed and available in build.rs (all_transforms)
+    - Transform nodes live in crates/rasmcore-image/src/domain/pipeline/nodes/transform/
+    - Each transform has (name, params as (name, type) pairs, multi_input flag)
+    - Single-input transforms: flip, rotate, crop, resize, auto-orient, icc-to-srgb
+    - Multi-input: composite (fg + bg) — skip for now, needs different dispatch
+    - Params use enums (FlipDirection, Rotation, ResizeFilter) that need string parsing
+    - build.rs calls generate() at line ~65 in generate/mod.rs
+  acceptance_criteria:
+    - cli_dispatch.rs codegen accepts transforms alongside filters/mappers
+    - Generated dispatch_filter handles all single-input transforms by name
+    - Enum params (FlipDirection, Rotation, ResizeFilter) parsed from strings
+    - rasmcore_filter C API can dispatch flip, rotate, resize, crop
+    - FFI backend Go tests pass with transforms (identity chain with flip)
+    - Multi-input transforms (composite) are excluded with clear error message
+  out_of_scope: |
+    - Multi-input transform dispatch (composite needs separate API)
+    - Encoder dispatch by name (already handled by rasmcore_write format param)
+  technical_notes: |
+    Extend generate() in cli_dispatch.rs to accept &[TransformReg].
+    For each single-input transform, generate a match arm that parses
+    params from HashMap<String, String>, constructs the node, returns it.
+    Enum params need string-to-enum conversion (e.g., "horizontal" -> FlipDirection::Horizontal).
+    Wire in build.rs by passing all_transforms to generate().
+plan:
+  - phase: "Codegen extension"
+    tasks:
+      - text: "Update cli_dispatch::generate() signature to accept transforms"
+        done: false
+      - text: "Generate match arms for single-input transforms with param parsing"
+        done: false
+      - text: "Add string-to-enum conversion for FlipDirection, Rotation, ResizeFilter"
+        done: false
+      - text: "Skip multi-input transforms (composite) with unknown-filter error"
+        done: false
+  - phase: "Wire up"
+    tasks:
+      - text: "Pass all_transforms to cli_dispatch::generate() in build.rs"
+        done: false
+      - text: "Update generate_all() in generate/mod.rs to pass transforms"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "cargo build -p rasmcore-ffi — verify dispatch compiles with transforms"
+        done: false
+      - text: "Go test with FFI backend — pipe.Read().Invert().Flip(0).WritePNG() works"
+        done: false
+extra: {}
