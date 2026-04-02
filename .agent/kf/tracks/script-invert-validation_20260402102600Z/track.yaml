@@ -1,118 +1,162 @@
 id: script-invert-validation_20260402102600Z
-title: "Script invert self-inverse validation for all strategy types"
+title: Script invert self-inverse validation for all strategy types
 type: feature
 status: pending
 created: '2026-04-02'
 updated: '2026-04-02'
 spec:
-  summary: |
-    Complete compute/GPU script execution, create invert scripts for fusable/compute/GPU
+  summary: 'Complete compute/GPU script execution, create invert scripts for fusable/compute/GPU
+
     strategies, validate self-inverse property (even = identity, odd = invert) via Rust
+
     domain tests, and add a browser E2E test page for one-click WASM validation.
-  context: |
-    The script plugin system (script_plugin.rs) supports 4 strategies but only fusable is
+
+    '
+  context: 'The script plugin system (script_plugin.rs) supports 4 strategies but only fusable is
+
     fully functional. Compute and GPU compute_region() are stubs that pass through upstream
+
     pixels unchanged (lines 489-501). To validate scripting works end-to-end, we need to:
+
     1. Wire up Rhai compute() dispatch for compute strategy (pixel Blob to Rhai)
+
     2. Wire up GPU strategy: GpuCapable impl + Rhai compute() CPU fallback
+
     3. Create invert_*.rhai example scripts for fusable, compute, GPU
+
     4. Rust domain tests proving invert(invert(x)) == x for each strategy
+
     5. Add WIT methods for script loading so scripts work through WASM
+
     6. Browser E2E test page with a button to run the validation
-  codebase_analysis: |
-    script_plugin.rs:489-501 — Compute/GPU stubs returning upstream pixels unchanged.
+
+    '
+  codebase_analysis: 'script_plugin.rs:489-501 — Compute/GPU stubs returning upstream pixels unchanged.
+
     script_plugin.rs:404-434 — build_lut() works correctly for fusable strategy.
+
     script_plugin.rs:237-261 — create_engine() has helpers but no pixel buffer ops.
+
     Rhai Blob type (native Vec<u8>) supports indexing — suitable for pixel data.
+
     GpuCapable trait in rasmcore_pipeline::gpu requires gpu_ops(w,h) -> Option<Vec<GpuOp>>.
+
     FusedLutNode in graph.rs:158 is the reference GPU LUT dispatch pattern.
+
     WIT pipeline.wit has no script-related methods — need load-scripts + apply-script-filter.
+
     web-ui/ has React + Vite + pipeline-worker.ts for WASM loading in browser.
+
     tests/wasm-e2e/pipeline.test.mjs exists as Node.js-based E2E pattern.
+
     demo/build.sh handles cargo component build + jco transpile + SDK copy.
+
+    '
   acceptance_criteria:
-    - Compute strategy calls Rhai compute(pixels, info, params) with actual pixel Blob data
-    - GPU strategy implements GpuCapable for ScriptNode, calling gpu_shader() for WGSL source
-    - GPU strategy CPU fallback calls Rhai compute() same as compute strategy
-    - examples/scripts/invert_fusable.rhai exists with strategy fusable and fn lut()
-    - examples/scripts/invert_compute.rhai exists with strategy compute and fn compute()
-    - examples/scripts/invert_gpu.rhai exists with strategy gpu, fn gpu_shader(), fn compute()
-    - Rust tests pass — single invert produces inverted pixels for each strategy
-    - Rust tests pass — double invert produces original pixels (identity) for each strategy
-    - WIT pipeline exposes load-scripts and apply-script-filter methods
-    - Adapter wires WIT script methods to ScriptRegistry + dispatch
-    - Browser E2E test page loads WASM, runs invert self-inverse test, shows pass/fail
-    - All existing script_plugin tests continue to pass
-  out_of_scope: |
-    Composite strategy validation (builds sub-graphs, does not process pixels directly).
+  - Compute strategy calls Rhai compute(pixels, info, params) with actual pixel Blob data
+  - GPU strategy implements GpuCapable for ScriptNode, calling gpu_shader() for WGSL source
+  - GPU strategy CPU fallback calls Rhai compute() same as compute strategy
+  - examples/scripts/invert_fusable.rhai exists with strategy fusable and fn lut()
+  - examples/scripts/invert_compute.rhai exists with strategy compute and fn compute()
+  - examples/scripts/invert_gpu.rhai exists with strategy gpu, fn gpu_shader(), fn compute()
+  - Rust tests pass — single invert produces inverted pixels for each strategy
+  - Rust tests pass — double invert produces original pixels (identity) for each strategy
+  - WIT pipeline exposes load-scripts and apply-script-filter methods
+  - Adapter wires WIT script methods to ScriptRegistry + dispatch
+  - Browser E2E test page loads WASM, runs invert self-inverse test, shows pass/fail
+  - All existing script_plugin tests continue to pass
+  out_of_scope: 'Composite strategy validation (builds sub-graphs, does not process pixels directly).
+
     builtin() dispatch for calling native filters from compute scripts.
+
     GPU shader testing against actual GPU runtime (test shader generation + CPU fallback only).
+
     Rhai performance optimization.
+
     Modifying the main web-ui app — E2E test is a standalone page.
-  technical_notes: |
-    Compute strategy: register pixel buffer as Rhai Blob (native Vec<u8>), create info Map
+
+    '
+  technical_notes: 'Compute strategy: register pixel buffer as Rhai Blob (native Vec<u8>), create info Map
+
     with width/height/channels, call compute(blob, info, params), extract result Blob.
 
+
     GPU strategy: ScriptNode implements GpuCapable when strategy == Gpu. gpu_ops() calls
+
     gpu_shader() in Rhai to get WGSL source, packages it as GpuOp::Compute. CPU fallback
+
     reuses the compute() dispatch path.
+
 
     Invert WGSL shader: output[idx] = 255u - input[idx] per-channel, preserving alpha.
 
+
     WIT integration: add load-scripts(sources: list<string>) and
+
     apply-script-filter(name: string, upstream: node-id, config: list<tuple<string,string>>)
+
     to pipeline.wit.tmpl. Adapter creates ScriptRegistry on load-scripts, dispatches via
+
     dispatch_script_filter on apply-script-filter.
 
+
     Browser E2E: standalone HTML page at tests/browser/script-invert.html, served by Vite
+
     or static server. Loads WASM SDK, creates pipeline, applies invert 1x and 2x, compares
+
     pixels, renders pass/fail. Uses the built-in invert filter AND script-based invert
+
     (via new WIT methods) for full coverage.
+
+    '
 plan:
-  - phase: "Compute Strategy Implementation"
-    tasks:
-      - text: "Register pixel Blob and info Map types in Rhai engine (create_engine)"
-        done: false
-      - text: "Implement compute strategy execution in ScriptNode::compute_region — call Rhai compute(blob, info, params) and return result"
-        done: false
-      - text: "Write Rust test: compute invert single application produces inverted pixels"
-        done: false
-  - phase: "GPU Strategy Implementation"
-    tasks:
-      - text: "Implement GpuCapable for ScriptNode — gpu_ops() calls Rhai gpu_shader() to get WGSL, returns GpuOp::Compute"
-        done: false
-      - text: "Implement GPU CPU fallback in ScriptNode::compute_region — reuse compute() dispatch path"
-        done: false
-      - text: "Write Rust test: GPU invert CPU fallback single application produces inverted pixels"
-        done: false
-  - phase: "Example Scripts + Self-Inverse Tests"
-    tasks:
-      - text: "Create examples/scripts/invert_fusable.rhai (strategy fusable, fn lut returning 255 - input)"
-        done: false
-      - text: "Create examples/scripts/invert_compute.rhai (strategy compute, fn compute inverting each byte)"
-        done: false
-      - text: "Create examples/scripts/invert_gpu.rhai (strategy gpu, fn gpu_shader with WGSL invert + fn compute fallback)"
-        done: false
-      - text: "Write Rust test: fusable single apply = inverted, double apply = identity"
-        done: false
-      - text: "Write Rust test: compute single apply = inverted, double apply = identity"
-        done: false
-      - text: "Write Rust test: GPU (CPU fallback) single apply = inverted, double apply = identity"
-        done: false
-      - text: "Write Rust test: GPU gpu_ops() returns valid GpuOp with WGSL shader source"
-        done: false
-      - text: "Write Rust test: all 3 invert scripts appear in script_filter_manifest()"
-        done: false
-  - phase: "WIT Integration + Browser E2E"
-    tasks:
-      - text: "Add load-scripts(sources: list<string>) to pipeline.wit.tmpl"
-        done: false
-      - text: "Add apply-script-filter(name: string, upstream: node-id, config: list<tuple<string,string>>) -> result<node-id, rasmcore-error> to pipeline.wit.tmpl"
-        done: false
-      - text: "Wire adapter layer — load-scripts creates ScriptRegistry, apply-script-filter calls dispatch_script_filter"
-        done: false
-      - text: "Create tests/browser/script-invert.html — standalone page that loads WASM SDK, runs invert self-inverse test with button click, shows pass/fail"
-        done: false
-      - text: "Verify E2E — cargo component build, jco transpile, serve page, confirm button-click test passes"
-        done: false
+- phase: Compute Strategy Implementation
+  tasks:
+  - text: Register pixel Blob and info Map types in Rhai engine (create_engine)
+    done: true
+  - text: Implement compute strategy execution in ScriptNode::compute_region — call Rhai compute(blob, info, params) and return
+      result
+    done: true
+  - text: 'Write Rust test: compute invert single application produces inverted pixels'
+    done: true
+- phase: GPU Strategy Implementation
+  tasks:
+  - text: Implement GpuCapable for ScriptNode — gpu_ops() calls Rhai gpu_shader() to get WGSL, returns GpuOp::Compute
+    done: true
+  - text: Implement GPU CPU fallback in ScriptNode::compute_region — reuse compute() dispatch path
+    done: true
+  - text: 'Write Rust test: GPU invert CPU fallback single application produces inverted pixels'
+    done: true
+- phase: Example Scripts + Self-Inverse Tests
+  tasks:
+  - text: Create examples/scripts/invert_fusable.rhai (strategy fusable, fn lut returning 255 - input)
+    done: true
+  - text: Create examples/scripts/invert_compute.rhai (strategy compute, fn compute inverting each byte)
+    done: true
+  - text: Create examples/scripts/invert_gpu.rhai (strategy gpu, fn gpu_shader with WGSL invert + fn compute fallback)
+    done: true
+  - text: 'Write Rust test: fusable single apply = inverted, double apply = identity'
+    done: true
+  - text: 'Write Rust test: compute single apply = inverted, double apply = identity'
+    done: true
+  - text: 'Write Rust test: GPU (CPU fallback) single apply = inverted, double apply = identity'
+    done: true
+  - text: 'Write Rust test: GPU gpu_ops() returns valid GpuOp with WGSL shader source'
+    done: true
+  - text: 'Write Rust test: all 3 invert scripts appear in script_filter_manifest()'
+    done: true
+- phase: WIT Integration + Browser E2E
+  tasks:
+  - text: 'Add load-scripts(sources: list<string>) to pipeline.wit.tmpl'
+    done: true
+  - text: 'Add apply-script-filter(name: string, upstream: node-id, config: list<tuple<string,string>>) -> result<node-id,
+      rasmcore-error> to pipeline.wit.tmpl'
+    done: true
+  - text: Wire adapter layer — load-scripts creates ScriptRegistry, apply-script-filter calls dispatch_script_filter
+    done: true
+  - text: Create tests/browser/script-invert.html — standalone page that loads WASM SDK, runs invert self-inverse test with
+      button click, shows pass/fail
+    done: true
+  - text: Verify E2E — cargo component build, jco transpile, serve page, confirm button-click test passes
+    done: true
 extra: {}
