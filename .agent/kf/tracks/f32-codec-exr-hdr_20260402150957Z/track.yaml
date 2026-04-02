@@ -114,11 +114,11 @@ plan:
 - phase: Encoder f32 input
   tasks:
   - text: EXR encoder — accept Rgba32f input, skip u8→f32 conversion, write f32 samples directly
-    done: false
+    done: true
   - text: HDR encoder — accept Rgb32f input, skip u8→f32 conversion, pack RGBE from f32 directly
-    done: false
+    done: true
   - text: Preserve backward compat — both encoders still accept u8/u16 formats with existing conversion
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: EXR f32 round-trip parity test — decode→encode→decode bit-exact for f32-stored files

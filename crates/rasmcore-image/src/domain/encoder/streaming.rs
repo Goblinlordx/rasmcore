@@ -319,12 +319,13 @@ fn to_rgbe(r: f32, g: f32, b: f32) -> [u8; 4] {
     if max_val < 1e-32 {
         return [0, 0, 0, 0];
     }
-    let e = max_val.log2().ceil() as i32;
-    let scale = (256.0 / (2.0f32.powi(e))).min(255.0);
+    let e = max_val.log2().floor() as i32 + 1;
+    let inv_scale = 2.0f32.powi(e);
+    let scale = 256.0 / inv_scale;
     [
-        (r * scale) as u8,
-        (g * scale) as u8,
-        (b * scale) as u8,
+        (r * scale + 0.5).min(255.0) as u8,
+        (g * scale + 0.5).min(255.0) as u8,
+        (b * scale + 0.5).min(255.0) as u8,
         (e + 128) as u8,
     ]
 }

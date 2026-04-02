@@ -148,4 +148,96 @@ mod tests {
         let result = encode_pixels(&pixels, &info, &ExrEncodeConfig).unwrap();
         assert_eq!(&result[..4], &[0x76, 0x2F, 0x31, 0x01]);
     }
+
+    #[test]
+    fn encode_rgba32f() {
+        // Create 4x4 Rgba32f gradient
+        let mut pixels = Vec::with_capacity(4 * 4 * 16);
+        for i in 0..16u32 {
+            let v = i as f32 / 15.0;
+            pixels.extend_from_slice(&v.to_le_bytes()); // R
+            pixels.extend_from_slice(&(1.0 - v).to_le_bytes()); // G
+            pixels.extend_from_slice(&0.5f32.to_le_bytes()); // B
+            pixels.extend_from_slice(&1.0f32.to_le_bytes()); // A
+        }
+        let info = ImageInfo {
+            width: 4,
+            height: 4,
+            format: PixelFormat::Rgba32f,
+            color_space: ColorSpace::Srgb,
+        };
+        let result = encode_pixels(&pixels, &info, &ExrEncodeConfig).unwrap();
+        assert_eq!(&result[..4], &[0x76, 0x2F, 0x31, 0x01]);
+    }
+
+    #[test]
+    fn exr_f32_round_trip_bit_exact() {
+        use crate::domain::decoder;
+
+        // Create known f32 values — a gradient with precise values
+        let (w, h) = (4, 4);
+        let mut orig_pixels = Vec::with_capacity((w * h * 16) as usize);
+        for i in 0..(w * h) {
+            let v = i as f32 / (w * h - 1) as f32;
+            orig_pixels.extend_from_slice(&v.to_le_bytes());       // R
+            orig_pixels.extend_from_slice(&(1.0 - v).to_le_bytes()); // G
+            orig_pixels.extend_from_slice(&(v * 0.5).to_le_bytes()); // B
+            orig_pixels.extend_from_slice(&1.0f32.to_le_bytes());    // A
+        }
+
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgba32f,
+            color_space: ColorSpace::Srgb,
+        };
+
+        // Encode
+        let encoded = encode_pixels(&orig_pixels, &info, &ExrEncodeConfig).unwrap();
+
+        // Decode f32
+        let decoded = decoder::decode_f32(&encoded).unwrap();
+        assert_eq!(decoded.info.format, PixelFormat::Rgba32f);
+        assert_eq!(decoded.info.width, w);
+        assert_eq!(decoded.info.height, h);
+        assert_eq!(decoded.pixels.len(), orig_pixels.len());
+
+        // Verify bit-exact f32 round-trip
+        for i in 0..(w * h) as usize {
+            let off = i * 16;
+            for c in 0..4 {
+                let orig = f32::from_le_bytes([
+                    orig_pixels[off + c * 4],
+                    orig_pixels[off + c * 4 + 1],
+                    orig_pixels[off + c * 4 + 2],
+                    orig_pixels[off + c * 4 + 3],
+                ]);
+                let back = f32::from_le_bytes([
+                    decoded.pixels[off + c * 4],
+                    decoded.pixels[off + c * 4 + 1],
+                    decoded.pixels[off + c * 4 + 2],
+                    decoded.pixels[off + c * 4 + 3],
+                ]);
+                assert!(
+                    (orig - back).abs() < 1e-6,
+                    "pixel {i} channel {c}: orig={orig}, back={back}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn exr_standard_decode_still_rgba8() {
+        // Encode and decode via standard path — should still be Rgba8
+        let pixels: Vec<u8> = (0..(4 * 4 * 4)).map(|i| (i % 256) as u8).collect();
+        let info = ImageInfo {
+            width: 4,
+            height: 4,
+            format: PixelFormat::Rgba8,
+            color_space: ColorSpace::Srgb,
+        };
+        let encoded = encode_pixels(&pixels, &info, &ExrEncodeConfig).unwrap();
+        let decoded = crate::domain::decoder::decode(&encoded).unwrap();
+        assert_eq!(decoded.info.format, PixelFormat::Rgba8);
+    }
 }
