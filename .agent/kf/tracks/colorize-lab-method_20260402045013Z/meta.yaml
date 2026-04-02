@@ -1,0 +1,8 @@
+title: Add CIELAB colorize method as alternative to W3C/PS default
+status: pending
+type: feature
+approved: false
+created: '2026-04-02'
+updated: '2026-04-02'
+deps:
+- param-enum-options_20260402045006Z

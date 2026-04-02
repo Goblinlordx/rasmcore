@@ -1,0 +1,98 @@
+id: colorize-lab-method_20260402045013Z
+title: Add CIELAB colorize method as alternative to W3C/PS default
+type: feature
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Add a method parameter to colorize filter offering "w3c" (default,
+    current PS-standard) and "lab" (CIELAB perceptual colorize with
+    parabolic weighting, as used by libvips/sharp).
+  context: |
+    The W3C/PS colorize (SetLum/ClipColor) has a known limitation: at
+    tonal extremes (pure black, pure white), the ClipColor step collapses
+    all channels to the same value — no tinting occurs. This is correct
+    per the PS spec but produces flat results at extremes.
+
+    The CIELAB approach (used by libvips/sharp tint()) operates in
+    perceptual color space with a parabolic weighting curve that naturally
+    reduces tint at extremes without losing it entirely. This produces
+    more natural-looking results, especially in highlights and shadows.
+
+    Both approaches preserve perceived luminance — they just distribute
+    chroma differently across the tonal range.
+  codebase_analysis: |
+    Current state:
+    - ColorOp::Colorize in color_lut.rs uses W3C SetLum/ClipColor (BT.601)
+    - The amount parameter already handles lerp between original and colorized
+    - color_spaces module has Lab conversion functions (rgb_to_lab, lab_to_rgb)
+    - Need to check if Lab conversions are accurate enough for this use case
+
+    CIELAB approach (from libvips/sharp):
+    1. Convert target color from sRGB to Lab
+    2. For each pixel: compute L* from its sRGB values
+    3. Weight = 1.0 - 4.0 * (L/100 - 0.5)^2  (parabolic, max at midtones)
+    4. Output a* = target_a * weight, b* = target_b * weight
+    5. Output L* = original L* (preserved)
+    6. Convert back to sRGB
+
+    Files to modify:
+    - crates/rasmcore-image/src/domain/color_lut.rs (add method to ColorOp::Colorize)
+    - crates/rasmcore-image/src/domain/filters/color/colorize.rs (add method param)
+    - Tests: W3C tests stay for "w3c" method, add new tests for "lab" method
+
+    Depends on param-enum-options track for rich method descriptions.
+  acceptance_criteria:
+    - Colorize filter has method param with "w3c" (default) and "lab" options
+    - method="w3c" produces identical output to current implementation (no regression)
+    - method="lab" operates in CIELAB with parabolic weighting per libvips/sharp
+    - method="lab" preserves L* channel exactly
+    - method="lab" produces subtle tint on pure white (not flat white like w3c)
+    - Both methods validated with reference tests
+    - Method param uses #[param(options = "...")] with descriptions (from dep track)
+  out_of_scope: |
+    Other color spaces (OKLab, ICtCp) for future exploration.
+    Separate colorize filter (this is a single filter with a method switch).
+  technical_notes: |
+    The CIELAB approach requires sRGB-to-Lab conversion per pixel (or via CLUT).
+    The CLUT path handles this naturally — build_clut samples apply() at grid
+    points, and trilinear interpolation handles the rest. The Lab conversion
+    cost is paid once at CLUT build time, not per-pixel.
+
+    The parabolic weight formula from sharp:
+      weight = 1.0 - 4.0 * ((L_normalized - 0.5) * (L_normalized - 0.5))
+    where L_normalized = L* / 100.0 (CIELAB L* ranges 0-100).
+    Weight is 0 at L=0 and L=100, maximum 1.0 at L=50.
+
+    ColorOp enum change:
+      Colorize([f32; 3], f32)  →  Colorize { target: [f32; 3], amount: f32, lab: bool }
+    Or keep the tuple and add a separate variant:
+      ColorizeLab([f32; 3], f32)
+    Separate variant is cleaner — no breaking change to existing match arms.
+plan:
+  - phase: Core implementation
+    tasks:
+      - text: Add ColorOp::ColorizeLab variant with CIELAB parabolic weighting
+        done: false
+      - text: Add method param to ColorizeParams with options descriptions
+        done: false
+      - text: Wire method param to select ColorOp::Colorize vs ColorizeLab
+        done: false
+      - text: Verify CLUT build path works for Lab variant
+        done: false
+  - phase: Validation
+    tasks:
+      - text: Add test for method=lab with known CIELAB reference values
+        done: false
+      - text: Verify method=w3c (default) produces identical output to before
+        done: false
+      - text: Test that pure white with method=lab gets subtle tint (not flat)
+        done: false
+  - phase: Documentation
+    tasks:
+      - text: Update PARITY.md with lab method reference
+        done: false
+      - text: Update colorize.rs doc comments with both method descriptions
+        done: false
+extra: {}
