@@ -82,14 +82,19 @@ spec:
 
     EXR f32 round-trip should be bit-exact for f32-stored EXR files.
     For f16-stored EXR files, decode precision is limited to f16 range.
+
+    f16 extension (if f16-pipeline-extension track is completed first):
+    EXR decoder should also support Rgba16f output for f16-stored EXR files
+    in HalfPrecision mode — preserving native f16 without up-converting to f32.
+    EXR encoder should accept Rgba16f input and write f16 channels directly.
 plan:
   - phase: "EXR f32 decode"
     tasks:
       - text: "Modify EXR decoder to output Rgba32f — store f32 samples as LE bytes in Vec<u8> instead of quantizing to u8"
         done: false
-      - text: "Add precision-aware path — output Rgba32f in HP mode, Rgba8 in Standard mode"
+      - text: "Add precision-aware path — output Rgba32f in HP/FullPrecision mode, Rgba16f in HalfPrecision (if available), Rgba8 in Standard mode"
         done: false
-      - text: "Handle f16 and u32 EXR channels — convert to f32 at decode (already done internally)"
+      - text: "Handle f16 and u32 EXR channels — convert to f32 at decode (already done internally), or preserve f16 natively if HalfPrecision"
         done: false
       - text: "Unit test — EXR f32 decode produces correct byte count and sample values"
         done: false

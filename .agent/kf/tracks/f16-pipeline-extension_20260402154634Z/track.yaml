@@ -1,0 +1,153 @@
+id: f16-pipeline-extension_20260402154634Z
+title: "f16 pipeline extension — half-precision PixelSample, format variants, EXR native f16"
+type: feature
+status: pending
+created: 2026-04-03
+updated: 2026-04-03
+spec:
+  summary: |
+    Extend the f32 pipeline foundation with f16 (half-precision) support.
+    Add PixelSample impl for half::f16, format variants (Rgba16f, Rgb16f,
+    Gray16f), and WIT extension. Update the EXR codec to preserve native
+    f16 without up-converting to f32, halving HP memory usage for f16 content.
+  context: |
+    The f32 pipeline foundation (merged) added PixelSample trait with impls
+    for u8, u16, f32 plus PipelinePrecision flag. This track extends it
+    with f16 as a third HP tier.
+
+    f16 is ideal for:
+    - EXR workflows (f16 is the dominant EXR storage format)
+    - GPU pipelines (GPUs have native f16 ALUs, 2x throughput vs f32)
+    - Memory-sensitive HP processing (8 bytes/pixel RGBA vs 16 for f32)
+
+    The `half` crate (v2.7.1) is already a transitive dependency via `exr`.
+    Adding it as a direct dependency to rasmcore-image is trivial.
+
+    Precision: ~3.3 decimal digits, range [6e-8, 65504]. Adequate for
+    color processing but NOT for analysis filters (Harris, FFT) which
+    need f32. The PixelSample trait's MAX_VALUE for f16 is 1.0 (same
+    as f32 — normalized range).
+  codebase_analysis: |
+    Files to modify (all from the f32 foundation, extending the pattern):
+    - Cargo.toml: add half = "2.7" as direct dependency
+    - domain/types.rs: add Rgb16f, Rgba16f, Gray16f to PixelFormat, bytes_per_pixel()
+    - domain/pixel_sample.rs: add PixelSample impl for half::f16
+    - domain/filters/common/pixel_format.rs: add is_f16(), update validate_format(), channels()
+    - domain/transform/convert.rs: add f16↔u8, f16↔f32 conversion paths
+    - domain/pipeline/graph.rs: add f16 variants to pixel_format_to_u8/u8_to_pixel_format
+    - domain/pipeline/nodes/precision.rs: update PromoteNode to support f16 target
+    - wit/core/types.wit + wit/image/deps/rasmcore_core/types.wit: add f16 format variants
+    - adapter/mod.rs: add f16 format mapping
+    - bindings.rs: regenerate
+
+    Sibling tracks to update (notes only, not code changes in this track):
+    - f32-codec-exr-hdr: EXR decoder should offer Rgba16f output for f16-stored
+      EXR files (currently reads f16, converts to f32, then to u8). With this
+      track, it can output f16 directly.
+    - gpu-f32-buffers: GPU f16 is a natural follow-up (vec4<f16> storage).
+      WebGPU has f16 extension. Separate from this track.
+    - f32-filter-audit-wave1: PixelSample is already generic — filters migrated
+      to PixelSample<T> will automatically support f16 with no code changes.
+  acceptance_criteria:
+    - half crate added as direct dependency to rasmcore-image
+    - PixelSample impl for half::f16 with correct to_f32/from_f32 (delegates to half crate)
+    - Rgb16f, Rgba16f, Gray16f added to PixelFormat enum
+    - bytes_per_pixel() returns correct sizes (6, 8, 2)
+    - WIT pixel-format enum extended with rgb16f, rgba16f, gray16f
+    - WIT adapter format mapping updated
+    - validate_format() accepts f16 variants
+    - is_f16() helper added
+    - channels() handles f16 formats
+    - convert_pixels() supports f16↔u8 and f16↔f32 conversions
+    - PromoteNode supports promoting to f16 (new HalfPrecision mode or auto-select)
+    - pixel_format_to_u8/u8_to_pixel_format updated
+    - Bindings regenerated and WASM component builds
+    - Unit tests for f16 PixelSample round-trips
+    - All existing tests pass unchanged
+  out_of_scope: |
+    - GPU f16 shaders (future extension to gpu-f32-buffers track)
+    - EXR f16 decode output (handled by f32-codec-exr-hdr track, which should
+      adopt f16 output when this track completes)
+    - Individual filter f16 migration (automatic via PixelSample<T> generic)
+    - PipelinePrecision enum change (keep Standard/HighPrecision; HP selects
+      f32 or f16 based on source content, or add HalfPrecision variant)
+  technical_notes: |
+    PixelSample impl for f16:
+
+      use half::f16;
+
+      impl PixelSample for f16 {
+          const BYTE_SIZE: usize = 2;
+          const MAX_VALUE: f32 = 1.0;
+
+          fn to_f32(self) -> f32 { self.to_f32() }
+          fn from_f32(v: f32) -> Self { f16::from_f32(v) }
+
+          fn from_bytes(bytes: &[u8]) -> Vec<Self> {
+              bytes.chunks_exact(2)
+                  .map(|c| f16::from_le_bytes([c[0], c[1]]))
+                  .collect()
+          }
+          fn to_bytes(samples: &[Self]) -> Vec<u8> {
+              samples.iter().flat_map(|v| v.to_le_bytes()).collect()
+          }
+      }
+
+    Precision mode design choice:
+    Option A: Add PipelinePrecision::HalfPrecision variant. Users explicitly
+    choose f16 vs f32. Simple but adds API surface.
+    Option B: Keep Standard/HighPrecision. HP auto-selects f16 when source is
+    f16 (EXR), f32 when source is f32. Simpler API, less user control.
+    Recommend Option A — explicit is better than implicit for precision decisions.
+
+    Format naming: Using Rgb16f/Rgba16f/Gray16f (not Rgb16F or RgbF16) to
+    parallel the existing f32 naming (Rgb32f). The "f" suffix distinguishes
+    from integer Rgb16/Rgba16/Gray16.
+
+    The half crate dependency: already in the tree via exr. Adding it as a
+    direct dependency doesn't increase binary size or compile time.
+    Cargo.toml addition: half = { version = "2.7", default-features = false }
+plan:
+  - phase: "Foundation — trait and types"
+    tasks:
+      - text: "Add half crate as direct dependency in rasmcore-image Cargo.toml"
+        done: false
+      - text: "Add PixelSample impl for half::f16 in domain/pixel_sample.rs"
+        done: false
+      - text: "Add Rgb16f, Rgba16f, Gray16f to PixelFormat enum and bytes_per_pixel()"
+        done: false
+      - text: "Extend WIT pixel-format enum (core + image deps) and regenerate bindings"
+        done: false
+      - text: "Update WIT adapter format mapping (both directions)"
+        done: false
+      - text: "Update pixel_format_to_u8/u8_to_pixel_format in graph.rs"
+        done: false
+  - phase: "Helpers and conversions"
+    tasks:
+      - text: "Add is_f16() helper, update validate_format() and channels() for f16"
+        done: false
+      - text: "Add f16↔u8 and f16↔f32 conversion paths in convert.rs"
+        done: false
+      - text: "Add bytes_to_f16() and f16_to_bytes() to pixel_format helpers"
+        done: false
+      - text: "Add process_via_standard() support for f16 input (f16→u8→process→u8→f16)"
+        done: false
+  - phase: "Pipeline integration"
+    tasks:
+      - text: "Add PipelinePrecision::HalfPrecision variant"
+        done: false
+      - text: "Update PromoteNode to support f16 target format in HalfPrecision mode"
+        done: false
+      - text: "Wire HalfPrecision through WIT pipeline-precision enum and adapter"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Unit tests for f16 PixelSample — round-trip f16→f32→f16, u8→f16→u8"
+        done: false
+      - text: "convert_samples tests for f16↔u8 and f16↔f32"
+        done: false
+      - text: "WASM component build passes"
+        done: false
+      - text: "All existing tests pass unchanged (zero regression)"
+        done: false
+extra: {}
