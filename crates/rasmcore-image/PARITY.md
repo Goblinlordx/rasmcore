@@ -1,6 +1,6 @@
 # Parity Scorecard — rasmcore vs OpenCV/ImageMagick Reference
 
-Last updated: 2026-03-30
+Last updated: 2026-04-02
 
 All results from automated parity tests on 7 canonical 128x128 grayscale images
 (gradient, checker, noisy_flat, sharp_edges, photo, flat, highcontrast).
@@ -24,6 +24,11 @@ These filters produce identical output to OpenCV/ImageMagick on every pixel:
 | **Perspective warp** | OpenCV | 1/1 exact | Byte-exact |
 | **pyrUp** | OpenCV | 7/7 exact | Byte-exact |
 | **Gray-world WB** | Reference | 1/1 exact | Byte-exact |
+| **Grayscale (BT.709)** | numpy | RGB8+RGBA8 exact | Byte-exact |
+| **Colorize** | numpy | 2/2 exact | Byte-exact |
+| **Gradient map** | numpy | 2/2 exact | Byte-exact |
+| **White balance temp** | numpy | 2/2 exact | Byte-exact |
+| **Photo filter** | numpy | 2/2 exact | Byte-exact |
 
 ## Near-Exact Filters (max_err <= 1)
 
@@ -31,6 +36,7 @@ These filters produce identical output to OpenCV/ImageMagick on every pixel:
 |--------|-----------|-----------|---------------|-------|
 | **CLAHE** | OpenCV | 0.094 | 1 | Rounding in histogram bin mapping |
 | **Guided filter** | OpenCV | 0.007 | 1 | Floating-point accumulation order |
+| **Hue rotate** | numpy | 0.056 | 1 | f32 HSL roundtrip rounding at 90°/270° |
 
 ## Close Filters (MAE < 10)
 
@@ -54,7 +60,7 @@ These filters produce identical output to OpenCV/ImageMagick on every pixel:
 
 ## Summary
 
-- **13 filter operations** are byte-exact against OpenCV reference
-- **2 filter operations** within max_err=1 (CLAHE, guided filter)
+- **18 filter operations** are byte-exact against OpenCV/numpy reference
+- **3 filter operations** within max_err=1 (CLAHE, guided filter, hue rotate)
 - **3 filter operations** have minor divergence documented with root causes
 - **7 codec paths** validated with parity tests
