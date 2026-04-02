@@ -266,3 +266,6 @@ gpu-shaders-spatial_20260402020003Z:
 
 gpu-shaders-lut-point_20260402020004Z:
   - gpu-trait-batch_20260402020000Z
+
+# Script invert validation — no deps (script plugin system already exists)
+script-invert-validation_20260402102600Z: []
