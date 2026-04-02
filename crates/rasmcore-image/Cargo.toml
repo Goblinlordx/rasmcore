@@ -34,6 +34,7 @@ rustybuzz = "0.18"
 unicode-bidi = "0.3"
 unicode-linebreak = "0.1"
 bcdec_rs = "0.2"
+rhai = "1"
 
 # Native codec crates (optional, feature-gated)
 rasmcore-qoi = { path = "../rasmcore-qoi", optional = true }

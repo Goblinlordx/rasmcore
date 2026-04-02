@@ -24,6 +24,7 @@ pub mod param_types;
 pub mod pipeline;
 pub mod point_ops;
 pub mod quantize;
+pub mod script_plugin;
 pub mod smart_crop;
 pub mod transform;
 pub mod types;
