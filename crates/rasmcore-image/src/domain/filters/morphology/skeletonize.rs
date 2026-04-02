@@ -293,11 +293,20 @@ mod tests {
         let ops = params.gpu_ops(100, 100).unwrap();
         // 50 iterations × 2 sub-iterations = 100 dispatches
         assert_eq!(ops.len(), 100);
-        assert_eq!(ops[0].entry_point, "main");
-        assert_eq!(ops[0].workgroup_size, [16, 16, 1]);
-        // First op is sub-iter 0, second is sub-iter 1
-        assert_eq!(ops[0].params[8], 0); // sub_iter = 0
-        assert_eq!(ops[1].params[8], 1); // sub_iter = 1
+        match &ops[0] {
+            rasmcore_pipeline::GpuOp::Compute { entry_point, workgroup_size, params, .. } => {
+                assert_eq!(*entry_point, "main");
+                assert_eq!(*workgroup_size, [16, 16, 1]);
+                assert_eq!(params[8], 0); // sub_iter = 0
+            }
+            _ => panic!("expected Compute"),
+        }
+        match &ops[1] {
+            rasmcore_pipeline::GpuOp::Compute { params, .. } => {
+                assert_eq!(params[8], 1); // sub_iter = 1
+            }
+            _ => panic!("expected Compute"),
+        }
     }
 
     #[test]

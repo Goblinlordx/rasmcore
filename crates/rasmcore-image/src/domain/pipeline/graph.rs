@@ -3829,11 +3829,16 @@ mod gpu_lut_tests {
         };
         let ops = node.gpu_ops(64, 64).expect("should produce GPU ops");
         assert_eq!(ops.len(), 1);
-        assert_eq!(ops[0].extra_buffers.len(), 1);
-        // 33^3 = 35937 entries x 16 bytes (vec4<f32>) = 574,992 bytes
-        assert_eq!(ops[0].extra_buffers[0].len(), 33 * 33 * 33 * 16);
-        eprintln!("fused_clut_gpu_ops: shader={} bytes, lut={} bytes",
-            ops[0].shader.len(), ops[0].extra_buffers[0].len());
+        match &ops[0] {
+            rasmcore_pipeline::gpu::GpuOp::Compute { shader, extra_buffers, .. } => {
+                assert_eq!(extra_buffers.len(), 1);
+                // 33^3 = 35937 entries x 16 bytes (vec4<f32>) = 574,992 bytes
+                assert_eq!(extra_buffers[0].len(), 33 * 33 * 33 * 16);
+                eprintln!("fused_clut_gpu_ops: shader={} bytes, lut={} bytes",
+                    shader.len(), extra_buffers[0].len());
+            }
+            _ => panic!("expected Compute"),
+        }
     }
 
     #[test]
@@ -3849,8 +3854,13 @@ mod gpu_lut_tests {
         };
         let ops = node.gpu_ops(64, 64).expect("should produce GPU ops");
         assert_eq!(ops.len(), 1);
-        assert_eq!(ops[0].extra_buffers.len(), 1);
-        // 256 entries x 4 bytes (u32) = 1024 bytes
-        assert_eq!(ops[0].extra_buffers[0].len(), 256 * 4);
+        match &ops[0] {
+            rasmcore_pipeline::gpu::GpuOp::Compute { extra_buffers, .. } => {
+                assert_eq!(extra_buffers.len(), 1);
+                // 256 entries x 4 bytes (u32) = 1024 bytes
+                assert_eq!(extra_buffers[0].len(), 256 * 4);
+            }
+            _ => panic!("expected Compute"),
+        }
     }
 }
