@@ -44,23 +44,23 @@ plan:
 - phase: Rewrite polar inverse mapping
   tasks:
   - text: Rewrite polar.rs inverse_fn to use f64, pixel-center (+0.5/-0.5), and IM DePolar angle convention
-    done: false
+    done: true
   - text: Update jacobian_polar in ewa.rs to match new pixel-center and angle convention
-    done: false
+    done: true
 - phase: Update tests
   tasks:
   - text: Add im_parity_depolar test (our polar vs IM -distort DePolar, MAE < 3.0)
-    done: false
+    done: true
   - text: Tighten polar_depolar_roundtrip threshold from MAE < 30 to MAE < 3.0
-    done: false
+    done: true
   - text: Update parity.rs roundtrip test threshold and remove coordinate-mismatch documentation
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Existing im_parity_polar test still passes (depolar vs IM Polar, MAE < 3.0)
-    done: false
+    done: true
   - text: All distortion unit tests pass (no regressions)
-    done: false
+    done: true
   - text: All parity tests pass including updated roundtrip
-    done: false
+    done: true
 extra: {}

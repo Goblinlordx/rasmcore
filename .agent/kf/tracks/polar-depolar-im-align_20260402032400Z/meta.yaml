@@ -1,5 +1,5 @@
 title: Align polar filter to IM DePolar convention (fix roundtrip)
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-04-02'
