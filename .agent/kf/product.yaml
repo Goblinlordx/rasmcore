@@ -1,43 +1,62 @@
 # Product Definition — rasmcore
 name: rasmcore
-tagline: "Modular WASM Component Ecosystem for Media & Data Processing"
+tagline: "Professional-Grade Media Processing — Portable, GPU-Accelerated, f32 Everywhere"
 description: |
-  A set of interoperable Rust modules compiled to WebAssembly (WASI 0.2/0.3 Component Model)
-  providing best-in-class image, video, and data processing with simple cross-language APIs.
+  A professional-grade media processing engine built in pure Rust, compiled to WebAssembly
+  (WASI 0.2/0.3 Component Model). Provides image, audio, and video processing with
+  Photoshop/DaVinci Resolve-level quality through f32 GPU-accelerated pipelines.
 
-  The project eliminates C/C++ FFI security risks, achieves seamless portability, and enables
-  modular plugin distribution — including a sidecar pattern for patent-encumbered codecs.
+  Runs anywhere — browser, edge, cloud, native — with a single binary and clean
+  cross-language APIs. No C/C++ dependencies, no FFI risks, no platform lock-in.
+
+  Nothing else combines professional quality + universal portability + open source.
 
 vision: |
-  Build a "Universal Pure-Rust WASM Engine" — an ecosystem of interoperable components that
-  provide image processing, video processing, and data transformation capabilities across
-  any platform and language through standardized WIT interfaces.
+  Build the universal media processing engine — professional-grade image, audio, and
+  video processing that runs on any platform, in any language, through a single portable
+  package. The quality bar is Photoshop for image, Pro Tools for audio, DaVinci Resolve
+  for video — or better.
+
+  Phase 1 (current): Image — f32 GPU pipeline, 140+ filters, PS-level quality
+  Phase 2 (future):  Audio — f32 sample pipeline, SIMD DSP, professional mixing/mastering
+  Phase 3 (future):  Video — f32 frame pipeline, per-frame image processing + temporal ops
+
+  The pipeline architecture, GPU acceleration, caching, and tiling infrastructure are
+  designed to be domain-agnostic — the same node graph engine handles pixels, samples,
+  and frames.
 
 goals:
+  - Professional quality — f32 compute everywhere, matching PS/Resolve precision
+  - GPU-first processing — WebGPU/wgpu primary, CPU f32 fallback always available
   - Seamless cross-platform, cross-language portability via WASM Component Model
-  - Security-first design — eliminate C/C++ parser vulnerabilities
+  - Security-first design — pure Rust, WASM sandbox, zero C/C++ parser vulnerabilities
+  - Demand-driven tile pipeline — bounded memory, works on low-spec devices
+  - Adaptive memory management — cache quantization (Q16/Q8), GPU tiled streaming, proxy scaling
   - Modular plugin architecture with WIT interface governance
-  - Demand-driven tile pipeline with spatial cache (no full-image memory loading)
-  - Dual-level API — pipeline resource + stateless compute kernels for host-driven parallelism
-  - Deployment-portable orchestrator — same Rust code runs native (host) or WASM (wasi-threads)
-  - Feature parity with libvips and ImageMagick for image operations
-  - GPU acceleration via wgpu/WebGPU where available
+  - Feature parity with Photoshop for image operations (filters, adjustments, compositing)
   - Patent-encumbered codec support via sidecar plugin distribution
+  - Future-ready for audio and video processing using the same pipeline architecture
 
 domains:
   - name: image-processing
-    description: "Image format handling, conversion, filtering, and manipulation"
+    description: "Professional image editing — f32 GPU pipeline, 140+ filters, format codecs, compositing"
+    status: active
+  - name: audio-processing
+    description: "Professional audio processing — f32 sample pipeline, DSP ops, mixing, mastering"
+    status: future
   - name: video-processing
-    description: "Video encoding, decoding, transcoding, and frame manipulation"
-  - name: data-processing
-    description: "Data transformation, format conversion, and high-performance analytics"
+    description: "Professional video processing — per-frame image pipeline, temporal ops, codec integration"
+    status: future
   - name: core-runtime
-    description: "Shared types, buffer management, stream interfaces, and plugin hosting"
+    description: "Shared pipeline engine, GPU executor, cache, tiling, WIT interfaces, plugin hosting"
+    status: active
 
 target_users:
-  - "Application developers needing portable media/data processing"
-  - "Cross-language teams (Go, TypeScript, Python, Rust)"
-  - "High-security environments (government, military, enterprise)"
+  - "Application developers building media editing tools (web, desktop, mobile)"
+  - "Cross-language teams (Go, TypeScript, Python, Rust) needing embeddable media processing"
+  - "SaaS platforms needing server-side or edge media processing"
+  - "High-security environments (government, military, enterprise) requiring WASM sandboxing"
+  - "Creative professionals who need PS/Resolve quality in portable tooling"
 
 current_phase: implementation
 
