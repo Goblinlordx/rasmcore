@@ -114,7 +114,32 @@ pub fn detect_format(header: &[u8]) -> Option<String> {
     if header.len() >= 2 && header[0] == b'P' && header[1].is_ascii_digit() {
         return Some("pnm".to_string());
     }
+    // .cube 3D LUT (text format — check for LUT_3D_SIZE keyword)
+    if is_cube_lut(header) {
+        return Some("cube".to_string());
+    }
     None
+}
+
+/// Detect .cube LUT format by looking for LUT_3D_SIZE in the first 1024 bytes.
+fn is_cube_lut(data: &[u8]) -> bool {
+    // .cube files are UTF-8 text — check for the required LUT_3D_SIZE keyword
+    let check_len = data.len().min(1024);
+    if let Ok(text) = std::str::from_utf8(&data[..check_len]) {
+        text.contains("LUT_3D_SIZE") || text.contains("lut_3d_size")
+    } else {
+        false
+    }
+}
+
+/// Decode a .cube LUT file into a ColorLut3D.
+///
+/// This does not produce pixels — it produces a 3D lookup table that can
+/// be injected into the pipeline as a FusedClutNode source.
+pub fn decode_cube(data: &[u8]) -> Result<super::color_lut::ColorLut3D, ImageError> {
+    let text = std::str::from_utf8(data)
+        .map_err(|e| ImageError::InvalidInput(format!(".cube file is not valid UTF-8: {e}")))?;
+    super::color_lut::parse_cube_lut(text)
 }
 
 /// Check if data starts with a HEIF/HEIC/AVIF ftyp box with a recognized brand.
@@ -3226,5 +3251,70 @@ mod tests {
         let block = [0u8; 8];
         let dds = make_dds_fourcc(4, 4, b"DXT1", &block);
         assert_eq!(detect_format(&dds), Some("dds".to_string()));
+    }
+
+    // ── .cube LUT decoder tests ──────────────────────────────────────────
+
+    #[test]
+    fn detect_format_cube_lut() {
+        let cube = b"LUT_3D_SIZE 9\n0.0 0.0 0.0\n";
+        assert_eq!(detect_format(cube), Some("cube".to_string()));
+    }
+
+    #[test]
+    fn detect_format_cube_with_title() {
+        let cube = b"TITLE \"My LUT\"\nLUT_3D_SIZE 17\n0.0 0.0 0.0\n";
+        assert_eq!(detect_format(cube), Some("cube".to_string()));
+    }
+
+    #[test]
+    fn decode_cube_identity() {
+        // Build an identity .cube file
+        let mut text = String::from("LUT_3D_SIZE 5\n");
+        for b in 0..5u32 {
+            for g in 0..5u32 {
+                for r in 0..5u32 {
+                    let rf = r as f64 / 4.0;
+                    let gf = g as f64 / 4.0;
+                    let bf = b as f64 / 4.0;
+                    text.push_str(&format!("{rf:.6} {gf:.6} {bf:.6}\n"));
+                }
+            }
+        }
+        let clut = decode_cube(text.as_bytes()).unwrap();
+        assert_eq!(clut.grid_size, 5);
+        assert_eq!(clut.data.len(), 125); // 5^3
+
+        // Verify identity: lookup(r,g,b) ≈ (r,g,b)
+        let (r, g, b) = clut.lookup(0.5, 0.5, 0.5);
+        assert!((r - 0.5).abs() < 0.01);
+        assert!((g - 0.5).abs() < 0.01);
+        assert!((b - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn decode_cube_roundtrip_with_encoder() {
+        use crate::domain::color_lut::ColorLut3D;
+
+        // Create a non-trivial CLUT (channel swap)
+        let original = ColorLut3D::from_fn(9, |r, g, b| (b, r, g));
+        let cube_text = crate::domain::encoder::cube::serialize_cube(
+            &original,
+            &crate::domain::encoder::cube::CubeExportConfig::default(),
+        );
+        let decoded = decode_cube(cube_text.as_bytes()).unwrap();
+        assert_eq!(decoded.grid_size, 9);
+
+        // Verify the decoded CLUT matches the original
+        for (i, (orig, back)) in original.data.iter().zip(decoded.data.iter()).enumerate() {
+            for c in 0..3 {
+                let diff = (orig[c] - back[c]).abs();
+                assert!(
+                    diff < 1e-5,
+                    "entry {i} channel {c}: orig={}, back={}, diff={diff}",
+                    orig[c], back[c]
+                );
+            }
+        }
     }
 }

@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use crate::domain::error::ImageError;
 use crate::domain::pipeline::nodes::frame_source::FrameSourceNode;
-use crate::domain::types::{DecodedImage, FrameSequence, ImageInfo, bytes_per_pixel};
+use crate::domain::types::{ColorSpace, DecodedImage, FrameSequence, ImageInfo, PixelFormat, bytes_per_pixel};
 use rasmcore_pipeline::{Rect, SpatialCache};
 
 /// Access pattern hint for cache optimization.
@@ -744,6 +744,34 @@ impl NodeGraph {
         name: &str,
     ) -> u32 {
         self.add_node_with_hash_metadata_desc(node, hash, metadata, NodeKind::Source, name)
+    }
+
+    /// Add a 3D CLUT as a source node in the pipeline.
+    ///
+    /// This injects a `FusedClutNode` with no upstream (upstream=0, self-referential
+    /// identity). When the pipeline is used for CLUT-to-CLUT transformation
+    /// (e.g., read .cube → chain color ops → write .cube), no pixels ever exist.
+    /// The CLUT composes with subsequent color ops via `fuse_color_ops()`.
+    pub fn add_clut_source(&mut self, clut: crate::domain::color_lut::ColorLut3D) -> u32 {
+        // Use a dummy 1x1 RGB8 ImageInfo — the CLUT source never produces pixels,
+        // it only participates in color op fusion.
+        let info = ImageInfo {
+            width: 1,
+            height: 1,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Srgb,
+        };
+        let node = Box::new(FusedClutNode {
+            upstream: 0, // self-referential (source node)
+            source_info: info,
+            clut,
+        });
+        self.add_source_node(
+            node,
+            rasmcore_pipeline::ZERO_HASH,
+            rasmcore_pipeline::Metadata::default(),
+            "clut_source",
+        )
     }
 
     /// Internal: add node with hash, metadata, and explicit descriptor kind/name.
