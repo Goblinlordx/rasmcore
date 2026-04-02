@@ -10,3 +10,6 @@ mod smudge;
 pub use smudge::*;
 mod sponge;
 pub use sponge::*;
+
+#[cfg(test)]
+mod tests;
