@@ -1,245 +1,161 @@
 id: plugin-node-impl_20260402072337Z
-title: "Script plugin system — Rhai-based filter scripts as pipeline nodes"
+title: Script plugin system — Rhai-based filter scripts as pipeline nodes
 type: feature
 status: pending
 created: '2026-04-02'
 updated: '2026-04-02'
 spec:
-  summary: |
-    Implement a script-based plugin system using Rhai (pure Rust scripting
+  summary: 'Implement a script-based plugin system using Rhai (pure Rust scripting
+
     language). Users write .rhai filter scripts that declare their execution
+
     strategy and provide implementations. The engine loads, validates, and
+
     wraps scripts as pipeline nodes.
-  context: |
-    Users should be able to define custom filters without a Rust toolchain
+
+    '
+  context: 'Users should be able to define custom filters without a Rust toolchain
+
     or WASM compilation. A script file declares its node type (fusable
+
     point-op, GPU-accelerated, or CPU compute), provides the implementation,
+
     and the engine validates and wraps it as a standard pipeline node.
 
+
     Rhai was chosen because:
+
     - Pure Rust — no C dependencies, compiles to WASM natively
+
     - Rust-like syntax — familiar to the codebase
+
     - Sandboxed — no filesystem, network, or system access
+
     - Embeddable — designed for hosting in Rust applications
+
     - ~200KB compiled overhead — acceptable for the core component
+
     - Supports execution limits (max operations, max memory)
 
+
     Script plugins are the lightweight path. The WASM component approach
+
     (from the architecture doc) remains a future option for heavy/complex
+
     plugins that need compiled-code performance.
-  codebase_analysis: |
-    Plugin scripts declare one of three execution strategies:
 
-    1. FUSABLE POINT-OP: script provides a lut(input, params) -> output
-       function. Engine evaluates it for 0-255, produces [u8; 256] LUT.
-       Participates in LUT fusion chain. No compute_region needed.
-
-    2. GPU-ACCELERATED: script provides a WGSL shader string + params
-       serialization. Engine dispatches to GPU via existing GpuOp system.
-       Script also provides compute(pixels, info, params) as CPU fallback.
-
-    3. CPU COMPUTE: script provides compute(pixels, info, params) function.
-       Can call built-in filters by name via builtin() host function.
-       For spatial ops, also provides input_rect(output, bounds) -> rect.
-
-    Engine validation on load:
-    - Parse script, check it compiles
-    - Verify declared strategy matches provided functions
-    - Fusable: verify lut() returns valid u8 for all inputs 0-255
-    - GPU: verify shader string is valid WGSL (existing shader validator)
-    - Compute: verify function signature matches expected contract
-    - Validate config params schema against declared fields
-
-    Integration with existing systems:
-    - Fusable scripts participate in LUT fusion (same as built-in point-ops)
-    - GPU scripts dispatch through existing GpuOp/GpuExecutor
-    - Scripts call built-in nodes via builtin("filter_name", pixels, info, config)
-    - Script nodes appear in list_filters() and param-manifest.json
+    '
+  codebase_analysis: "Plugin scripts declare one of three execution strategies:\n\n1. FUSABLE POINT-OP: script provides a\
+    \ lut(input, params) -> output\n   function. Engine evaluates it for 0-255, produces [u8; 256] LUT.\n   Participates in\
+    \ LUT fusion chain. No compute_region needed.\n\n2. GPU-ACCELERATED: script provides a WGSL shader string + params\n \
+    \  serialization. Engine dispatches to GPU via existing GpuOp system.\n   Script also provides compute(pixels, info, params)\
+    \ as CPU fallback.\n\n3. CPU COMPUTE: script provides compute(pixels, info, params) function.\n   Can call built-in filters\
+    \ by name via builtin() host function.\n   For spatial ops, also provides input_rect(output, bounds) -> rect.\n\nEngine\
+    \ validation on load:\n- Parse script, check it compiles\n- Verify declared strategy matches provided functions\n- Fusable:\
+    \ verify lut() returns valid u8 for all inputs 0-255\n- GPU: verify shader string is valid WGSL (existing shader validator)\n\
+    - Compute: verify function signature matches expected contract\n- Validate config params schema against declared fields\n\
+    \nIntegration with existing systems:\n- Fusable scripts participate in LUT fusion (same as built-in point-ops)\n- GPU\
+    \ scripts dispatch through existing GpuOp/GpuExecutor\n- Scripts call built-in nodes via builtin(\"filter_name\", pixels,\
+    \ info, config)\n- Script nodes appear in list_filters() and param-manifest.json\n"
   acceptance_criteria:
-    - Rhai engine embedded in rasmcore-image
-    - Script file format with metadata header (name, category, strategy, params)
-    - Script loader that discovers and loads .rhai files from a directory
-    - Fusable point-op scripts produce valid LUTs and participate in fusion
-    - GPU scripts provide WGSL shaders dispatched through existing GPU system
-    - CPU compute scripts execute per-tile with upstream pixel access
-    - builtin() host function allows scripts to call existing filters by name
-    - Config params declared in script metadata, validated on load
-    - Script nodes registered and appear in filter list / param manifest
-    - Execution limits enforced (max operations, max call depth)
-    - Validation on load catches errors before pipeline execution
-    - At least 3 example scripts (one per strategy)
-    - All existing tests pass, WASM build clean
-  out_of_scope: |
-    WASM component plugins (separate future track). Script hot-reload.
+  - Rhai engine embedded in rasmcore-image
+  - Script file format with metadata header (name, category, strategy, params)
+  - Script loader that discovers and loads .rhai files from a directory
+  - Fusable point-op scripts produce valid LUTs and participate in fusion
+  - GPU scripts provide WGSL shaders dispatched through existing GPU system
+  - CPU compute scripts execute per-tile with upstream pixel access
+  - builtin() host function allows scripts to call existing filters by name
+  - Config params declared in script metadata, validated on load
+  - Script nodes registered and appear in filter list / param manifest
+  - Execution limits enforced (max operations, max call depth)
+  - Validation on load catches errors before pipeline execution
+  - At least 3 example scripts (one per strategy)
+  - All existing tests pass, WASM build clean
+  out_of_scope: 'WASM component plugins (separate future track). Script hot-reload.
+
     Script marketplace/registry. Script debugging tools.
+
     ML capability declarations (separate ML execution track).
-  technical_notes: |
-    Loading scripts:
 
-    Scripts are passed to the pipeline as source strings at construction.
-    WASM components cannot access the host filesystem — the host reads
-    script files and passes the source code in.
-
-    WIT interface:
-    ```wit
-    record pipeline-config {
-        scripts: option<list<string>>,
-    }
-    resource pipeline {
-        constructor(config: pipeline-config);
-    }
-    ```
-
-    Usage (TypeScript host):
-    ```typescript
-    const p = new Pipeline({
-        scripts: [warmTintScript, vintageScript],
-    });
-    const src = p.read(data);
-    const result = p.apply(src, "warm_tint", { warmth: 0.3 });
-    ```
-
-    Script file format — four strategies:
-
-    1. Fusable point-op:
-    ```rhai
-    //! name: warm_tint
-    //! category: color
-    //! strategy: fusable
-    //! param warmth: f32 = 0.2 [0.0, 1.0]
-
-    fn lut(input, channel, params) {
-        if channel == 0 {
-            clamp(input + params.warmth * 20.0, 0, 255)
-        } else if channel == 2 {
-            clamp(input - params.warmth * 10.0, 0, 255)
-        } else { input }
-    }
-    ```
-
-    2. GPU-accelerated:
-    ```rhai
-    //! name: custom_blur
-    //! category: spatial
-    //! strategy: gpu
-    //! param radius: f32 = 3.0 [0.1, 50.0]
-
-    fn gpu_shader() { SHADER_SOURCE }
-    fn gpu_params(width, height, params) {
-        pack_u32(width) + pack_u32(height) + pack_f32(params.radius)
-    }
-    fn gpu_workgroup() { [16, 16, 1] }
-    fn compute(pixels, info, params) {
-        builtin("blur", pixels, info, #{ radius: params.radius })
-    }
-    ```
-
-    3. CPU compute (eager, with builtin calls):
-    ```rhai
-    //! name: custom_glow
-    //! category: effect
-    //! strategy: compute
-    //! param radius: f32 = 5.0 [0.1, 50.0]
-    //! param intensity: f32 = 0.5 [0.0, 1.0]
-
-    fn compute(pixels, info, params) {
-        let blurred = builtin("blur", pixels, info, #{ radius: params.radius * 3.0 });
-        builtin("blend", pixels, blurred, info, #{ mode: "screen", opacity: params.intensity })
-    }
-    fn input_rect(output, bounds_w, bounds_h, params) {
-        expand_uniform(output, (params.radius * 9.0).ceil(), bounds_w, bounds_h)
-    }
-    ```
-
-    4. Composite (lazy graph, fluent API):
-    ```rhai
-    //! name: vintage_film
-    //! category: grading
-    //! strategy: composite
-    //! param grain: f32 = 0.3 [0.0, 1.0]
-    //! param vignette_str: f32 = 0.4 [0.0, 1.0]
-
-    fn graph(input, params) {
-        input
-            .apply("curves_master", #{ points: [[0,10],[64,50],[192,220],[255,245]] })
-            .apply("color_balance", #{ shadow_r: 10, shadow_b: 15 })
-            .apply("film_grain", #{ amount: params.grain, size: 1.5 })
-            .apply("vignette", #{ strength: params.vignette_str })
-    }
-    ```
-
-    Composite strategy details:
-    - graph() returns a NodeRef DAG description, NOT computed pixels
-    - .apply(name, config) is a single registered Rhai method on NodeRef
-    - Filter names are strings resolved at graph build time (not script load)
-    - Can reference built-in filters, other loaded scripts, or any registered filter
-    - Engine inserts the graph as a lazy sub-pipeline with full optimizations
-      (LUT fusion, GPU dispatch, tiling, caching)
-
-    Rhai integration:
-    - Use rhai crate (pure Rust, MIT license)
-    - Create Engine with sandboxed defaults (no filesystem, no network)
-    - Register NodeRef type with .apply(name, config) method
-    - Register builtin() for compute strategy
-    - Register helpers (clamp, pack_u32, pack_f32, expand_uniform, pixel_at)
-    - Set max_operations limit per compute() call
-    - Compile scripts to AST on construction (fail fast on syntax errors)
-    - Validation: check strategy matches provided functions, validate LUT
-      range, validate WGSL shaders, resolve composite filter name references
-
-    ScriptNode wrapper:
-    - Implements ImageNode trait
-    - Holds compiled AST + Rhai engine + config values
-    - Strategy-specific dispatch:
-      fusable: evaluate lut() for 0-255 -> [u8; 256]
-      gpu: call gpu_shader() + gpu_params() -> GpuOp
-      compute: call compute() per tile with pixel data
-      composite: return graph description for engine to build as sub-pipeline
+    '
+  technical_notes: "Loading scripts:\n\nScripts are passed to the pipeline as source strings at construction.\nWASM components\
+    \ cannot access the host filesystem — the host reads\nscript files and passes the source code in.\n\nWIT interface:\n\
+    ```wit\nrecord pipeline-config {\n    scripts: option<list<string>>,\n}\nresource pipeline {\n    constructor(config:\
+    \ pipeline-config);\n}\n```\n\nUsage (TypeScript host):\n```typescript\nconst p = new Pipeline({\n    scripts: [warmTintScript,\
+    \ vintageScript],\n});\nconst src = p.read(data);\nconst result = p.apply(src, \"warm_tint\", { warmth: 0.3 });\n```\n\
+    \nScript file format — four strategies:\n\n1. Fusable point-op:\n```rhai\n//! name: warm_tint\n//! category: color\n//!\
+    \ strategy: fusable\n//! param warmth: f32 = 0.2 [0.0, 1.0]\n\nfn lut(input, channel, params) {\n    if channel == 0 {\n\
+    \        clamp(input + params.warmth * 20.0, 0, 255)\n    } else if channel == 2 {\n        clamp(input - params.warmth\
+    \ * 10.0, 0, 255)\n    } else { input }\n}\n```\n\n2. GPU-accelerated:\n```rhai\n//! name: custom_blur\n//! category:\
+    \ spatial\n//! strategy: gpu\n//! param radius: f32 = 3.0 [0.1, 50.0]\n\nfn gpu_shader() { SHADER_SOURCE }\nfn gpu_params(width,\
+    \ height, params) {\n    pack_u32(width) + pack_u32(height) + pack_f32(params.radius)\n}\nfn gpu_workgroup() { [16, 16,\
+    \ 1] }\nfn compute(pixels, info, params) {\n    builtin(\"blur\", pixels, info, #{ radius: params.radius })\n}\n```\n\n\
+    3. CPU compute (eager, with builtin calls):\n```rhai\n//! name: custom_glow\n//! category: effect\n//! strategy: compute\n\
+    //! param radius: f32 = 5.0 [0.1, 50.0]\n//! param intensity: f32 = 0.5 [0.0, 1.0]\n\nfn compute(pixels, info, params)\
+    \ {\n    let blurred = builtin(\"blur\", pixels, info, #{ radius: params.radius * 3.0 });\n    builtin(\"blend\", pixels,\
+    \ blurred, info, #{ mode: \"screen\", opacity: params.intensity })\n}\nfn input_rect(output, bounds_w, bounds_h, params)\
+    \ {\n    expand_uniform(output, (params.radius * 9.0).ceil(), bounds_w, bounds_h)\n}\n```\n\n4. Composite (lazy graph,\
+    \ fluent API):\n```rhai\n//! name: vintage_film\n//! category: grading\n//! strategy: composite\n//! param grain: f32\
+    \ = 0.3 [0.0, 1.0]\n//! param vignette_str: f32 = 0.4 [0.0, 1.0]\n\nfn graph(input, params) {\n    input\n        .apply(\"\
+    curves_master\", #{ points: [[0,10],[64,50],[192,220],[255,245]] })\n        .apply(\"color_balance\", #{ shadow_r: 10,\
+    \ shadow_b: 15 })\n        .apply(\"film_grain\", #{ amount: params.grain, size: 1.5 })\n        .apply(\"vignette\",\
+    \ #{ strength: params.vignette_str })\n}\n```\n\nComposite strategy details:\n- graph() returns a NodeRef DAG description,\
+    \ NOT computed pixels\n- .apply(name, config) is a single registered Rhai method on NodeRef\n- Filter names are strings\
+    \ resolved at graph build time (not script load)\n- Can reference built-in filters, other loaded scripts, or any registered\
+    \ filter\n- Engine inserts the graph as a lazy sub-pipeline with full optimizations\n  (LUT fusion, GPU dispatch, tiling,\
+    \ caching)\n\nRhai integration:\n- Use rhai crate (pure Rust, MIT license)\n- Create Engine with sandboxed defaults (no\
+    \ filesystem, no network)\n- Register NodeRef type with .apply(name, config) method\n- Register builtin() for compute\
+    \ strategy\n- Register helpers (clamp, pack_u32, pack_f32, expand_uniform, pixel_at)\n- Set max_operations limit per compute()\
+    \ call\n- Compile scripts to AST on construction (fail fast on syntax errors)\n- Validation: check strategy matches provided\
+    \ functions, validate LUT\n  range, validate WGSL shaders, resolve composite filter name references\n\nScriptNode wrapper:\n\
+    - Implements ImageNode trait\n- Holds compiled AST + Rhai engine + config values\n- Strategy-specific dispatch:\n  fusable:\
+    \ evaluate lut() for 0-255 -> [u8; 256]\n  gpu: call gpu_shader() + gpu_params() -> GpuOp\n  compute: call compute() per\
+    \ tile with pixel data\n  composite: return graph description for engine to build as sub-pipeline\n"
 plan:
-  - phase: Rhai engine integration
-    tasks:
-      - text: Add rhai dependency to rasmcore-image
-        done: false
-      - text: Define script metadata format (header comments parsed into ScriptMetadata)
-        done: false
-      - text: Implement script loader — parse metadata, compile AST, validate strategy
-        done: false
-      - text: Add pipeline-config with scripts field to WIT pipeline constructor
-        done: false
-  - phase: ScriptNode implementation
-    tasks:
-      - text: Implement ScriptNode wrapping compiled Rhai AST as ImageNode
-        done: false
-      - text: Register NodeRef type with .apply(name, config) method for composite graphs
-        done: false
-      - text: Implement builtin() host function — call existing filters by name
-        done: false
-      - text: Implement fusable strategy — evaluate lut() for 0-255, produce LUT
-        done: false
-      - text: Implement GPU strategy — extract shader + params from script
-        done: false
-      - text: Implement compute strategy — call script compute() per tile
-        done: false
-      - text: Implement composite strategy — graph() returns NodeRef DAG, engine builds lazy sub-pipeline
-        done: false
-  - phase: Pipeline integration and validation
-    tasks:
-      - text: Add generic apply(source, filter_name, config) to WIT pipeline interface
-        done: false
-      - text: Register script nodes in filter list and param manifest
-        done: false
-      - text: Validate scripts on load (strategy matches functions, LUT range, shader validity)
-        done: false
-      - text: Composite scripts can reference built-in and other script filters by name
-        done: false
-  - phase: Examples and verification
-    tasks:
-      - text: Write example fusable script (warm_tint or similar)
-        done: false
-      - text: Write example compute script (glow effect using builtin calls)
-        done: false
-      - text: Write example composite script (vintage film look using fluent .apply chain)
-        done: false
-      - text: All existing tests pass, WASM build clean
-        done: false
+- phase: Rhai engine integration
+  tasks:
+  - text: Add rhai dependency to rasmcore-image
+    done: true
+  - text: Define script metadata format (header comments parsed into ScriptMetadata)
+    done: true
+  - text: Implement script loader — parse metadata, compile AST, validate strategy
+    done: true
+  - text: Add pipeline-config with scripts field to WIT pipeline constructor
+    done: false
+- phase: ScriptNode implementation
+  tasks:
+  - text: Implement ScriptNode wrapping compiled Rhai AST as ImageNode
+    done: true
+  - text: Register NodeRef type with .apply(name, config) method for composite graphs
+    done: true
+  - text: Implement builtin() host function — call existing filters by name
+    done: false
+  - text: Implement fusable strategy — evaluate lut() for 0-255, produce LUT
+    done: true
+  - text: Implement GPU strategy — extract shader + params from script
+    done: true
+  - text: Implement compute strategy — call script compute() per tile
+    done: true
+  - text: Implement composite strategy — graph() returns NodeRef DAG, engine builds lazy sub-pipeline
+    done: true
+- phase: Pipeline integration and validation
+  tasks:
+  - text: Add generic apply(source, filter_name, config) to WIT pipeline interface
+    done: false
+  - text: Register script nodes in filter list and param manifest
+    done: false
+  - text: Validate scripts on load (strategy matches functions, LUT range, shader validity)
+    done: false
+  - text: Composite scripts can reference built-in and other script filters by name
+    done: false
+- phase: Examples and verification
+  tasks:
+  - text: Write example fusable script (warm_tint or similar)
+    done: false
+  - text: Write example compute script (glow effect using builtin calls)
+    done: false
+  - text: Write example composite script (vintage film look using fluent .apply chain)
+    done: false
+  - text: All existing tests pass, WASM build clean
+    done: false
 extra: {}

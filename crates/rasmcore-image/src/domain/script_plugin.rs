@@ -505,6 +505,71 @@ impl ImageNode for ScriptNode {
     }
 }
 
+// ─── Pipeline Dispatch Integration ─────────────────────────────────────────
+
+/// Dispatch a script filter by name, returning a boxed ImageNode.
+///
+/// This is the runtime dispatch counterpart to the generated `dispatch_filter`.
+/// The pipeline calls generated dispatch first; if not found, tries this.
+pub fn dispatch_script_filter(
+    registry: &ScriptRegistry,
+    name: &str,
+    upstream: u32,
+    info: ImageInfo,
+    params: &HashMap<String, String>,
+) -> Result<Box<dyn ImageNode>, String> {
+    let script = registry
+        .get(name)
+        .ok_or_else(|| format!("unknown script filter: {name}"))?
+        .clone();
+
+    Ok(Box::new(ScriptNode::new(script, upstream, info, params)))
+}
+
+/// Get the list of script filter names and their metadata for the param manifest.
+pub fn script_filter_manifest(registry: &ScriptRegistry) -> Vec<ScriptFilterManifestEntry> {
+    registry
+        .scripts
+        .values()
+        .map(|s| ScriptFilterManifestEntry {
+            name: s.metadata.name.clone(),
+            category: s.metadata.category.clone(),
+            strategy: format!("{:?}", s.metadata.strategy),
+            params: s
+                .metadata
+                .params
+                .iter()
+                .map(|p| ScriptParamManifestEntry {
+                    name: p.name.clone(),
+                    param_type: p.param_type.clone(),
+                    default: p.default,
+                    min: p.min,
+                    max: p.max,
+                })
+                .collect(),
+        })
+        .collect()
+}
+
+/// Manifest entry for a script filter (for param-manifest.json integration).
+#[derive(Debug, Clone)]
+pub struct ScriptFilterManifestEntry {
+    pub name: String,
+    pub category: String,
+    pub strategy: String,
+    pub params: Vec<ScriptParamManifestEntry>,
+}
+
+/// Manifest entry for a script param.
+#[derive(Debug, Clone)]
+pub struct ScriptParamManifestEntry {
+    pub name: String,
+    pub param_type: String,
+    pub default: f64,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+}
+
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
