@@ -292,6 +292,11 @@ pub struct PipelineResource {
     script_registry: RefCell<Option<domain::script_plugin::ScriptRegistry>>,
     /// Pipeline precision mode (Standard or HighPrecision).
     precision: std::cell::Cell<domain::pixel_sample::PipelinePrecision>,
+    /// Proxy scale factor for automatic spatial parameter scaling.
+    /// Default 1.0 = full resolution (no scaling). Values < 1.0 indicate
+    /// working at reduced resolution; spatial params (hint = rc.pixels)
+    /// are multiplied by this factor before reaching domain code.
+    proxy_scale: std::cell::Cell<f32>,
 }
 
 impl PipelineResource {
@@ -313,6 +318,7 @@ impl GuestImagePipeline for PipelineResource {
             metadata_filter: RefCell::new(rasmcore_pipeline::MetadataFilter::DropAll),
             script_registry: RefCell::new(None),
             precision: std::cell::Cell::new(domain::pixel_sample::PipelinePrecision::Standard),
+            proxy_scale: std::cell::Cell::new(1.0),
         }
     }
 
@@ -329,6 +335,10 @@ impl GuestImagePipeline for PipelineResource {
             }
         };
         self.precision.set(domain_precision);
+    }
+
+    fn set_proxy_scale(&self, scale: f32) {
+        self.proxy_scale.set(scale.max(0.01)); // clamp to prevent zero/negative
     }
 
     fn set_layer_cache(&self, cache: LayerCacheBorrow<'_>) {

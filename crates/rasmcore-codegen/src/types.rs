@@ -86,6 +86,10 @@ pub struct ParamField {
     pub default_val: String,
     pub label: String,
     pub hint: String,
+    /// Whether this parameter represents a spatial dimension (pixels) that
+    /// should be scaled by the pipeline's proxy_scale factor.
+    /// Derived from `hint == "rc.pixels"`.
+    pub spatial: bool,
     /// Per-option descriptions for enum/choice params: `[(value, description)]`.
     /// Parsed from `#[param(options = "val1:desc1|val2:desc2")]`.
     pub options: Vec<(String, String)>,

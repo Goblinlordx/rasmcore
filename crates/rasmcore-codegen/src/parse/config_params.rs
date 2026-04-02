@@ -120,6 +120,7 @@ fn extract_raw(file: &syn::File) -> HashMap<String, ParsedStruct> {
                         default_val = default_for_type(&ftype);
                     }
 
+                    let spatial = hint == "rc.pixels";
                     fields.push(ParamField {
                         name: fname,
                         param_type: ftype,
@@ -129,6 +130,7 @@ fn extract_raw(file: &syn::File) -> HashMap<String, ParsedStruct> {
                         default_val,
                         label,
                         hint,
+                        spatial,
                         options,
                     });
                 }
@@ -171,6 +173,11 @@ fn resolve_nested_fields(
                 &field.hint
             };
             for nf in &nested.fields {
+                let effective_hint = if hint.is_empty() {
+                    nf.hint.clone()
+                } else {
+                    hint.to_string()
+                };
                 result.push(ParamField {
                     name: format!("{}.{}", field.name, nf.name),
                     param_type: nf.param_type.clone(),
@@ -179,11 +186,8 @@ fn resolve_nested_fields(
                     step: nf.step.clone(),
                     default_val: nf.default_val.clone(),
                     label: nf.label.clone(),
-                    hint: if hint.is_empty() {
-                        nf.hint.clone()
-                    } else {
-                        hint.to_string()
-                    },
+                    spatial: effective_hint == "rc.pixels",
+                    hint: effective_hint,
                     options: nf.options.clone(),
                 });
             }

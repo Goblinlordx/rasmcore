@@ -6,6 +6,31 @@ use crate::types::{FilterReg, ParamField};
 
 use super::helpers::{to_owned_type, to_pascal_case, to_qualified_binding_type};
 
+/// Generate a field init expression, applying proxy_scale for spatial params.
+///
+/// For spatial params (hint = rc.pixels), generates:
+/// - u32/u8: `(wit_config.field as f32 * self.proxy_scale.get()) as u32`
+/// - f32: `wit_config.field * self.proxy_scale.get()`
+/// For non-spatial params, generates:
+/// - `wit_config.field`
+fn proxy_scale_expr(field_accessor: &str, field: &ParamField) -> String {
+    if !field.spatial {
+        return format!("wit_config.{field_accessor}");
+    }
+    match field.param_type.as_str() {
+        "u32" | "u16" | "u8" | "i32" | "i16" => {
+            format!(
+                "(wit_config.{field_accessor} as f32 * self.proxy_scale.get()) as {}",
+                field.param_type
+            )
+        }
+        "f32" | "f64" => {
+            format!("wit_config.{field_accessor} * self.proxy_scale.get()")
+        }
+        _ => format!("wit_config.{field_accessor}"),
+    }
+}
+
 /// Generate pipeline node structs + ImageNode impls + pipeline adapter macro.
 pub fn generate_nodes(filters: &[FilterReg]) -> String {
     let mut code = String::new();
@@ -318,7 +343,7 @@ pub fn generate_adapter_macro(
                         .iter()
                         .map(|field| {
                             let fname = field.name.trim_start_matches('_');
-                            format!("            {fname}: wit_config.{fname}")
+                            format!("            {fname}: {}", proxy_scale_expr(fname, field))
                         })
                         .collect();
                     body_lines.push(format!(
@@ -347,14 +372,14 @@ pub fn generate_adapter_macro(
                                     let nested_type = to_qualified_binding_type(&field.param_type);
                                     let nested_inits: Vec<String> = nested_fields.iter().map(|nf| {
                                 let nfname = nf.name.trim_start_matches('_');
-                                format!("                {nfname}: wit_config.{fname}.{nfname}")
+                                format!("                {nfname}: {}", proxy_scale_expr(&format!("{fname}.{nfname}"), nf))
                             }).collect();
                                     format!(
                                         "            {fname}: {nested_type} {{\n{}\n            }}",
                                         nested_inits.join(",\n")
                                     )
                                 } else {
-                                    format!("            {fname}: wit_config.{fname}")
+                                    format!("            {fname}: {}", proxy_scale_expr(fname, field))
                                 }
                             })
                             .collect();

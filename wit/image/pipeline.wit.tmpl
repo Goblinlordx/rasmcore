@@ -89,6 +89,10 @@ interface pipeline {
 
         // ─── Configuration ───
         set-precision: func(precision: pipeline-precision);
+        /// Set proxy scale factor for automatic spatial parameter scaling.
+        /// Spatial params (hint = rc.pixels) are multiplied by this factor.
+        /// Default 1.0 = full resolution. Use 0.5 for half-resolution proxy.
+        set-proxy-scale: func(scale: f32);
 
         // ─── Source ───
         read: func(data: buffer) -> result<node-id, rasmcore-error>;

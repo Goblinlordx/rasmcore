@@ -270,6 +270,7 @@ mod tests {
                 step: String::new(),
                 label: String::new(),
                 hint: String::new(),
+                spatial: false,
                 options: Vec::new(),
             }],
         );
@@ -321,6 +322,7 @@ mod tests {
                     step: String::new(),
                     label: String::new(),
                     hint: String::new(),
+                    spatial: false,
                     options: Vec::new(),
                 },
                 ParamField {
@@ -332,6 +334,7 @@ mod tests {
                     step: String::new(),
                     label: String::new(),
                     hint: String::new(),
+                    spatial: false,
                     options: Vec::new(),
                 },
             ],

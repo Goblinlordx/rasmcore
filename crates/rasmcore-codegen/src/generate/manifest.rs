@@ -212,6 +212,9 @@ fn field_to_json(field: &ParamField) -> Value {
         "label": field.label,
         "hint": field.hint,
     });
+    if field.spatial {
+        obj["spatial"] = json!(true);
+    }
     if !field.options.is_empty() {
         let options_json: Vec<Value> = field
             .options
