@@ -6,8 +6,12 @@
 use crate::domain::filters::common::*;
 
 #[derive(rasmcore_macros::ConfigParams, Clone)]
-/// Mask invert — no parameters needed.
-pub struct MaskInvertParams {}
+/// Mask invert parameters.
+pub struct MaskInvertParams {
+    /// Inversion strength (0 = no change, 1 = full invert). Reserved for future partial inversion.
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)]
+    pub strength: f32,
+}
 
 /// Invert mask values: 0 becomes 255, 255 becomes 0.
 ///
