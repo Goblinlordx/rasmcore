@@ -757,7 +757,7 @@ pub fn dispatch_chain_op(
         "average_blur" | "average-blur" => P::average_blur(pipe, source),
 
         // ─── Parameterized filters ───
-        "blur" => P::blur(pipe, source),
+        "blur" => P::blur(pipe, source, p::BlurConfig { radius: f(0, 3.0) }),
         "brightness" => P::brightness(pipe, source, p::BrightnessConfig { amount: f(0, 0.0) }),
         "contrast" => P::contrast(pipe, source, p::ContrastConfig { amount: f(0, 0.0) }),
         "gamma" => P::gamma(pipe, source, p::GammaConfig { gamma_value: f(0, 1.0) }),
@@ -776,7 +776,7 @@ pub fn dispatch_chain_op(
             P::hue_rotate(pipe, source, p::HueRotateConfig { degrees: f(0, 0.0) })
         }
         "vibrance" => P::vibrance(pipe, source, p::VibranceConfig { amount: f(0, 0.0) }),
-        "sharpen" => P::sharpen(pipe, source),
+        "sharpen" => P::sharpen(pipe, source, p::SharpenConfig { amount: f(0, 1.0) }),
         "solarize" => {
             P::solarize(pipe, source, p::SolarizeConfig { threshold: f(0, 128.0) as u8 })
         }
@@ -789,15 +789,15 @@ pub fn dispatch_chain_op(
         "oil_paint" | "oil-paint" => {
             P::oil_paint(pipe, source, p::OilPaintConfig { radius: f(0, 4.0) as u32 })
         }
-        "median" => P::median(pipe, source),
-        "box_blur" | "box-blur" => P::box_blur(pipe, source),
-        "motion_blur" | "motion-blur" => P::motion_blur(pipe, source),
-        "spin_blur" | "spin-blur" => P::spin_blur(pipe, source),
-        "spherize" => P::spherize(pipe, source),
-        "swirl" => P::swirl(pipe, source),
-        "ripple" => P::ripple(pipe, source),
-        "wave" => P::wave(pipe, source),
-        "bilateral" => P::bilateral(pipe, source),
+        "median" => P::median(pipe, source, p::MedianConfig { radius: f(0, 3.0) as u32 }),
+        "box_blur" | "box-blur" => P::box_blur(pipe, source, p::BoxBlurConfig { radius: f(0, 3.0) as u32 }),
+        "motion_blur" | "motion-blur" => P::motion_blur(pipe, source, p::MotionBlurConfig { length: f(0, 10.0) as u32, angle_degrees: f(1, 0.0) }),
+        "spin_blur" | "spin-blur" => P::spin_blur(pipe, source, p::SpinBlurConfig { center_x: f(0, 0.5), center_y: f(1, 0.5), angle: f(2, 10.0) }),
+        "spherize" => P::spherize(pipe, source, p::SpherizeConfig { amount: f(0, 1.0) }),
+        "swirl" => P::swirl(pipe, source, p::SwirlConfig { angle: f(0, 1.0), radius: f(1, 0.5) }),
+        "ripple" => P::ripple(pipe, source, p::RippleConfig { amplitude: f(0, 10.0), wavelength: f(1, 50.0), center_x: f(2, 0.5), center_y: f(3, 0.5) }),
+        "wave" => P::wave(pipe, source, p::WaveConfig { amplitude: f(0, 10.0), wavelength: f(1, 50.0), vertical: f(2, 0.0) }),
+        "bilateral" => P::bilateral(pipe, source, p::BilateralConfig { diameter: f(0, 9.0) as u32, sigma_color: f(1, 75.0), sigma_space: f(2, 75.0) }),
         "gaussian_noise" | "gaussian-noise" => P::gaussian_noise(
             pipe,
             source,

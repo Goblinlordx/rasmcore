@@ -58,8 +58,12 @@ pub fn generate(
 
     for f in filters {
         let has_config_param = f.params.iter().any(|(_n, t)| t.starts_with('&') && t.ends_with("Params"));
-        // derive(Filter) filters have config_struct but no entries in params vec
-        let has_derive_config = f.config_struct.is_some() && f.params.is_empty();
+        // derive(Filter) filters have config_struct but no entries in params vec.
+        // Only true when the config struct has actual fields in param_structs.
+        let has_derive_config = f.config_struct.as_ref()
+            .filter(|_| f.params.is_empty())
+            .and_then(|name| param_structs.get(name.as_str()))
+            .map_or(false, |fields| !fields.is_empty());
 
         // Get config struct field names to avoid duplicating fields
         let config_field_names: std::collections::HashSet<String> = if has_config_param {

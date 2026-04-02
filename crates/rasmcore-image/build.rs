@@ -532,16 +532,19 @@ fn main() {
                         "        {wit_name}: func(source: node-id, config: {wit_name}-config) -> result<node-id, rasmcore-error>;\n"
                     ));
                 } else {
-                    // Build-time assertion: catch derive(Filter) filters with config_struct
-                    // but missing param_structs entry — this indicates a registration mismatch.
-                    assert!(
-                        f.config_struct.is_none(),
-                        "Filter '{}' has config_struct '{}' but no matching param fields found in param_structs. \
-                         This means the WIT signature would omit config params. \
-                         Ensure the ConfigParams/Filter derive struct is parsed correctly.",
-                        f.name,
-                        f.config_struct.as_deref().unwrap_or("?")
-                    );
+                    // Build-time assertion: catch derive(Filter) filters whose config_struct
+                    // has fields but those fields aren't in param_structs (parsing mismatch).
+                    // Empty config structs (e.g., DepolarParams {}) are legitimately zero-param.
+                    if let Some(cs) = &f.config_struct {
+                        let field_count = data.param_structs.get(cs.as_str())
+                            .map_or(0, |f| f.len());
+                        assert!(
+                            field_count == 0,
+                            "Filter '{}' has config_struct '{}' with {} field(s) in param_structs, \
+                             but WIT generation classified it as zero-param. This is a codegen bug.",
+                            f.name, cs, field_count
+                        );
+                    }
                     filter_methods.push_str(&format!(
                         "        {wit_name}: func(source: node-id) -> result<node-id, rasmcore-error>;\n"
                     ));
