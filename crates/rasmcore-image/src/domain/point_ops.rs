@@ -840,7 +840,7 @@ pub fn apply_point_op_f32(pixels: &[u8], info: &ImageInfo, op: &PointOp) -> Resu
 // ─── Public convenience functions ───────────────────────────────────────────
 
 /// Apply a point operation, auto-dispatching between 8-bit, 16-bit, and f32 paths.
-fn apply_op(pixels: &[u8], info: &ImageInfo, op: &PointOp) -> Result<Vec<u8>, ImageError> {
+pub fn apply_op(pixels: &[u8], info: &ImageInfo, op: &PointOp) -> Result<Vec<u8>, ImageError> {
     if is_f32(info.format) {
         apply_point_op_f32(pixels, info, op)
     } else if is_16bit(info.format) {

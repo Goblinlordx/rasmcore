@@ -45,5 +45,10 @@ pub fn white_balance_temperature_registered(
     let temperature = config.temperature;
     let tint = config.tint;
 
+    if is_f32(info.format) {
+        return process_via_standard(pixels, info, |p8, i8| {
+            crate::domain::color_spaces::white_balance_temperature(p8, i8, temperature as f64, tint as f64)
+        });
+    }
     crate::domain::color_spaces::white_balance_temperature(pixels, info, temperature as f64, tint as f64)
 }

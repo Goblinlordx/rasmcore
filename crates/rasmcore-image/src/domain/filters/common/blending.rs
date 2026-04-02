@@ -267,6 +267,47 @@ pub fn dodge_burn_impl(
 ) -> Result<Vec<u8>, ImageError> {
     validate_format(info.format)?;
 
+    // Identity fast path
+    if exposure.abs() < 1e-6 {
+        return Ok(pixels.to_vec());
+    }
+
+    // Shared per-pixel math for dodge/burn
+    #[inline]
+    fn dodge_burn_pixel(r: f32, g: f32, b: f32, exposure: f32, range: u32, is_dodge: bool) -> (f32, f32, f32) {
+        let luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        let weight = match range {
+            0 => { let t = (luma * 2.0).min(1.0); 1.0 - t * t * (3.0 - 2.0 * t) }
+            2 => { let t = ((luma - 0.5) * 2.0).clamp(0.0, 1.0); t * t * (3.0 - 2.0 * t) }
+            _ => (4.0 * luma * (1.0 - luma)).min(1.0),
+        };
+        let factor = exposure * weight;
+        if is_dodge {
+            (r + r * factor, g + g * factor, b + b * factor)
+        } else {
+            (r * (1.0 - factor), g * (1.0 - factor), b * (1.0 - factor))
+        }
+    }
+
+    // f32 path: samples are already in [0,1]
+    if is_f32(info.format) {
+        let ch = channels(info.format);
+        if ch < 3 {
+            return Err(ImageError::UnsupportedFormat("dodge/burn requires RGB".into()));
+        }
+        let mut samples: Vec<f32> = pixels
+            .chunks_exact(4)
+            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect();
+        for chunk in samples.chunks_exact_mut(ch) {
+            let (nr, ng, nb) = dodge_burn_pixel(chunk[0], chunk[1], chunk[2], exposure, range, is_dodge);
+            chunk[0] = nr.clamp(0.0, 1.0);
+            chunk[1] = ng.clamp(0.0, 1.0);
+            chunk[2] = nb.clamp(0.0, 1.0);
+        }
+        return Ok(samples.iter().flat_map(|v| v.to_le_bytes()).collect());
+    }
+
     if is_16bit(info.format) {
         return process_via_8bit(pixels, info, |p8, i8| {
             dodge_burn_impl(p8, i8, exposure, range, is_dodge)
@@ -280,56 +321,30 @@ pub fn dodge_burn_impl(
         ));
     }
 
-    // Identity fast path
-    if exposure.abs() < 1e-6 {
-        return Ok(pixels.to_vec());
-    }
-
     let n = (info.width as usize) * (info.height as usize);
     let mut result = vec![0u8; pixels.len()];
 
     for i in 0..n {
         let pi = i * ch;
-        // BT.709 luminance for range weight
+        // Compute luma in [0,1] for range weight, but keep pixel math in [0,255]
         let luma = (0.2126 * pixels[pi] as f32
             + 0.7152 * pixels[pi + 1] as f32
             + 0.0722 * pixels[pi + 2] as f32)
             / 255.0;
-
-        // Range weight based on tonal selection
         let weight = match range {
-            0 => {
-                // Shadows: strong at dark, fades at mid
-                let t = (luma * 2.0).min(1.0);
-                1.0 - t * t * (3.0 - 2.0 * t) // 1-smoothstep(0, 0.5)
-            }
-            2 => {
-                // Highlights: strong at bright, fades at mid
-                let t = ((luma - 0.5) * 2.0).clamp(0.0, 1.0);
-                t * t * (3.0 - 2.0 * t) // smoothstep(0.5, 1.0)
-            }
-            _ => {
-                // Midtones: bell curve peaking at 0.5
-                // w = 4 * luma * (1 - luma), peaks at 1.0 for luma=0.5
-                (4.0 * luma * (1.0 - luma)).min(1.0)
-            }
+            0 => { let t = (luma * 2.0).min(1.0); 1.0 - t * t * (3.0 - 2.0 * t) }
+            2 => { let t = ((luma - 0.5) * 2.0).clamp(0.0, 1.0); t * t * (3.0 - 2.0 * t) }
+            _ => (4.0 * luma * (1.0 - luma)).min(1.0),
         };
-
         let factor = exposure * weight;
 
         for c in 0..3 {
             let v = pixels[pi + c] as f32;
-            let adjusted = if is_dodge {
-                // Dodge: lighten — output = pixel + pixel * factor
-                v + v * factor
-            } else {
-                // Burn: darken — output = pixel * (1 - factor)
-                v * (1.0 - factor)
-            };
+            let adjusted = if is_dodge { v + v * factor } else { v * (1.0 - factor) };
             result[pi + c] = adjusted.round().clamp(0.0, 255.0) as u8;
         }
         if ch == 4 {
-            result[pi + 3] = pixels[pi + 3]; // preserve alpha
+            result[pi + 3] = pixels[pi + 3];
         }
     }
 

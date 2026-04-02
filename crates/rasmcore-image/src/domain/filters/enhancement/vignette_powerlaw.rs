@@ -61,13 +61,6 @@ pub fn vignette_powerlaw(
     let offset_y = config.offset_y;
 
     validate_format(info.format)?;
-    if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| {
-            let r = Rect::new(0, 0, i8.width, i8.height);
-            let mut u = |_: Rect| Ok(p8.to_vec());
-            vignette_powerlaw(r, &mut u, i8, config)
-        });
-    }
 
     let ch = channels(info.format);
     let color_ch = if ch == 4 { 3 } else { ch };
@@ -81,19 +74,46 @@ pub fn vignette_powerlaw(
     let strength_d = strength as f64;
     let falloff_d = falloff as f64;
 
-    let mut result = pixels.to_vec();
-
-    for row in 0..h {
+    // Compute factor for each pixel position (shared between u8 and f32 paths)
+    let compute_factor = |row: usize, col: usize| -> f64 {
         let abs_y = (offset_y as usize + row) as f64 + 0.5;
+        let abs_x = (offset_x as usize + col) as f64 + 0.5;
         let dy = abs_y - cy;
-        let dy2 = dy * dy;
-        for col in 0..w {
-            let abs_x = (offset_x as usize + col) as f64 + 0.5;
-            let dx = abs_x - cx;
-            let dist = (dx * dx + dy2).sqrt();
-            let t = (dist / max_dist).powf(falloff_d);
-            let factor = 1.0 - strength_d * t;
+        let dx = abs_x - cx;
+        let dist = (dx * dx + dy * dy).sqrt();
+        let t = (dist / max_dist).powf(falloff_d);
+        1.0 - strength_d * t
+    };
 
+    if is_f32(info.format) {
+        let mut samples: Vec<f32> = pixels
+            .chunks_exact(4)
+            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect();
+        for row in 0..h {
+            for col in 0..w {
+                let factor = compute_factor(row, col) as f32;
+                let idx = (row * w + col) * ch;
+                for c in 0..color_ch {
+                    samples[idx + c] *= factor;
+                }
+            }
+        }
+        return Ok(samples.iter().flat_map(|v| v.to_le_bytes()).collect());
+    }
+
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            vignette_powerlaw(r, &mut u, i8, config)
+        });
+    }
+
+    let mut result = pixels.to_vec();
+    for row in 0..h {
+        for col in 0..w {
+            let factor = compute_factor(row, col);
             let idx = (row * w + col) * ch;
             for c in 0..color_ch {
                 let v = result[idx + c] as f64 * factor;

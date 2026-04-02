@@ -63,5 +63,10 @@ pub fn selective_color_registered(
         saturation,
         lightness,
     };
+    if is_f32(info.format) {
+        return process_via_standard(pixels, info, |p8, i8| {
+            crate::domain::content_aware::selective_color(p8, i8, &params)
+        });
+    }
     crate::domain::content_aware::selective_color(pixels, info, &params)
 }

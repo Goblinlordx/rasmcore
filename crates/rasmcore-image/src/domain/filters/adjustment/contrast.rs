@@ -47,13 +47,5 @@ pub fn contrast(
         ));
     }
     validate_format(info.format)?;
-    if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| {
-            let r = Rect::new(0, 0, i8.width, i8.height);
-            let mut u = |_: Rect| Ok(p8.to_vec());
-            contrast(r, &mut u, i8, config)
-        });
-    }
-    let lut = crate::domain::point_ops::build_lut(&crate::domain::point_ops::PointOp::Contrast(amount));
-    crate::domain::point_ops::apply_lut(pixels, info, &lut)
+    crate::domain::point_ops::apply_op(pixels, info, &crate::domain::point_ops::PointOp::Contrast(amount))
 }

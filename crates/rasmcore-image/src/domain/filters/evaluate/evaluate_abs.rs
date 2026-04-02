@@ -24,5 +24,11 @@ pub fn evaluate_abs(
     };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
-    Ok(pixels.to_vec()) // identity for unsigned types
+    // For f32, abs() is meaningful (values can be negative in HDR pipelines)
+    if is_f32(info.format) {
+        return crate::domain::point_ops::apply_point_op_f32(
+            pixels, info, &crate::domain::point_ops::PointOp::EvalAbs,
+        );
+    }
+    Ok(pixels.to_vec()) // identity for unsigned integer types
 }

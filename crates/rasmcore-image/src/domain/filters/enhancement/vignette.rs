@@ -78,13 +78,6 @@ pub fn vignette(
     let tile_offset_y = config.tile_offset_y;
 
     validate_format(info.format)?;
-    if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| {
-            let r = Rect::new(0, 0, i8.width, i8.height);
-            let mut u = |_: Rect| Ok(p8.to_vec());
-            vignette(r, &mut u, i8, config)
-        });
-    }
 
     let fw = full_width as usize;
     let fh = full_height as usize;
@@ -93,19 +86,40 @@ pub fn vignette(
     let rx = (fw as f64 / 2.0 - x_inset as f64).max(1.0);
     let ry = (fh as f64 / 2.0 - y_inset as f64).max(1.0);
 
-    // Build anti-aliased elliptical mask for the full image
     let mask = build_aa_ellipse_mask(fw, fh, cx, cy, rx, ry);
-
-    // Gaussian blur the mask
     let blurred = gaussian_blur_mask(&mask, fw, fh, sigma as f64);
 
-    // Multiply pixels by the corresponding mask region
     let ch = channels(info.format);
     let color_ch = if ch == 4 { 3 } else { ch };
     let tw = info.width as usize;
     let th = info.height as usize;
     let tx = tile_offset_x as usize;
     let ty = tile_offset_y as usize;
+
+    if is_f32(info.format) {
+        let mut samples: Vec<f32> = pixels
+            .chunks_exact(4)
+            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect();
+        for row in 0..th {
+            for col in 0..tw {
+                let factor = blurred[(ty + row) * fw + (tx + col)] as f32;
+                let idx = (row * tw + col) * ch;
+                for c in 0..color_ch {
+                    samples[idx + c] *= factor;
+                }
+            }
+        }
+        return Ok(samples.iter().flat_map(|v| v.to_le_bytes()).collect());
+    }
+
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            vignette(r, &mut u, i8, config)
+        });
+    }
 
     let mut result = pixels.to_vec();
     for row in 0..th {

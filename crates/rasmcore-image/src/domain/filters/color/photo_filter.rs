@@ -61,29 +61,12 @@ pub fn photo_filter(
     let fb = color_b.min(255) as f32 / 255.0;
     let preserve = preserve_luminosity != 0;
 
-    let bpp = match info.format {
-        PixelFormat::Rgba8 => 4,
-        PixelFormat::Rgb8 => 3,
-        _ => {
-            return Err(ImageError::UnsupportedFormat(
-                "photo_filter requires RGB8 or RGBA8".into(),
-            ));
-        }
-    };
-
-    let mut result = pixels.to_vec();
-    for chunk in result.chunks_exact_mut(bpp) {
-        let r = chunk[0] as f32 / 255.0;
-        let g = chunk[1] as f32 / 255.0;
-        let b = chunk[2] as f32 / 255.0;
-
-        // Blend: lerp(original, filter_color, density)
+    crate::domain::color_grading::apply_rgb_transform(pixels, info, |r, g, b| {
         let mut nr = r + (fr - r) * density;
         let mut ng = g + (fg - g) * density;
         let mut nb = b + (fb - b) * density;
 
         if preserve {
-            // Preserve original luminance (BT.709)
             let orig_luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
             let new_luma = 0.2126 * nr + 0.7152 * ng + 0.0722 * nb;
             if new_luma > 0.0 {
@@ -94,9 +77,6 @@ pub fn photo_filter(
             }
         }
 
-        chunk[0] = (nr * 255.0 + 0.5).clamp(0.0, 255.0) as u8;
-        chunk[1] = (ng * 255.0 + 0.5).clamp(0.0, 255.0) as u8;
-        chunk[2] = (nb * 255.0 + 0.5).clamp(0.0, 255.0) as u8;
-    }
-    Ok(result)
+        (nr, ng, nb)
+    })
 }

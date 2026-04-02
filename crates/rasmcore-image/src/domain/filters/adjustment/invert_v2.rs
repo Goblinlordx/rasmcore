@@ -25,6 +25,34 @@ impl CpuFilter for InvertV2 {
         info: &ImageInfo,
     ) -> Result<Vec<u8>, ImageError> {
         let pixels = upstream(request)?;
+
+        // f32 path: operate directly on normalized samples
+        if matches!(
+            info.format,
+            crate::domain::types::PixelFormat::Rgb32f
+                | crate::domain::types::PixelFormat::Rgba32f
+                | crate::domain::types::PixelFormat::Gray32f
+        ) {
+            let ch = match info.format {
+                crate::domain::types::PixelFormat::Rgba32f => 4,
+                crate::domain::types::PixelFormat::Rgb32f => 3,
+                _ => 1,
+            };
+            let mut samples: Vec<f32> = pixels
+                .chunks_exact(4)
+                .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                .collect();
+            for chunk in samples.chunks_exact_mut(ch) {
+                let color_ch = if ch == 4 { 3 } else { ch };
+                for s in &mut chunk[..color_ch] {
+                    let orig = *s;
+                    let inverted = 1.0 - orig;
+                    *s = orig * (1.0 - self.strength) + inverted * self.strength;
+                }
+            }
+            return Ok(samples.iter().flat_map(|v| v.to_le_bytes()).collect());
+        }
+
         let channels = crate::domain::types::bytes_per_pixel(info.format) as usize;
         let has_alpha = channels == 4;
 
