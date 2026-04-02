@@ -1,0 +1,155 @@
+id: lut-formats-3dl-csp-hald_20260402032441Z
+title: "LUT format support — .3dl, .csp read/write + Hald CLUT write"
+type: feature
+status: pending
+created: '2026-04-02'
+updated: '2026-04-02'
+spec:
+  summary: |
+    Add read/write support for Autodesk .3dl and CineSpace .csp LUT formats,
+    plus Hald CLUT PNG write. All formats route through existing ColorLut3D
+    infrastructure and pipeline short-circuit (no pixel execution for LUT I/O).
+  context: |
+    rasmcore currently supports .cube (R/W) and Hald CLUT (read-only) for LUT
+    files. The LUT encoder/decoder infrastructure was just added — .cube format
+    short-circuits the pixel pipeline via fuse_color_ops() + serialize.
+
+    Professional color grading workflows use multiple LUT formats:
+    - .3dl (Autodesk Lustre/Flame) — dominant in post-production
+    - .csp (CineSpace/Rising Sun Research) — used in VFX pipelines (ShotGrid/RV),
+      uniquely supports preLUT shaper curves (1D pre-curve + 3D LUT)
+    - Hald CLUT (PNG image) — used by darktable, RawTherapee for LUT sharing
+
+    Adding these 3 formats gives rasmcore comprehensive LUT format coverage
+    across film/TV post-production, VFX, and open-source photography tools.
+  codebase_analysis: |
+    EXISTING INFRASTRUCTURE (all in place):
+    - ColorLut3D struct with identity(), from_fn(), lookup(), apply(), compose_cluts()
+    - parse_cube_lut() and serialize_cube() — .cube R/W
+    - parse_hald_lut() — Hald read (needs write counterpart)
+    - Pipeline short-circuit in sink.rs write_tiled() for format=="cube"
+    - detect_format() in decoder/mod.rs with is_cube_lut() detection
+    - decode_cube() returns ColorLut3D from bytes
+    - NodeGraph::add_clut_source() injects CLUT as pipeline source
+    - absorb_1d_pre() / absorb_1d_post() — shaper curve composition (for .csp)
+
+    .3DL FORMAT (Autodesk Lustre/Flame):
+    - Text file, integer values (0-1023 for 10-bit, 0-4095 for 12-bit)
+    - First line: mesh header (grid vertex positions, optional)
+    - Subsequent lines: R G B triplets (space-separated integers)
+    - Grid sizes: 17, 33, or 65 (cube root of entry count)
+    - R varies fastest (same as ColorLut3D storage order)
+    - No formal published spec — reverse-engineered from Autodesk docs + examples
+    - Reference: Autodesk Lustre Color Management User Guide
+
+    .CSP FORMAT (CineSpace v1.0):
+    - Text file with formal spec (published PDF)
+    - Header: "CSPLUTV100" + "1D" or "3D" on second line
+    - PreLUT section (lines 3-11): per-channel shaper curves
+      - 3 blocks of 3 lines each (R, G, B)
+      - Line 1: count of preLUT entries
+      - Line 2: input values (space-separated floats)
+      - Line 3: output values (space-separated floats)
+    - 3D LUT data: grid size on one line, then N^3 RGB triplets
+    - Red varies fastest (same as our internal order)
+    - Values are space-delimited floats in [0.0, 1.0]
+    - PreLUT maps to absorb_1d_pre() — bake shaper into CLUT on import,
+      or export as separate 1D curve on write
+
+    HALD CLUT WRITE:
+    - Square PNG image where dimension = level^3
+    - Grid size = level^2
+    - Standard levels: 4 (grid 16, 64x64 image), 6 (grid 36, 216x216),
+      8 (grid 64, 512x512 image — most common)
+    - Pixel order: R fastest, G middle, B slowest (left-to-right, top-to-bottom)
+    - Output via existing PNG encoder
+  acceptance_criteria:
+    - parse_3dl() reads Autodesk .3dl files into ColorLut3D (10-bit and 12-bit)
+    - serialize_3dl() writes ColorLut3D to .3dl format (10-bit default)
+    - parse_csp() reads CineSpace .csp files into ColorLut3D (absorbs preLUT)
+    - serialize_csp() writes ColorLut3D to .csp format (identity preLUT)
+    - serialize_hald() writes ColorLut3D to Hald CLUT PNG image
+    - detect_format() recognizes .3dl and .csp headers
+    - Pipeline write short-circuit works for format=="3dl" and format=="csp"
+    - Round-trip tests pass for each format (parse then serialize, compare)
+    - Cross-format test passes (.cube -> .3dl -> .csp -> .cube, verify equivalence)
+    - All existing LUT tests pass (no regressions)
+    - cargo build + cargo component build succeed
+  out_of_scope: |
+    spi1d/spi3d (no formal spec — defer to future track).
+    Generic .lut format (ambiguous, app-dependent).
+    1D-only LUT read/write (project uses 3D CLUTs for full color transform fidelity).
+    LUT visualization or preview UI.
+  technical_notes: |
+    APPROACH:
+    All three formats convert to/from the existing ColorLut3D struct.
+    No new data structures needed — just parsing/serialization functions.
+
+    .3DL IMPLEMENTATION:
+    - Parser: skip optional mesh header line (starts with integer count),
+      read R G B integer triplets, normalize to [0.0, 1.0] by dividing
+      by max value (auto-detect 1023 for 10-bit, 4095 for 12-bit)
+    - Writer: multiply [0.0, 1.0] by 1023, write as integer triplets
+    - Detection: first non-comment line contains only integers
+
+    .CSP IMPLEMENTATION:
+    - Parser: check CSPLUTV100 header, read 3D/1D type,
+      parse preLUT section (3 channels x 3 lines = 9 lines),
+      parse 3D LUT data. If preLUT is non-identity, compose via
+      absorb_1d_pre() to bake shaper into the 3D CLUT.
+    - Writer: write CSPLUTV100 header + "3D",
+      write identity preLUT (2 entries per channel: 0.0->0.0, 1.0->1.0),
+      write grid size + RGB triplets
+    - Detection: first line is "CSPLUTV100"
+
+    HALD WRITE:
+    - Generate square RGB8 image from ColorLut3D
+    - level = ceil(grid_size^(1/2)) — find smallest level where level^2 >= grid_size
+    - Resample CLUT to level^2 grid if needed
+    - Write pixels left-to-right, top-to-bottom via PNG encoder
+    - Detection: N/A (Hald is a PNG image, detected as PNG, identified by structure)
+
+    PIPELINE INTEGRATION:
+    - Add format=="3dl" and format=="csp" branches to sink.rs short-circuit
+    - Add format detection for .3dl and .csp in decoder/mod.rs
+    - Add decode_3dl() and decode_csp() convenience functions
+plan:
+  - phase: ".3dl format (read + write)"
+    tasks:
+      - text: Add parse_3dl() to color_lut.rs — read integer triplets, auto-detect 10/12-bit, normalize to ColorLut3D
+        done: false
+      - text: Add serialize_3dl() to encoder/cube.rs (or new encoder/lut3dl.rs) — write 10-bit integer triplets
+        done: false
+      - text: Add .3dl format detection in decoder detect_format() and decode_3dl() convenience function
+        done: false
+      - text: Add format=="3dl" short-circuit in sink.rs write_tiled()
+        done: false
+      - text: Unit tests — .3dl identity roundtrip, 10-bit and 12-bit parsing, format detection
+        done: false
+  - phase: ".csp format (read + write)"
+    tasks:
+      - text: Add parse_csp() to color_lut.rs — read CSPLUTV100 header, preLUT shaper, 3D LUT data
+        done: false
+      - text: Add serialize_csp() — write CSPLUTV100 header, identity preLUT, 3D LUT data
+        done: false
+      - text: Add .csp format detection in decoder detect_format() and decode_csp() convenience function
+        done: false
+      - text: Add format=="csp" short-circuit in sink.rs write_tiled()
+        done: false
+      - text: Unit tests — .csp roundtrip, preLUT absorption, format detection
+        done: false
+  - phase: "Hald CLUT write"
+    tasks:
+      - text: Add serialize_hald() to color_lut.rs — generate square RGB8 pixel buffer from ColorLut3D
+        done: false
+      - text: Wire Hald write as format=="hald" in sink.rs — serialize CLUT to pixels, encode as PNG
+        done: false
+      - text: Unit test — Hald write then parse_hald_lut() roundtrip, verify identity
+        done: false
+  - phase: "Integration + verification"
+    tasks:
+      - text: Cross-format parity test — .cube to .3dl to .csp to .cube roundtrip, verify CLUT equivalence within tolerance
+        done: false
+      - text: cargo build + cargo component build succeed, all existing tests pass
+        done: false
+extra: {}
