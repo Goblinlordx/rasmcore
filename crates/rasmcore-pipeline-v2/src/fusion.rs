@@ -376,7 +376,7 @@ impl Clut3D {
 
         // Trilinear interpolation
         let mut result = [0.0f32; 3];
-        for c in 0..3 {
+        for (c, res) in result.iter_mut().enumerate() {
             let c000 = self.data[idx(r0, g0, b0) + c];
             let c100 = self.data[idx(r1, g0, b0) + c];
             let c010 = self.data[idx(r0, g1, b0) + c];
@@ -394,7 +394,7 @@ impl Clut3D {
             let c0 = c00 + fg * (c10 - c00);
             let c1 = c01 + fg * (c11 - c01);
 
-            result[c] = c0 + fb * (c1 - c0);
+            *res = c0 + fb * (c1 - c0);
         }
 
         (result[0], result[1], result[2])

@@ -68,17 +68,15 @@ impl Filter for GaussianBlur {
         for y in 0..h {
             for x in 0..w {
                 let mut sum = [0.0f32; 4];
-                for kx in 0..kernel.len() {
+                for (kx, &kw) in kernel.iter().enumerate() {
                     let sx = clamp_coord(x as i32 + kx as i32 - r as i32, w);
                     let idx = (y * w + sx) * 4;
                     for c in 0..4 {
-                        sum[c] += kernel[kx] * input[idx + c];
+                        sum[c] += kw * input[idx + c];
                     }
                 }
                 let out_idx = (y * w + x) * 4;
-                for c in 0..4 {
-                    tmp[out_idx + c] = sum[c];
-                }
+                tmp[out_idx..out_idx + 4].copy_from_slice(&sum);
             }
         }
 
@@ -87,17 +85,15 @@ impl Filter for GaussianBlur {
         for y in 0..h {
             for x in 0..w {
                 let mut sum = [0.0f32; 4];
-                for ky in 0..kernel.len() {
+                for (ky, &kw) in kernel.iter().enumerate() {
                     let sy = clamp_coord(y as i32 + ky as i32 - r as i32, h);
                     let idx = (sy * w + x) * 4;
                     for c in 0..4 {
-                        sum[c] += kernel[ky] * tmp[idx + c];
+                        sum[c] += kw * tmp[idx + c];
                     }
                 }
                 let out_idx = (y * w + x) * 4;
-                for c in 0..4 {
-                    out[out_idx + c] = sum[c];
-                }
+                out[out_idx..out_idx + 4].copy_from_slice(&sum);
             }
         }
 

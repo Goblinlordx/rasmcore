@@ -126,14 +126,14 @@ pub struct ParamBinding {
 
 /// Check if an analysis result type is compatible with a param type.
 pub fn types_compatible(result_type: AnalysisResultType, param_type: ParamType) -> bool {
-    match (result_type, param_type) {
-        (AnalysisResultType::Scalar, ParamType::F32) => true,
-        (AnalysisResultType::Scalar, ParamType::F64) => true,
-        (AnalysisResultType::Scalar, ParamType::U32) => true,
-        (AnalysisResultType::Scalar, ParamType::I32) => true,
-        (AnalysisResultType::Rect, ParamType::Rect) => true,
-        _ => false,
-    }
+    matches!(
+        (result_type, param_type),
+        (AnalysisResultType::Scalar, ParamType::F32)
+            | (AnalysisResultType::Scalar, ParamType::F64)
+            | (AnalysisResultType::Scalar, ParamType::U32)
+            | (AnalysisResultType::Scalar, ParamType::I32)
+            | (AnalysisResultType::Rect, ParamType::Rect)
+    )
 }
 
 /// Check if a field extraction is valid for the given result type.
@@ -214,7 +214,7 @@ impl StagedPipeline {
     pub fn add_analysis_node(&mut self, node: Box<dyn AnalysisNode>) -> u32 {
         // We need to add the node to the graph as a regular Node,
         // but also keep a reference for analysis. Use the node_id as key.
-        let result_type = node.result_type();
+        let _result_type = node.result_type();
         let id = self.graph.add_node(node);
         // Re-create a lightweight marker — actual analysis happens via the
         // analysis_nodes map. We store the trait object separately.
@@ -274,22 +274,20 @@ impl StagedPipeline {
         for constraint in constraints {
             match constraint {
                 ParamConstraint::RectWithinUpstream => {
-                    if let Some(rect) = result.as_rect() {
-                        if rect.right() > upstream_info.width || rect.bottom() > upstream_info.height {
+                    if let Some(rect) = result.as_rect()
+                        && (rect.right() > upstream_info.width || rect.bottom() > upstream_info.height) {
                             return Err(format!(
                                 "rect ({},{} {}x{}) exceeds upstream dimensions ({}x{})",
                                 rect.x, rect.y, rect.width, rect.height,
                                 upstream_info.width, upstream_info.height,
                             ));
                         }
-                    }
                 }
                 ParamConstraint::Range { min, max } => {
-                    if let Some(v) = result.as_scalar() {
-                        if v < *min || v > *max {
+                    if let Some(v) = result.as_scalar()
+                        && (v < *min || v > *max) {
                             return Err(format!("value {v} outside range [{min}, {max}]"));
                         }
-                    }
                 }
                 ParamConstraint::MaxContext(ctx) => {
                     if let Some(v) = result.as_scalar() {

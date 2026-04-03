@@ -13,7 +13,7 @@ struct CachedRegion {
     rect: Rect,
     data: Vec<f32>,
     /// Content hash of the node output for invalidation.
-    hash: ContentHash,
+    _hash: ContentHash,
 }
 
 /// Spatial cache for f32 tile data.
@@ -73,17 +73,16 @@ impl SpatialCache {
         // Evict until we have room
         while self.current_bytes + byte_size > self.budget_bytes && !self.order.is_empty() {
             let (evict_node, evict_idx) = self.order.remove(0);
-            if let Some(entries) = self.entries.get_mut(&evict_node) {
-                if evict_idx < entries.len() {
+            if let Some(entries) = self.entries.get_mut(&evict_node)
+                && evict_idx < entries.len() {
                     let removed = entries.remove(evict_idx);
                     self.current_bytes -= removed.data.len() * 4;
                 }
-            }
         }
 
         let entries = self.entries.entry(node_id).or_default();
         let idx = entries.len();
-        entries.push(CachedRegion { rect, data, hash });
+        entries.push(CachedRegion { rect, data, _hash: hash });
         self.current_bytes += byte_size;
         self.order.push((node_id, idx));
     }

@@ -30,9 +30,9 @@ pub fn linear_to_srgb(v: f32) -> f32 {
 // S-2016-001
 
 const ACESCCT_CUT: f32 = 0.0078125; // 2^-7
-const ACESCCT_A: f32 = 10.5402377416545;
-const ACESCCT_B: f32 = 0.0729055341958355;
-const ACESCCT_CUT_LOG: f32 = 0.155251141552511;
+const ACESCCT_A: f32 = 10.540_237;
+const ACESCCT_B: f32 = 0.072_905_53;
+const ACESCCT_CUT_LOG: f32 = 0.155_251_15;
 
 /// ACEScg Linear → ACEScct Log. Per-channel.
 #[inline]

@@ -292,10 +292,10 @@ impl PointOpExpr {
     /// Bake the expression to a 256-entry u8 LUT (for u8 output boundary).
     pub fn bake_to_lut(&self) -> [u8; 256] {
         let mut lut = [0u8; 256];
-        for i in 0..256 {
+        for (i, entry) in lut.iter_mut().enumerate() {
             let v = i as f64 / 255.0;
             let result = self.evaluate(v);
-            lut[i] = (result * 255.0 + 0.5).clamp(0.0, 255.0) as u8;
+            *entry = (result * 255.0 + 0.5).clamp(0.0, 255.0) as u8;
         }
         lut
     }

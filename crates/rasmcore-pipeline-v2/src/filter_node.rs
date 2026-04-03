@@ -122,7 +122,7 @@ impl<F: Filter + 'static> Node for FilterNode<F> {
         }
     }
 
-    fn gpu_shader(&self, width: u32, height: u32) -> Option<GpuShader> {
+    fn gpu_shader(&self, _width: u32, _height: u32) -> Option<GpuShader> {
         // Check if the filter also implements GpuFilter via trait object
         // This requires the filter to be passed as a trait object or checked at construction
         // For now, GPU support is handled by GpuFilterNode below
