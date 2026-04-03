@@ -1,0 +1,8 @@
+title: Fix runtime test failures — parity and reference regressions
+status: pending
+type: bug
+approved: false
+created: '2026-04-03'
+updated: '2026-04-03'
+deps:
+- fix-test-compilation_20260404164200Z
