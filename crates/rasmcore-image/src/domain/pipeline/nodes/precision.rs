@@ -8,6 +8,8 @@ use crate::domain::pipeline::graph::{AccessPattern, ImageNode};
 use crate::domain::transform::convert_format;
 use crate::domain::types::{ImageInfo, PixelFormat};
 use rasmcore_pipeline::Rect;
+use rasmcore_pipeline::gpu::{BufferFormat, GpuCapable, GpuOp};
+use std::sync::LazyLock;
 
 /// Promotes pixel data from any format to f32.
 /// Inserted automatically after source nodes.
@@ -70,6 +72,49 @@ impl ImageNode for PromoteNode {
 
     fn upstream_id(&self) -> Option<u32> {
         Some(self.upstream)
+    }
+}
+
+static PROMOTE_F32_SHADER: LazyLock<String> = LazyLock::new(|| {
+    include_str!("../../../shaders/promote_f32.wgsl").to_string()
+});
+
+impl GpuCapable for PromoteNode {
+    fn gpu_ops_with_format(
+        &self,
+        width: u32,
+        height: u32,
+        _buffer_format: BufferFormat,
+    ) -> Option<Vec<GpuOp>> {
+        // Only promote Rgba8 → Rgba32f on GPU (most common path)
+        if self.source_info.format != PixelFormat::Rgba8 || self.target_format != PixelFormat::Rgba32f {
+            return None;
+        }
+
+        let mut params = Vec::with_capacity(8);
+        params.extend_from_slice(&width.to_le_bytes());
+        params.extend_from_slice(&height.to_le_bytes());
+
+        // The u8 source pixels go as extra_buffers[0] (binding 3).
+        // The graph walker populates this from upstream u8 data.
+        // Ping-pong input (binding 0) is unused; output (binding 1) is f32.
+        Some(vec![GpuOp::Compute {
+            shader: PROMOTE_F32_SHADER.clone(),
+            entry_point: "main",
+            workgroup_size: [256, 1, 1],
+            params,
+            extra_buffers: vec![], // populated by graph walker at dispatch time
+            buffer_format: BufferFormat::F32Vec4, // output format
+        }])
+    }
+
+    fn input_buffer_format(&self) -> Option<BufferFormat> {
+        // Upstream data is u8 packed (4 bytes/pixel), not f32 (16 bytes/pixel)
+        if self.source_info.format == PixelFormat::Rgba8 {
+            Some(BufferFormat::U32Packed)
+        } else {
+            None
+        }
     }
 }
 

@@ -104,6 +104,18 @@ pub trait GpuCapable {
         let _ = buffer_format;
         self.gpu_ops(width, height)
     }
+
+    /// Buffer format of this node's **upstream input** data.
+    ///
+    /// Most nodes have matching input/output formats (both u32 or both f32).
+    /// Format-conversion nodes (e.g., PromoteNode: u8→f32) override this to
+    /// declare that upstream data arrives in a different format. The graph
+    /// walker uses this to upload the correct input size.
+    ///
+    /// Default: `None` (input format matches output format).
+    fn input_buffer_format(&self) -> Option<BufferFormat> {
+        None
+    }
 }
 
 /// Error from GPU execution.

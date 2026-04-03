@@ -1474,21 +1474,43 @@ impl NodeGraph {
             _ => rasmcore_pipeline::BufferFormat::U32Packed,
         };
         let gpu_dispatch = self.gpu_executor.clone().and_then(|executor| {
-            // Compute the input rect needed for this output tile (includes overlap
-            // for neighborhood ops like blur/sharpen). Point ops return request unchanged.
+            let gpu_node = self.gpu_nodes.get(node_id as usize)?.as_ref()?;
             let gpu_input_rect = self.nodes[node_id as usize]
                 .input_rect(request, info.width, info.height);
-            let ops = self.gpu_nodes.get(node_id as usize)?.as_ref()?
+            let mut ops = gpu_node
                 .gpu_ops_with_format(gpu_input_rect.width, gpu_input_rect.height, buf_format)?;
             let upstream_id = self.nodes[node_id as usize].upstream_id()?;
-            Some((executor, ops, upstream_id, gpu_input_rect))
+            // Check for asymmetric buffer format (e.g., PromoteNode: u8 input → f32 output)
+            let input_fmt = gpu_node.input_buffer_format();
+            Some((executor, ops, upstream_id, gpu_input_rect, input_fmt))
         });
-        if let Some((executor, ops, upstream_id, gpu_input_rect)) = gpu_dispatch {
-            let input = self.request_region(upstream_id, gpu_input_rect)?;
+        if let Some((executor, mut ops, upstream_id, gpu_input_rect, input_fmt)) = gpu_dispatch {
+            let upstream_data = self.request_region(upstream_id, gpu_input_rect)?;
+
+            // Handle asymmetric buffer formats (e.g., promote u8→f32):
+            // Upload the smaller upstream data as extra_buffers[0] in the first op,
+            // and pass a dummy input at the output format size.
+            let (exec_input, exec_format) = if let Some(in_fmt) = input_fmt {
+                if in_fmt != buf_format {
+                    // Inject upstream data as extra buffer for the shader to read
+                    if let Some(rasmcore_pipeline::GpuOp::Compute { extra_buffers, .. }) = ops.first_mut() {
+                        extra_buffers.insert(0, upstream_data.clone());
+                    }
+                    // Create dummy input at output format size (shader ignores binding 0)
+                    let npixels = gpu_input_rect.width as usize * gpu_input_rect.height as usize;
+                    let dummy = vec![0u8; npixels * buf_format.bytes_per_pixel() as usize];
+                    (dummy, buf_format)
+                } else {
+                    (upstream_data, buf_format)
+                }
+            } else {
+                (upstream_data, buf_format)
+            };
+
             match executor.execute_with_format(
-                &ops, &input,
+                &ops, &exec_input,
                 gpu_input_rect.width, gpu_input_rect.height,
-                buf_format,
+                exec_format,
             ) {
                 Ok(gpu_pixels) => {
                     // Crop GPU output from expanded input rect to the requested tile

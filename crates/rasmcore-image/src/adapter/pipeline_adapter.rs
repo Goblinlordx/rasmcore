@@ -440,7 +440,8 @@ impl GuestImagePipeline for PipelineResource {
         // f32 pipeline: promote to Rgba32f immediately after decode.
         // All downstream nodes see Rgba32f — no format branching needed.
         if src_info.format != domain::types::PixelFormat::Rgba32f {
-            let promote = precision::PromoteNode::new(source_id, src_info);
+            let promote = precision::PromoteNode::new(source_id, src_info.clone());
+            let gpu_promote = precision::PromoteNode::new(source_id, src_info);
             let promote_hash = rasmcore_pipeline::compute_hash(
                 &self.graph.borrow().node_hash(source_id),
                 "promote_f32",
@@ -453,6 +454,8 @@ impl GuestImagePipeline for PipelineResource {
                 domain::pipeline::graph::NodeKind::Filter,
                 "promote_f32",
             );
+            // Register GPU capability — upload u8, promote to f32 on GPU
+            self.graph.borrow_mut().register_gpu(id, Box::new(gpu_promote));
             Ok(id)
         } else {
             Ok(source_id)
