@@ -3,6 +3,7 @@
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
+use crate::domain::filter_traits::GpuFilter;
 
 /// Box blur — separable uniform-weight kernel with O(1) running-sum.
 ///
@@ -198,5 +199,65 @@ impl CpuFilter for BoxBlurParams {
     fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> Rect {
         let overlap = self.radius;
         output.expand_uniform(overlap, bounds_w, bounds_h)
+    }
+}
+
+impl GpuFilter for BoxBlurParams {
+    fn gpu_ops(
+        &self,
+        width: u32,
+        height: u32,
+    ) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        self.gpu_ops_with_format(width, height, rasmcore_pipeline::gpu::BufferFormat::U32Packed)
+    }
+
+    fn gpu_ops_with_format(
+        &self,
+        width: u32,
+        height: u32,
+        buffer_format: rasmcore_pipeline::gpu::BufferFormat,
+    ) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        use rasmcore_pipeline::gpu::{BufferFormat, GpuOp};
+        use std::sync::LazyLock;
+        use rasmcore_gpu_shaders as shaders;
+
+        static BOX_BLUR_U32: LazyLock<String> =
+            LazyLock::new(|| shaders::with_pixel_ops(include_str!("../../../shaders/box_blur.wgsl")));
+        static BOX_BLUR_F32: LazyLock<String> =
+            LazyLock::new(|| shaders::with_pixel_ops_f32(include_str!("../../../shaders/box_blur_f32.wgsl")));
+
+        if self.radius == 0 {
+            return None;
+        }
+
+        let mut params = Vec::with_capacity(16);
+        params.extend_from_slice(&width.to_le_bytes());
+        params.extend_from_slice(&height.to_le_bytes());
+        params.extend_from_slice(&self.radius.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes());
+
+        let shader = match buffer_format {
+            BufferFormat::F32Vec4 => BOX_BLUR_F32.clone(),
+            BufferFormat::U32Packed => BOX_BLUR_U32.clone(),
+        };
+
+        Some(vec![
+            GpuOp::Compute {
+                shader: shader.clone(),
+                entry_point: "blur_h",
+                workgroup_size: [256, 1, 1],
+                params: params.clone(),
+                extra_buffers: vec![],
+                buffer_format,
+            },
+            GpuOp::Compute {
+                shader,
+                entry_point: "blur_v",
+                workgroup_size: [1, 256, 1],
+                params,
+                extra_buffers: vec![],
+                buffer_format,
+            },
+        ])
     }
 }

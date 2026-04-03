@@ -2,6 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::GpuFilter;
 
 
 #[derive(rasmcore_macros::ConfigParams, Clone)]
@@ -9,6 +10,83 @@ pub struct ConvolveParams {
     pub kw: u32,
     pub kh: u32,
     pub divisor: f32,
+}
+
+impl ConvolveParams {
+    /// Build GPU operations for convolution with the given kernel weights.
+    ///
+    /// The kernel slice must have exactly `kw * kh` elements.
+    /// Weights are pre-divided by `divisor` before uploading to the GPU.
+    pub fn gpu_ops_with_kernel(
+        &self,
+        width: u32,
+        height: u32,
+        kernel: &[f32],
+        buffer_format: rasmcore_pipeline::gpu::BufferFormat,
+    ) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        use rasmcore_pipeline::gpu::{BufferFormat, GpuOp};
+        use std::sync::LazyLock;
+        use rasmcore_gpu_shaders as shaders;
+
+        static CONVOLVE_U32: LazyLock<String> =
+            LazyLock::new(|| shaders::with_pixel_ops(include_str!("../../../shaders/convolve.wgsl")));
+        static CONVOLVE_F32: LazyLock<String> =
+            LazyLock::new(|| shaders::with_pixel_ops_f32(include_str!("../../../shaders/convolve_f32.wgsl")));
+
+        let kw = self.kw;
+        let kh = self.kh;
+        if kw == 0 || kh == 0 || kernel.len() != (kw * kh) as usize {
+            return None;
+        }
+
+        // Pre-divide kernel weights by divisor
+        let inv_div = if self.divisor.abs() > f32::EPSILON { 1.0 / self.divisor } else { 1.0 };
+        let mut kernel_buf = Vec::with_capacity(kernel.len() * 4);
+        for &w in kernel {
+            kernel_buf.extend_from_slice(&(w * inv_div).to_le_bytes());
+        }
+
+        let mut params = Vec::with_capacity(16);
+        params.extend_from_slice(&width.to_le_bytes());
+        params.extend_from_slice(&height.to_le_bytes());
+        params.extend_from_slice(&kw.to_le_bytes());
+        params.extend_from_slice(&kh.to_le_bytes());
+
+        let shader = match buffer_format {
+            BufferFormat::F32Vec4 => CONVOLVE_F32.clone(),
+            BufferFormat::U32Packed => CONVOLVE_U32.clone(),
+        };
+
+        Some(vec![GpuOp::Compute {
+            shader,
+            entry_point: "main",
+            workgroup_size: [16, 16, 1],
+            params,
+            extra_buffers: vec![kernel_buf],
+            buffer_format,
+        }])
+    }
+}
+
+impl GpuFilter for ConvolveParams {
+    fn gpu_ops(
+        &self,
+        _width: u32,
+        _height: u32,
+    ) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        // Kernel weights are external to ConvolveParams; callers with kernel
+        // data should use `gpu_ops_with_kernel()` directly.
+        None
+    }
+
+    fn gpu_ops_with_format(
+        &self,
+        _width: u32,
+        _height: u32,
+        _buffer_format: rasmcore_pipeline::gpu::BufferFormat,
+    ) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        None
+    }
 }
 
 impl InputRectProvider for ConvolveParams {

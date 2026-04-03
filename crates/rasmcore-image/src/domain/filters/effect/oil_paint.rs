@@ -2,7 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
-use crate::domain::filter_traits::CpuFilter;
+use crate::domain::filter_traits::{CpuFilter, GpuFilter};
 
 /// Oil painting effect: for each pixel, find the most frequent intensity
 /// in the neighborhood and output that pixel's color.
@@ -118,5 +118,40 @@ impl CpuFilter for OilPaintParams {
 
     Ok(out)
 }
+}
+
+impl GpuFilter for OilPaintParams {
+    fn gpu_ops(&self, _width: u32, _height: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        None
+    }
+
+    fn gpu_ops_with_format(
+        &self,
+        width: u32,
+        height: u32,
+        buffer_format: rasmcore_pipeline::gpu::BufferFormat,
+    ) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        if buffer_format != rasmcore_pipeline::gpu::BufferFormat::F32Vec4 {
+            return None;
+        }
+        use rasmcore_pipeline::gpu::GpuOp;
+        use std::sync::LazyLock;
+        static SHADER: LazyLock<String> = LazyLock::new(|| {
+            include_str!("../../../shaders/oil_paint_f32.wgsl").to_string()
+        });
+        let mut params = Vec::with_capacity(16);
+        params.extend_from_slice(&width.to_le_bytes());
+        params.extend_from_slice(&height.to_le_bytes());
+        params.extend_from_slice(&self.radius.max(1).to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes()); // _pad
+        Some(vec![GpuOp::Compute {
+            shader: SHADER.clone(),
+            entry_point: "main",
+            workgroup_size: [16, 16, 1],
+            params,
+            extra_buffers: vec![],
+            buffer_format: rasmcore_pipeline::gpu::BufferFormat::F32Vec4,
+        }])
+    }
 }
 
