@@ -1,8 +1,9 @@
 title: Update docs/extending.md with unified registration patterns
-status: pending
+status: archived
 type: chore
 approved: false
 created: '2026-04-02'
-updated: '2026-04-02'
+updated: '2026-04-03'
 deps:
 - gpu-filter-attribute_20260402042202Z
+archived_at: '2026-04-03'

@@ -5,7 +5,8 @@
 Every filter MUST be in its own file under `src/domain/filters/<category>/<name>.rs`.
 
 Each filter file contains:
-- The `#[register_filter/mapper/compositor/generator]` annotation + pub fn
+- The `#[derive(Filter)]` struct + `impl CpuFilter` (V2 filters)
+- The `#[register_mapper/compositor/generator]` annotation (V1 non-filter types)
 - The `ConfigParams` struct (if any) + its impl blocks
 - Private helper functions used ONLY by this filter
 - `use crate::domain::filters::common::*;` for shared types and helpers
@@ -28,52 +29,51 @@ shared helpers from `common.rs` or domain modules (`point_ops`, `color_grading`,
 
 ## GPU support (REQUIRED for new filters)
 
-Every new filter SHOULD implement `GpuCapable` when the operation is
+Every new filter SHOULD implement `GpuFilter` when the operation is
 expressible as a compute shader. This is the default expectation — only
 skip GPU if the algorithm is fundamentally unsuitable (e.g., recursive
 flood fill, iterative content-aware seam carving).
 
 ### How to add GPU support
 
-1. **Write a WGSL compute shader** in `src/shaders/<name>.wgsl`
-   - Follow existing shader patterns (box_blur.wgsl, skeletonize.wgsl)
-   - Input/output are `array<u32>` (packed RGBA8)
+1. **Write a WGSL compute shader** in `src/shaders/<name>_f32.wgsl`
+   - Input/output are `array<vec4<f32>>` (F32Vec4 format)
    - Params via `var<uniform>` struct (little-endian, 4-byte aligned)
+   - First two fields MUST be `width: u32, height: u32`
    - Workgroup size: `@workgroup_size(16, 16, 1)` for 2D image ops
-   - Extra data (kernels, LUTs) via additional `storage<read>` bindings
+   - Use `shaders::with_sampling_f32()` for distortion (bilinear sample)
+   - Use `shaders::with_io_f32()` for per-pixel ops (load/store)
 
-2. **Implement `GpuCapable` on ConfigParams**:
+2. **Implement `GpuFilter` on the filter struct**:
    ```rust
-   const MY_FILTER_WGSL: &str = include_str!("../../../shaders/my_filter.wgsl");
+   impl GpuFilter for MyFilterParams {
+       fn gpu_ops(&self, w: u32, h: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+           self.gpu_ops_with_format(w, h, rasmcore_pipeline::gpu::BufferFormat::F32Vec4)
+       }
 
-   impl rasmcore_pipeline::GpuCapable for MyFilterParams {
-       fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<rasmcore_pipeline::GpuOp>> {
+       fn gpu_ops_with_format(&self, w: u32, h: u32, fmt: BufferFormat)
+           -> Option<Vec<GpuOp>>
+       {
+           static SHADER: LazyLock<String> = LazyLock::new(|| {
+               rasmcore_gpu_shaders::with_io_f32(include_str!("../../../shaders/my_filter_f32.wgsl"))
+           });
            let mut params = Vec::with_capacity(16);
-           params.extend_from_slice(&width.to_le_bytes());
-           params.extend_from_slice(&height.to_le_bytes());
+           params.extend_from_slice(&w.to_le_bytes());
+           params.extend_from_slice(&h.to_le_bytes());
            // ... add filter-specific params
-           Some(vec![rasmcore_pipeline::GpuOp {
-               shader: MY_FILTER_WGSL,
+           Some(vec![GpuOp::Compute {
+               shader: SHADER.clone(),
                entry_point: "main",
                workgroup_size: [16, 16, 1],
                params,
-               extra_buffers: Vec::new(),
+               extra_buffers: vec![],
+               buffer_format: BufferFormat::F32Vec4,
            }])
        }
    }
    ```
 
-3. **Add GPU parity test** — verify GPU ops are generated and validate
-   CPU output matches expected behavior:
-   ```rust
-   #[test]
-   fn gpu_ops_generated() {
-       let params = MyFilterParams { ... };
-       use rasmcore_pipeline::GpuCapable;
-       let ops = params.gpu_ops(100, 100).unwrap();
-       assert!(!ops.is_empty());
-   }
-   ```
+3. **Add GPU parity test** — verify GPU output matches CPU within f32 tolerance.
 
 ### When to skip GPU
 

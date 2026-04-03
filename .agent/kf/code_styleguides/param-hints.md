@@ -7,10 +7,10 @@ only — they do not affect runtime behavior, WIT signatures, or adapter code.
 
 ### Type-level hint (`#[config_hint("...")]`)
 
-Put on a reusable ConfigParams struct. Propagates to all fields when embedded.
+Put on a reusable param type struct. Propagates to all fields when embedded.
 
 ```rust
-#[derive(ConfigParams)]
+#[derive(rasmcore_macros::ConfigParams)]
 #[config_hint("rc.color_rgba")]
 pub struct ColorRgba {
     #[param(min = 0, max = 255, step = 1, default = 255)]
@@ -24,7 +24,8 @@ pub struct ColorRgba {
 Put on individual fields. Overrides the type-level hint when both are present.
 
 ```rust
-#[derive(ConfigParams)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "split_toning", category = "grading")]
 pub struct SplitToningParams {
     #[param(min = 0.0, max = 360.0, step = 1.0, default = 40.0, hint = "rc.angle_deg")]
     pub highlight_hue: f32,
@@ -69,13 +70,24 @@ automatically. No `#[param(hint = "...")]` needed.
 | `rc.text` | Text input field | String params (JSON arrays, paths) | — |
 | `rc.enum` | Dropdown select | Mode/shape/method (when param encodes a choice) | PS blend mode dropdown |
 
+### Canvas Interaction Hints
+
+| Hint | UI Control | When to use | Reference |
+|------|-----------|-------------|-----------|
+| `rc.point` | Canvas point selector | Click-to-place coordinates (cx/cy pairs) | PS eyedropper tool |
+| `rc.path` | Canvas path drawer | Brush stroke coordinates (freehand drawing) | PS brush tool |
+| `rc.box_select` | Canvas rectangle drag | Crop/selection region (width/height pairs) | PS marquee tool |
+
 ### Decision Guide
 
 ```
 Is it a boolean?           → rc.toggle
 Is it a color?             → rc.color_rgb / rc.color_rgba (via param type)
 Is it an angle in degrees? → rc.angle_deg
-Is it a pixel coord/dim?   → rc.pixels
+Is it a pixel coord/dim?   → rc.pixels (or rc.point for canvas interaction)
+Is it a canvas coordinate? → rc.point (paired x/y params)
+Is it a brush path?        → rc.path
+Is it a selection region?  → rc.box_select (paired w/h params)
 Is it a random seed?       → rc.seed
 Is it a temperature?       → rc.temperature_k
 Is it a string?            → rc.text
