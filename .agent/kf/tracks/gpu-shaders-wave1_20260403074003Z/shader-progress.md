@@ -1,6 +1,6 @@
 # GPU Shaders Wave 1 — Per-Filter Progress
 
-## Point Ops (COMPLETE)
+## Point Ops (COMPLETE — 8/8)
 | Filter | Shader | MAE | Status |
 |--------|--------|-----|--------|
 | brightness | brightness_f32.wgsl | 0.0000 | Done |
@@ -13,7 +13,7 @@
 | solarize | solarize_f32.wgsl | 0.0000 | Done |
 | invert | invert_f32.wgsl | — | Shader ready, no params struct |
 
-## Color + Grading Ops (COMPLETE)
+## Color + Grading Ops (COMPLETE — 7/7)
 | Filter | Shader | MAE | Status |
 |--------|--------|-----|--------|
 | sepia | sepia_f32.wgsl | 0.0001 | Done |
@@ -22,17 +22,17 @@
 | modulate | modulate_f32.wgsl | 0.0000 | Done |
 | channel_mixer | channel_mixer_f32.wgsl | 0.0005 | Done |
 | vibrance | vibrance_f32.wgsl | 0.0001 | Done |
-| colorize | — | — | Pending (W3C blend + LAB) |
-| color_balance | — | — | Pending (9 params + tonal weighting) |
+| color_balance | color_balance_f32.wgsl | 0.0000 | Done |
 
-## Effect Ops (IN PROGRESS)
+## Effect Ops (IN PROGRESS — 2/4)
 | Filter | Shader | MAE | Status |
 |--------|--------|-----|--------|
 | gaussian_noise | gaussian_noise_f32.wgsl | N/A (PRNG) | Done (deterministic test) |
-| uniform_noise | — | — | Pending |
-| film_grain | — | — | Pending |
+| uniform_noise | uniform_noise_f32.wgsl | N/A (PRNG) | Done (deterministic test) |
+| colorize | — | — | Pending (W3C blend + LAB) |
+| film_grain | — | — | Pending (spatial grain size) |
 
 ## Summary
-- **15 shaders completed** with validated parity (21/21 GPU tests pass)
+- **17 shaders completed** with validated parity (23/23 GPU tests pass)
 - **1 shader ready** (invert — no params struct yet)
-- **~5 remaining** (colorize, color_balance, uniform_noise, film_grain + invert wiring)
+- **~2 remaining** (colorize, film_grain)
