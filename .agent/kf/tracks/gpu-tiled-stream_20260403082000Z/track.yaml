@@ -120,7 +120,7 @@ plan:
   - text: Ensure buffer allocation in gpu-handler.ts works for tile dimensions
     done: true
   - text: Add integration test — GPU process a 512x512 tile produces same output as full image crop
-    done: false
+    done: true
 - phase: Pipeline GPU tile dispatch
   tasks:
   - text: In GPU-capable node compute_region, dispatch tile to GPU instead of falling back to CPU
@@ -132,11 +132,11 @@ plan:
 - phase: Verification
   tasks:
   - text: GPU tiled output matches GPU full-image output (pixel-identical)
-    done: false
+    done: true
   - text: VRAM usage stays bounded to tile size (verify with WebGPU diagnostics)
-    done: false
+    done: true
   - text: Works on simulated low-VRAM environment
-    done: false
+    done: true
   - text: All existing GPU parity tests pass
-    done: false
+    done: true
 extra: {}
