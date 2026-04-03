@@ -7,3 +7,4 @@
 //! No format dispatch. No u8/u16 paths. No PixelFormat. Just f32.
 
 pub mod adjustment;
+pub mod spatial;
