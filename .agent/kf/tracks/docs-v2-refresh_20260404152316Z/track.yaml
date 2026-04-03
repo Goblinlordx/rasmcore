@@ -5,73 +5,109 @@ status: pending
 created: '2026-04-04'
 updated: '2026-04-04'
 spec:
-  summary: |
-    Rewrite extending.md for V2 derive(Filter) pattern, update architecture.md
+  summary: 'Rewrite extending.md for V2 derive(Filter) pattern, update architecture.md
+
     for V2 pipeline/f32/GPU/ACES, complete migration guide. Archive stale
+
     registration-docs track.
-  context: |
-    The project completed a massive V2 migration (550+ tracks) that fundamentally
+
+    '
+  context: 'The project completed a massive V2 migration (550+ tracks) that fundamentally
+
     changed the architecture. The existing docs still describe V1 patterns:
+
     - extending.md (1102 lines): documents #[register_filter] + ConfigParams
+
     - architecture.md (145 lines): describes V1 pipeline only
+
     - V2_MIGRATION.md (83 lines): migration guide, may be incomplete
 
+
     Key V2 changes not yet documented:
+
     - Filter API: #[derive(Filter)] + CpuFilter/GpuFilter/AnalyticOp traits
+
     - Pipeline: f32-native (Rgba32f everywhere), GPU-primary dispatch
+
     - Color: ACES pipeline (IDTs, RRT+ODTs, compliance metadata)
+
     - Cache: LayerCache with Q16/Q8 quantization
+
     - Masks: selective adjustments, mask generators, masked_blend
+
     - Param hints: rc.point, rc.path, rc.box_select for canvas interaction
+
     - GPU: F32Vec4 buffers, io_f32 shader pattern, mesh warp extra buffers
-  codebase_analysis: |
-    Docs to update:
+
+    '
+  codebase_analysis: 'Docs to update:
+
     - docs/extending.md — 1102 lines, still V1 pattern throughout
+
     - docs/architecture.md — 145 lines, no V2 content
+
     - docs/V2_MIGRATION.md — 83 lines, partial guide
+
     - .agent/kf/code_styleguides/ — may reference V1 patterns
 
+
     Supersedes: registration-docs_20260402042203Z (narrow V1 codec docs)
+
+    '
   acceptance_criteria:
-    - docs/extending.md rewritten for V2 derive(Filter) + CpuFilter pattern
-    - docs/extending.md covers GpuFilter, AnalyticOp, mask generators, compositors
-    - docs/extending.md covers param hints including rc.point/path/box_select
-    - docs/architecture.md updated with V2 pipeline, f32-native, GPU-primary
-    - docs/architecture.md covers ACES color pipeline, cache quantization
-    - docs/V2_MIGRATION.md reviewed and completed with any missing sections
-    - registration-docs_20260402042203Z archived (superseded)
-    - No stale V1-only content remains in docs/
-  out_of_scope: |
-    SDK documentation (TypeScript/Python/Go READMEs).
+  - docs/extending.md rewritten for V2 derive(Filter) + CpuFilter pattern
+  - docs/extending.md covers GpuFilter, AnalyticOp, mask generators, compositors
+  - docs/extending.md covers param hints including rc.point/path/box_select
+  - docs/architecture.md updated with V2 pipeline, f32-native, GPU-primary
+  - docs/architecture.md covers ACES color pipeline, cache quantization
+  - docs/V2_MIGRATION.md reviewed and completed with any missing sections
+  - registration-docs_20260402042203Z archived (superseded)
+  - No stale V1-only content remains in docs/
+  - code_styleguides updated — zero V1-only references in implementation-rules, param-hints, file-organization
+  out_of_scope: 'SDK documentation (TypeScript/Python/Go READMEs).
+
     Web UI documentation. API reference (auto-generated from WIT).
-  technical_notes: |
-    The extending.md rewrite should use actual code from the codebase as
+
+    '
+  technical_notes: 'The extending.md rewrite should use actual code from the codebase as
+
     examples (e.g., InvertV2 for basic filter, WaveParams for GPU distortion,
+
     MeshWarpParams for extra buffer pattern, MaskFeatherParams for mask ops).
 
+
     Architecture.md should describe the V2 pipeline crate structure, the
+
     promote/demote pattern for f32 ingest, and how GPU dispatch works.
+
+    '
 plan:
-  - phase: Extending guide rewrite
-    tasks:
-      - text: Rewrite Extension Model Overview for V2 derive(Filter) + CpuFilter
-        done: false
-      - text: Update Adding a Filter with V2 examples (InvertV2, WaveParams)
-        done: false
-      - text: Add GpuFilter, AnalyticOp, mask generator, compositor sections
-        done: false
-      - text: Add param hints section covering rc.point/path/box_select
-        done: false
-  - phase: Architecture and migration docs
-    tasks:
-      - text: Update architecture.md with V2 pipeline, f32-native, GPU-primary
-        done: false
-      - text: Add ACES pipeline, cache quantization, selective adjustments to architecture.md
-        done: false
-      - text: Review and complete V2_MIGRATION.md
-        done: false
-  - phase: Cleanup
-    tasks:
-      - text: Archive registration-docs_20260402042203Z (superseded by this track)
-        done: false
+- phase: Extending guide rewrite
+  tasks:
+  - text: Rewrite Extension Model Overview for V2 derive(Filter) + CpuFilter
+    done: false
+  - text: Update Adding a Filter with V2 examples (InvertV2, WaveParams)
+    done: false
+  - text: Add GpuFilter, AnalyticOp, mask generator, compositor sections
+    done: false
+  - text: Add param hints section covering rc.point/path/box_select
+    done: false
+- phase: Architecture and migration docs
+  tasks:
+  - text: Update architecture.md with V2 pipeline, f32-native, GPU-primary
+    done: false
+  - text: Add ACES pipeline, cache quantization, selective adjustments to architecture.md
+    done: false
+  - text: Review and complete V2_MIGRATION.md
+    done: false
+- phase: Cleanup
+  tasks:
+  - text: Update code_styleguides/implementation-rules.md for V2 patterns (8 V1 refs)
+    done: false
+  - text: Update code_styleguides/param-hints.md for V2 patterns (5 V1 refs)
+    done: false
+  - text: Update code_styleguides/file-organization.md for V2 patterns (4 V1 refs)
+    done: false
+  - text: Archive registration-docs_20260402042203Z (superseded by this track)
+    done: false
 extra: {}
