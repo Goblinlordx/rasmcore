@@ -138,11 +138,45 @@ pub trait Node {
 
     /// Compute the input region needed to produce the given output region.
     ///
-    /// Point ops return `output` unchanged. Spatial ops expand by kernel radius.
-    /// Transform ops compute the inverse mapping bounding box.
-    fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> Rect {
-        output.clamp(bounds_w, bounds_h)
+    /// Most ops can compute this statically from params alone:
+    /// - Point ops: `Exact` — output unchanged
+    /// - Spatial ops: `Exact` — output expanded by kernel radius
+    /// - Transforms: `Exact` — inverse mapping bounding box
+    ///
+    /// Rare ops that depend on pixel data (displacement map, content-aware):
+    /// - `FullImage` — the pipeline materializes the full upstream before this node
+    ///
+    /// `FullImage` nodes become **tile barriers** — tiling pauses, full image is
+    /// fetched, then tiling resumes downstream. This is a last resort.
+    fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> InputRectEstimate {
+        InputRectEstimate::Exact(output.clamp(bounds_w, bounds_h))
     }
+}
+
+/// How a node estimates its required input region.
+///
+/// The pipeline's tile scheduler uses this to pre-plan tile fetches
+/// BEFORE any pixel execution. It must be computable from (output_rect,
+/// params, upstream_dims) alone — no pixel data.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InputRectEstimate {
+    /// Exact region needed — computable from params alone.
+    /// This is the common case (99% of operations).
+    Exact(Rect),
+
+    /// Full upstream image needed — cannot estimate statically.
+    /// This node becomes a tile barrier: the pipeline materializes
+    /// the full upstream before executing this node, then resumes
+    /// tiling downstream.
+    ///
+    /// Used by: displacement map, content-aware seam carving, mesh warp
+    /// with data-driven control points.
+    FullImage,
+
+    /// Conservative upper bound — the node needs at most this much,
+    /// but may request less during compute(). The pipeline pre-fetches
+    /// the upper bound; the node clips internally.
+    UpperBound(Rect),
 }
 
 /// Pipeline error type.

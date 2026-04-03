@@ -94,7 +94,16 @@ impl Graph {
 
         // 2. GPU-primary dispatch
         if let Some(executor) = &self.gpu_executor {
-            let gpu_input_rect = node.input_rect(request, info.width, info.height);
+            use crate::node::InputRectEstimate;
+            let estimate = node.input_rect(request, info.width, info.height);
+            let gpu_input_rect = match estimate {
+                InputRectEstimate::Exact(r) => r,
+                InputRectEstimate::UpperBound(r) => r,
+                InputRectEstimate::FullImage => {
+                    // Tile barrier: request full upstream image
+                    Rect::new(0, 0, info.width, info.height)
+                }
+            };
             if let Some(shader) = node.gpu_shader(gpu_input_rect.width, gpu_input_rect.height) {
                 let upstream_ids = node.upstream_ids();
                 if let Some(&upstream_id) = upstream_ids.first() {

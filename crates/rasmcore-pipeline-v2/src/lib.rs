@@ -28,7 +28,7 @@ pub mod ops;
 
 // Re-export core types at crate root
 pub use rect::{Rect, Overlap};
-pub use node::{Node, NodeInfo, NodeCapabilities, GpuShader, TileHint, PipelineError, Upstream};
+pub use node::{Node, NodeInfo, NodeCapabilities, GpuShader, TileHint, PipelineError, Upstream, InputRectEstimate};
 pub use color_space::ColorSpace;
 pub use gpu::{GpuError, GpuExecutor};
 pub use graph::Graph;
