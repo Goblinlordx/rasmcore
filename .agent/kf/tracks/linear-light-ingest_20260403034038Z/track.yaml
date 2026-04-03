@@ -1,0 +1,94 @@
+id: linear-light-ingest_20260403034038Z
+title: Linear-light ingest — sRGB to Linear at promote
+type: feature
+status: pending
+created: '2026-04-03'
+updated: '2026-04-03'
+spec:
+  summary: |
+    Extend PromoteNode to apply sRGB→Linear transfer function after
+    format conversion. All pipeline data becomes Linear f32. Tag
+    ImageInfo.color_space = LinearSrgb after promote.
+  context: |
+    Professional engines process in linear light. Blurring in gamma
+    space produces dark fringes around bright objects — the hallmark
+    of a cheap engine. Compositing (A+B) must be linear for correct
+    light transport. Currently, PromoteNode only normalizes u8→f32
+    without linearizing, so the entire pipeline operates in gamma space.
+  codebase_analysis: |
+    The sRGB transfer functions already exist:
+    - color_spaces.rs:17 — srgb_to_linear(v: f32) -> f32
+      v <= 0.04045 ? v/12.92 : ((v+0.055)/1.055)^2.4
+    - color_spaces.rs:25 — linear_to_srgb(v: f32) -> f32
+      v <= 0.0031308 ? v*12.92 : 1.055*v^(1/2.4)-0.055
+
+    PromoteNode (precision.rs:14-76):
+    - Currently: convert_format() normalizes u8[0,255] → f32[0.0,1.0]
+    - Needed: after normalization, apply srgb_to_linear() per channel
+    - GPU promote shader (promote_f32.wgsl): currently does v/255.0,
+      needs sRGB→linear after normalization
+
+    ColorSpace enum (types.rs:65): has LinearSrgb variant, unused.
+
+    ICC conversion node (pipeline/nodes/color.rs): converts ICC profiles
+    to sRGB but does not linearize — operates in gamma sRGB space.
+  acceptance_criteria:
+    - PromoteNode applies sRGB→Linear after u8/u16 normalization
+    - GPU promote shader applies sRGB→Linear transfer function
+    - ImageInfo.color_space set to LinearSrgb after promotion
+    - EXR/HDR decode (already linear) skip linearization
+    - Existing sRGB-encoded source formats (JPEG, PNG, BMP) are linearized
+    - Blur on bright edge produces no dark fringes (visual test)
+    - All existing tests updated for linear output values
+  out_of_scope: |
+    Display P3 linearization. ProPhoto / Adobe RGB linearization.
+    Non-sRGB input handling beyond EXR/HDR.
+  technical_notes: |
+    The sRGB→linear function is per-channel and branchless-friendly:
+      fn srgb_to_linear(v: f32) -> f32 {
+          if v <= 0.04045 { v / 12.92 }
+          else { ((v + 0.055) / 1.055).powf(2.4) }
+      }
+
+    For GPU, use a polynomial approximation or the exact formula in WGSL:
+      fn srgb_to_linear(v: f32) -> f32 {
+          if (v <= 0.04045) { return v / 12.92; }
+          return pow((v + 0.055) / 1.055, 2.4);
+      }
+
+    Format-aware linearization:
+    - sRGB sources (JPEG, PNG, BMP, GIF, WebP, QOI, ICO, TGA): linearize
+    - Linear sources (EXR, HDR, FITS): skip (already linear)
+    - ICC-profiled sources: linearize using ICC profile TRC
+    - Use source_info.color_space to decide (Srgb → linearize, Linear → skip)
+
+    Test impact: many tests compare exact pixel values. After this change,
+    values will be in linear space. Tests checking f32 output values will
+    need updating. Tests checking final u8 encode output should be
+    unaffected if Track C (display transform) is also applied.
+plan:
+  - phase: CPU promote linearization
+    tasks:
+      - text: Add linearize flag to PromoteNode based on source color space
+        done: false
+      - text: Apply srgb_to_linear() per channel after normalization in compute_region
+        done: false
+      - text: Set color_space = LinearSrgb on output ImageInfo
+        done: false
+      - text: Skip linearization for already-linear sources (EXR, HDR, FITS)
+        done: false
+  - phase: GPU promote linearization
+    tasks:
+      - text: Add sRGB→Linear transfer function to promote_f32.wgsl
+        done: false
+      - text: Verify GPU promote output matches CPU promote (linear values)
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Visual test — blur bright edge, verify no dark fringes in linear
+        done: false
+      - text: Update affected tests for linear f32 output values
+        done: false
+      - text: Regression — all tests pass with linear pipeline
+        done: false
+extra: {}

@@ -1,0 +1,8 @@
+title: Linear-light ingest — sRGB to Linear at promote
+status: pending
+type: feature
+approved: false
+created: '2026-04-03'
+updated: '2026-04-03'
+deps:
+- hdr-safe-f32_20260403034037Z

@@ -1,0 +1,100 @@
+id: display-transform_20260403034039Z
+title: Display transform at output — Linear to sRGB at demote
+type: feature
+status: pending
+created: '2026-04-03'
+updated: '2026-04-03'
+spec:
+  summary: |
+    DemoteNode applies Linear→sRGB gamma encoding before quantization.
+    The encode pipeline becomes: Linear f32 → gamma encode → quantize.
+    Add GPU demote shader. Support extensible view transforms.
+  context: |
+    With Track B, all pipeline data is Linear f32. But sRGB-encoded
+    output formats (JPEG, PNG, etc.) need gamma encoding before
+    quantization. Without this, exports look too dark (linear data
+    displayed as gamma).
+
+    Professional engines never show raw linear to the user. They apply
+    a View Transform (sRGB, Rec.709, ACES Output) to the final output.
+    This track implements the sRGB view transform as the default, with
+    extensibility for other transforms.
+  codebase_analysis: |
+    DemoteNode (precision.rs:121-170):
+    - Currently: convert_format() quantizes f32[0,1] → u8[0,255]
+    - Needed: apply linear_to_srgb() before quantization
+
+    linear_to_srgb already exists (color_spaces.rs:25):
+      v <= 0.0031308 ? v*12.92 : 1.055*v^(1/2.4)-0.055
+
+    Sink quantization (quantize_f32.rs):
+    - rgba32f_to_rgba8: (v * 255.0 + 0.5).clamp(0.0, 255.0)
+    - This runs AFTER DemoteNode in the pipeline, so it will receive
+      gamma-encoded values — correct.
+
+    EXR/HDR encoders should receive LINEAR data (no gamma encode).
+    The quantize_f32::encoder_target_format() already routes EXR/HDR
+    to f32 output — DemoteNode should skip gamma for f32 targets.
+  acceptance_criteria:
+    - DemoteNode applies linear_to_srgb() before u8/u16 quantization
+    - GPU demote shader applies Linear→sRGB transfer function
+    - EXR/HDR/FITS encode receives linear f32 (no gamma applied)
+    - sRGB-encoded outputs (JPEG, PNG, BMP, WebP) receive gamma-encoded data
+    - ViewTransform enum for extensible output transforms (sRGB default)
+    - Round-trip JPEG test — encode and decode produces visually correct output
+    - No visible darkness shift in exported images
+  out_of_scope: |
+    Rec.709, ACES, DCI-P3 view transforms (future extension).
+    Display-referred vs scene-referred distinction.
+    Soft-clipping / tone mapping for HDR→SDR (separate track).
+  technical_notes: |
+    ViewTransform enum (extensible):
+      pub enum ViewTransform {
+          Srgb,         // linear_to_srgb (default for SDR output)
+          Linear,       // No transform (for EXR/HDR/FITS)
+          // Future: Rec709, AcesOutput, FilmicTonemap
+      }
+
+    DemoteNode changes:
+    - Accept ViewTransform parameter (default Srgb)
+    - Before quantization: apply view transform per channel
+    - For Linear: skip (EXR/HDR output)
+    - For Srgb: apply linear_to_srgb()
+
+    GPU demote shader (new: demote_u8.wgsl):
+    - Read vec4<f32>, apply linear_to_srgb per channel, pack to u32
+    - Inverse of promote_f32.wgsl
+    - Transfer savings: readback 4 bpp instead of 16 bpp
+
+    Sink integration:
+    - quantize_f32 already handles f32→u8 math
+    - DemoteNode should be inserted before quantize_f32 in the sink path
+    - Or: merge gamma encode into quantize_f32 itself
+plan:
+  - phase: CPU display transform
+    tasks:
+      - text: Add ViewTransform enum to pipeline types
+        done: false
+      - text: Extend DemoteNode to apply linear_to_srgb() per channel before quantization
+        done: false
+      - text: Skip gamma encode for linear output formats (EXR, HDR, FITS)
+        done: false
+      - text: Wire ViewTransform into sink write path
+        done: false
+  - phase: GPU display transform
+    tasks:
+      - text: Write demote_u8.wgsl — apply Linear→sRGB and pack to u32
+        done: false
+      - text: Add GpuCapable impl to DemoteNode with asymmetric output (f32 input, u8 output)
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Round-trip test — JPEG encode→decode from linear pipeline produces correct sRGB output
+        done: false
+      - text: EXR round-trip — verify linear values preserved (no gamma applied)
+        done: false
+      - text: Visual test — exported JPEG matches expected brightness
+        done: false
+      - text: Regression — all existing tests pass
+        done: false
+extra: {}

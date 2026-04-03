@@ -1,0 +1,75 @@
+id: hdr-safe-f32_20260403034037Z
+title: HDR-safe f32 — remove intermediate value clamping from all filters
+type: refactor
+status: pending
+created: '2026-04-03'
+updated: '2026-04-03'
+spec:
+  summary: |
+    Audit and remove all intermediate [0,1] and [0,255] clamping in f32
+    filter code paths. HDR values >1.0 must survive the entire pipeline
+    and only be clamped at the final encode boundary.
+  context: |
+    Professional engines (Nuke, Resolve, PS) support HDR: a user can
+    multiply a pixel by 100 and divide by 100, getting the original back.
+    Currently, many f32 code paths clamp to [0.0, 1.0] mid-pipeline,
+    destroying HDR data. The quantize_f32 layer at encode is the ONLY
+    place clamping should occur.
+  codebase_analysis: |
+    Intermediate clamp sites found (these destroy HDR values mid-pipeline):
+    - filters/common/blending.rs:143 — result.clamp(0.0, 1.0) * 255.0
+    - filters/common/blending.rs:304-306 — .clamp(0.0, 1.0) per channel
+    - filters/common/convolution.rs:350 — unsharp mask .clamp(0.0, 1.0)
+    - filters/enhancement/pyramid.rs:474 — Laplacian .clamp(0.0, 1.0)
+
+    Output clamp sites (these are CORRECT — at quantization boundary):
+    - quantize_f32.rs:76-139 — f32→u8/u16 quantization (keep these)
+    - transform/convert.rs:257-276 — Rgba32f→Rgba8 conversion (keep)
+    - filters/common/pixel_format.rs:155-195 — f32_samples_to_pixels (keep)
+
+    Pipeline boundary: sink.rs:275-286 dispatches to quantize_f32 for
+    encode — this is the correct clamping point.
+  acceptance_criteria:
+    - Zero intermediate clamp(0.0, 1.0) in filter f32 code paths
+    - HDR values >1.0 pass through blur, sharpen, blend, composite unchanged
+    - Only quantize_f32 and f32_samples_to_pixels clamp (at encode boundary)
+    - All existing tests pass (u8 pipeline unaffected)
+    - New test — round-trip HDR values through multi-filter chain
+  out_of_scope: |
+    Changing the [0,1] normalization convention. Filters that inherently
+    produce [0,1] output (like normalize) are fine. Only removing clamps
+    that DESTROY values outside [0,1] mid-pipeline.
+  technical_notes: |
+    For each clamp site, determine if it is:
+    A) Intermediate (destroys HDR) — REMOVE, let values pass through
+    B) Output boundary (quantization) — KEEP, this is correct
+    C) Algorithm-inherent (e.g., saturation clamp) — KEEP with comment
+
+    The blending.rs clamps are the most impactful — compositing with
+    HDR values is a core use case. The unsharp mask clamp in
+    convolution.rs prevents overbright sharpening halos, which is
+    actually desired for HDR (halos should go bright, not clip).
+plan:
+  - phase: Audit and classify clamp sites
+    tasks:
+      - text: Grep all .clamp() calls in filters/ and common/ — classify each as intermediate, boundary, or algorithm-inherent
+        done: false
+      - text: Document each site with rationale (remove/keep/comment)
+        done: false
+  - phase: Remove intermediate clamps
+    tasks:
+      - text: Remove clamp from blending.rs blend accumulation (lines 143, 304-306)
+        done: false
+      - text: Remove clamp from convolution.rs unsharp mask (line 350)
+        done: false
+      - text: Remove clamp from pyramid.rs Laplacian reconstruction (line 474)
+        done: false
+      - text: Fix any other intermediate clamps found in audit
+        done: false
+  - phase: HDR round-trip test
+    tasks:
+      - text: Test — create f32 image with values [0.0, 2.0], run through blur+sharpen+blend chain, verify values >1.0 survive
+        done: false
+      - text: Regression — all existing tests pass unchanged
+        done: false
+extra: {}

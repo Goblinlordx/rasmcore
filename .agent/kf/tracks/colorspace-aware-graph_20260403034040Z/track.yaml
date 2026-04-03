@@ -1,0 +1,125 @@
+id: colorspace-aware-graph_20260403034040Z
+title: Color-space-aware graph — per-node state tracking and auto-conversion
+type: feature
+status: pending
+created: '2026-04-03'
+updated: '2026-04-03'
+spec:
+  summary: |
+    Each node declares its expected input color space. The graph walker
+    auto-inserts color space conversions at node boundaries. Grading
+    nodes work in Log space, VFX nodes in Linear. ImageInfo.color_space
+    becomes enforced, not decorative.
+  context: |
+    This is the "secret sauce" of professional color pipelines. In Nuke
+    and Resolve, the engine tracks the color state of data through the
+    graph. When a Linear node feeds into a Log node, the engine
+    auto-inserts a Linear→Log conversion.
+
+    This enables the ideal workflow:
+    1. Input: decode → promote → linearize (Tracks A-B)
+    2. VFX (blur, transform, composite): operate in Linear
+    3. Color grading (curves, levels, color balance): engine auto-converts
+       to Log (e.g., ACEScct) — sliders feel "musical" and perceptually
+       uniform — then back to Linear
+    4. Output: Linear → display transform → encode (Track C)
+
+    Without this, users must manually insert color space conversions
+    between every VFX and grading node — error-prone and tedious.
+  codebase_analysis: |
+    ColorSpace enum (types.rs:65-73): has 7 variants including Srgb,
+    LinearSrgb. Need to add Log variants (ACEScct, ACEScc).
+
+    ImageInfo.color_space (types.rs:81): exists but purely decorative.
+    No processing code checks it.
+
+    Existing color conversions (color_spaces.rs):
+    - sRGB ↔ Linear (lines 17-32) — done
+    - ProPhoto RGB ↔ sRGB (lines 89-100)
+    - Adobe RGB ↔ sRGB (lines 147-156)
+    - OKLab ↔ sRGB (lines 271-349)
+    - NO Log/ACES conversions exist — need implementation
+
+    Graph walker (graph.rs request_region): dispatches nodes without
+    checking color_space. Need to add color space negotiation before
+    dispatch — if node expects Log and input is Linear, insert converter.
+
+    Node trait (graph.rs ImageNode): has info(), compute_region(),
+    input_rect(). Need to add expected_color_space() method.
+  acceptance_criteria:
+    - ImageNode trait has expected_color_space() method (default Linear)
+    - Grading filters (curves, levels, color_balance, lift_gamma_gain) declare Log
+    - Graph walker auto-inserts Linear↔Log conversion nodes at boundaries
+    - ACEScct Log encoding implemented (ACES standard)
+    - ImageInfo.color_space correctly reflects data state at every node
+    - Grading in Log space produces perceptually uniform results
+    - No manual color space management required for common workflows
+  out_of_scope: |
+    Full ACES pipeline (IDT, RRT, ODT).
+    Per-node custom color space (beyond Linear/Log/sRGB).
+    OCIO integration.
+  technical_notes: |
+    ACEScct (ACES Log encoding) transfer function:
+      Forward (linear → log):
+        x <= 0.0078125: y = (10.5402377 * x + 0.0729055)
+        x > 0.0078125: y = (log2(x) + 9.72) / 17.52
+      Inverse (log → linear):
+        y <= 0.155251: x = (y - 0.0729055) / 10.5402377
+        y > 0.155251: x = 2^(y * 17.52 - 9.72)
+
+    Node trait extension:
+      trait ImageNode {
+          fn expected_color_space(&self) -> ColorSpace {
+              ColorSpace::LinearSrgb  // default for VFX nodes
+          }
+      }
+
+    Graph walker color negotiation (in request_region):
+      let node_wants = node.expected_color_space();
+      let upstream_has = upstream_info.color_space;
+      if node_wants != upstream_has {
+          // Insert auto-conversion node
+          let converted = auto_convert(upstream_data, upstream_has, node_wants);
+      }
+
+    This is similar to how PromoteNode auto-inserts for format conversion,
+    but for color space conversion. The converter nodes are lightweight
+    (per-channel transfer function, no spatial dependencies).
+plan:
+  - phase: Color space infrastructure
+    tasks:
+      - text: Add ACEScct Log variants to ColorSpace enum
+        done: false
+      - text: Implement ACEScct forward and inverse transfer functions in color_spaces.rs
+        done: false
+      - text: Add expected_color_space() method to ImageNode trait (default Linear)
+        done: false
+      - text: Create ColorSpaceConvertNode — lightweight per-channel transfer function node
+        done: false
+  - phase: Node color space declarations
+    tasks:
+      - text: Declare Linear for VFX nodes (blur, sharpen, resize, composite, transform, distortion)
+        done: false
+      - text: Declare Log (ACEScct) for grading nodes (curves, levels, color_balance, lift_gamma_gain, exposure, contrast)
+        done: false
+      - text: Declare Linear for analysis nodes (histogram, edge detection, Harris)
+        done: false
+  - phase: Graph walker auto-conversion
+    tasks:
+      - text: In request_region, detect color space mismatch between node and upstream
+        done: false
+      - text: Auto-insert ColorSpaceConvertNode when mismatch detected
+        done: false
+      - text: Propagate color_space through ImageInfo at each node boundary
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test — grading node receives Log data, VFX node receives Linear
+        done: false
+      - text: Test — auto-conversion is transparent (no manual intervention)
+        done: false
+      - text: Visual test — curves adjustment in Log space produces smoother gradients than Linear
+        done: false
+      - text: Regression — all existing tests pass
+        done: false
+extra: {}

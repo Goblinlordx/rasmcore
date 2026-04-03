@@ -1,0 +1,8 @@
+title: Color-space-aware graph — per-node state tracking
+status: pending
+type: feature
+approved: false
+created: '2026-04-03'
+updated: '2026-04-03'
+deps:
+- display-transform_20260403034039Z
