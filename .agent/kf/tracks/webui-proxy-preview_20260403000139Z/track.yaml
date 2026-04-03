@@ -5,75 +5,72 @@ status: pending
 created: '2026-04-03'
 updated: '2026-04-03'
 spec:
-  summary: |
-    Wire setProxyScale() into the web UI preview worker so spatial parameters
+  summary: 'Wire setProxyScale() into the web UI preview worker so spatial parameters
+
     (blur radius, crop coords, draw positions, vignette insets) auto-scale
+
     to match the preview resolution. Users set params at full-res values;
+
     the preview renders correctly at 400px proxy scale.
-  context: |
-    The proxy-scale-params track added setProxyScale(scale) to the WASM
+
+    '
+  context: 'The proxy-scale-params track added setProxyScale(scale) to the WASM
+
     pipeline. The codegen auto-multiplies spatial params (hint=rc.pixels)
+
     by the scale factor before passing to domain code. But the web UI
-    doesn't call setProxyScale yet — the preview worker downscales the
+
+    doesn''t call setProxyScale yet — the preview worker downscales the
+
     image to 400px but leaves spatial params at their full-res values.
 
+
     This means a blur radius of 20px looks like ~3px in preview (correct
+
     proportionally) but a crop at x=500 is out of bounds in the 400px
+
     preview. With proxy scale, the pipeline handles this transparently.
-  codebase_analysis: |
-    Key files:
-    - web-ui/src/preview-worker.ts — downscales to PREVIEW_MAX=400, creates
-      cachedPipe for preview chain processing. Line 86 computes scale factor.
-      Line 94 re-creates pipeline. setProxyScale should be called here.
-    - web-ui/src/pipeline-worker.ts — full-res pipeline. Must ensure
-      proxy_scale stays at 1.0 (the default).
-    - web-ui/src/utils/manifest.ts — reads param-manifest.json, maps hints
-      to UI control types. The 'spatial' field is now in the manifest but
-      the UI doesn't use it yet.
 
-    The WASM pipeline already has full setProxyScale support:
-    - PipelineResource.proxy_scale: Cell<f32> (default 1.0)
-    - Generated adapter multiplies spatial params by proxy_scale
-    - 33 params across 11 filters have hint=rc.pixels (spatial)
+    '
+  codebase_analysis: "Key files:\n- web-ui/src/preview-worker.ts — downscales to PREVIEW_MAX=400, creates\n  cachedPipe for\
+    \ preview chain processing. Line 86 computes scale factor.\n  Line 94 re-creates pipeline. setProxyScale should be called\
+    \ here.\n- web-ui/src/pipeline-worker.ts — full-res pipeline. Must ensure\n  proxy_scale stays at 1.0 (the default).\n\
+    - web-ui/src/utils/manifest.ts — reads param-manifest.json, maps hints\n  to UI control types. The 'spatial' field is\
+    \ now in the manifest but\n  the UI doesn't use it yet.\n\nThe WASM pipeline already has full setProxyScale support:\n\
+    - PipelineResource.proxy_scale: Cell<f32> (default 1.0)\n- Generated adapter multiplies spatial params by proxy_scale\n\
+    - 33 params across 11 filters have hint=rc.pixels (spatial)\n"
   acceptance_criteria:
-    - preview-worker calls pipe.setProxyScale(downscaleRatio) after resize
-    - pipeline-worker ensures proxy_scale is 1.0 for full-res renders
-    - Spatial params in preview render at correct visual proportion
-    - Non-spatial params (percentage, angle, color) are NOT affected
-    - Existing preview behavior unchanged for images <= 400px (scale=1.0)
-  out_of_scope: |
-    UI display of scaled-vs-unscaled param values (showing "20px" while
-    computing at 10px). That's a UI polish follow-up.
+  - preview-worker calls pipe.setProxyScale(downscaleRatio) after resize
+  - pipeline-worker ensures proxy_scale is 1.0 for full-res renders
+  - Spatial params in preview render at correct visual proportion
+  - Non-spatial params (percentage, angle, color) are NOT affected
+  - Existing preview behavior unchanged for images <= 400px (scale=1.0)
+  out_of_scope: 'UI display of scaled-vs-unscaled param values (showing "20px" while
+
+    computing at 10px). That''s a UI polish follow-up.
+
     Configurable PREVIEW_MAX. Preview quality improvements.
-  technical_notes: |
-    The change is minimal:
 
-    preview-worker.ts (after line 96, where cachedPipe is re-created):
-      cachedPipe.setProxyScale(scale);  // scale is the downscale ratio
-
-    For images that don't need resize (scale=1.0), setProxyScale(1.0)
-    is a no-op — the default is already 1.0.
-
-    pipeline-worker.ts: no change needed — default is 1.0 and full-res
-    processing should use unscaled params.
-
-    Testing: add a Vitest test that verifies setProxyScale is called
-    with the correct ratio after image load. Integration test that
-    a blur(radius=20) on a 2000px image at 400px preview produces
-    the same visual result as blur(radius=4) at native 400px.
+    '
+  technical_notes: "The change is minimal:\n\npreview-worker.ts (after line 96, where cachedPipe is re-created):\n  cachedPipe.setProxyScale(scale);\
+    \  // scale is the downscale ratio\n\nFor images that don't need resize (scale=1.0), setProxyScale(1.0)\nis a no-op —\
+    \ the default is already 1.0.\n\npipeline-worker.ts: no change needed — default is 1.0 and full-res\nprocessing should\
+    \ use unscaled params.\n\nTesting: add a Vitest test that verifies setProxyScale is called\nwith the correct ratio after\
+    \ image load. Integration test that\na blur(radius=20) on a 2000px image at 400px preview produces\nthe same visual result\
+    \ as blur(radius=4) at native 400px.\n"
 plan:
-  - phase: Integration
-    tasks:
-      - text: Call setProxyScale(downscaleRatio) in preview-worker after image resize
-        done: false
-      - text: Verify pipeline-worker uses default scale 1.0 for full-res (no change needed)
-        done: false
-      - text: Log proxy scale in preview-worker console output for debugging
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Vitest test that setProxyScale is called with correct ratio
-        done: false
-      - text: Manual test — blur radius preview matches expected visual size
-        done: false
+- phase: Integration
+  tasks:
+  - text: Call setProxyScale(downscaleRatio) in preview-worker after image resize
+    done: true
+  - text: Verify pipeline-worker uses default scale 1.0 for full-res (no change needed)
+    done: true
+  - text: Log proxy scale in preview-worker console output for debugging
+    done: true
+- phase: Verification
+  tasks:
+  - text: Vitest test that setProxyScale is called with correct ratio
+    done: true
+  - text: Manual test — blur radius preview matches expected visual size
+    done: true
 extra: {}
