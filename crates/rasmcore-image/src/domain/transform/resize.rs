@@ -27,6 +27,9 @@ pub fn resize(
         PixelFormat::Rgb16 => fir::PixelType::U16x3,
         PixelFormat::Rgba16 => fir::PixelType::U16x4,
         PixelFormat::Gray16 => fir::PixelType::U16,
+        PixelFormat::Rgba32f => fir::PixelType::F32x4,
+        PixelFormat::Rgb32f => fir::PixelType::F32x3,
+        PixelFormat::Gray32f => fir::PixelType::F32,
         other => {
             return Err(ImageError::UnsupportedFormat(format!(
                 "resize from {other:?} not supported by SIMD backend"

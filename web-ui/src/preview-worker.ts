@@ -107,8 +107,9 @@ function loadImage(bytes) {
       cachedSourceNode = src;
       console.log(`[preview-worker] No resize needed: ${origW}x${origH} <= ${PREVIEW_MAX}px`);
     }
-  } catch (e) {
-    console.error('[preview-worker] Load failed:', e);
+  } catch (e: any) {
+    const detail = e?.payload ? JSON.stringify(e.payload, null, 2) : e?.message || String(e);
+    console.error('[preview-worker] Load failed:', detail, e);
     previewBytes = raw;
     cachedPipe = null;
     cachedSourceNode = null;
@@ -144,8 +145,10 @@ function processChain(chain) {
 
     const buf = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength);
     self.postMessage({ type: 'result', png: buf, totalMs }, [buf]);
-  } catch (e) {
-    self.postMessage({ type: 'error', message: e.message });
+  } catch (e: any) {
+    const detail = e?.payload ? JSON.stringify(e.payload, null, 2) : e?.message || String(e);
+    console.error('[preview-worker] Process failed:', detail, e);
+    self.postMessage({ type: 'error', message: detail });
   }
 }
 
