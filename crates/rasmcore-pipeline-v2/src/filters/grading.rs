@@ -5,7 +5,7 @@
 
 use crate::fusion::Clut3D;
 use crate::node::PipelineError;
-use crate::ops::Filter;
+use crate::ops::{Filter, GpuFilter};
 
 use super::color::ClutOp;
 
@@ -811,6 +811,84 @@ impl Filter for FilmGrain {
     }
 }
 
+/// WGSL compute shader for film grain.
+///
+/// Implements the same hash noise and parabolic intensity curve as the CPU path.
+/// Supports both monochrome and color grain via the `color_grain` uniform flag.
+const FILM_GRAIN_WGSL: &str = r#"
+struct Params {
+  width: u32,
+  height: u32,
+  amount: f32,
+  inv_size: f32,
+  seed: u32,
+  color_grain: u32,
+  _pad0: u32,
+  _pad1: u32,
+}
+
+@group(0) @binding(2) var<uniform> params: Params;
+
+fn hash_noise(x: u32, y: u32, seed: u32) -> f32 {
+  var h = x * 374761393u + y * 668265263u + seed * 1274126177u;
+  h = (h ^ (h >> 13u)) * 1103515245u;
+  h = h ^ (h >> 16u);
+  return f32(h) / 4294967295.0 * 2.0 - 1.0;
+}
+
+@compute @workgroup_size(16, 16, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let x = gid.x;
+  let y = gid.y;
+  if (x >= params.width || y >= params.height) {
+    return;
+  }
+  let idx = y * params.width + x;
+  let pixel = load_pixel(idx);
+  let luma = 0.2126 * pixel.x + 0.7152 * pixel.y + 0.0722 * pixel.z;
+  let intensity = 4.0 * luma * (1.0 - luma) * params.amount;
+  let sx = u32(f32(x) * params.inv_size);
+  let sy = u32(f32(y) * params.inv_size);
+  var result = pixel;
+  if (params.color_grain != 0u) {
+    result.x = pixel.x + hash_noise(sx, sy, params.seed) * intensity;
+    result.y = pixel.y + hash_noise(sx, sy, params.seed + 1u) * intensity;
+    result.z = pixel.z + hash_noise(sx, sy, params.seed + 2u) * intensity;
+  } else {
+    let n = hash_noise(sx, sy, params.seed) * intensity;
+    result.x = pixel.x + n;
+    result.y = pixel.y + n;
+    result.z = pixel.z + n;
+  }
+  store_pixel(idx, result);
+}
+"#;
+
+impl GpuFilter for FilmGrain {
+    fn shader_body(&self) -> &str {
+        FILM_GRAIN_WGSL
+    }
+
+    fn workgroup_size(&self) -> [u32; 3] {
+        [16, 16, 1]
+    }
+
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        let inv_size = 1.0 / self.size.max(0.1);
+        let color_grain: u32 = if self.color { 1 } else { 0 };
+        let mut buf = Vec::with_capacity(32);
+        buf.extend_from_slice(&width.to_le_bytes());
+        buf.extend_from_slice(&height.to_le_bytes());
+        buf.extend_from_slice(&self.amount.to_le_bytes());
+        buf.extend_from_slice(&inv_size.to_le_bytes());
+        buf.extend_from_slice(&self.seed.to_le_bytes());
+        buf.extend_from_slice(&color_grain.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes()); // _pad0
+        buf.extend_from_slice(&0u32.to_le_bytes()); // _pad1
+        buf
+    }
+}
+
 // ─── .cube LUT Parser ──────────────────────────────────────────────────────
 
 /// Parse a .cube format 3D LUT from text content into a Clut3D.
@@ -1198,6 +1276,46 @@ mod tests {
         };
         let out = f.compute(&input, 1, 1).unwrap();
         assert_eq!(out[3], 0.42, "Grain should preserve alpha");
+    }
+
+    #[test]
+    fn film_grain_gpu_shader_valid() {
+        let f = FilmGrain {
+            amount: 0.3,
+            size: 1.5,
+            color: false,
+            seed: 42,
+        };
+        let body = f.shader_body();
+        assert!(body.contains("fn hash_noise"), "Shader should contain hash_noise");
+        assert!(body.contains("@compute @workgroup_size(16, 16, 1)"), "Shader should have workgroup_size");
+        assert!(body.contains("load_pixel"), "Shader should use load_pixel");
+        assert!(body.contains("store_pixel"), "Shader should use store_pixel");
+        assert!(body.contains("params.amount"), "Shader should reference params.amount");
+        assert!(body.contains("params.color_grain"), "Shader should reference color_grain flag");
+    }
+
+    #[test]
+    fn film_grain_gpu_params_layout() {
+        let f = FilmGrain {
+            amount: 0.3,
+            size: 2.0,
+            color: true,
+            seed: 99,
+        };
+        let params = f.params(100, 50);
+        assert_eq!(params.len(), 32, "Params should be 8 u32s = 32 bytes");
+        // Parse back: width=100, height=50
+        let width = u32::from_le_bytes(params[0..4].try_into().unwrap());
+        let height = u32::from_le_bytes(params[4..8].try_into().unwrap());
+        let amount = f32::from_le_bytes(params[8..12].try_into().unwrap());
+        let seed = u32::from_le_bytes(params[16..20].try_into().unwrap());
+        let color_grain = u32::from_le_bytes(params[20..24].try_into().unwrap());
+        assert_eq!(width, 100);
+        assert_eq!(height, 50);
+        assert!((amount - 0.3).abs() < 1e-6);
+        assert_eq!(seed, 99);
+        assert_eq!(color_grain, 1);
     }
 
     // ── LUT Application ──
