@@ -1,6 +1,7 @@
 //! Tests for threshold filters
 
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 #[cfg(test)]
 mod threshold_tests {

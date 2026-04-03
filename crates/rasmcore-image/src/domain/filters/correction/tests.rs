@@ -91,10 +91,10 @@ fn ca_remove_synthetic_ca_correction() {
     // Apply CA effect (from our chromatic_aberration filter)
     let r_ca = Rect::new(0, 0, w, h);
     let mut u_ca = |_: Rect| Ok(original.clone());
-    let ca_image = crate::domain::filters::effect::chromatic_aberration(
-        r_ca, &mut u_ca, &info,
-        &crate::domain::filters::effect::ChromaticAberrationParams { strength: 3.0 },
-    ).unwrap();
+    use crate::domain::filter_traits::CpuFilter;
+    let ca_image = crate::domain::filters::effect::ChromaticAberrationParams { strength: 3.0 }
+        .compute(r_ca, &mut u_ca, &info)
+        .unwrap();
 
     // Apply CA removal with similar magnitude
     let r_fix = Rect::new(0, 0, w, h);

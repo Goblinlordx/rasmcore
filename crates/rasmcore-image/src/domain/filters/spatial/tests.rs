@@ -178,10 +178,11 @@ mod tests {
     #[test]
     fn brightness_increases() {
         let (px, info) = make_image(8, 8);
-        let result = BrightnessParams { amount: 0.5 }.compute(
+        let result = brightness(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(px.to_vec()),
             &info,
+            &BrightnessParams { amount: 0.5 },
         )
         .unwrap();
         assert_eq!(result.len(), px.len());
@@ -194,18 +195,20 @@ mod tests {
     fn brightness_out_of_range_returns_error() {
         let (px, info) = make_image(8, 8);
         assert!(
-            BrightnessParams { amount: 1.5 }.compute(
+            brightness(
                 Rect::new(0, 0, info.width, info.height),
                 &mut |_| Ok(px.to_vec()),
                 &info,
+                &BrightnessParams { amount: 1.5 },
             )
             .is_err()
         );
         assert!(
-            BrightnessParams { amount: -1.5 }.compute(
+            brightness(
                 Rect::new(0, 0, info.width, info.height),
                 &mut |_| Ok(px.to_vec()),
                 &info,
+                &BrightnessParams { amount: -1.5 },
             )
             .is_err()
         );
@@ -214,10 +217,11 @@ mod tests {
     #[test]
     fn contrast_preserves_dimensions() {
         let (px, info) = make_image(8, 8);
-        let result = ContrastParams { amount: 0.5 }.compute(
+        let result = contrast(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(px.to_vec()),
             &info,
+            &ContrastParams { amount: 0.5 },
         )
         .unwrap();
         assert_eq!(result.len(), px.len());
@@ -227,10 +231,11 @@ mod tests {
     fn contrast_out_of_range_returns_error() {
         let (px, info) = make_image(8, 8);
         assert!(
-            ContrastParams { amount: 2.0 }.compute(
+            contrast(
                 Rect::new(0, 0, info.width, info.height),
                 &mut |_| Ok(px.to_vec()),
                 &info,
+                &ContrastParams { amount: 2.0 },
             )
             .is_err()
         );
@@ -264,18 +269,20 @@ mod tests {
         assert!(blur_impl(&pixels, &info, &BlurParams { radius: 1.0 }).is_ok());
         assert!(sharpen_impl(&pixels, &info, &SharpenParams { amount: 1.0 }).is_ok());
         assert!(
-            BrightnessParams { amount: 0.2 }.compute(
+            brightness(
                 Rect::new(0, 0, info.width, info.height),
                 &mut |_| Ok(pixels.to_vec()),
                 &info,
+                &BrightnessParams { amount: 0.2 },
             )
             .is_ok()
         );
         assert!(
-            ContrastParams { amount: 0.2 }.compute(
+            contrast(
                 Rect::new(0, 0, info.width, info.height),
                 &mut |_| Ok(pixels.to_vec()),
                 &info,
+                &ContrastParams { amount: 0.2 },
             )
             .is_ok()
         );
@@ -286,10 +293,11 @@ mod tests {
     fn contrast_lut_produces_expected_values() {
         // Zero contrast should be near identity
         let (px, info) = make_image(4, 4);
-        let result = ContrastParams { amount: 0.0 }.compute(
+        let result = contrast(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(px.to_vec()),
             &info,
+            &ContrastParams { amount: 0.0 },
         )
         .unwrap();
         assert_eq!(result, px);
@@ -320,7 +328,7 @@ mod tests {
         let r = Rect::new(0, 0, info.width, info.height);
         let px2 = px.clone();
         let mut u = |_: Rect| Ok(px2.clone());
-        let result = saturate(r, &mut u, &info, &SaturateParams { factor: 1.0 }).unwrap();
+        let result = SaturateParams { factor: 1.0 }.compute(r, &mut u, &info).unwrap();
         for (i, (&orig, &out)) in px.iter().zip(result.iter()).enumerate() {
             assert!(
                 (orig as i16 - out as i16).abs() <= 1,
@@ -369,7 +377,7 @@ mod tests {
         let r = Rect::new(0, 0, info.width, info.height);
         let px2 = px.clone();
         let mut u = |_: Rect| Ok(px2.clone());
-        let result = saturate(r, &mut u, &info, &SaturateParams { factor: 0.0 }).unwrap();
+        let result = SaturateParams { factor: 0.0 }.compute(r, &mut u, &info).unwrap();
         // All pixels should have r≈g≈b
         for chunk in result.chunks_exact(3) {
             let spread = chunk.iter().map(|&v| v as i32).max().unwrap()
@@ -387,7 +395,7 @@ mod tests {
         let r = Rect::new(0, 0, info.width, info.height);
         let px2 = px.clone();
         let mut u = |_: Rect| Ok(px2.clone());
-        let result = saturate(r, &mut u, &info, &SaturateParams { factor: 1.0 }).unwrap();
+        let result = SaturateParams { factor: 1.0 }.compute(r, &mut u, &info).unwrap();
         let mae: f64 = px
             .iter()
             .zip(result.iter())
@@ -405,7 +413,7 @@ mod tests {
         let (px, info) = make_image(8, 8);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = sepia(r, &mut u, &info, &SepiaParams { intensity: 1.0 }).unwrap();
+        let result = SepiaParams { intensity: 1.0 }.compute(r, &mut u, &info).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
@@ -414,7 +422,7 @@ mod tests {
         let (px, info) = make_image(8, 8);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = sepia(r, &mut u, &info, &SepiaParams { intensity: 0.0 }).unwrap();
+        let result = SepiaParams { intensity: 0.0 }.compute(r, &mut u, &info).unwrap();
         assert_eq!(result, px);
     }
 
@@ -423,6 +431,8 @@ mod tests {
         let (px, info) = make_image(8, 8);
         let result = ColorizeParams {
             target: crate::domain::param_types::ColorRgb { r: 255, g: 0, b: 0 },
+            amount: 0.5,
+            method: String::from("w3c"),
         }.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(px.to_vec()),
@@ -437,6 +447,8 @@ mod tests {
         let (px, info) = make_image(8, 8);
         let result = ColorizeParams {
             target: crate::domain::param_types::ColorRgb { r: 255, g: 0, b: 0 },
+            amount: 0.0,
+            method: String::from("w3c"),
         }.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(px.to_vec()),
@@ -459,15 +471,16 @@ mod tests {
         let kernel = [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0];
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = ConvolveParams {
-                kw: 3,
-                kh: 3,
-                divisor: 1.0
-        }.compute(
+        let result = convolve(
             r,
             &mut u,
             &info,
             &kernel,
+            &ConvolveParams {
+                kw: 3,
+                kh: 3,
+                divisor: 1.0,
+            },
         )
         .unwrap();
         assert_eq!(result, pixels);
@@ -486,15 +499,16 @@ mod tests {
         let kernel = [0.0, -1.0, 0.0, -1.0, 5.0, -1.0, 0.0, -1.0, 0.0];
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = ConvolveParams {
-                kw: 3,
-                kh: 3,
-                divisor: 1.0
-        }.compute(
+        let result = convolve(
             r,
             &mut u,
             &info,
             &kernel,
+            &ConvolveParams {
+                kw: 3,
+                kh: 3,
+                divisor: 1.0,
+            },
         )
         .unwrap();
         // Uniform input → sharpen produces same output (no edges)
@@ -572,12 +586,13 @@ mod tests {
                 pixels[r * 16 + c] = 200;
             }
         }
-        let result = CannyParams {
-                low_threshold: 30.0,
-                high_threshold: 100.0
-        }.compute(
+        let result = canny(
             &pixels,
             &info,
+            &CannyParams {
+                low_threshold: 30.0,
+                high_threshold: 100.0,
+            },
         )
         .unwrap();
         // Should produce binary output (0 or 255 only)
@@ -630,6 +645,8 @@ mod tests {
                     g: 128,
                     b: 255,
                 },
+                amount: 0.5,
+                method: String::from("w3c"),
             }.compute(
                 Rect::new(0, 0, info.width, info.height),
                 &mut |_| Ok(pixels.to_vec()),
@@ -1030,15 +1047,16 @@ mod optimization_tests {
         let start = std::time::Instant::now();
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let _ = ConvolveParams {
-                kw: 3,
-                kh: 3,
-                divisor: 9.0
-        }.compute(
+        let _ = convolve(
             r,
             &mut u,
             &info,
             &kernels::BOX_BLUR_3X3,
+            &ConvolveParams {
+                kw: 3,
+                kh: 3,
+                divisor: 9.0,
+            },
         )
         .unwrap();
         let elapsed = start.elapsed();
@@ -1263,7 +1281,8 @@ mod optimization_tests {
                 radius: 4,
                 epsilon: 0.01
         }.compute(
-            &pixels,
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.clone()),
             &info,
         )
         .unwrap();
@@ -1300,7 +1319,8 @@ mod optimization_tests {
                 radius: 4,
                 epsilon: 0.01
         }.compute(
-            &pixels,
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.clone()),
             &info,
         )
         .unwrap();
@@ -1369,15 +1389,16 @@ mod tests_16bit {
         let kernel = [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0];
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = ConvolveParams {
-                kw: 3,
-                kh: 3,
-                divisor: 1.0
-        }.compute(
+        let result = convolve(
             r,
             &mut u,
             &info,
             &kernel,
+            &ConvolveParams {
+                kw: 3,
+                kh: 3,
+                divisor: 1.0,
+            },
         )
         .unwrap();
         // Should be close to original (some precision loss from 16→8→16)
@@ -1427,10 +1448,11 @@ mod tests_16bit {
     #[test]
     fn brightness_16bit() {
         let (px, info) = make_rgb16(4, 4, 32768);
-        let result = BrightnessParams { amount: 0.5 }.compute(
+        let result = brightness(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(px.to_vec()),
             &info,
+            &BrightnessParams { amount: 0.5 },
         )
         .unwrap();
         assert_eq!(result.len(), px.len());
@@ -1450,7 +1472,7 @@ mod tests_16bit {
         let (px, info) = make_rgb16(4, 4, 32768);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = sepia(r, &mut u, &info, &SepiaParams { intensity: 1.0 }).unwrap();
+        let result = SepiaParams { intensity: 1.0 }.compute(r, &mut u, &info).unwrap();
         assert_eq!(result.len(), px.len());
     }
 }

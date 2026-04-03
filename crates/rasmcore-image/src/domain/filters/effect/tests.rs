@@ -1,6 +1,7 @@
 //! Tests for effect filters
 
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 #[cfg(test)]
 mod noise_tests {
@@ -145,7 +146,7 @@ mod artistic_filter_tests {
         let info = rgb_info(32, 32);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = solarize(r, &mut u, &info, &SolarizeParams { threshold: 128 }).unwrap();
+        let result = SolarizeParams { threshold: 128 }.compute(r, &mut u, &info).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -156,7 +157,7 @@ mod artistic_filter_tests {
         let info = rgb_info(1, 1);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = solarize(r, &mut u, &info, &SolarizeParams { threshold: 128 }).unwrap();
+        let result = SolarizeParams { threshold: 128 }.compute(r, &mut u, &info).unwrap();
         assert_eq!(result, vec![55, 55, 55]);
     }
 
@@ -167,7 +168,7 @@ mod artistic_filter_tests {
         let info = rgb_info(1, 1);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = solarize(r, &mut u, &info, &SolarizeParams { threshold: 0 }).unwrap();
+        let result = SolarizeParams { threshold: 0 }.compute(r, &mut u, &info).unwrap();
         assert_eq!(result, vec![127, 127, 127]);
     }
 
@@ -299,11 +300,10 @@ mod add_noise_tests {
             sigma: 25.0,
             seed: 42,
         };
-        let result = gaussian_noise(
+        let result = config.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &config,
         )
         .unwrap();
         assert_eq!(result, pixels);
@@ -319,18 +319,16 @@ mod add_noise_tests {
             sigma: 25.0,
             seed: 123,
         };
-        let r1 = gaussian_noise(
+        let r1 = config.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &config,
         )
         .unwrap();
-        let r2 = gaussian_noise(
+        let r2 = config.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &config,
         )
         .unwrap();
         assert_eq!(r1, r2, "same seed must produce identical output");
@@ -352,18 +350,16 @@ mod add_noise_tests {
             sigma: 25.0,
             seed: 2,
         };
-        let r1 = gaussian_noise(
+        let r1 = c1.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &c1,
         )
         .unwrap();
-        let r2 = gaussian_noise(
+        let r2 = c2.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &c2,
         )
         .unwrap();
         assert_ne!(r1, r2, "different seeds should produce different output");
@@ -380,11 +376,10 @@ mod add_noise_tests {
             sigma: 25.0,
             seed: 42,
         };
-        let result = gaussian_noise(
+        let result = config.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &config,
         )
         .unwrap();
         let mean: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
@@ -419,11 +414,10 @@ mod add_noise_tests {
             sigma: 50.0,
             seed: 99,
         };
-        let result = gaussian_noise(
+        let result = config.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &config,
         )
         .unwrap();
         assert_eq!(result[3], 255, "alpha channel must be preserved");
@@ -439,11 +433,10 @@ mod add_noise_tests {
             density: 0.0,
             seed: 42,
         };
-        let result = salt_pepper_noise(
+        let result = config.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &config,
         ).unwrap();
         assert_eq!(result, pixels);
     }
@@ -456,17 +449,15 @@ mod add_noise_tests {
             density: 0.1,
             seed: 77,
         };
-        let r1 = salt_pepper_noise(
+        let r1 = config.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &config,
         ).unwrap();
-        let r2 = salt_pepper_noise(
+        let r2 = config.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &config,
         ).unwrap();
         assert_eq!(r1, r2);
     }
@@ -479,11 +470,10 @@ mod add_noise_tests {
             density: 1.0,
             seed: 42,
         };
-        let result = salt_pepper_noise(
+        let result = config.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &config,
         ).unwrap();
         // Every pixel should be either 0 or 255 (density=1 means all replaced)
         for chunk in result.chunks_exact(3) {
@@ -508,7 +498,7 @@ mod add_noise_tests {
         let r = Rect::new(0, 0, info.width, info.height);
         let px = pixels.clone();
         let mut u = |_: Rect| Ok(px.clone());
-        let result = poisson_noise(r, &mut u, &info, &config).unwrap();
+        let result = config.compute(r, &mut u, &info).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -524,8 +514,8 @@ mod add_noise_tests {
         let px = pixels.clone();
         let mut u1 = |_: Rect| Ok(px.clone());
         let mut u2 = |_: Rect| Ok(px.clone());
-        let r1 = poisson_noise(r, &mut u1, &info, &config).unwrap();
-        let r2 = poisson_noise(r, &mut u2, &info, &config).unwrap();
+        let r1 = config.compute(r, &mut u1, &info).unwrap();
+        let r2 = config.compute(r, &mut u2, &info).unwrap();
         assert_eq!(r1, r2);
     }
 
@@ -547,8 +537,8 @@ mod add_noise_tests {
         let br = bright.clone();
         let mut u_dark = |_: Rect| Ok(dk.clone());
         let mut u_bright = |_: Rect| Ok(br.clone());
-        let dark_result = poisson_noise(r, &mut u_dark, &info, &config).unwrap();
-        let bright_result = poisson_noise(r, &mut u_bright, &info, &config).unwrap();
+        let dark_result = config.compute(r, &mut u_dark, &info).unwrap();
+        let bright_result = config.compute(r, &mut u_bright, &info).unwrap();
         let dark_var: f64 = {
             let m: f64 = dark_result.iter().map(|&v| v as f64).sum::<f64>() / n as f64;
             dark_result
@@ -583,7 +573,7 @@ mod add_noise_tests {
         };
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = uniform_noise(r, &mut u, &info, &config).unwrap();
+        let result = config.compute(r, &mut u, &info).unwrap();
         assert_eq!(result, pixels);
     }
 
@@ -598,8 +588,8 @@ mod add_noise_tests {
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u1 = |_: Rect| Ok(pixels.clone());
         let mut u2 = |_: Rect| Ok(pixels.clone());
-        let r1 = uniform_noise(r, &mut u1, &info, &config).unwrap();
-        let r2 = uniform_noise(r, &mut u2, &info, &config).unwrap();
+        let r1 = config.compute(r, &mut u1, &info).unwrap();
+        let r2 = config.compute(r, &mut u2, &info).unwrap();
         assert_eq!(r1, r2);
     }
 
@@ -614,7 +604,7 @@ mod add_noise_tests {
         };
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = uniform_noise(r, &mut u, &info, &config).unwrap();
+        let result = config.compute(r, &mut u, &info).unwrap();
         for &v in &result {
             assert!(
                 v >= 78 && v <= 178,
@@ -634,7 +624,7 @@ mod add_noise_tests {
         };
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = uniform_noise(r, &mut u, &info, &config).unwrap();
+        let result = config.compute(r, &mut u, &info).unwrap();
         let mean: f64 = result.iter().map(|&v| v as f64).sum::<f64>() / result.len() as f64;
         assert!(
             (mean - 128.0).abs() < 5.0,
@@ -691,11 +681,10 @@ mod pixelate_tests {
         let rect = Rect::new(0, 0, w, h);
         let params = PixelateParams::default();
         let input = pixels.clone();
-        let result = pixelate(
+        let result = params.compute(
             rect,
             &mut |_| Ok(input.clone()),
             &info,
-            &params,
         )
         .unwrap();
         // With a visible block_size (>=2), output should differ from input
@@ -815,7 +804,7 @@ mod consumer_effect_tests {
     #[test]
     fn chromatic_aberration_output_size() {
         let result = run_filter(64, 64, |r, u, info| {
-            chromatic_aberration(r, u, info, &ChromaticAberrationParams { strength: 3.0 })
+            ChromaticAberrationParams { strength: 3.0 }.compute(r, u, info)
         });
         assert_eq!(result.len(), 64 * 64 * 3);
     }
@@ -824,7 +813,7 @@ mod consumer_effect_tests {
     fn chromatic_aberration_zero_is_identity() {
         let pixels = gradient_rgb(32, 32);
         let result = run_filter(32, 32, |r, u, info| {
-            chromatic_aberration(r, u, info, &ChromaticAberrationParams { strength: 0.0 })
+            ChromaticAberrationParams { strength: 0.0 }.compute(r, u, info)
         });
         assert_eq!(result, pixels);
     }
@@ -833,7 +822,7 @@ mod consumer_effect_tests {
     fn chromatic_aberration_green_unchanged() {
         let pixels = gradient_rgb(64, 64);
         let result = run_filter(64, 64, |r, u, info| {
-            chromatic_aberration(r, u, info, &ChromaticAberrationParams { strength: 5.0 })
+            ChromaticAberrationParams { strength: 5.0 }.compute(r, u, info)
         });
         // Green channel (index 1) should be identical to original
         for i in (1..pixels.len()).step_by(3) {
@@ -846,16 +835,16 @@ mod consumer_effect_tests {
     #[test]
     fn glitch_deterministic() {
         let a = run_filter(64, 64, |r, u, info| {
-            glitch(r, u, info, &GlitchParams {
+            GlitchParams {
                 shift_amount: 20.0, channel_offset: 5.0,
                 intensity: 0.5, band_height: 8, seed: 42,
-            })
+            }.compute(r, u, info)
         });
         let b = run_filter(64, 64, |r, u, info| {
-            glitch(r, u, info, &GlitchParams {
+            GlitchParams {
                 shift_amount: 20.0, channel_offset: 5.0,
                 intensity: 0.5, band_height: 8, seed: 42,
-            })
+            }.compute(r, u, info)
         });
         assert_eq!(a, b, "same seed should produce identical output");
     }
@@ -863,16 +852,16 @@ mod consumer_effect_tests {
     #[test]
     fn glitch_different_seeds_differ() {
         let a = run_filter(64, 64, |r, u, info| {
-            glitch(r, u, info, &GlitchParams {
+            GlitchParams {
                 shift_amount: 20.0, channel_offset: 5.0,
                 intensity: 0.5, band_height: 8, seed: 1,
-            })
+            }.compute(r, u, info)
         });
         let b = run_filter(64, 64, |r, u, info| {
-            glitch(r, u, info, &GlitchParams {
+            GlitchParams {
                 shift_amount: 20.0, channel_offset: 5.0,
                 intensity: 0.5, band_height: 8, seed: 2,
-            })
+            }.compute(r, u, info)
         });
         assert_ne!(a, b, "different seeds should produce different output");
     }
@@ -883,10 +872,10 @@ mod consumer_effect_tests {
     fn light_leak_zero_intensity_is_identity() {
         let pixels = gradient_rgb(32, 32);
         let result = run_filter(32, 32, |r, u, info| {
-            light_leak(r, u, info, &LightLeakParams {
+            LightLeakParams {
                 intensity: 0.0, position_x: 0.5, position_y: 0.5,
                 radius: 0.5, warmth: 25.0,
-            })
+            }.compute(r, u, info)
         });
         assert_eq!(result, pixels);
     }
@@ -895,10 +884,10 @@ mod consumer_effect_tests {
     fn light_leak_brightens_image() {
         let pixels = gradient_rgb(64, 64);
         let result = run_filter(64, 64, |r, u, info| {
-            light_leak(r, u, info, &LightLeakParams {
+            LightLeakParams {
                 intensity: 0.8, position_x: 0.5, position_y: 0.5,
                 radius: 0.8, warmth: 25.0,
-            })
+            }.compute(r, u, info)
         });
         // Screen blend always lightens — sum should be >= original
         let sum_orig: u64 = pixels.iter().map(|&v| v as u64).sum();
@@ -911,9 +900,9 @@ mod consumer_effect_tests {
     #[test]
     fn mirror_horizontal_symmetry() {
         let result = run_filter(64, 64, |r, u, info| {
-            mirror_kaleidoscope(r, u, info, &MirrorKaleidoscopeParams {
+            MirrorKaleidoscopeParams {
                 segments: 2, angle: 0.0, mode: 0,
-            })
+            }.compute(r, u, info)
         });
         // Left half should equal reversed right half
         let w = 64usize;
@@ -935,9 +924,9 @@ mod consumer_effect_tests {
     #[test]
     fn mirror_vertical_symmetry() {
         let result = run_filter(64, 64, |r, u, info| {
-            mirror_kaleidoscope(r, u, info, &MirrorKaleidoscopeParams {
+            MirrorKaleidoscopeParams {
                 segments: 2, angle: 0.0, mode: 1,
-            })
+            }.compute(r, u, info)
         });
         let w = 64usize;
         let h = 64usize;
@@ -957,9 +946,9 @@ mod consumer_effect_tests {
     #[test]
     fn kaleidoscope_output_size() {
         let result = run_filter(64, 64, |r, u, info| {
-            mirror_kaleidoscope(r, u, info, &MirrorKaleidoscopeParams {
+            MirrorKaleidoscopeParams {
                 segments: 6, angle: 30.0, mode: 2,
-            })
+            }.compute(r, u, info)
         });
         assert_eq!(result.len(), 64 * 64 * 3);
     }

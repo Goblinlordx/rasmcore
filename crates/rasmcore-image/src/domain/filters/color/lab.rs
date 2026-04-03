@@ -463,11 +463,10 @@ mod tests {
         }
 
         // Per-pixel CPU path
-        let cpu_result = lab_adjust(
+        let cpu_result = config.compute(
             Rect::new(0, 0, 8, 8),
             &mut |_| Ok(pixels.clone()),
             &info,
-            &config,
         ).unwrap();
 
         // CLUT path

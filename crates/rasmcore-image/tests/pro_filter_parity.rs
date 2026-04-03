@@ -12,6 +12,7 @@
 
 use rasmcore_image::domain::color_grading;
 use rasmcore_image::domain::content_aware;
+use rasmcore_image::domain::filter_traits::CpuFilter;
 use rasmcore_image::domain::filters;
 use rasmcore_image::domain::types::*;
 use rasmcore_pipeline::Rect;
@@ -505,7 +506,8 @@ fn parity_smart_crop_registered() {
     let info = info_rgb8(w, h);
 
     let r = Rect::new(0, 0, info.width, info.height);
-    let result = filters::smart_crop_registered(r, &mut |_| Ok(pixels.to_vec()), &info, &filters::SmartCropParams { target_width: 64, target_height: 64 }).unwrap();
+    let config = filters::SmartCrop { target_width: 64, target_height: 64 };
+    let result = config.compute(r, &mut |_| Ok(pixels.to_vec()), &info).unwrap();
     assert_eq!(
         result.len(),
         64 * 64 * 3,
@@ -686,7 +688,8 @@ fn parity_vibrance() {
     let info = info_rgb8(w, h);
 
     let r = Rect::new(0, 0, info.width, info.height);
-    let ours = rasmcore_image::domain::filters::vibrance(r, &mut |_| Ok(pixels.to_vec()), &info, &filters::VibranceParams { amount: 40.0 }).unwrap();
+    let config = filters::VibranceParams { amount: 40.0 };
+    let ours = config.compute(r, &mut |_| Ok(pixels.to_vec()), &info).unwrap();
 
     let script = format!(
         r#"
@@ -743,11 +746,8 @@ fn parity_channel_mixer() {
     let info = info_rgb8(w, h);
 
     let r = Rect::new(0, 0, info.width, info.height);
-    let ours = rasmcore_image::domain::filters::channel_mixer(
-        r, &mut |_| Ok(pixels.to_vec()), &info,
-        &filters::ChannelMixerParams { rr: 0.8, rg: 0.1, rb: 0.1, gr: 0.1, gg: 0.8, gb: 0.1, br: 0.1, bg: 0.1, bb: 0.8 },
-    )
-    .unwrap();
+    let config = filters::ChannelMixerParams { rr: 0.8, rg: 0.1, rb: 0.1, gr: 0.1, gg: 0.8, gb: 0.1, br: 0.1, bg: 0.1, bb: 0.8 };
+    let ours = config.compute(r, &mut |_| Ok(pixels.to_vec()), &info).unwrap();
 
     let script = format!(
         r#"
@@ -820,8 +820,8 @@ fn parity_modulate_hsl() {
 
     // brightness=80%, saturation=120%, hue=30 degrees
     let r = Rect::new(0, 0, info.width, info.height);
-    let ours =
-        rasmcore_image::domain::filters::modulate(r, &mut |_| Ok(pixels.to_vec()), &info, &filters::ModulateParams { brightness: 80.0, saturation: 120.0, hue: 30.0 }).unwrap();
+    let config = filters::ModulateParams { brightness: 80.0, saturation: 120.0, hue: 30.0 };
+    let ours = config.compute(r, &mut |_| Ok(pixels.to_vec()), &info).unwrap();
 
     let script = format!(
         r#"

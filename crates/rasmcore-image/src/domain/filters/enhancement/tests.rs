@@ -6,6 +6,7 @@ use crate::domain::filters::common::*;
 #[cfg(test)]
 mod photo_enhance_tests {
     use super::*;
+    use crate::domain::filter_traits::CpuFilter;
     use crate::domain::types::ColorSpace;
 
     fn test_info(w: u32, h: u32, fmt: PixelFormat) -> ImageInfo {
@@ -323,6 +324,7 @@ mod nlm_tests {
 #[cfg(test)]
 mod retinex_tests {
     use super::*;
+    use crate::domain::filter_traits::CpuFilter;
     use crate::domain::types::ColorSpace;
 
     fn make_rgb(w: u32, h: u32) -> (Vec<u8>, ImageInfo) {
@@ -348,7 +350,7 @@ mod retinex_tests {
         let (px, info) = make_rgb(32, 32);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = retinex_ssr(r, &mut u, &info, &RetinexSsrParams { sigma: 80.0 }).unwrap();
+        let result = RetinexSsrParams { sigma: 80.0 }.compute(r, &mut u, &info).unwrap();
         assert_eq!(result.len(), px.len());
     }
 
@@ -370,7 +372,7 @@ mod retinex_tests {
         };
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = retinex_ssr(r, &mut u, &info, &RetinexSsrParams { sigma: 80.0 }).unwrap();
+        let result = RetinexSsrParams { sigma: 80.0 }.compute(r, &mut u, &info).unwrap();
 
         let stats_before = crate::domain::histogram::statistics(&pixels, &info).unwrap();
         let stats_after = crate::domain::histogram::statistics(&result, &info).unwrap();
@@ -396,7 +398,7 @@ mod retinex_tests {
         let (px, info) = make_rgb(32, 32);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let ssr = retinex_ssr(r, &mut u, &info, &RetinexSsrParams { sigma: 80.0 }).unwrap();
+        let ssr = RetinexSsrParams { sigma: 80.0 }.compute(r, &mut u, &info).unwrap();
         let mut u2 = |_: Rect| Ok(px.clone());
         let msr = retinex_msr(r, &mut u2, &info, &[80.0]).unwrap();
         // MSR with one scale should equal SSR
@@ -481,7 +483,7 @@ mod retinex_tests {
         // Run retinex_ssr which uses the box blur path for sigma=80
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = retinex_ssr(r, &mut u, &info, &RetinexSsrParams { sigma: 80.0 }).unwrap();
+        let result = RetinexSsrParams { sigma: 80.0 }.compute(r, &mut u, &info).unwrap();
         assert_eq!(result.len(), pixels.len());
 
         // Result should use a reasonable dynamic range (normalized output)
@@ -502,6 +504,7 @@ mod retinex_tests {
 #[cfg(test)]
 mod shadow_highlight_tests {
     use super::*;
+    use crate::domain::filter_traits::CpuFilter;
     use crate::domain::types::ColorSpace;
 
     fn rgb_info(w: u32, h: u32) -> ImageInfo {
@@ -817,6 +820,7 @@ mod hdr_tests {
 #[cfg(test)]
 mod frequency_separation_tests {
     use super::*;
+    use crate::domain::filter_traits::CpuFilter;
     use crate::domain::types::ColorSpace;
 
     fn make_rgb(w: u32, h: u32) -> (Vec<u8>, ImageInfo) {
@@ -847,11 +851,11 @@ mod frequency_separation_tests {
 
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let low = frequency_low(r, &mut u, &info, &FrequencyLowParams { sigma: sigma }).unwrap();
+        let low = FrequencyLowParams { sigma: sigma }.compute(r, &mut u, &info).unwrap();
         let r2 = Rect::new(0, 0, info.width, info.height);
         let mut u2 = |_: Rect| Ok(pixels.clone());
         let high =
-            frequency_high(r2, &mut u2, &info, &FrequencyHighParams { sigma: sigma }).unwrap();
+            FrequencyHighParams { sigma: sigma }.compute(r2, &mut u2, &info).unwrap();
 
         assert_eq!(low.len(), pixels.len());
         assert_eq!(high.len(), pixels.len());
@@ -890,11 +894,11 @@ mod frequency_separation_tests {
         let sigma = 3.0;
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let low = frequency_low(r, &mut u, &info, &FrequencyLowParams { sigma: sigma }).unwrap();
+        let low = FrequencyLowParams { sigma: sigma }.compute(r, &mut u, &info).unwrap();
         let r2 = Rect::new(0, 0, info.width, info.height);
         let mut u2 = |_: Rect| Ok(pixels.clone());
         let high =
-            frequency_high(r2, &mut u2, &info, &FrequencyHighParams { sigma: sigma }).unwrap();
+            FrequencyHighParams { sigma: sigma }.compute(r2, &mut u2, &info).unwrap();
 
         // Check alpha preserved in high-pass
         for i in 0..pixels.len() / 4 {
@@ -921,10 +925,10 @@ mod frequency_separation_tests {
         // sigma=0 → low = original, high = all 128
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let low = frequency_low(r, &mut u, &info, &FrequencyLowParams { sigma: 0.0 }).unwrap();
+        let low = FrequencyLowParams { sigma: 0.0 }.compute(r, &mut u, &info).unwrap();
         let r2 = Rect::new(0, 0, info.width, info.height);
         let mut u2 = |_: Rect| Ok(pixels.clone());
-        let high = frequency_high(r2, &mut u2, &info, &FrequencyHighParams { sigma: 0.0 }).unwrap();
+        let high = FrequencyHighParams { sigma: 0.0 }.compute(r2, &mut u2, &info).unwrap();
 
         assert_eq!(low, pixels, "sigma=0 low-pass should equal original");
         assert!(
@@ -946,7 +950,7 @@ mod frequency_separation_tests {
 
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let high = frequency_high(r, &mut u, &info, &FrequencyHighParams { sigma: 5.0 }).unwrap();
+        let high = FrequencyHighParams { sigma: 5.0 }.compute(r, &mut u, &info).unwrap();
 
         // For a flat image, blur = original, so high = orig - blur + 128 = 128
         for (i, &v) in high.iter().enumerate() {
@@ -969,10 +973,10 @@ mod frequency_separation_tests {
 
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let low = frequency_low(r, &mut u, &info, &FrequencyLowParams { sigma: 2.0 }).unwrap();
+        let low = FrequencyLowParams { sigma: 2.0 }.compute(r, &mut u, &info).unwrap();
         let r2 = Rect::new(0, 0, info.width, info.height);
         let mut u2 = |_: Rect| Ok(pixels.clone());
-        let high = frequency_high(r2, &mut u2, &info, &FrequencyHighParams { sigma: 2.0 }).unwrap();
+        let high = FrequencyHighParams { sigma: 2.0 }.compute(r2, &mut u2, &info).unwrap();
 
         let mut max_err = 0i16;
         for i in 0..pixels.len() {
@@ -987,6 +991,7 @@ mod frequency_separation_tests {
 #[cfg(test)]
 mod dodge_burn_tests {
     use super::*;
+    use crate::domain::filter_traits::CpuFilter;
     use crate::domain::types::ColorSpace;
 
     fn rgb_info(w: u32, h: u32) -> ImageInfo {

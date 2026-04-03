@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::domain::types::{ColorSpace, ImageInfo, PixelFormat};
+use crate::domain::filter_traits::CpuFilter;
 use rasmcore_pipeline::Rect;
 
 fn info_rgb8(w: u32, h: u32) -> ImageInfo {
@@ -168,10 +169,11 @@ fn mask_combine_intersect() {
 fn mask_invert_gray8() {
     let pixels = vec![0u8, 128, 255];
     let info = info_gray8(3, 1);
-    let result = MaskInvertParams { strength: 1.0 }.compute(
+    let result = mask_invert(
         Rect::new(0, 0, 3, 1),
         &mut |_| Ok(pixels.clone()),
         &info,
+        &MaskInvertParams { strength: 1.0 },
     )
     .unwrap();
     assert_eq!(result, vec![255, 127, 0]);
@@ -181,10 +183,11 @@ fn mask_invert_gray8() {
 fn mask_invert_rgb8() {
     let pixels = vec![100, 100, 100, 200, 200, 200];
     let info = info_rgb8(2, 1);
-    let result = MaskInvertParams { strength: 1.0 }.compute(
+    let result = mask_invert(
         Rect::new(0, 0, 2, 1),
         &mut |_| Ok(pixels.clone()),
         &info,
+        &MaskInvertParams { strength: 1.0 },
     )
     .unwrap();
     assert_eq!(result[0], 155); // 255 - 100

@@ -134,7 +134,7 @@ fn benchmark_artistic_filters() {
 
     bench("Solarize t=128", || {
         let r = Rect::new(0, 0, info.width, info.height);
-        filters::solarize(r, &mut |_| Ok(pixels.to_vec()), &info, &filters::SolarizeParams { threshold: 128 }).unwrap()
+        filters::SolarizeParams { threshold: 128 }.compute(r, &mut |_| Ok(pixels.to_vec()), &info).unwrap()
     });
     bench("Emboss", || {
         let r = Rect::new(0, 0, info.width, info.height);
@@ -142,7 +142,7 @@ fn benchmark_artistic_filters() {
     });
     bench("Oil paint r=3", || {
         let r = Rect::new(0, 0, info.width, info.height);
-        filters::oil_paint(r, &mut |_| Ok(pixels.to_vec()), &info, &filters::OilPaintParams { radius: 3 }).unwrap()
+        filters::OilPaintParams { radius: 3 }.compute(r, &mut |_| Ok(pixels.to_vec()), &info).unwrap()
     });
     bench("Charcoal r=1 σ=0.5", || {
         filters::charcoal(&pixels, &info, &filters::CharcoalParams { radius: 1.0, sigma: 0.5 }).unwrap()

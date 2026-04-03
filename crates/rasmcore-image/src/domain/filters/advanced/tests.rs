@@ -1,6 +1,7 @@
 //! Tests for advanced filters
 
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 #[cfg(test)]
 mod perspective_tests {
@@ -212,14 +213,15 @@ mod perspective_tests {
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = PerspectiveWarpParams {
-                out_width: 16,
-                out_height: 16
-        }.compute(
+        let result = perspective_warp(
             r,
             &mut u,
             &info,
             &identity,
+            &PerspectiveWarpParams {
+                out_width: 16,
+                out_height: 16,
+            },
         )
         .unwrap();
         // With fixed-point, identity warp at integer coords should be exact
@@ -235,14 +237,15 @@ mod perspective_tests {
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = PerspectiveWarpParams {
-                out_width: 64,
-                out_height: 48
-        }.compute(
+        let result = perspective_warp(
             r,
             &mut u,
             &info,
             &identity,
+            &PerspectiveWarpParams {
+                out_width: 64,
+                out_height: 48,
+            },
         )
         .unwrap();
         assert_eq!(result.len(), 64 * 48 * 3);
@@ -254,14 +257,15 @@ mod perspective_tests {
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = PerspectiveWarpParams {
-                out_width: 16,
-                out_height: 16
-        }.compute(
+        let result = perspective_warp(
             r,
             &mut u,
             &info,
             &identity,
+            &PerspectiveWarpParams {
+                out_width: 16,
+                out_height: 16,
+            },
         )
         .unwrap();
         assert_eq!(result.len(), 16 * 16 * 4);
@@ -273,14 +277,15 @@ mod perspective_tests {
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = PerspectiveWarpParams {
-                out_width: 16,
-                out_height: 16
-        }.compute(
+        let result = perspective_warp(
             r,
             &mut u,
             &info,
             &identity,
+            &PerspectiveWarpParams {
+                out_width: 16,
+                out_height: 16,
+            },
         )
         .unwrap();
         assert_eq!(result.len(), 16 * 16);
@@ -306,14 +311,15 @@ mod perspective_tests {
         let mat = [1.0, 0.0, 2.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0];
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = PerspectiveWarpParams {
-                out_width: w,
-                out_height: h
-        }.compute(
+        let result = perspective_warp(
             r,
             &mut u,
             &info,
             &mat,
+            &PerspectiveWarpParams {
+                out_width: w,
+                out_height: h,
+            },
         )
         .unwrap();
 

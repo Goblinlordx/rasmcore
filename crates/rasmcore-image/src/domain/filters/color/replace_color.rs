@@ -159,11 +159,10 @@ mod tests {
             sat_shift: 0.0,
             lum_shift: 0.0,
         };
-        let result = replace_color(
+        let result = config.compute(
             make_request(&info),
             &mut |_| Ok(pixels.clone()),
             &info,
-            &config,
         )
         .unwrap();
         // Zero shifts = near identity (within HSL roundtrip tolerance)
@@ -191,11 +190,10 @@ mod tests {
             sat_shift: 0.0,
             lum_shift: 0.0,
         };
-        let result = replace_color(
+        let result = config.compute(
             make_request(&info),
             &mut |_| Ok(pixels.clone()),
             &info,
-            &config,
         )
         .unwrap();
 
@@ -232,11 +230,10 @@ mod tests {
             sat_shift: 0.0,
             lum_shift: 0.0,
         };
-        let result = replace_color(
+        let result = config.compute(
             make_request(&info),
             &mut |_| Ok(pixels.clone()),
             &info,
-            &config,
         )
         .unwrap();
         // Gray pixel should be unchanged (sat=0, below sat_min=0.5)
@@ -268,11 +265,10 @@ mod tests {
             sat_shift: 0.0,
             lum_shift: -0.2, // darken
         };
-        let result = replace_color(
+        let result = config.compute(
             make_request(&info),
             &mut |_| Ok(pixels.clone()),
             &info,
-            &config,
         )
         .unwrap();
         // Should be darker red
@@ -299,11 +295,10 @@ mod tests {
             sat_shift: 0.0,
             lum_shift: 0.0,
         };
-        let result = replace_color(
+        let result = config.compute(
             Rect::new(0, 0, 1, 1),
             &mut |_| Ok(pixels.clone()),
             &info,
-            &config,
         )
         .unwrap();
         assert_eq!(result[3], 128, "alpha should be preserved");

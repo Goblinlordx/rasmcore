@@ -289,14 +289,15 @@ mod color_manipulation_tests {
         let info = info_rgb8(4, 4);
         let r = Rect::new(0, 0, 4, 4);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = SparseColorParams {
-                points: String::new(),
-                power: 2.0
-        }.compute(
+        let result = sparse_color(
             r,
             &mut u,
             &info,
             "2,2:FF0000".to_string(),
+            &SparseColorParams {
+                points: String::new(),
+                power: 2.0,
+            },
         )
         .unwrap();
         // All pixels should be red (only one control point)
@@ -312,14 +313,15 @@ mod color_manipulation_tests {
         let r = Rect::new(0, 0, 8, 1);
         let mut u = |_: Rect| Ok(pixels.clone());
         // Red at x=0, blue at x=7
-        let result = SparseColorParams {
-                points: String::new(),
-                power: 2.0
-        }.compute(
+        let result = sparse_color(
             r,
             &mut u,
             &info,
             "0,0:FF0000;7,0:0000FF".to_string(),
+            &SparseColorParams {
+                points: String::new(),
+                power: 2.0,
+            },
         )
         .unwrap();
         // First pixel should be close to red
@@ -349,14 +351,15 @@ mod color_manipulation_tests {
         let r = Rect::new(0, 0, 4, 4);
         let mut u = |_: Rect| Ok(pixels.clone());
         assert!(
-            SparseColorParams {
-                    points: String::new(),
-                    power: 2.0
-            }.compute(
+            sparse_color(
                 r,
                 &mut u,
                 &info,
                 "invalid".to_string(),
+                &SparseColorParams {
+                    points: String::new(),
+                    power: 2.0,
+                },
             )
             .is_err()
         );
