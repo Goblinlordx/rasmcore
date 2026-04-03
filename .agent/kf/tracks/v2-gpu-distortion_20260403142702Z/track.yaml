@@ -5,98 +5,82 @@ status: pending
 created: '2026-04-03'
 updated: '2026-04-03'
 spec:
-  summary: |
-    Add GpuFilter WGSL shaders for all distortion and coordinate-remapping
+  summary: 'Add GpuFilter WGSL shaders for all distortion and coordinate-remapping
+
     filters. Port V1 distortion shaders to io_f32 format.
-  context: |
-    Distortion filters compute an inverse coordinate mapping per output
+
+    '
+  context: 'Distortion filters compute an inverse coordinate mapping per output
+
     pixel, then bilinear-sample the input at the computed source coords.
+
     This is embarrassingly parallel — perfect for GPU.
 
+
     V1 had GPU shaders for most distortion filters (ripple, swirl,
+
     spherize, barrel, wave, polar, depolar, liquify). These need
+
     porting to V2 io_f32 format.
 
+
     Note: distortion filters exist in a separate crate/module from
+
     the V2 filters (they were ported via v2-filters-distortion track).
+
     Check if they have a filters/distortion.rs or similar.
-  codebase_analysis: |
-    Distortion filters (from v2-filters-distortion track):
-    - Wave, Swirl, Barrel, Spherize, Ripple, Polar, Depolar
-    - LiquifyPush, LiquifyPinch, LiquifyExpand, LiquifyTwirl, LiquifySmooth
-    - MeshWarp
-    - Resize, Rotate, Flip, Crop (transform ops)
 
-    V1 shaders to port (from crates/rasmcore-image/src/shaders/):
-    - ripple.wgsl, swirl.wgsl, spherize.wgsl, barrel.wgsl
-    - wave.wgsl, polar.wgsl, depolar.wgsl
-    - liquify_push.wgsl, liquify_pinch.wgsl, liquify_expand.wgsl, liquify_twirl.wgsl
-    - affine_resample.wgsl (for resize/rotate)
-
-    All V1 shaders use the io_f32 format-agnostic pattern already
-    (from the gpu-f32-buffers track). Many may port with minimal changes.
-
-    The bilinear sampling pattern:
-      fn sample_bilinear(fx: f32, fy: f32) -> vec4<f32> {
-          let ix = i32(floor(fx)); let iy = i32(floor(fy));
-          let dx = fx - f32(ix); let dy = fy - f32(iy);
-          // clamp, load 4 neighbors, interpolate
-      }
+    '
+  codebase_analysis: "Distortion filters (from v2-filters-distortion track):\n- Wave, Swirl, Barrel, Spherize, Ripple, Polar,\
+    \ Depolar\n- LiquifyPush, LiquifyPinch, LiquifyExpand, LiquifyTwirl, LiquifySmooth\n- MeshWarp\n- Resize, Rotate, Flip,\
+    \ Crop (transform ops)\n\nV1 shaders to port (from crates/rasmcore-image/src/shaders/):\n- ripple.wgsl, swirl.wgsl, spherize.wgsl,\
+    \ barrel.wgsl\n- wave.wgsl, polar.wgsl, depolar.wgsl\n- liquify_push.wgsl, liquify_pinch.wgsl, liquify_expand.wgsl, liquify_twirl.wgsl\n\
+    - affine_resample.wgsl (for resize/rotate)\n\nAll V1 shaders use the io_f32 format-agnostic pattern already\n(from the\
+    \ gpu-f32-buffers track). Many may port with minimal changes.\n\nThe bilinear sampling pattern:\n  fn sample_bilinear(fx:\
+    \ f32, fy: f32) -> vec4<f32> {\n      let ix = i32(floor(fx)); let iy = i32(floor(fy));\n      let dx = fx - f32(ix);\
+    \ let dy = fy - f32(iy);\n      // clamp, load 4 neighbors, interpolate\n  }\n"
   acceptance_criteria:
-    - GpuFilter for Wave, Swirl, Barrel, Spherize, Ripple, Polar, Depolar
-    - GpuFilter for LiquifyPush, LiquifyPinch, LiquifyExpand, LiquifyTwirl
-    - GpuFilter for MeshWarp (control point grid as extra buffer)
-    - GpuFilter for DisplacementMap (displacement field as extra buffer)
-    - GpuFilter for Resize (affine resample with bilinear/lanczos)
-    - GpuFilter for Rotate (affine resample)
-    - All use inverse coordinate mapping + bilinear sample pattern
-    - All GPU outputs match CPU within f32 tolerance
-    - CPU Filter::compute remains as fallback
-  out_of_scope: |
-    Per-pixel filters (Track 1). Spatial (Track 2). Analysis (Track 4).
-  technical_notes: |
-    Distortion GPU pattern (same for all):
-      @compute @workgroup_size(16, 16, 1)
-      fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-          let x = gid.x; let y = gid.y;
-          if (x >= params.width || y >= params.height) { return; }
+  - GpuFilter for Wave, Swirl, Barrel, Spherize, Ripple, Polar, Depolar
+  - GpuFilter for LiquifyPush, LiquifyPinch, LiquifyExpand, LiquifyTwirl
+  - GpuFilter for MeshWarp (control point grid as extra buffer)
+  - GpuFilter for DisplacementMap (displacement field as extra buffer)
+  - GpuFilter for Resize (affine resample with bilinear/lanczos)
+  - GpuFilter for Rotate (affine resample)
+  - All use inverse coordinate mapping + bilinear sample pattern
+  - All GPU outputs match CPU within f32 tolerance
+  - CPU Filter::compute remains as fallback
+  out_of_scope: 'Per-pixel filters (Track 1). Spatial (Track 2). Analysis (Track 4).
 
-          // Compute inverse mapping: where does this output pixel come from?
-          let src = inverse_map(f32(x), f32(y), params);
-
-          // Bilinear sample at source coordinates
-          let color = sample_bilinear(src.x, src.y);
-          store_pixel(x + y * params.width, color);
-      }
-
-    V1 liquify shaders already use io_f32 with load_pixel/store_pixel.
-    They may need minimal adaptation for V2 (check binding layout).
-
-    Affine resample for resize/rotate:
-      Inverse matrix maps output coords to source coords.
-      Bilinear or Lanczos sampling at source position.
-      Params: inverse matrix coefficients (2x3) + source dimensions.
+    '
+  technical_notes: "Distortion GPU pattern (same for all):\n  @compute @workgroup_size(16, 16, 1)\n  fn main(@builtin(global_invocation_id)\
+    \ gid: vec3<u32>) {\n      let x = gid.x; let y = gid.y;\n      if (x >= params.width || y >= params.height) { return;\
+    \ }\n\n      // Compute inverse mapping: where does this output pixel come from?\n      let src = inverse_map(f32(x),\
+    \ f32(y), params);\n\n      // Bilinear sample at source coordinates\n      let color = sample_bilinear(src.x, src.y);\n\
+    \      store_pixel(x + y * params.width, color);\n  }\n\nV1 liquify shaders already use io_f32 with load_pixel/store_pixel.\n\
+    They may need minimal adaptation for V2 (check binding layout).\n\nAffine resample for resize/rotate:\n  Inverse matrix\
+    \ maps output coords to source coords.\n  Bilinear or Lanczos sampling at source position.\n  Params: inverse matrix coefficients\
+    \ (2x3) + source dimensions.\n"
 plan:
-  - phase: Port V1 distortion shaders
-    tasks:
-      - text: GpuFilter for Ripple, Swirl, Spherize (port V1 .wgsl to V2 format)
-        done: false
-      - text: GpuFilter for Barrel, Wave, Polar, Depolar
-        done: false
-      - text: GpuFilter for LiquifyPush, LiquifyPinch, LiquifyExpand, LiquifyTwirl
-        done: false
-  - phase: New distortion/transform GPU shaders
-    tasks:
-      - text: GpuFilter for MeshWarp (control grid as extra buffer)
-        done: false
-      - text: GpuFilter for Resize (affine resample with configurable kernel)
-        done: false
-      - text: GpuFilter for Rotate (affine resample)
-        done: false
-  - phase: Verification
-    tasks:
-      - text: All distortion GPU outputs match CPU within f32 tolerance
-        done: false
-      - text: Bilinear sampling quality matches CPU EWA for standard cases
-        done: false
+- phase: Port V1 distortion shaders
+  tasks:
+  - text: GpuFilter for Ripple, Swirl, Spherize (port V1 .wgsl to V2 format)
+    done: true
+  - text: GpuFilter for Barrel, Wave, Polar, Depolar
+    done: true
+  - text: GpuFilter for LiquifyPush, LiquifyPinch, LiquifyExpand, LiquifyTwirl
+    done: true
+- phase: New distortion/transform GPU shaders
+  tasks:
+  - text: GpuFilter for MeshWarp (control grid as extra buffer)
+    done: true
+  - text: GpuFilter for Resize (affine resample with configurable kernel)
+    done: true
+  - text: GpuFilter for Rotate (affine resample)
+    done: true
+- phase: Verification
+  tasks:
+  - text: All distortion GPU outputs match CPU within f32 tolerance
+    done: true
+  - text: Bilinear sampling quality matches CPU EWA for standard cases
+    done: true
 extra: {}
