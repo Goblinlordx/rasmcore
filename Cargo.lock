@@ -3087,6 +3087,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rasmcore-pipeline-v2"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "serde",
+]
+
+[[package]]
 name = "rasmcore-pnm"
 version = "0.1.0"
 dependencies = [

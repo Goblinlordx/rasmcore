@@ -1,0 +1,419 @@
+//! Graph engine — demand-driven tile execution with GPU-primary dispatch.
+//!
+//! The graph manages node topology and executes tile requests by pulling
+//! data through the graph from sinks to sources. GPU dispatch is checked
+//! first for every node; CPU `compute()` is the fallback.
+//!
+//! All data is `Vec<f32>` — 4 channels (RGBA) per pixel. No format dispatch.
+
+use std::rc::Rc;
+
+use crate::cache::SpatialCache;
+use crate::demand::DemandStrategy;
+use crate::gpu::GpuExecutor;
+use crate::node::{Node, NodeInfo, PipelineError, Upstream};
+use crate::rect::Rect;
+
+/// The V2 pipeline graph.
+///
+/// Manages node topology, caching, GPU dispatch, and demand-driven execution.
+/// Knows nothing about specific operations — just dispatches through the
+/// `Node` trait.
+pub struct Graph {
+    nodes: Vec<Box<dyn Node>>,
+    cache: SpatialCache,
+    gpu_executor: Option<Rc<dyn GpuExecutor>>,
+    demand_strategy: DemandStrategy,
+}
+
+impl Graph {
+    /// Create a new graph with the given cache budget (bytes).
+    pub fn new(cache_budget: usize) -> Self {
+        Self {
+            nodes: Vec::new(),
+            cache: SpatialCache::new(cache_budget),
+            gpu_executor: None,
+            demand_strategy: DemandStrategy::default(),
+        }
+    }
+
+    /// Add a node to the graph. Returns the node ID.
+    pub fn add_node(&mut self, node: Box<dyn Node>) -> u32 {
+        let id = self.nodes.len() as u32;
+        self.nodes.push(node);
+        id
+    }
+
+    /// Set the GPU executor for GPU-primary dispatch.
+    pub fn set_gpu_executor(&mut self, executor: Rc<dyn GpuExecutor>) {
+        self.gpu_executor = Some(executor);
+    }
+
+    /// Set the demand strategy (tile sizing).
+    pub fn set_demand_strategy(&mut self, strategy: DemandStrategy) {
+        self.demand_strategy = strategy;
+    }
+
+    /// Get node info for a given node ID.
+    pub fn node_info(&self, node_id: u32) -> Result<NodeInfo, PipelineError> {
+        self.nodes
+            .get(node_id as usize)
+            .map(|n| n.info())
+            .ok_or(PipelineError::NodeNotFound(node_id))
+    }
+
+    /// Number of nodes in the graph.
+    pub fn node_count(&self) -> u32 {
+        self.nodes.len() as u32
+    }
+
+    /// Request f32 pixel data for a region from a node.
+    ///
+    /// This is the core execution entry point. It:
+    /// 1. Checks the spatial cache
+    /// 2. Tries GPU dispatch (primary path)
+    /// 3. Falls back to CPU compute
+    ///
+    /// Returns `Vec<f32>` with `request.width * request.height * 4` elements.
+    pub fn request_region(
+        &mut self,
+        node_id: u32,
+        request: Rect,
+    ) -> Result<Vec<f32>, PipelineError> {
+        // 1. Cache check
+        if let Some(cached) = self.cache.query(node_id, request) {
+            return Ok(cached);
+        }
+
+        let node = self
+            .nodes
+            .get(node_id as usize)
+            .ok_or(PipelineError::NodeNotFound(node_id))?;
+
+        let info = node.info();
+
+        // 2. GPU-primary dispatch
+        if let Some(executor) = &self.gpu_executor {
+            let gpu_input_rect = node.input_rect(request, info.width, info.height);
+            if let Some(shader) = node.gpu_shader(gpu_input_rect.width, gpu_input_rect.height) {
+                let upstream_ids = node.upstream_ids();
+                if let Some(&upstream_id) = upstream_ids.first() {
+                    let executor = executor.clone();
+                    let input = self.request_region(upstream_id, gpu_input_rect)?;
+                    match executor.execute(
+                        &[shader],
+                        &input,
+                        gpu_input_rect.width,
+                        gpu_input_rect.height,
+                    ) {
+                        Ok(gpu_pixels) => {
+                            let pixels = if gpu_input_rect == request {
+                                gpu_pixels
+                            } else {
+                                crop_f32(&gpu_pixels, gpu_input_rect, request)
+                            };
+                            // Cache the result
+                            self.cache.store(
+                                node_id,
+                                request,
+                                pixels.clone(),
+                                crate::hash::ZERO_HASH,
+                            );
+                            return Ok(pixels);
+                        }
+                        Err(_) => {
+                            // GPU failed — fall through to CPU
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. CPU fallback
+        // Use raw pointer to split the borrow (node.compute needs &mut self for upstream)
+        let self_ptr: *mut Graph = self;
+        let node_ptr: *const dyn Node = &**self
+            .nodes
+            .get(node_id as usize)
+            .ok_or(PipelineError::NodeNotFound(node_id))?;
+
+        let mut upstream_adapter = GraphUpstream { graph: self_ptr };
+        let pixels = unsafe { &*node_ptr }.compute(request, &mut upstream_adapter)?;
+
+        // Validate output size
+        let expected = request.width as usize * request.height as usize * 4;
+        if pixels.len() != expected {
+            return Err(PipelineError::BufferMismatch {
+                expected,
+                actual: pixels.len(),
+            });
+        }
+
+        // Cache
+        self.cache
+            .store(node_id, request, pixels.clone(), crate::hash::ZERO_HASH);
+        Ok(pixels)
+    }
+
+    /// Request the full output of a node (convenience).
+    pub fn request_full(&mut self, node_id: u32) -> Result<Vec<f32>, PipelineError> {
+        let info = self.node_info(node_id)?;
+        self.request_region(node_id, Rect::new(0, 0, info.width, info.height))
+    }
+
+    /// Request full output as tiled execution (bounds peak memory).
+    pub fn request_tiled(
+        &mut self,
+        node_id: u32,
+        tile_size: u32,
+    ) -> Result<Vec<f32>, PipelineError> {
+        let info = self.node_info(node_id)?;
+        let w = info.width;
+        let h = info.height;
+
+        if tile_size == 0 || (w <= tile_size && h <= tile_size) {
+            return self.request_full(node_id);
+        }
+
+        let mut out = vec![0.0f32; w as usize * h as usize * 4];
+        let stride = w as usize * 4;
+
+        let mut y = 0u32;
+        while y < h {
+            let th = tile_size.min(h - y);
+            let mut x = 0u32;
+            while x < w {
+                let tw = tile_size.min(w - x);
+                let tile = self.request_region(node_id, Rect::new(x, y, tw, th))?;
+                let tile_stride = tw as usize * 4;
+                for row in 0..th as usize {
+                    let dst = (y as usize + row) * stride + x as usize * 4;
+                    let src = row * tile_stride;
+                    out[dst..dst + tile_stride]
+                        .copy_from_slice(&tile[src..src + tile_stride]);
+                }
+                x += tile_size;
+            }
+            y += tile_size;
+        }
+
+        Ok(out)
+    }
+
+    /// Get the demand strategy.
+    pub fn demand_strategy(&self) -> &DemandStrategy {
+        &self.demand_strategy
+    }
+
+    /// Clear the spatial cache.
+    pub fn clear_cache(&mut self) {
+        self.cache.clear();
+    }
+}
+
+/// Adapter that bridges Graph::request_region to the Upstream trait.
+struct GraphUpstream {
+    graph: *mut Graph,
+}
+
+impl Upstream for GraphUpstream {
+    fn request(&mut self, upstream_id: u32, rect: Rect) -> Result<Vec<f32>, PipelineError> {
+        // SAFETY: The graph is only mutated through request_region, which is
+        // not reentrant on the same node. Different nodes can safely recurse.
+        unsafe { &mut *self.graph }.request_region(upstream_id, rect)
+    }
+}
+
+/// Crop f32 pixel data from a source rect to a destination rect.
+fn crop_f32(data: &[f32], src_rect: Rect, dst_rect: Rect) -> Vec<f32> {
+    let sw = src_rect.width as usize;
+    let dw = dst_rect.width as usize;
+    let dh = dst_rect.height as usize;
+    let dx = (dst_rect.x - src_rect.x) as usize;
+    let dy = (dst_rect.y - src_rect.y) as usize;
+
+    let mut out = Vec::with_capacity(dw * dh * 4);
+    for row in 0..dh {
+        let src_off = ((dy + row) * sw + dx) * 4;
+        out.extend_from_slice(&data[src_off..src_off + dw * 4]);
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::color_space::ColorSpace;
+    use crate::node::NodeInfo;
+
+    /// A trivial source node that produces a solid color.
+    struct SolidColorNode {
+        width: u32,
+        height: u32,
+        color: [f32; 4],
+    }
+
+    impl Node for SolidColorNode {
+        fn info(&self) -> NodeInfo {
+            NodeInfo {
+                width: self.width,
+                height: self.height,
+                color_space: ColorSpace::Linear,
+            }
+        }
+
+        fn compute(
+            &self,
+            request: Rect,
+            _upstream: &mut dyn Upstream,
+        ) -> Result<Vec<f32>, PipelineError> {
+            let n = request.width as usize * request.height as usize;
+            let mut pixels = Vec::with_capacity(n * 4);
+            for _ in 0..n {
+                pixels.extend_from_slice(&self.color);
+            }
+            Ok(pixels)
+        }
+
+        fn upstream_ids(&self) -> Vec<u32> {
+            vec![] // source node, no upstream
+        }
+    }
+
+    /// A trivial filter that scales brightness by a factor.
+    struct ScaleNode {
+        upstream: u32,
+        factor: f32,
+        info: NodeInfo,
+    }
+
+    impl Node for ScaleNode {
+        fn info(&self) -> NodeInfo {
+            self.info.clone()
+        }
+
+        fn compute(
+            &self,
+            request: Rect,
+            upstream: &mut dyn Upstream,
+        ) -> Result<Vec<f32>, PipelineError> {
+            let input = upstream.request(self.upstream, request)?;
+            Ok(input.iter().map(|&v| v * self.factor).collect())
+        }
+
+        fn upstream_ids(&self) -> Vec<u32> {
+            vec![self.upstream]
+        }
+    }
+
+    #[test]
+    fn graph_single_source() {
+        let mut g = Graph::new(0);
+        let src = g.add_node(Box::new(SolidColorNode {
+            width: 4,
+            height: 4,
+            color: [0.5, 0.3, 0.1, 1.0],
+        }));
+
+        let pixels = g.request_full(src).unwrap();
+        assert_eq!(pixels.len(), 4 * 4 * 4); // 4x4 * RGBA
+        assert!((pixels[0] - 0.5).abs() < 1e-6); // R
+        assert!((pixels[1] - 0.3).abs() < 1e-6); // G
+        assert!((pixels[2] - 0.1).abs() < 1e-6); // B
+        assert!((pixels[3] - 1.0).abs() < 1e-6); // A
+    }
+
+    #[test]
+    fn graph_source_and_filter() {
+        let mut g = Graph::new(0);
+        let src = g.add_node(Box::new(SolidColorNode {
+            width: 4,
+            height: 4,
+            color: [0.5, 0.3, 0.1, 1.0],
+        }));
+        let info = g.node_info(src).unwrap();
+        let scale = g.add_node(Box::new(ScaleNode {
+            upstream: src,
+            factor: 2.0,
+            info,
+        }));
+
+        let pixels = g.request_full(scale).unwrap();
+        assert!((pixels[0] - 1.0).abs() < 1e-6); // 0.5 * 2.0 = 1.0
+        assert!((pixels[1] - 0.6).abs() < 1e-6); // 0.3 * 2.0 = 0.6
+    }
+
+    #[test]
+    fn graph_tiled_matches_full() {
+        let mut g = Graph::new(0);
+        let src = g.add_node(Box::new(SolidColorNode {
+            width: 32,
+            height: 32,
+            color: [0.25, 0.5, 0.75, 1.0],
+        }));
+
+        let full = g.request_full(src).unwrap();
+        g.clear_cache();
+        let tiled = g.request_tiled(src, 16).unwrap();
+
+        assert_eq!(full.len(), tiled.len());
+        assert_eq!(full, tiled);
+    }
+
+    #[test]
+    fn graph_hdr_values_preserved() {
+        let mut g = Graph::new(0);
+        let src = g.add_node(Box::new(SolidColorNode {
+            width: 2,
+            height: 2,
+            color: [5.0, 10.0, -0.5, 1.0], // HDR: values > 1.0 and < 0.0
+        }));
+
+        let pixels = g.request_full(src).unwrap();
+        assert!((pixels[0] - 5.0).abs() < 1e-6);
+        assert!((pixels[1] - 10.0).abs() < 1e-6);
+        assert!((pixels[2] - (-0.5)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn graph_node_count() {
+        let mut g = Graph::new(0);
+        assert_eq!(g.node_count(), 0);
+        g.add_node(Box::new(SolidColorNode {
+            width: 1,
+            height: 1,
+            color: [0.0; 4],
+        }));
+        assert_eq!(g.node_count(), 1);
+    }
+
+    #[test]
+    fn graph_buffer_validation() {
+        // A broken node that returns wrong-sized data
+        struct BrokenNode;
+        impl Node for BrokenNode {
+            fn info(&self) -> NodeInfo {
+                NodeInfo {
+                    width: 4,
+                    height: 4,
+                    color_space: ColorSpace::Linear,
+                }
+            }
+            fn compute(
+                &self,
+                _request: Rect,
+                _upstream: &mut dyn Upstream,
+            ) -> Result<Vec<f32>, PipelineError> {
+                Ok(vec![0.0; 10]) // Wrong size
+            }
+            fn upstream_ids(&self) -> Vec<u32> {
+                vec![]
+            }
+        }
+
+        let mut g = Graph::new(0);
+        let n = g.add_node(Box::new(BrokenNode));
+        let result = g.request_full(n);
+        assert!(matches!(result, Err(PipelineError::BufferMismatch { .. })));
+    }
+}

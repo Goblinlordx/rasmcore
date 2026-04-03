@@ -1,0 +1,13 @@
+[package]
+name = "rasmcore-pipeline-v2"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "V2 pipeline engine — f32-native, GPU-primary, zero built-in knowledge"
+
+[dependencies]
+blake3 = "1"
+serde = { version = "1", features = ["derive"] }
+
+[lints]
+workspace = true

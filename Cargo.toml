@@ -4,6 +4,7 @@ members = [
     "crates/rasmcore-bitio",
     "crates/rasmcore-deflate",
     "crates/rasmcore-pipeline",
+    "crates/rasmcore-pipeline-v2",
     "crates/rasmcore-kernel",
     "crates/rasmcore-color",
     "crates/rasmcore-image",
