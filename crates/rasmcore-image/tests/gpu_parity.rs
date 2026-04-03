@@ -1226,3 +1226,51 @@ fn gpu_f32_parity_modulate() {
     assert_gpu_parity("modulate_f32 vs cpu_f32", &cpu_f32_result, &gpu_f32_as_u8, 2.0);
     eprintln!("  modulate f32 GPU parity: PASS");
 }
+
+#[test]
+fn gpu_f32_parity_channel_mixer() {
+    use rasmcore_pipeline::gpu::BufferFormat;
+    use rasmcore_image::domain::filter_traits::GpuFilter;
+    use rasmcore_image::domain::filters::ChannelMixerParams;
+
+    let gpu = match try_gpu() {
+        Some(g) => g,
+        None => return,
+    };
+
+    let (w, h) = (64, 64);
+    let pixels_u8 = make_gradient_rgba(w, h);
+    let pixels_f32_norm: Vec<u8> = pixels_u8.iter()
+        .flat_map(|&b| (b as f32 / 255.0).to_le_bytes())
+        .collect();
+
+    let config = ChannelMixerParams {
+        rr: 0.8, rg: 0.2, rb: 0.0,
+        gr: 0.1, gg: 0.7, gb: 0.2,
+        br: 0.0, bg: 0.3, bb: 0.7,
+    };
+
+    // CPU f32 reference
+    let cpu_f32_result: Vec<u8> = pixels_u8.chunks_exact(4).flat_map(|px| {
+        let r = px[0] as f32 / 255.0;
+        let g = px[1] as f32 / 255.0;
+        let b = px[2] as f32 / 255.0;
+        let or = (r * 0.8 + g * 0.2 + b * 0.0).clamp(0.0, 1.0);
+        let og = (r * 0.1 + g * 0.7 + b * 0.2).clamp(0.0, 1.0);
+        let ob = (r * 0.0 + g * 0.3 + b * 0.7).clamp(0.0, 1.0);
+        [(or * 255.0 + 0.5) as u8, (og * 255.0 + 0.5) as u8, (ob * 255.0 + 0.5) as u8, px[3]]
+    }).collect();
+
+    let ops = config.gpu_ops_with_format(w, h, BufferFormat::F32Vec4)
+        .expect("channel_mixer should support f32 GPU");
+    let gpu_f32_bytes = gpu.execute_with_format(&ops, &pixels_f32_norm, w, h, BufferFormat::F32Vec4).unwrap();
+    let gpu_f32_as_u8: Vec<u8> = gpu_f32_bytes.chunks_exact(4)
+        .map(|c| {
+            let v = f32::from_le_bytes([c[0], c[1], c[2], c[3]]);
+            (v * 255.0 + 0.5).clamp(0.0, 255.0) as u8
+        })
+        .collect();
+
+    assert_gpu_parity("channel_mixer_f32 vs cpu_f32", &cpu_f32_result, &gpu_f32_as_u8, 1.0);
+    eprintln!("  channel_mixer f32 GPU parity: PASS");
+}
