@@ -233,6 +233,27 @@ pub fn generate_nodes(filters: &[FilterReg]) -> String {
             } else {
                 format!(", {}", call_args.join(", "))
             };
+            // f32 pipeline auto-wrap for old-style filters
+            if !f.f32_native {
+                code.push_str("        // Auto-wrap: f32 → u8 → compute → u8 → f32\n");
+                code.push_str("        if self.source_info.format == crate::domain::types::PixelFormat::Rgba32f {\n");
+                code.push_str("            let upstream_id = self.upstream;\n");
+                code.push_str("            let __info_u8 = ImageInfo { format: crate::domain::types::PixelFormat::Rgba8, ..self.source_info.clone() };\n");
+                code.push_str("            let mut upstream = |rect: Rect| {\n");
+                code.push_str("                let f32_px = upstream_fn(upstream_id, rect)?;\n");
+                code.push_str("                Ok(crate::domain::quantize_f32::rgba32f_to_rgba8(&f32_px))\n");
+                code.push_str("            };\n");
+                code.push_str(&format!(
+                    "            let result_u8 = filters::{domain_fn}(request, &mut upstream, &__info_u8{extra_args})?;\n"
+                ));
+                code.push_str("            let n = result_u8.len() / 4;\n");
+                code.push_str("            let mut out = Vec::with_capacity(n * 16);\n");
+                code.push_str("            for chunk in result_u8.chunks_exact(4) {\n");
+                code.push_str("                for &v in chunk { out.extend_from_slice(&(v as f32 / 255.0).to_le_bytes()); }\n");
+                code.push_str("            }\n");
+                code.push_str("            return Ok(out);\n");
+                code.push_str("        }\n");
+            }
             code.push_str("        let upstream_id = self.upstream;\n");
             code.push_str(
                 "        let mut upstream = |rect: Rect| upstream_fn(upstream_id, rect);\n",

@@ -139,6 +139,22 @@ impl ImageNode for FusedLutNode {
         upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
     ) -> Result<Vec<u8>, ImageError> {
         let src_pixels = upstream_fn(self.upstream, request)?;
+        // f32 pipeline auto-wrap: quantize to u8, apply LUT, promote back
+        if self.source_info.format == PixelFormat::Rgba32f {
+            let u8_pixels = crate::domain::quantize_f32::rgba32f_to_rgba8(&src_pixels);
+            let info_u8 = ImageInfo {
+                format: PixelFormat::Rgba8,
+                ..self.source_info
+            };
+            let result_u8 = crate::domain::point_ops::apply_lut(&u8_pixels, &info_u8, &self.lut)?;
+            let mut out = Vec::with_capacity(result_u8.len() * 4);
+            for chunk in result_u8.chunks_exact(4) {
+                for &v in chunk {
+                    out.extend_from_slice(&(v as f32 / 255.0).to_le_bytes());
+                }
+            }
+            return Ok(out);
+        }
         crate::domain::point_ops::apply_lut(&src_pixels, &self.source_info, &self.lut)
     }
 

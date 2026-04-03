@@ -32,6 +32,12 @@ pub(crate) fn bytes_per_pixel(format: PixelFormat) -> Result<usize, ImageError> 
         PixelFormat::Gray16 => Ok(2),
         PixelFormat::Rgb16 => Ok(6),
         PixelFormat::Rgba16 => Ok(8),
+        PixelFormat::Rgba32f => Ok(16),
+        PixelFormat::Rgb32f => Ok(12),
+        PixelFormat::Gray32f => Ok(4),
+        PixelFormat::Rgba16f => Ok(8),
+        PixelFormat::Rgb16f => Ok(6),
+        PixelFormat::Gray16f => Ok(2),
         _ => Err(ImageError::UnsupportedFormat(format!(
             "{format:?} not supported for geometric transforms"
         ))),

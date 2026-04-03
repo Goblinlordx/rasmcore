@@ -535,4 +535,118 @@ mod tests {
         let desc2 = graph.description();
         assert_eq!(desc.len(), desc2.len());
     }
+
+    // ─── f32 Pipeline Tests ────────────────────────────────────────────────
+
+    use crate::domain::pipeline::nodes::precision::PromoteNode;
+
+    #[test]
+    fn f32_pipeline_promote_invert_produces_different_output() {
+        let png_data = make_test_png();
+        let mut graph = NodeGraph::new(4 * 1024 * 1024);
+
+        // Source → Promote to Rgba32f → Invert
+        let src = graph.add_node(Box::new(SourceNode::new(png_data.clone()).unwrap()));
+        let src_info = graph.node_info(src).unwrap();
+        let promoted = graph.add_node(Box::new(PromoteNode::new(src, src_info)));
+        let promoted_info = graph.node_info(promoted).unwrap();
+        assert_eq!(promoted_info.format, PixelFormat::Rgba32f);
+
+        let inverted = graph.add_node(Box::new(
+            crate::domain::pipeline::nodes::filters::InvertNode::new(promoted, promoted_info),
+        ));
+
+        // Write to PNG (quantizes back to u8)
+        let inverted_png = sink::write(&mut graph, inverted, "png", None, None).unwrap();
+
+        // Also write the original (no invert)
+        let mut graph2 = NodeGraph::new(4 * 1024 * 1024);
+        let src2 = graph2.add_node(Box::new(SourceNode::new(png_data).unwrap()));
+        let original_png = sink::write(&mut graph2, src2, "png", None, None).unwrap();
+
+        // Inverted should be different from original
+        assert_ne!(inverted_png, original_png, "invert should change the image");
+    }
+
+    #[test]
+    fn f32_pipeline_double_invert_is_identity() {
+        let png_data = make_test_png();
+
+        // Original: source → write
+        let mut graph1 = NodeGraph::new(4 * 1024 * 1024);
+        let src1 = graph1.add_node(Box::new(SourceNode::new(png_data.clone()).unwrap()));
+        let original_png = sink::write(&mut graph1, src1, "png", None, None).unwrap();
+        let original = crate::domain::decoder::decode(&original_png).unwrap();
+
+        // Double invert: source → promote → invert → invert → write
+        // Tests f32 pipeline with point ops (hits LUT fusion + auto-wrap).
+        let mut graph2 = NodeGraph::new(4 * 1024 * 1024);
+        let src2 = graph2.add_node(Box::new(SourceNode::new(png_data).unwrap()));
+        let src2_info = graph2.node_info(src2).unwrap();
+        let promoted = graph2.add_node(Box::new(PromoteNode::new(src2, src2_info)));
+        let p_info = graph2.node_info(promoted).unwrap();
+
+        let inv1 = graph2.add_node(Box::new(
+            crate::domain::pipeline::nodes::filters::InvertNode::new(promoted, p_info.clone()),
+        ));
+        let inv2 = graph2.add_node(Box::new(
+            crate::domain::pipeline::nodes::filters::InvertNode::new(inv1, p_info),
+        ));
+
+        let roundtrip_png = sink::write(&mut graph2, inv2, "png", None, None).unwrap();
+        let roundtrip = crate::domain::decoder::decode(&roundtrip_png).unwrap();
+
+        assert_eq!(original.info.width, roundtrip.info.width);
+        assert_eq!(original.info.height, roundtrip.info.height);
+
+        // Compare RGB channels only — f32 pipeline promotes to Rgba32f so
+        // output may be Rgba8 while original is Rgb8.
+        let orig_rgb: Vec<u8> = match original.info.format {
+            PixelFormat::Rgb8 => original.pixels.clone(),
+            PixelFormat::Rgba8 => original.pixels.chunks_exact(4).flat_map(|c| &c[..3]).copied().collect(),
+            _ => original.pixels.clone(),
+        };
+        let rt_rgb: Vec<u8> = match roundtrip.info.format {
+            PixelFormat::Rgb8 => roundtrip.pixels.clone(),
+            PixelFormat::Rgba8 => roundtrip.pixels.chunks_exact(4).flat_map(|c| &c[..3]).copied().collect(),
+            _ => roundtrip.pixels.clone(),
+        };
+
+        let max_diff: u8 = orig_rgb
+            .iter()
+            .zip(rt_rgb.iter())
+            .map(|(&a, &b)| (a as i16 - b as i16).unsigned_abs() as u8)
+            .max()
+            .unwrap_or(0);
+
+        assert!(
+            max_diff <= 1,
+            "double invert should be identity (max pixel diff = {max_diff}, expected <= 1)"
+        );
+        eprintln!("f32_pipeline_double_invert_is_identity: PASS — max_diff = {max_diff}");
+    }
+
+    #[test]
+    fn f32_pipeline_invert_changes_output() {
+        let png_data = make_test_png();
+
+        // Source → promote → invert → write (should differ from original)
+        let mut graph = NodeGraph::new(4 * 1024 * 1024);
+        let src = graph.add_node(Box::new(SourceNode::new(png_data.clone()).unwrap()));
+        let src_info = graph.node_info(src).unwrap();
+        let promoted = graph.add_node(Box::new(PromoteNode::new(src, src_info)));
+        let p_info = graph.node_info(promoted).unwrap();
+        let inverted = graph.add_node(Box::new(
+            crate::domain::pipeline::nodes::filters::InvertNode::new(promoted, p_info),
+        ));
+        let inverted_png = sink::write(&mut graph, inverted, "png", None, None).unwrap();
+
+        // Original: source → write
+        let mut graph2 = NodeGraph::new(4 * 1024 * 1024);
+        let src2 = graph2.add_node(Box::new(SourceNode::new(png_data).unwrap()));
+        let original_png = sink::write(&mut graph2, src2, "png", None, None).unwrap();
+
+        assert_ne!(inverted_png, original_png, "invert should change the image");
+        eprintln!("f32_pipeline_invert_changes_output: PASS");
+    }
 }
