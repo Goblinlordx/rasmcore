@@ -55,6 +55,8 @@ pub use registry::{
     ParamDescriptor, ParamType, ParamConstraint, ContextRef,
     registered_operations, find_operation, operations_by_category,
     operations_by_kind, param_descriptors,
+    ParamMap, FilterFactory, FilterFactoryRegistration,
+    create_filter_node, registered_filter_factories,
 };
 
 // Re-export operation traits

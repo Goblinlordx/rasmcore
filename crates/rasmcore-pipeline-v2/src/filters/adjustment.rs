@@ -510,6 +510,68 @@ impl AnalyticOp for Solarize {
     }
 }
 
+// ─── Factory Registrations ──────────────────────────────────────────────────
+
+use crate::filter_node::FilterNode;
+#[allow(unused_imports)]
+use crate::registry::{FilterFactoryRegistration, ParamMap};
+
+macro_rules! register_factory {
+    ($name:expr, $struct:ident { $($field:ident : $getter:ident),* $(,)? }) => {
+        inventory::submit! {
+            &FilterFactoryRegistration {
+                name: $name,
+                factory: |upstream, info, params| {
+                    let f = $struct { $($field: params.$getter(stringify!($field))),* };
+                    Box::new(FilterNode::point_op(upstream, info, f))
+                },
+            }
+        }
+    };
+    ($name:expr, $struct:ident) => {
+        inventory::submit! {
+            &FilterFactoryRegistration {
+                name: $name,
+                factory: |upstream, info, _params| {
+                    Box::new(FilterNode::point_op(upstream, info, $struct))
+                },
+            }
+        }
+    };
+}
+
+register_factory!("brightness", Brightness { amount: get_f32 });
+register_factory!("contrast", Contrast { amount: get_f32 });
+register_factory!("gamma", Gamma { gamma: get_f32 });
+register_factory!("exposure", Exposure { ev: get_f32, offset: get_f32, gamma_correction: get_f32 });
+register_factory!("invert", Invert);
+register_factory!("levels", Levels { black: get_f32, white: get_f32, gamma: get_f32 });
+inventory::submit! {
+    &FilterFactoryRegistration {
+        name: "posterize",
+        factory: |upstream, info, params| {
+            let f = Posterize { levels: params.get_u32("levels") as u8 };
+            Box::new(FilterNode::point_op(upstream, info, f))
+        },
+    }
+}
+inventory::submit! {
+    &FilterFactoryRegistration {
+        name: "sigmoidal_contrast",
+        factory: |upstream, info, params| {
+            let f = SigmoidalContrast {
+                strength: params.get_f32("strength"),
+                midpoint: params.get_f32("midpoint"),
+                sharpen: params.get_bool("sharpen"),
+            };
+            Box::new(FilterNode::point_op(upstream, info, f))
+        },
+    }
+}
+register_factory!("dodge", Dodge { amount: get_f32 });
+register_factory!("burn", Burn { amount: get_f32 });
+register_factory!("solarize", Solarize { threshold: get_f32 });
+
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

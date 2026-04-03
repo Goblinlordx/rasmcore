@@ -197,6 +197,97 @@ pub fn param_descriptors(name: &str) -> Option<&'static [ParamDescriptor]> {
     find_operation(name).map(|r| r.params)
 }
 
+// ─── Dynamic Filter Factory ──────────────────────────────────────────────────
+
+use std::collections::HashMap;
+
+/// A map of parameter values for dynamic filter construction.
+#[derive(Debug, Clone, Default)]
+pub struct ParamMap {
+    pub floats: HashMap<String, f32>,
+    pub ints: HashMap<String, i64>,
+    pub bools: HashMap<String, bool>,
+    pub strings: HashMap<String, String>,
+}
+
+impl ParamMap {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn get_f32(&self, key: &str) -> f32 {
+        self.floats.get(key).copied().unwrap_or(0.0)
+    }
+
+    pub fn get_u32(&self, key: &str) -> u32 {
+        self.ints.get(key).copied().unwrap_or(0) as u32
+    }
+
+    pub fn get_i32(&self, key: &str) -> i32 {
+        self.ints.get(key).copied().unwrap_or(0) as i32
+    }
+
+    pub fn get_u64(&self, key: &str) -> u64 {
+        self.ints.get(key).copied().unwrap_or(0) as u64
+    }
+
+    pub fn get_bool(&self, key: &str) -> bool {
+        self.bools.get(key).copied().unwrap_or(false)
+    }
+
+    pub fn get_string(&self, key: &str) -> String {
+        self.strings.get(key).cloned().unwrap_or_default()
+    }
+}
+
+/// Factory function that constructs a filter from dynamic parameters.
+///
+/// Returns a boxed Node (FilterNode wrapping the concrete filter).
+/// The factory is responsible for extracting typed params from the ParamMap.
+pub type FilterFactory = fn(
+    upstream_id: u32,
+    info: NodeInfo,
+    params: &ParamMap,
+) -> Box<dyn crate::node::Node>;
+
+/// Registration entry for a dynamically-constructible filter.
+///
+/// Each V2 filter registers one of these alongside its OperationRegistration.
+/// The adapter uses this to construct filters by name at runtime.
+pub struct FilterFactoryRegistration {
+    /// Filter name (must match OperationRegistration.name).
+    pub name: &'static str,
+    /// Factory function.
+    pub factory: FilterFactory,
+}
+
+inventory::collect!(&'static FilterFactoryRegistration);
+
+/// Construct a filter node by name with dynamic parameters.
+///
+/// Returns None if no factory is registered for the given name.
+pub fn create_filter_node(
+    name: &str,
+    upstream_id: u32,
+    info: NodeInfo,
+    params: &ParamMap,
+) -> Option<Box<dyn crate::node::Node>> {
+    inventory::iter::<&'static FilterFactoryRegistration>
+        .into_iter()
+        .copied()
+        .find(|r| r.name == name)
+        .map(|r| (r.factory)(upstream_id, info, params))
+}
+
+/// List all registered filter factories.
+pub fn registered_filter_factories() -> Vec<&'static str> {
+    inventory::iter::<&'static FilterFactoryRegistration>
+        .into_iter()
+        .copied()
+        .map(|r| r.name)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -361,5 +452,34 @@ mod tests {
     fn operations_list_contains_all() {
         let all = registered_operations();
         assert!(all.len() >= 2); // at least our two test registrations
+    }
+
+    #[test]
+    fn filter_factory_creates_brightness() {
+        let factories = registered_filter_factories();
+        assert!(factories.contains(&"brightness"), "brightness factory not registered");
+
+        let info = crate::node::NodeInfo { width: 4, height: 4, color_space: crate::color_space::ColorSpace::Linear };
+        let mut params = ParamMap::new();
+        params.floats.insert("amount".into(), 0.1);
+
+        let node = create_filter_node("brightness", 0, info, &params);
+        assert!(node.is_some(), "factory should return a node");
+    }
+
+    #[test]
+    fn filter_factory_unknown_returns_none() {
+        let info = crate::node::NodeInfo { width: 4, height: 4, color_space: crate::color_space::ColorSpace::Linear };
+        let params = ParamMap::new();
+        assert!(create_filter_node("nonexistent_filter", 0, info, &params).is_none());
+    }
+
+    #[test]
+    fn all_adjustment_factories_registered() {
+        let factories = registered_filter_factories();
+        for name in &["brightness", "contrast", "gamma", "exposure", "invert", "levels",
+                       "posterize", "dodge", "burn", "solarize"] {
+            assert!(factories.contains(name), "{name} factory not registered");
+        }
     }
 }
