@@ -1,8 +1,8 @@
 title: GPU shaders wave 1 — point ops, color ops, per-pixel filters
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-02'
-updated: '2026-04-02'
+updated: '2026-04-03'
 deps:
 - gpu-f32-default_20260403074001Z
