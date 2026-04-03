@@ -856,3 +856,51 @@ fn gpu_f32_parity_solarize() {
     assert_gpu_parity("solarize_f32 vs cpu_f32", &cpu_f32_result, &gpu_f32_as_u8, 1.0);
     eprintln!("  solarize f32 GPU parity: PASS");
 }
+
+#[test]
+fn gpu_f32_parity_sepia() {
+    use rasmcore_pipeline::gpu::BufferFormat;
+    use rasmcore_image::domain::filter_traits::GpuFilter;
+    use rasmcore_image::domain::filters::SepiaParams;
+
+    let gpu = match try_gpu() {
+        Some(g) => g,
+        None => return,
+    };
+
+    let (w, h) = (64, 64);
+    let pixels_u8 = make_gradient_rgba(w, h);
+    let pixels_f32_norm: Vec<u8> = pixels_u8.iter()
+        .flat_map(|&b| (b as f32 / 255.0).to_le_bytes())
+        .collect();
+
+    let config = SepiaParams { intensity: 0.8 };
+
+    // CPU f32 reference
+    let cpu_f32_result: Vec<u8> = pixels_u8.chunks_exact(4).flat_map(|px| {
+        let r = px[0] as f32 / 255.0;
+        let g = px[1] as f32 / 255.0;
+        let b = px[2] as f32 / 255.0;
+        let sr = (r * 0.393 + g * 0.769 + b * 0.189).min(1.0);
+        let sg = (r * 0.349 + g * 0.686 + b * 0.168).min(1.0);
+        let sb = (r * 0.272 + g * 0.534 + b * 0.131).min(1.0);
+        let or = r + (sr - r) * 0.8;
+        let og = g + (sg - g) * 0.8;
+        let ob = b + (sb - b) * 0.8;
+        [(or * 255.0 + 0.5) as u8, (og * 255.0 + 0.5) as u8, (ob * 255.0 + 0.5) as u8, px[3]]
+    }).collect();
+
+    // GPU f32
+    let ops = config.gpu_ops_with_format(w, h, BufferFormat::F32Vec4)
+        .expect("sepia should support f32 GPU");
+    let gpu_f32_bytes = gpu.execute_with_format(&ops, &pixels_f32_norm, w, h, BufferFormat::F32Vec4).unwrap();
+    let gpu_f32_as_u8: Vec<u8> = gpu_f32_bytes.chunks_exact(4)
+        .map(|c| {
+            let v = f32::from_le_bytes([c[0], c[1], c[2], c[3]]);
+            (v * 255.0 + 0.5).clamp(0.0, 255.0) as u8
+        })
+        .collect();
+
+    assert_gpu_parity("sepia_f32 vs cpu_f32", &cpu_f32_result, &gpu_f32_as_u8, 1.0);
+    eprintln!("  sepia f32 GPU parity: PASS");
+}
