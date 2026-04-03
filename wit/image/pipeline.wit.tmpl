@@ -68,10 +68,22 @@ interface pipeline {
         size-bytes: u64,
     }
 
+    /// Cache storage quality for layer cache entries.
+    enum cache-quality {
+        /// Full precision — store cached tiles as-is (default).
+        full,
+        /// Quantize to 16-bit per channel (halves memory).
+        q16,
+        /// Quantize to 8-bit per channel (quarters memory).
+        q8,
+    }
+
     resource layer-cache {
         constructor(capacity: u32);
         stats: func() -> cache-stats;
         clear: func();
+        /// Set the storage quality for new cache entries.
+        set-cache-quality: func(quality: cache-quality);
     }
 
     /// Pipeline precision mode.

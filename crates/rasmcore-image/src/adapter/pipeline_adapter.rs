@@ -791,8 +791,8 @@ pub fn dispatch_chain_op(
         "polar" => P::polar(pipe, source),
         "premultiply" => P::premultiply(pipe, source),
         "unpremultiply" => P::unpremultiply(pipe, source),
-        "triangle_threshold" | "triangle-threshold" => P::triangle_threshold(pipe, source),
-        "otsu_threshold" | "otsu-threshold" => P::otsu_threshold(pipe, source),
+        // triangle_threshold and otsu_threshold now have ConfigParams (V2) —
+        // handled by generated_pipeline_filter_methods macro
         "evaluate_abs" | "evaluate-abs" => P::evaluate_abs(pipe, source),
         "average_blur" | "average-blur" => P::average_blur(pipe, source),
 

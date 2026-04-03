@@ -63,7 +63,21 @@ fn generate_derive_style_method(
                 .iter()
                 .map(|field| {
                     let fname = field.name.trim_start_matches('_');
-                    format!("            {fname}: wit_config.{fname}")
+                    // Handle nested struct types (e.g., ColorRgb, ColorRgba)
+                    let nested = param_structs.get(&field.param_type);
+                    if let Some(nested_fields) = nested {
+                        let nested_type = qualified(&field.param_type);
+                        let nested_inits: Vec<String> = nested_fields.iter().map(|nf| {
+                            let nfname = nf.name.trim_start_matches('_');
+                            format!("                {nfname}: wit_config.{fname}.{nfname}")
+                        }).collect();
+                        format!(
+                            "            {fname}: {nested_type} {{\n{}\n            }}",
+                            nested_inits.join(",\n")
+                        )
+                    } else {
+                        format!("            {fname}: wit_config.{fname}")
+                    }
                 })
                 .collect();
             code.push_str(&format!(

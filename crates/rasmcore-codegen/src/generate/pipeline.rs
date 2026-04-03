@@ -382,7 +382,21 @@ pub fn generate_adapter_macro(
                         .iter()
                         .map(|field| {
                             let fname = field.name.trim_start_matches('_');
-                            format!("            {fname}: {}", proxy_scale_expr(fname, field))
+                            // Check if this field is a nested struct (e.g., ColorRgb, ColorRgba)
+                            let nested = param_structs.get(&field.param_type);
+                            if let Some(nested_fields) = nested {
+                                let nested_type = to_qualified_binding_type(&field.param_type);
+                                let nested_inits: Vec<String> = nested_fields.iter().map(|nf| {
+                                    let nfname = nf.name.trim_start_matches('_');
+                                    format!("                {nfname}: wit_config.{fname}.{nfname}")
+                                }).collect();
+                                format!(
+                                    "            {fname}: {nested_type} {{\n{}\n            }}",
+                                    nested_inits.join(",\n")
+                                )
+                            } else {
+                                format!("            {fname}: {}", proxy_scale_expr(fname, field))
+                            }
                         })
                         .collect();
                     body_lines.push(format!(
