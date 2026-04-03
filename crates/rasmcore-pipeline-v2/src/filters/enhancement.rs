@@ -1751,6 +1751,55 @@ gpu_filter_passes_only!(PyramidDetailRemap,
 );
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Factory Registrations
+// ═══════════════════════════════════════════════════════════════════════════════
+
+use crate::filter_node::FilterNode;
+#[allow(unused_imports)]
+use crate::registry::{FilterFactoryRegistration, ParamMap};
+
+macro_rules! register_enhance_factory {
+    ($name:expr, $struct:ident { $($field:ident : $getter:ident),* $(,)? }) => {
+        inventory::submit! { &FilterFactoryRegistration { name: $name,
+            factory: |upstream, info, params| {
+                let f = $struct { $($field: params.$getter(stringify!($field))),* };
+                Box::new(FilterNode::point_op(upstream, info, f))
+            },
+        } }
+    };
+    ($name:expr, $struct:ident) => {
+        inventory::submit! { &FilterFactoryRegistration { name: $name,
+            factory: |upstream, info, _params| { Box::new(FilterNode::point_op(upstream, info, $struct)) },
+        } }
+    };
+}
+
+register_enhance_factory!("auto_level", AutoLevel);
+register_enhance_factory!("equalize", Equalize);
+register_enhance_factory!("normalize", Normalize { black_clip: get_f32, white_clip: get_f32 });
+register_enhance_factory!("frequency_low", FrequencyLow { sigma: get_f32 });
+register_enhance_factory!("frequency_high", FrequencyHigh { sigma: get_f32 });
+register_enhance_factory!("clarity", Clarity { amount: get_f32, radius: get_f32 });
+register_enhance_factory!("dehaze", Dehaze { patch_radius: get_u32, omega: get_f32, t_min: get_f32 });
+register_enhance_factory!("clahe", Clahe { tile_grid: get_u32, clip_limit: get_f32 });
+register_enhance_factory!("nlm_denoise", NlmDenoise { h: get_f32, patch_radius: get_u32, search_radius: get_u32 });
+register_enhance_factory!("pyramid_detail_remap", PyramidDetailRemap { sigma: get_f32, levels: get_u32 });
+register_enhance_factory!("retinex_ssr", RetinexSsr { sigma: get_f32 });
+inventory::submit! { &FilterFactoryRegistration { name: "shadow_highlight",
+    factory: |upstream, info, params| {
+        let f = ShadowHighlight {
+            shadows: params.get_f32("shadows"), highlights: params.get_f32("highlights"),
+            whitepoint: params.get_f32("whitepoint"), radius: params.get_f32("radius"),
+            compress: params.get_f32("compress"), shadows_ccorrect: params.get_f32("shadows_ccorrect"),
+            highlights_ccorrect: params.get_f32("highlights_ccorrect"),
+        };
+        Box::new(FilterNode::point_op(upstream, info, f))
+    },
+} }
+register_enhance_factory!("vignette", Vignette { sigma: get_f32, x_inset: get_u32, y_inset: get_u32 });
+register_enhance_factory!("vignette_powerlaw", VignettePowerlaw { strength: get_f32, falloff: get_f32 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════════════════════
 

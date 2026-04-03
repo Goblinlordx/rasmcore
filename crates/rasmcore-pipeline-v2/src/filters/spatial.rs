@@ -685,6 +685,52 @@ impl GpuFilter for DisplacementMap {
     }
 }
 
+// ─── Factory Registrations ──────────────────────────────────────────────────
+
+use crate::filter_node::FilterNode;
+#[allow(unused_imports)]
+use crate::registry::{FilterFactoryRegistration, ParamMap};
+
+inventory::submit! { &FilterFactoryRegistration { name: "gaussian_blur",
+    factory: |upstream, info, params| {
+        Box::new(FilterNode::point_op(upstream, info, GaussianBlur { radius: params.get_f32("radius") }))
+    },
+} }
+inventory::submit! { &FilterFactoryRegistration { name: "box_blur",
+    factory: |upstream, info, params| {
+        Box::new(FilterNode::point_op(upstream, info, BoxBlur { radius: params.get_u32("radius") }))
+    },
+} }
+inventory::submit! { &FilterFactoryRegistration { name: "sharpen",
+    factory: |upstream, info, params| {
+        Box::new(FilterNode::point_op(upstream, info, Sharpen { radius: params.get_f32("radius"), amount: params.get_f32("amount") }))
+    },
+} }
+inventory::submit! { &FilterFactoryRegistration { name: "median",
+    factory: |upstream, info, params| {
+        Box::new(FilterNode::point_op(upstream, info, Median { radius: params.get_u32("radius") }))
+    },
+} }
+inventory::submit! { &FilterFactoryRegistration { name: "bilateral",
+    factory: |upstream, info, params| {
+        Box::new(FilterNode::point_op(upstream, info, Bilateral {
+            diameter: params.get_u32("diameter"),
+            sigma_color: params.get_f32("sigma_color"),
+            sigma_space: params.get_f32("sigma_space"),
+        }))
+    },
+} }
+inventory::submit! { &FilterFactoryRegistration { name: "motion_blur",
+    factory: |upstream, info, params| {
+        Box::new(FilterNode::point_op(upstream, info, MotionBlur { angle: params.get_f32("angle"), length: params.get_f32("length") }))
+    },
+} }
+inventory::submit! { &FilterFactoryRegistration { name: "high_pass",
+    factory: |upstream, info, params| {
+        Box::new(FilterNode::point_op(upstream, info, HighPass { radius: params.get_f32("radius") }))
+    },
+} }
+
 #[cfg(test)]
 mod tests {
     use super::*;

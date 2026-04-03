@@ -1307,6 +1307,68 @@ impl GpuFilter for MirrorKaleidoscope {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Factory Registrations
+// ═══════════════════════════════════════════════════════════════════════════════
+
+use crate::filter_node::FilterNode;
+#[allow(unused_imports)]
+use crate::registry::{FilterFactoryRegistration, ParamMap};
+
+macro_rules! register_effect_factory {
+    ($name:expr, $struct:ident { $($field:ident : $getter:ident),* $(,)? }) => {
+        inventory::submit! {
+            &FilterFactoryRegistration {
+                name: $name,
+                factory: |upstream, info, params| {
+                    let f = $struct { $($field: params.$getter(stringify!($field))),* };
+                    Box::new(FilterNode::point_op(upstream, info, f))
+                },
+            }
+        }
+    };
+    ($name:expr, $struct:ident) => {
+        inventory::submit! {
+            &FilterFactoryRegistration {
+                name: $name,
+                factory: |upstream, info, _params| {
+                    Box::new(FilterNode::point_op(upstream, info, $struct))
+                },
+            }
+        }
+    };
+}
+
+register_effect_factory!("gaussian_noise", GaussianNoise { amount: get_f32, mean: get_f32, sigma: get_f32, seed: get_u64 });
+register_effect_factory!("uniform_noise", UniformNoise { range: get_f32, seed: get_u64 });
+register_effect_factory!("salt_pepper_noise", SaltPepperNoise { density: get_f32, seed: get_u64 });
+register_effect_factory!("poisson_noise", PoissonNoise { scale: get_f32, seed: get_u64 });
+register_effect_factory!("film_grain", FilmGrain { amount: get_f32, size: get_f32, seed: get_u64 });
+register_effect_factory!("pixelate", Pixelate { block_size: get_u32 });
+register_effect_factory!("halftone", Halftone { dot_size: get_f32, angle_offset: get_f32 });
+register_effect_factory!("oil_paint", OilPaint { radius: get_u32 });
+register_effect_factory!("emboss", Emboss);
+register_effect_factory!("charcoal", Charcoal { radius: get_f32, sigma: get_f32 });
+register_effect_factory!("chromatic_split", ChromaticSplit { red_dx: get_f32, red_dy: get_f32, green_dx: get_f32, green_dy: get_f32, blue_dx: get_f32, blue_dy: get_f32 });
+register_effect_factory!("chromatic_aberration", ChromaticAberration { strength: get_f32 });
+inventory::submit! {
+    &FilterFactoryRegistration {
+        name: "glitch",
+        factory: |upstream, info, params| {
+            let f = Glitch {
+                shift_amount: params.get_f32("shift_amount"),
+                channel_offset: params.get_f32("channel_offset"),
+                intensity: params.get_f32("intensity"),
+                band_height: params.get_u32("band_height"),
+                seed: params.get_u32("seed"),
+            };
+            Box::new(FilterNode::point_op(upstream, info, f))
+        },
+    }
+}
+register_effect_factory!("light_leak", LightLeak { intensity: get_f32, position_x: get_f32, position_y: get_f32, radius: get_f32, warmth: get_f32 });
+register_effect_factory!("mirror_kaleidoscope", MirrorKaleidoscope { segments: get_u32, angle: get_f32, mode: get_u32 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // GPU shaders for remaining CPU-only filters (loaded from .wgsl files)
 // ═══════════════════════════════════════════════════════════════════════════════
 

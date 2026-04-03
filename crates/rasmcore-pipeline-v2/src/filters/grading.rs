@@ -969,6 +969,61 @@ pub fn parse_cube_lut(content: &str) -> Result<Clut3D, PipelineError> {
     })
 }
 
+// ─── Factory Registrations ──────────────────────────────────────────────────
+
+use crate::filter_node::FilterNode;
+#[allow(unused_imports)]
+use crate::registry::{FilterFactoryRegistration, ParamMap};
+
+inventory::submit! { &FilterFactoryRegistration { name: "tonemap_reinhard",
+    factory: |upstream, info, _params| {
+        Box::new(FilterNode::point_op(upstream, info, TonemapReinhard))
+    },
+} }
+inventory::submit! { &FilterFactoryRegistration { name: "tonemap_drago",
+    factory: |upstream, info, params| {
+        Box::new(FilterNode::point_op(upstream, info, TonemapDrago {
+            l_max: params.get_f32("l_max"), bias: params.get_f32("bias"),
+        }))
+    },
+} }
+inventory::submit! { &FilterFactoryRegistration { name: "tonemap_filmic",
+    factory: |upstream, info, params| {
+        Box::new(FilterNode::point_op(upstream, info, TonemapFilmic {
+            a: params.get_f32("a"), b: params.get_f32("b"), c: params.get_f32("c"),
+            d: params.get_f32("d"), e: params.get_f32("e"),
+        }))
+    },
+} }
+inventory::submit! { &FilterFactoryRegistration { name: "asc_cdl",
+    factory: |upstream, info, params| {
+        Box::new(FilterNode::point_op(upstream, info, AscCdl {
+            slope: [params.get_f32("slope_r"), params.get_f32("slope_g"), params.get_f32("slope_b")],
+            offset: [params.get_f32("offset_r"), params.get_f32("offset_g"), params.get_f32("offset_b")],
+            power: [params.get_f32("power_r"), params.get_f32("power_g"), params.get_f32("power_b")],
+            saturation: params.get_f32("saturation"),
+        }))
+    },
+} }
+inventory::submit! { &FilterFactoryRegistration { name: "split_toning",
+    factory: |upstream, info, params| {
+        Box::new(FilterNode::point_op(upstream, info, SplitToning {
+            shadow_color: [params.get_f32("shadow_r"), params.get_f32("shadow_g"), params.get_f32("shadow_b")],
+            highlight_color: [params.get_f32("highlight_r"), params.get_f32("highlight_g"), params.get_f32("highlight_b")],
+            balance: params.get_f32("balance"), strength: params.get_f32("strength"),
+        }))
+    },
+} }
+inventory::submit! { &FilterFactoryRegistration { name: "lift_gamma_gain",
+    factory: |upstream, info, params| {
+        Box::new(FilterNode::point_op(upstream, info, LiftGammaGain {
+            lift: [params.get_f32("lift_r"), params.get_f32("lift_g"), params.get_f32("lift_b")],
+            gamma: [params.get_f32("gamma_r"), params.get_f32("gamma_g"), params.get_f32("gamma_b")],
+            gain: [params.get_f32("gain_r"), params.get_f32("gain_g"), params.get_f32("gain_b")],
+        }))
+    },
+} }
+
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

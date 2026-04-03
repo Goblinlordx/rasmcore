@@ -1739,6 +1739,82 @@ impl GpuFilter for LabSharpen {
     }
 }
 
+// ─── Factory Registrations ──────────────────────────────────────────────────
+
+use crate::filter_node::FilterNode;
+#[allow(unused_imports)]
+use crate::registry::{FilterFactoryRegistration, ParamMap};
+
+macro_rules! reg_color {
+    ($name:expr, $struct:ident { $($field:ident : $getter:ident),* $(,)? }) => {
+        inventory::submit! { &FilterFactoryRegistration { name: $name,
+            factory: |upstream, info, params| {
+                let f = $struct { $($field: params.$getter(stringify!($field))),* };
+                Box::new(FilterNode::point_op(upstream, info, f))
+            },
+        } }
+    };
+    ($name:expr, $struct:ident) => {
+        inventory::submit! { &FilterFactoryRegistration { name: $name,
+            factory: |upstream, info, _params| { Box::new(FilterNode::point_op(upstream, info, $struct)) },
+        } }
+    };
+}
+
+reg_color!("hue_rotate", HueRotate { degrees: get_f32 });
+reg_color!("saturate", Saturate { factor: get_f32 });
+reg_color!("vibrance", Vibrance { amount: get_f32 });
+reg_color!("sepia", Sepia { intensity: get_f32 });
+inventory::submit! { &FilterFactoryRegistration { name: "colorize",
+    factory: |upstream, info, params| {
+        Box::new(FilterNode::point_op(upstream, info, Colorize {
+            target_r: params.get_f32("target_r"), target_g: params.get_f32("target_g"),
+            target_b: params.get_f32("target_b"), amount: params.get_f32("amount"),
+        }))
+    },
+} }
+inventory::submit! { &FilterFactoryRegistration { name: "modulate",
+    factory: |upstream, info, params| {
+        Box::new(FilterNode::point_op(upstream, info, Modulate {
+            brightness: params.get_f32("brightness"), saturation: params.get_f32("saturation"),
+            hue: params.get_f32("hue"),
+        }))
+    },
+} }
+inventory::submit! { &FilterFactoryRegistration { name: "photo_filter",
+    factory: |upstream, info, params| {
+        Box::new(FilterNode::point_op(upstream, info, PhotoFilter {
+            color_r: params.get_f32("color_r"), color_g: params.get_f32("color_g"),
+            color_b: params.get_f32("color_b"), density: params.get_f32("density"),
+            preserve_luminosity: params.get_bool("preserve_luminosity"),
+        }))
+    },
+} }
+inventory::submit! { &FilterFactoryRegistration { name: "selective_color",
+    factory: |upstream, info, params| {
+        Box::new(FilterNode::point_op(upstream, info, SelectiveColor {
+            target_hue: params.get_f32("target_hue"), hue_range: params.get_f32("hue_range"),
+            hue_shift: params.get_f32("hue_shift"), saturation: params.get_f32("saturation"),
+            lightness: params.get_f32("lightness"),
+        }))
+    },
+} }
+reg_color!("white_balance_temperature", WhiteBalanceTemperature { temperature: get_f32, tint: get_f32 });
+reg_color!("lab_adjust", LabAdjust { a_offset: get_f32, b_offset: get_f32 });
+reg_color!("white_balance_gray_world", WhiteBalanceGrayWorld);
+reg_color!("quantize", Quantize { max_colors: get_u32 });
+reg_color!("dither_ordered", DitherOrdered { max_colors: get_u32, map_size: get_u32 });
+reg_color!("dither_floyd_steinberg", DitherFloydSteinberg { max_colors: get_u32 });
+reg_color!("lab_sharpen", LabSharpen { amount: get_f32, radius: get_f32 });
+inventory::submit! { &FilterFactoryRegistration { name: "kmeans_quantize",
+    factory: |upstream, info, params| {
+        Box::new(FilterNode::point_op(upstream, info, KmeansQuantize {
+            k: params.get_u32("k"), max_iterations: params.get_u32("max_iterations"),
+            seed: params.get_u32("seed"),
+        }))
+    },
+} }
+
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
