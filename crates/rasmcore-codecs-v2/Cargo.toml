@@ -8,10 +8,12 @@ description = "V2 codec implementations — unified f32 decode/encode for all im
 [dependencies]
 rasmcore-image = { path = "../rasmcore-image" }
 rasmcore-pipeline-v2 = { path = "../rasmcore-pipeline-v2" }
+rasmcore-fits = { path = "../rasmcore-fits" }
 inventory = "0.3"
 
 [dev-dependencies]
 rasmcore-image = { path = "../rasmcore-image" }
+rasmcore-pipeline-v2 = { path = "../rasmcore-pipeline-v2" }
 
 [lints]
 workspace = true

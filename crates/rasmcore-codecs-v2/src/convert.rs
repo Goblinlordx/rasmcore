@@ -65,6 +65,41 @@ pub fn f32_to_v1_rgba8(
     (out, info)
 }
 
+/// Convert f32 RGBA to V1-compatible u8 Rgb8 (alpha dropped) with optional sRGB gamma.
+///
+/// For formats that don't support alpha channels (BMP, JPEG, PNM, HDR).
+pub fn f32_to_v1_rgb8(
+    pixels: &[f32],
+    width: u32,
+    height: u32,
+    apply_gamma: bool,
+) -> (Vec<u8>, ImageInfo) {
+    let npixels = (width as usize) * (height as usize);
+    let mut out = Vec::with_capacity(npixels * 3);
+
+    if apply_gamma {
+        for chunk in pixels.chunks_exact(4) {
+            out.push(linear_to_srgb_u8(chunk[0]));
+            out.push(linear_to_srgb_u8(chunk[1]));
+            out.push(linear_to_srgb_u8(chunk[2]));
+        }
+    } else {
+        for chunk in pixels.chunks_exact(4) {
+            out.push((chunk[0].clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
+            out.push((chunk[1].clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
+            out.push((chunk[2].clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
+        }
+    }
+
+    let info = ImageInfo {
+        width,
+        height,
+        format: PixelFormat::Rgb8,
+        color_space: rasmcore_image::domain::types::ColorSpace::Srgb,
+    };
+    (out, info)
+}
+
 /// Convert f32 RGBA to V1-compatible f32 LE bytes (Rgba32f).
 ///
 /// For linear HDR formats (EXR, HDR, FITS) that encode f32 directly.

@@ -75,7 +75,10 @@ macro_rules! v2_f32_decoder {
             fn decode(&self, data: &[u8]) -> Result<DecodedImage, PipelineError> {
                 let v1 = rasmcore_image::domain::decoder::decode_f32_with_hint(data, Some($format))
                     .map_err(|e| PipelineError::ComputeError(format!("{}: {e}", $format)))?;
-                convert::v1_to_v2(v1)
+                let mut decoded = convert::v1_to_v2(v1)?;
+                // Override: f32-native formats are always linear regardless of V1 metadata
+                decoded.info.color_space = rasmcore_pipeline_v2::ColorSpace::Linear;
+                Ok(decoded)
             }
 
             fn can_decode(&self, $data: &[u8]) -> bool {

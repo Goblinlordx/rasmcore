@@ -20,6 +20,7 @@ macro_rules! v2_srgb_encoder {
         display_name: $display:literal,
         mime: $mime:literal,
         extensions: [$($ext:literal),+],
+        alpha: $alpha:expr,
         reg_name: $reg_name:ident
     ) => {
         pub struct $struct;
@@ -32,10 +33,17 @@ macro_rules! v2_srgb_encoder {
                 height: u32,
                 quality: Option<u8>,
             ) -> Result<Vec<u8>, PipelineError> {
-                // Apply sRGB gamma + quantize to u8 Rgba8
-                let (u8_pixels, info) = convert::f32_to_v1_rgba8(pixels, width, height, true);
-                rasmcore_image::domain::encoder::encode(&u8_pixels, &info, $format, quality)
-                    .map_err(|e| PipelineError::ComputeError(format!("{}: {e}", $format)))
+                if $alpha {
+                    // Format supports alpha — use Rgba8
+                    let (u8_pixels, info) = convert::f32_to_v1_rgba8(pixels, width, height, true);
+                    rasmcore_image::domain::encoder::encode(&u8_pixels, &info, $format, quality)
+                        .map_err(|e| PipelineError::ComputeError(format!("{}: {e}", $format)))
+                } else {
+                    // Format doesn't support alpha — use Rgb8
+                    let (u8_pixels, info) = convert::f32_to_v1_rgb8(pixels, width, height, true);
+                    rasmcore_image::domain::encoder::encode(&u8_pixels, &info, $format, quality)
+                        .map_err(|e| PipelineError::ComputeError(format!("{}: {e}", $format)))
+                }
             }
 
             fn mime_type(&self) -> &str {
@@ -136,6 +144,7 @@ v2_srgb_encoder! {
     display_name: "PNG",
     mime: "image/png",
     extensions: ["png"],
+    alpha: true,
     reg_name: PNG_ENCODE_REG
 }
 
@@ -145,6 +154,7 @@ v2_srgb_encoder! {
     display_name: "JPEG",
     mime: "image/jpeg",
     extensions: ["jpg", "jpeg", "jfif"],
+    alpha: false,
     reg_name: JPEG_ENCODE_REG
 }
 
@@ -154,6 +164,7 @@ v2_srgb_encoder! {
     display_name: "WebP",
     mime: "image/webp",
     extensions: ["webp"],
+    alpha: true,
     reg_name: WEBP_ENCODE_REG
 }
 
@@ -163,6 +174,7 @@ v2_srgb_encoder! {
     display_name: "GIF",
     mime: "image/gif",
     extensions: ["gif"],
+    alpha: true,
     reg_name: GIF_ENCODE_REG
 }
 
@@ -172,6 +184,7 @@ v2_srgb_encoder! {
     display_name: "BMP",
     mime: "image/bmp",
     extensions: ["bmp", "dib"],
+    alpha: false,
     reg_name: BMP_ENCODE_REG
 }
 
@@ -181,6 +194,7 @@ v2_srgb_encoder! {
     display_name: "QOI",
     mime: "image/x-qoi",
     extensions: ["qoi"],
+    alpha: true,
     reg_name: QOI_ENCODE_REG
 }
 
@@ -190,6 +204,7 @@ v2_srgb_encoder! {
     display_name: "ICO",
     mime: "image/x-icon",
     extensions: ["ico", "cur"],
+    alpha: true,
     reg_name: ICO_ENCODE_REG
 }
 
@@ -199,6 +214,7 @@ v2_srgb_encoder! {
     display_name: "TGA",
     mime: "image/x-tga",
     extensions: ["tga", "targa"],
+    alpha: true,
     reg_name: TGA_ENCODE_REG
 }
 
@@ -208,10 +224,11 @@ v2_srgb_encoder! {
     display_name: "PNM",
     mime: "image/x-portable-anymap",
     extensions: ["pnm", "ppm"],
+    alpha: false,
     reg_name: PNM_ENCODE_REG
 }
 
-// TIFF supports both u8 sRGB and f32 output — default to sRGB u8 for
+// TIFF supports both u8 sRGB and f32 output — default to sRGB u8 Rgb8 for
 // maximum compatibility. TIFF f32 output can be added via a separate
 // TiffF32Encoder if needed.
 v2_srgb_encoder! {
@@ -220,6 +237,7 @@ v2_srgb_encoder! {
     display_name: "TIFF",
     mime: "image/tiff",
     extensions: ["tiff", "tif"],
+    alpha: false,
     reg_name: TIFF_ENCODE_REG
 }
 
@@ -245,13 +263,49 @@ v2_linear_encoder! {
     reg_name: HDR_ENCODE_REG
 }
 
-v2_linear_encoder! {
-    struct_name: FitsEncoder,
-    format: "fits",
-    display_name: "FITS",
-    mime: "image/fits",
-    extensions: ["fits", "fit"],
-    reg_name: FITS_ENCODE_REG
+// FITS requires special handling — grayscale f32, not the generic linear encoder.
+pub struct FitsEncoder;
+
+impl Encoder for FitsEncoder {
+    fn encode(
+        &self,
+        pixels: &[f32],
+        width: u32,
+        height: u32,
+        _quality: Option<u8>,
+    ) -> Result<Vec<u8>, PipelineError> {
+        // FITS is typically grayscale — extract luma from RGBA f32
+        let npixels = (width as usize) * (height as usize);
+        let mut gray = Vec::with_capacity(npixels);
+        for chunk in pixels.chunks_exact(4) {
+            // Rec. 709 luma coefficients
+            let luma = 0.2126 * chunk[0] + 0.7152 * chunk[1] + 0.0722 * chunk[2];
+            gray.push(luma);
+        }
+        rasmcore_fits::encode_f32(&gray, width, height)
+            .map_err(|e| PipelineError::ComputeError(format!("fits: {e}")))
+    }
+
+    fn mime_type(&self) -> &str {
+        "image/fits"
+    }
+
+    fn extensions(&self) -> &[&str] {
+        &["fits", "fit"]
+    }
+}
+
+inventory::submit! {
+    &OperationRegistration {
+        name: "fits_encode",
+        display_name: "FITS Encoder",
+        category: "codec",
+        kind: OperationKind::Encoder,
+        params: &[],
+        capabilities: OperationCapabilities {
+            gpu: false, analytic: false, affine: false, clut: false,
+        },
+    }
 }
 
 // ─── V2 encoder dispatch ────────────────────────────────────────────────────
