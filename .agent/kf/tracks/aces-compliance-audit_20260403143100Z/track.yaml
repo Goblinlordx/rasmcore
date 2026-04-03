@@ -1,76 +1,86 @@
 id: aces-compliance-audit_20260403143100Z
-title: "ACES compliance audit — node metadata + graph validation mode"
+title: ACES compliance audit — node metadata + graph validation mode
 type: feature
 status: pending
-created: "2026-04-03"
-updated: "2026-04-03"
+created: '2026-04-03'
+updated: '2026-04-03'
 spec:
-  summary: >
-    Add ACES compliance metadata to OperationRegistration and Node trait,
-    plus graph-level validation that reports non-compliant nodes before execution.
-  context: |
-    The V2 pipeline has ACES color spaces (AP0, AP1, ACEScct, ACEScc), transfer
+  summary: 'Add ACES compliance metadata to OperationRegistration and Node trait, plus graph-level validation that reports
+    non-compliant nodes before execution.
+
+    '
+  context: 'The V2 pipeline has ACES color spaces (AP0, AP1, ACEScct, ACEScc), transfer
+
     functions, and conversion matrices fully implemented. However, no filter or node
+
     declares whether it is ACES-safe. There is no mechanism to validate the color
+
     space chain through a graph or enforce ACES compliance before execution.
-    
+
+
     The user wants an ACES strict mode that refuses to run if any node in the graph
+
     is not ACES-compliant, logging all offending nodes.
-  codebase_analysis: |
-    Key files:
-    - registry.rs: OperationRegistration + OperationCapabilities (static metadata)
-    - node.rs: Node trait with expected_input_color_space() default Linear
-    - graph.rs: Graph executor — no pre-validation pass exists
-    - color_space.rs: ColorSpace enum with ACES variants
-    - filters/*.rs: ~70 V2 filters — most are linear math (ACES-safe), some
-      depend on perceptual assumptions or sRGB-specific math
+
+    '
+  codebase_analysis: "Key files:\n- registry.rs: OperationRegistration + OperationCapabilities (static metadata)\n- node.rs:\
+    \ Node trait with expected_input_color_space() default Linear\n- graph.rs: Graph executor — no pre-validation pass exists\n\
+    - color_space.rs: ColorSpace enum with ACES variants\n- filters/*.rs: ~70 V2 filters — most are linear math (ACES-safe),\
+    \ some\n  depend on perceptual assumptions or sRGB-specific math\n"
   acceptance_criteria:
-    - AcesCompliance enum added (Compliant, Log, NonCompliant, Unknown)
-    - aces_compliance() method on Node trait with default Unknown
-    - Graph::validate_aces() returns list of non-compliant nodes with reasons
-    - Strict mode fails execution with clear error listing all non-compliant nodes
-    - All existing V2 filters audited and marked with correct AcesCompliance
-    - Tests verify compliance checking with mixed compliant/non-compliant graphs
-  out_of_scope: |
-    RRT/ODT implementation. GPU shaders for color conversion. Camera IDTs. AMF metadata.
-  technical_notes: |
-    Add AcesCompliance enum to node.rs. Add aces_compliance() to Node trait
+  - AcesCompliance enum added (Compliant, Log, NonCompliant, Unknown)
+  - aces_compliance() method on Node trait with default Unknown
+  - Graph::validate_aces() returns list of non-compliant nodes with reasons
+  - Strict mode fails execution with clear error listing all non-compliant nodes
+  - All existing V2 filters audited and marked with correct AcesCompliance
+  - Tests verify compliance checking with mixed compliant/non-compliant graphs
+  out_of_scope: 'RRT/ODT implementation. GPU shaders for color conversion. Camera IDTs. AMF metadata.
+
+    '
+  technical_notes: 'Add AcesCompliance enum to node.rs. Add aces_compliance() to Node trait
+
     (default Unknown). Add aces_safe field to OperationCapabilities for static
+
     registration. Graph::validate_aces() walks all nodes and collects violations.
+
     Graph gets an aces_strict flag — when true, execute() calls validate_aces()
+
     first and returns PipelineError if violations found. Audit all existing filters
+
     and override aces_compliance() on FilterNode/GpuFilterNode wrappers.
+
+    '
 plan:
-  - phase: "ACES compliance metadata"
-    tasks:
-      - text: "Add AcesCompliance enum to node.rs (Compliant, Log, NonCompliant, Unknown)"
-        done: false
-      - text: "Add aces_compliance() method to Node trait with default Unknown"
-        done: false
-      - text: "Add aces_safe bool to OperationCapabilities in registry.rs"
-        done: false
-  - phase: "Graph validation"
-    tasks:
-      - text: "Add AcesViolation struct (node_id, node_name, compliance, reason)"
-        done: false
-      - text: "Implement Graph::validate_aces() — walk all nodes, collect violations"
-        done: false
-      - text: "Add aces_strict flag to Graph — when set, execute() validates first"
-        done: false
-  - phase: "Filter audit"
-    tasks:
-      - text: "Audit and mark adjustment filters (all Compliant — linear point ops)"
-        done: false
-      - text: "Audit and mark spatial filters (all Compliant — linear convolutions)"
-        done: false
-      - text: "Audit and mark enhancement filters (classify per algorithm)"
-        done: false
-      - text: "Audit and mark effect filters (classify per algorithm)"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Test validate_aces() on all-compliant graph returns empty"
-        done: false
-      - text: "Test validate_aces() on mixed graph returns correct violations"
-        done: false
+- phase: ACES compliance metadata
+  tasks:
+  - text: Add AcesCompliance enum to node.rs (Compliant, Log, NonCompliant, Unknown)
+    done: true
+  - text: Add aces_compliance() method to Node trait with default Unknown
+    done: true
+  - text: Add aces_safe bool to OperationCapabilities in registry.rs
+    done: true
+- phase: Graph validation
+  tasks:
+  - text: Add AcesViolation struct (node_id, node_name, compliance, reason)
+    done: true
+  - text: Implement Graph::validate_aces() — walk all nodes, collect violations
+    done: true
+  - text: Add aces_strict flag to Graph — when set, execute() validates first
+    done: true
+- phase: Filter audit
+  tasks:
+  - text: Audit and mark adjustment filters (all Compliant — linear point ops)
+    done: true
+  - text: Audit and mark spatial filters (all Compliant — linear convolutions)
+    done: true
+  - text: Audit and mark enhancement filters (classify per algorithm)
+    done: true
+  - text: Audit and mark effect filters (classify per algorithm)
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test validate_aces() on all-compliant graph returns empty
+    done: true
+  - text: Test validate_aces() on mixed graph returns correct violations
+    done: true
 extra: {}
