@@ -1537,3 +1537,82 @@ fn gpu_f32_film_grain_deterministic() {
 
     eprintln!("  film_grain f32 GPU: deterministic + valid range: PASS");
 }
+
+// ─── Fusion Node GPU Tests ─────────────────────────────────────────────────
+
+#[test]
+fn gpu_f32_fused_lut_brightness() {
+    use rasmcore_pipeline::gpu::BufferFormat;
+
+    let gpu = match try_gpu() {
+        Some(g) => g,
+        None => return,
+    };
+
+    let (w, h) = (64u32, 64u32);
+    let pixels_f32: Vec<u8> = (0..(w * h) as usize)
+        .flat_map(|i| {
+            let r = (i % w as usize) as f32 / w as f32;
+            let g = (i / w as usize) as f32 / h as f32;
+            [r, g, 0.5f32, 1.0f32].iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<_>>()
+        })
+        .collect();
+
+    // Build LUT for brightness +0.2
+    let lut = rasmcore_image::domain::point_ops::build_lut(
+        &rasmcore_image::domain::point_ops::PointOp::Brightness(0.2)
+    );
+
+    // Pack LUT as u32 array (same as FusedLutNode does)
+    let mut lut_buf = Vec::with_capacity(256 * 4);
+    for &v in lut.iter() {
+        lut_buf.extend_from_slice(&(v as u32).to_le_bytes());
+    }
+
+    let mut params = Vec::with_capacity(8);
+    params.extend_from_slice(&w.to_le_bytes());
+    params.extend_from_slice(&h.to_le_bytes());
+
+    // Use the f32 LUT shader directly
+    let shader = include_str!("../src/domain/pipeline/shaders/lut1d_f32.wgsl").to_string();
+
+    let ops = vec![GpuOp::Compute {
+        shader,
+        entry_point: "main",
+        workgroup_size: [16, 16, 1],
+        params,
+        extra_buffers: vec![lut_buf.clone()],
+        buffer_format: BufferFormat::F32Vec4,
+    }];
+
+    let gpu_output = gpu.execute_with_format(&ops, &pixels_f32, w, h, BufferFormat::F32Vec4).unwrap();
+
+    // CPU f32 reference — interpolated LUT lookup
+    let cpu_output: Vec<u8> = pixels_f32.chunks_exact(16).flat_map(|px| {
+        let r = f32::from_le_bytes([px[0], px[1], px[2], px[3]]);
+        let g = f32::from_le_bytes([px[4], px[5], px[6], px[7]]);
+        let b = f32::from_le_bytes([px[8], px[9], px[10], px[11]]);
+        let a = f32::from_le_bytes([px[12], px[13], px[14], px[15]]);
+
+        let apply = |v: f32| -> f32 {
+            let s = (v * 255.0).clamp(0.0, 255.0);
+            let lo = s.floor() as usize;
+            let hi = (lo + 1).min(255);
+            let frac = s - lo as f32;
+            (lut[lo] as f32 * (1.0 - frac) + lut[hi] as f32 * frac) / 255.0
+        };
+        [apply(r), apply(g), apply(b), a].iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<_>>()
+    }).collect();
+
+    // Compare f32 outputs
+    let max_diff: f32 = cpu_output.chunks_exact(4).zip(gpu_output.chunks_exact(4))
+        .map(|(a, b)| {
+            let va = f32::from_le_bytes([a[0], a[1], a[2], a[3]]);
+            let vb = f32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+            (va - vb).abs()
+        })
+        .fold(0.0f32, f32::max);
+
+    assert!(max_diff < 0.005, "FusedLut f32: max_diff={max_diff} (threshold 0.005)");
+    eprintln!("  fused_lut_1d f32 GPU: max_diff={max_diff:.6} — PASS");
+}

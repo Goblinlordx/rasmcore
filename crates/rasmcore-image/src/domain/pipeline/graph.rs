@@ -113,8 +113,10 @@ impl ImageNode for FrameSourceRcWrapper {
 }
 
 static LUT1D_SHADER: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
-    // lut1d doesn't use pack/unpack (operates on raw u32)
     include_str!("shaders/lut1d.wgsl").to_string()
+});
+static LUT1D_F32_SHADER: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    include_str!("shaders/lut1d_f32.wgsl").to_string()
 });
 static LUT3D_SHADER: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
     rasmcore_gpu_shaders::with_pixel_ops(include_str!("shaders/lut3d.wgsl"))
@@ -177,7 +179,6 @@ impl rasmcore_pipeline::gpu::GpuCapable for FusedLutNode {
         params.extend_from_slice(&width.to_le_bytes());
         params.extend_from_slice(&height.to_le_bytes());
 
-        // Pack 256-entry u8 LUT as u32 array for storage buffer
         let mut lut_buf = Vec::with_capacity(256 * 4);
         for &v in self.lut.iter() {
             lut_buf.extend_from_slice(&(v as u32).to_le_bytes());
@@ -189,7 +190,37 @@ impl rasmcore_pipeline::gpu::GpuCapable for FusedLutNode {
             workgroup_size: [256, 1, 1],
             params,
             extra_buffers: vec![lut_buf],
-            buffer_format: rasmcore_pipeline::BufferFormat::U32Packed, // TODO: migrate to f32 LUT shader
+            buffer_format: rasmcore_pipeline::BufferFormat::U32Packed,
+        }])
+    }
+
+    fn gpu_ops_with_format(
+        &self,
+        width: u32,
+        height: u32,
+        buffer_format: rasmcore_pipeline::BufferFormat,
+    ) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        let mut params = Vec::with_capacity(8);
+        params.extend_from_slice(&width.to_le_bytes());
+        params.extend_from_slice(&height.to_le_bytes());
+
+        let mut lut_buf = Vec::with_capacity(256 * 4);
+        for &v in self.lut.iter() {
+            lut_buf.extend_from_slice(&(v as u32).to_le_bytes());
+        }
+
+        let (shader, fmt, wg) = match buffer_format {
+            rasmcore_pipeline::BufferFormat::F32Vec4 => (LUT1D_F32_SHADER.clone(), rasmcore_pipeline::BufferFormat::F32Vec4, [16u32, 16, 1]),
+            _ => (LUT1D_SHADER.clone(), rasmcore_pipeline::BufferFormat::U32Packed, [256, 1, 1]),
+        };
+
+        Some(vec![rasmcore_pipeline::gpu::GpuOp::Compute {
+            shader,
+            entry_point: "main",
+            workgroup_size: wg,
+            params,
+            extra_buffers: vec![lut_buf],
+            buffer_format: fmt,
         }])
     }
 }
