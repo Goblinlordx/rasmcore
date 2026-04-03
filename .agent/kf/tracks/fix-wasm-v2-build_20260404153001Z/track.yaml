@@ -1,0 +1,56 @@
+id: fix-wasm-v2-build_20260404153001Z
+title: Fix V2 WASM component build — WIT/adapter sync
+type: bug
+status: pending
+created: '2026-04-04'
+updated: '2026-04-04'
+spec:
+  summary: |
+    Fix 19 cargo-component build errors from V2 migration. The native build
+    passes but WASM fails due to WIT/adapter desync.
+  context: |
+    The V2 pipeline migration changed ConfigParams structs (derive(Filter)
+    pattern), added CacheQuality enum, and modified function signatures.
+    The WIT template and adapter code weren't fully updated to match.
+  codebase_analysis: |
+    19 errors on cargo component build -p rasmcore-image:
+    - 12 type mismatches in generated_pipeline_adapter.rs — V2 derive(Filter)
+      changed field types (color structs vs tuples) but WIT config records
+      weren't regenerated
+    - 4 CacheQuality not found — cache-quantize-opt track added enum and
+      set_cache_quality method but WIT template lacks the enum/method
+    - 2 argument count mismatches — function signatures changed during V2
+    - 1 method not member of trait — set_cache_quality not in WIT
+  acceptance_criteria:
+    - cargo component build -p rasmcore-image succeeds
+    - WIT template includes CacheQuality enum and set-cache-quality method
+    - All V2 derive(Filter) config records match WIT binding types
+    - Native cargo check still passes
+  out_of_scope: |
+    Test compilation errors (separate issue from filter-migrate-remaining).
+    New feature work.
+  technical_notes: |
+    Fix approach:
+    1. Add cache-quality enum + set-cache-quality to pipeline.wit.tmpl
+    2. Regenerate pipeline.wit from template (touch template, rebuild)
+    3. Fix type mismatches — likely color param records need updating
+       in the codegen or the WIT config record generation
+    4. Fix argument count mismatches in adapter methods
+plan:
+  - phase: WIT template fixes
+    tasks:
+      - text: Add cache-quality enum and set-cache-quality method to pipeline.wit.tmpl
+        done: false
+      - text: Regenerate pipeline.wit and verify bindings match
+        done: false
+  - phase: Adapter type fixes
+    tasks:
+      - text: Fix 12 type mismatches in generated pipeline adapter (color struct fields)
+        done: false
+      - text: Fix 2 argument count mismatches
+        done: false
+  - phase: Verification
+    tasks:
+      - text: cargo component build -p rasmcore-image succeeds with 0 errors
+        done: false
+extra: {}

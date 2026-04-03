@@ -1,0 +1,84 @@
+id: gpu-shaders-remaining_20260404153002Z
+title: GPU shaders for non-fusable per-pixel filters
+type: feature
+status: pending
+created: '2026-04-04'
+updated: '2026-04-04'
+spec:
+  summary: |
+    Add GPU shaders for the ~15-20 per-pixel filters not covered by
+    LUT/CLUT/affine fusion. Point ops (17) and color ops (22) are
+    already GPU-accelerated via FusedLutNode and FusedClutNode.
+  context: |
+    The pipeline fuses consecutive point ops into a single 1D LUT
+    (lut1d.wgsl GPU shader) and color ops into a 3D CLUT (lut3d.wgsl).
+    Affine transforms fuse into a single resample pass. These fusion
+    paths cover ~39 filters with zero individual shaders needed.
+
+    The remaining per-pixel filters don't participate in fusion because
+    they have non-standard data flow (two inputs, position-dependent,
+    nonlinear per-channel mapping, format changes).
+  codebase_analysis: |
+    Filters needing individual GPU shaders (not covered by fusion):
+
+    Tonemapping (3): tonemap_reinhard, tonemap_filmic, tonemap_drago
+      — nonlinear per-channel, could be CLUT-absorbed but currently aren't
+
+    Enhancement (4): dodge, burn, vignette, vignette_powerlaw
+      — position-dependent (radial falloff) or luminance-dependent
+
+    Color (3): photo_filter, white_balance_temperature, selective_color
+      — not registered as ColorLutOp so not absorbed by CLUT fusion
+
+    Alpha (5): premultiply, unpremultiply, add_alpha, remove_alpha, flatten
+      — simple per-pixel, trivial shaders
+
+    Threshold (2): threshold_binary, otsu_threshold
+      — per-pixel comparison (otsu needs histogram pre-pass)
+
+    Enhancement (2): auto_level, equalize
+      — need histogram pre-pass then per-pixel remap
+  acceptance_criteria:
+    - GpuCapable/GpuFilter impls for all tonemapping filters (3)
+    - GpuCapable/GpuFilter impls for dodge, burn, vignette, vignette_powerlaw
+    - GpuCapable/GpuFilter impls for photo_filter, white_balance_temperature
+    - GpuCapable/GpuFilter impls for alpha ops (premultiply, unpremultiply, add_alpha, remove_alpha, flatten)
+    - WGSL shaders validated by naga for each
+    - GPU ops generation tests for each
+  out_of_scope: |
+    Point ops and color ops (already fused). Spatial/neighborhood filters
+    (separate track). Draw filters (not GPU-suitable). Tool filters
+    (mask-dependent). Analysis filters (sequential algorithms).
+    Histogram-dependent filters (auto_level, equalize, otsu) — these need
+    GPU histogram infrastructure which is a separate concern.
+  technical_notes: |
+    Most of these are trivial single-dispatch shaders:
+    - Tonemapping: per-pixel f(r,g,b) -> (r',g',b') — 3 shaders
+    - Alpha ops: per-pixel channel manipulation — 5 shaders
+    - Dodge/burn: luminance-weighted per-pixel — 1 shader (parameterized)
+    - Vignette: radial distance calculation per pixel — 2 shaders
+    - Photo filter/white balance: per-pixel color transform — 2 shaders
+
+    Total: ~15 new WGSL shaders + GpuCapable impls on ConfigParams.
+plan:
+  - phase: Tonemapping + enhancement GPU
+    tasks:
+      - text: GPU shaders for tonemap_reinhard, tonemap_filmic, tonemap_drago
+        done: false
+      - text: GPU shaders for dodge and burn (shared shader with mode param)
+        done: false
+      - text: GPU shaders for vignette and vignette_powerlaw
+        done: false
+  - phase: Color + alpha GPU
+    tasks:
+      - text: GPU shaders for photo_filter and white_balance_temperature
+        done: false
+      - text: GPU shaders for premultiply, unpremultiply, add_alpha, remove_alpha, flatten
+        done: false
+  - phase: Verification
+    tasks:
+      - text: All new shaders validated by naga (build passes)
+        done: false
+      - text: GPU ops generation tests for each new GpuCapable impl
+        done: false
+extra: {}
