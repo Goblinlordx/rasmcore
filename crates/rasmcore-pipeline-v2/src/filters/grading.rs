@@ -1,0 +1,1274 @@
+//! Color grading filters — f32-only tone curves, CDL, LUT application, tone mapping.
+//!
+//! All CLUT-compatible filters implement `ClutOp` for fusion.
+//! Film grain is spatial (position-dependent) and not CLUT-compatible.
+
+use crate::fusion::Clut3D;
+use crate::node::PipelineError;
+use crate::ops::Filter;
+
+use super::color::ClutOp;
+
+// ─── HSL helpers (re-exported from color module internals) ─────────────────
+// We duplicate these small helpers here to avoid making color module internals pub.
+
+fn rgb_to_hsl(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let l = (max + min) * 0.5;
+    if (max - min).abs() < 1e-7 {
+        return (0.0, 0.0, l);
+    }
+    let d = max - min;
+    let s = if l > 0.5 {
+        d / (2.0 - max - min)
+    } else {
+        d / (max + min)
+    };
+    let h = if (max - r).abs() < 1e-7 {
+        let mut h = (g - b) / d;
+        if g < b {
+            h += 6.0;
+        }
+        h * 60.0
+    } else if (max - g).abs() < 1e-7 {
+        ((b - r) / d + 2.0) * 60.0
+    } else {
+        ((r - g) / d + 4.0) * 60.0
+    };
+    (h, s, l)
+}
+
+fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (f32, f32, f32) {
+    if s.abs() < 1e-7 {
+        return (l, l, l);
+    }
+    let q = if l < 0.5 {
+        l * (1.0 + s)
+    } else {
+        l + s - l * s
+    };
+    let p = 2.0 * l - q;
+    let h_norm = h / 360.0;
+    let r = hue_to_rgb(p, q, h_norm + 1.0 / 3.0);
+    let g = hue_to_rgb(p, q, h_norm);
+    let b = hue_to_rgb(p, q, h_norm - 1.0 / 3.0);
+    (r, g, b)
+}
+
+fn hue_to_rgb(p: f32, q: f32, mut t: f32) -> f32 {
+    if t < 0.0 {
+        t += 1.0;
+    }
+    if t > 1.0 {
+        t -= 1.0;
+    }
+    if t < 1.0 / 6.0 {
+        return p + (q - p) * 6.0 * t;
+    }
+    if t < 0.5 {
+        return q;
+    }
+    if t < 2.0 / 3.0 {
+        return p + (q - p) * (2.0 / 3.0 - t) * 6.0;
+    }
+    p
+}
+
+fn bt709_luma(r: f32, g: f32, b: f32) -> f32 {
+    0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+// ─── Monotone Cubic Hermite Spline ─────────────────────────────────────────
+
+/// Build a f32 LUT from control points using monotone cubic Hermite interpolation.
+/// `lut_size` entries, indexed by normalized [0,1] → [0, lut_size-1].
+fn build_curve_lut_f32(points: &[(f32, f32)], lut_size: usize) -> Vec<f32> {
+    let mut lut = vec![0.0f32; lut_size];
+    if points.len() < 2 {
+        for (i, v) in lut.iter_mut().enumerate() {
+            *v = i as f32 / (lut_size - 1).max(1) as f32;
+        }
+        return lut;
+    }
+    let mut pts: Vec<(f32, f32)> = points.to_vec();
+    pts.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    let tangents = monotone_tangents(&pts);
+
+    for (i, entry) in lut.iter_mut().enumerate() {
+        let x = i as f32 / (lut_size - 1).max(1) as f32;
+        *entry = eval_hermite(&pts, &tangents, x);
+    }
+    lut
+}
+
+/// Compute Fritsch-Carlson monotone tangents for sorted control points.
+fn monotone_tangents(pts: &[(f32, f32)]) -> Vec<f32> {
+    let n = pts.len();
+    let mut m = vec![0.0f32; n];
+    if n < 2 {
+        return m;
+    }
+    if n == 2 {
+        let slope = (pts[1].1 - pts[0].1) / (pts[1].0 - pts[0].0).max(1e-6);
+        m[0] = slope;
+        m[1] = slope;
+        return m;
+    }
+    let mut deltas = vec![0.0f32; n - 1];
+    for i in 0..n - 1 {
+        let dx = (pts[i + 1].0 - pts[i].0).max(1e-6);
+        deltas[i] = (pts[i + 1].1 - pts[i].1) / dx;
+    }
+    m[0] = deltas[0];
+    m[n - 1] = deltas[n - 2];
+    for i in 1..n - 1 {
+        m[i] = (deltas[i - 1] + deltas[i]) * 0.5;
+    }
+    // Fritsch-Carlson monotonicity constraint
+    for i in 0..n - 1 {
+        if deltas[i].abs() < 1e-6 {
+            m[i] = 0.0;
+            m[i + 1] = 0.0;
+        } else {
+            let alpha = m[i] / deltas[i];
+            let beta = m[i + 1] / deltas[i];
+            let tau = alpha * alpha + beta * beta;
+            if tau > 9.0 {
+                let t = 3.0 / tau.sqrt();
+                m[i] = t * alpha * deltas[i];
+                m[i + 1] = t * beta * deltas[i];
+            }
+        }
+    }
+    m
+}
+
+/// Evaluate monotone cubic Hermite spline at x.
+fn eval_hermite(pts: &[(f32, f32)], tangents: &[f32], x: f32) -> f32 {
+    let n = pts.len();
+    if n == 0 {
+        return x;
+    }
+    if x <= pts[0].0 {
+        return pts[0].1;
+    }
+    if x >= pts[n - 1].0 {
+        return pts[n - 1].1;
+    }
+    // Find segment via binary search
+    let seg = match pts.binary_search_by(|p| p.0.partial_cmp(&x).unwrap_or(std::cmp::Ordering::Equal)) {
+        Ok(idx) => return pts[idx].1,
+        Err(idx) => {
+            if idx == 0 {
+                return pts[0].1;
+            }
+            idx - 1
+        }
+    };
+    let x0 = pts[seg].0;
+    let x1 = pts[seg + 1].0;
+    let y0 = pts[seg].1;
+    let y1 = pts[seg + 1].1;
+    let h = (x1 - x0).max(1e-6);
+    let t = (x - x0) / h;
+    let t2 = t * t;
+    let t3 = t2 * t;
+    let h00 = 2.0 * t3 - 3.0 * t2 + 1.0;
+    let h10 = t3 - 2.0 * t2 + t;
+    let h01 = -2.0 * t3 + 3.0 * t2;
+    let h11 = t3 - t2;
+    h00 * y0 + h10 * h * tangents[seg] + h01 * y1 + h11 * h * tangents[seg + 1]
+}
+
+// ─── Curves Filters ────────────────────────────────────────────────────────
+
+/// Per-channel tone curves — master (same curve for R, G, B).
+#[derive(Clone)]
+pub struct CurvesMaster {
+    /// Control points as (x, y) pairs in [0,1].
+    pub points: Vec<(f32, f32)>,
+}
+
+impl Filter for CurvesMaster {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        let lut = build_curve_lut_f32(&self.points, 4096);
+        let mut out = input.to_vec();
+        for pixel in out.chunks_exact_mut(4) {
+            for c in &mut pixel[..3] {
+                let idx = (*c * 4095.0).round().clamp(0.0, 4095.0) as usize;
+                *c = lut[idx];
+            }
+        }
+        Ok(out)
+    }
+}
+
+impl ClutOp for CurvesMaster {
+    fn build_clut(&self) -> Clut3D {
+        let lut = build_curve_lut_f32(&self.points, 4096);
+        Clut3D::from_fn(33, move |r, g, b| {
+            let ri = (r * 4095.0).round().clamp(0.0, 4095.0) as usize;
+            let gi = (g * 4095.0).round().clamp(0.0, 4095.0) as usize;
+            let bi = (b * 4095.0).round().clamp(0.0, 4095.0) as usize;
+            (lut[ri], lut[gi], lut[bi])
+        })
+    }
+}
+
+/// Per-channel tone curve — red channel only.
+#[derive(Clone)]
+pub struct CurvesRed {
+    pub points: Vec<(f32, f32)>,
+}
+
+impl Filter for CurvesRed {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        let lut = build_curve_lut_f32(&self.points, 4096);
+        let mut out = input.to_vec();
+        for pixel in out.chunks_exact_mut(4) {
+            let idx = (pixel[0] * 4095.0).round().clamp(0.0, 4095.0) as usize;
+            pixel[0] = lut[idx];
+        }
+        Ok(out)
+    }
+}
+
+impl ClutOp for CurvesRed {
+    fn build_clut(&self) -> Clut3D {
+        let lut = build_curve_lut_f32(&self.points, 4096);
+        Clut3D::from_fn(33, move |r, g, b| {
+            let ri = (r * 4095.0).round().clamp(0.0, 4095.0) as usize;
+            (lut[ri], g, b)
+        })
+    }
+}
+
+/// Per-channel tone curve — green channel only.
+#[derive(Clone)]
+pub struct CurvesGreen {
+    pub points: Vec<(f32, f32)>,
+}
+
+impl Filter for CurvesGreen {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        let lut = build_curve_lut_f32(&self.points, 4096);
+        let mut out = input.to_vec();
+        for pixel in out.chunks_exact_mut(4) {
+            let idx = (pixel[1] * 4095.0).round().clamp(0.0, 4095.0) as usize;
+            pixel[1] = lut[idx];
+        }
+        Ok(out)
+    }
+}
+
+impl ClutOp for CurvesGreen {
+    fn build_clut(&self) -> Clut3D {
+        let lut = build_curve_lut_f32(&self.points, 4096);
+        Clut3D::from_fn(33, move |r, g, b| {
+            let gi = (g * 4095.0).round().clamp(0.0, 4095.0) as usize;
+            (r, lut[gi], b)
+        })
+    }
+}
+
+/// Per-channel tone curve — blue channel only.
+#[derive(Clone)]
+pub struct CurvesBlue {
+    pub points: Vec<(f32, f32)>,
+}
+
+impl Filter for CurvesBlue {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        let lut = build_curve_lut_f32(&self.points, 4096);
+        let mut out = input.to_vec();
+        for pixel in out.chunks_exact_mut(4) {
+            let idx = (pixel[2] * 4095.0).round().clamp(0.0, 4095.0) as usize;
+            pixel[2] = lut[idx];
+        }
+        Ok(out)
+    }
+}
+
+impl ClutOp for CurvesBlue {
+    fn build_clut(&self) -> Clut3D {
+        let lut = build_curve_lut_f32(&self.points, 4096);
+        Clut3D::from_fn(33, move |r, g, b| {
+            let bi = (b * 4095.0).round().clamp(0.0, 4095.0) as usize;
+            (r, g, lut[bi])
+        })
+    }
+}
+
+// ─── ASC CDL ───────────────────────────────────────────────────────────────
+
+/// ASC Color Decision List — per-channel slope, offset, power with optional saturation.
+///
+/// Formula: `out = clamp01((in * slope + offset) ^ power)`
+/// Optional saturation adjustment via Rec. 709 luma.
+#[derive(Clone)]
+pub struct AscCdl {
+    pub slope: [f32; 3],
+    pub offset: [f32; 3],
+    pub power: [f32; 3],
+    /// Overall saturation (1.0 = unchanged).
+    pub saturation: f32,
+}
+
+impl Filter for AscCdl {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        let mut out = input.to_vec();
+        for pixel in out.chunks_exact_mut(4) {
+            let (r, g, b) = asc_cdl_pixel(pixel[0], pixel[1], pixel[2], self);
+            pixel[0] = r;
+            pixel[1] = g;
+            pixel[2] = b;
+        }
+        Ok(out)
+    }
+}
+
+fn asc_cdl_pixel(r: f32, g: f32, b: f32, cdl: &AscCdl) -> (f32, f32, f32) {
+    let mut or = ((r * cdl.slope[0] + cdl.offset[0]).max(0.0)).powf(cdl.power[0]);
+    let mut og = ((g * cdl.slope[1] + cdl.offset[1]).max(0.0)).powf(cdl.power[1]);
+    let mut ob = ((b * cdl.slope[2] + cdl.offset[2]).max(0.0)).powf(cdl.power[2]);
+    if cdl.saturation != 1.0 {
+        let luma = bt709_luma(or, og, ob);
+        or = luma + (or - luma) * cdl.saturation;
+        og = luma + (og - luma) * cdl.saturation;
+        ob = luma + (ob - luma) * cdl.saturation;
+    }
+    (or.clamp(0.0, 1.0), og.clamp(0.0, 1.0), ob.clamp(0.0, 1.0))
+}
+
+impl ClutOp for AscCdl {
+    fn build_clut(&self) -> Clut3D {
+        let cdl = self.clone();
+        Clut3D::from_fn(33, move |r, g, b| asc_cdl_pixel(r, g, b, &cdl))
+    }
+}
+
+// ─── Lift/Gamma/Gain ───────────────────────────────────────────────────────
+
+/// 3-way color corrector — DaVinci Resolve style lift/gamma/gain per channel.
+///
+/// Formula: `out = gain * (input + lift * (1 - input)) ^ (1/gamma)`
+#[derive(Clone)]
+pub struct LiftGammaGain {
+    pub lift: [f32; 3],
+    pub gamma: [f32; 3],
+    pub gain: [f32; 3],
+}
+
+impl Filter for LiftGammaGain {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        let mut out = input.to_vec();
+        for pixel in out.chunks_exact_mut(4) {
+            let (r, g, b) = lgg_pixel(pixel[0], pixel[1], pixel[2], self);
+            pixel[0] = r;
+            pixel[1] = g;
+            pixel[2] = b;
+        }
+        Ok(out)
+    }
+}
+
+fn lgg_channel(val: f32, lift: f32, gamma: f32, gain: f32) -> f32 {
+    let lifted = val + lift * (1.0 - val);
+    let gammaed = if gamma > 0.0 && lifted > 0.0 {
+        lifted.powf(1.0 / gamma)
+    } else {
+        0.0
+    };
+    (gain * gammaed).clamp(0.0, 1.0)
+}
+
+fn lgg_pixel(r: f32, g: f32, b: f32, lgg: &LiftGammaGain) -> (f32, f32, f32) {
+    (
+        lgg_channel(r, lgg.lift[0], lgg.gamma[0], lgg.gain[0]),
+        lgg_channel(g, lgg.lift[1], lgg.gamma[1], lgg.gain[1]),
+        lgg_channel(b, lgg.lift[2], lgg.gamma[2], lgg.gain[2]),
+    )
+}
+
+impl ClutOp for LiftGammaGain {
+    fn build_clut(&self) -> Clut3D {
+        let lgg = self.clone();
+        Clut3D::from_fn(33, move |r, g, b| lgg_pixel(r, g, b, &lgg))
+    }
+}
+
+// ─── Split Toning ──────────────────────────────────────────────────────────
+
+/// Split toning — tint shadows and highlights with different colors.
+#[derive(Clone)]
+pub struct SplitToning {
+    pub shadow_color: [f32; 3],
+    pub highlight_color: [f32; 3],
+    /// Balance: -1.0 (all shadow) to +1.0 (all highlight).
+    pub balance: f32,
+    /// Strength: 0.0 (none) to 1.0 (full).
+    pub strength: f32,
+}
+
+impl Filter for SplitToning {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        let mut out = input.to_vec();
+        for pixel in out.chunks_exact_mut(4) {
+            let (r, g, b) = split_toning_pixel(pixel[0], pixel[1], pixel[2], self);
+            pixel[0] = r;
+            pixel[1] = g;
+            pixel[2] = b;
+        }
+        Ok(out)
+    }
+}
+
+fn split_toning_pixel(r: f32, g: f32, b: f32, st: &SplitToning) -> (f32, f32, f32) {
+    let luma = bt709_luma(r, g, b);
+    let midpoint = 0.5 + st.balance * 0.5;
+    let shadow_w = (1.0 - luma / midpoint.max(0.001)).clamp(0.0, 1.0) * st.strength;
+    let highlight_w = ((luma - midpoint) / (1.0 - midpoint).max(0.001)).clamp(0.0, 1.0) * st.strength;
+    let or = r + (st.shadow_color[0] - r) * shadow_w + (st.highlight_color[0] - r) * highlight_w;
+    let og = g + (st.shadow_color[1] - g) * shadow_w + (st.highlight_color[1] - g) * highlight_w;
+    let ob = b + (st.shadow_color[2] - b) * shadow_w + (st.highlight_color[2] - b) * highlight_w;
+    (or.clamp(0.0, 1.0), og.clamp(0.0, 1.0), ob.clamp(0.0, 1.0))
+}
+
+impl ClutOp for SplitToning {
+    fn build_clut(&self) -> Clut3D {
+        let st = self.clone();
+        Clut3D::from_fn(33, move |r, g, b| split_toning_pixel(r, g, b, &st))
+    }
+}
+
+// ─── Hue-Based Curves ──────────────────────────────────────────────────────
+
+/// Hue vs Saturation — adjust saturation based on hue position.
+#[derive(Clone)]
+pub struct HueVsSat {
+    /// Control points (x in [0,1] mapping to hue 0-360, y in [0,1]).
+    /// y=0.5 is neutral, y>0.5 boosts, y<0.5 reduces.
+    pub points: Vec<(f32, f32)>,
+}
+
+impl Filter for HueVsSat {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        let lut = build_curve_lut_f32(&self.points, 360);
+        let mut out = input.to_vec();
+        for pixel in out.chunks_exact_mut(4) {
+            let (h, s, l) = rgb_to_hsl(pixel[0], pixel[1], pixel[2]);
+            let idx = (h.round() as usize).min(359);
+            let mult = lut[idx] * 2.0;
+            let (r, g, b) = hsl_to_rgb(h, (s * mult).clamp(0.0, 1.0), l);
+            pixel[0] = r;
+            pixel[1] = g;
+            pixel[2] = b;
+        }
+        Ok(out)
+    }
+}
+
+impl ClutOp for HueVsSat {
+    fn build_clut(&self) -> Clut3D {
+        let lut = build_curve_lut_f32(&self.points, 360);
+        Clut3D::from_fn(33, move |r, g, b| {
+            let (h, s, l) = rgb_to_hsl(r, g, b);
+            let idx = (h.round() as usize).min(359);
+            let mult = lut[idx] * 2.0;
+            hsl_to_rgb(h, (s * mult).clamp(0.0, 1.0), l)
+        })
+    }
+}
+
+/// Hue vs Luminance — adjust luminance based on hue position.
+#[derive(Clone)]
+pub struct HueVsLum {
+    pub points: Vec<(f32, f32)>,
+}
+
+impl Filter for HueVsLum {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        let lut = build_curve_lut_f32(&self.points, 360);
+        let mut out = input.to_vec();
+        for pixel in out.chunks_exact_mut(4) {
+            let (h, s, l) = rgb_to_hsl(pixel[0], pixel[1], pixel[2]);
+            let idx = (h.round() as usize).min(359);
+            let offset = (lut[idx] - 0.5) * 2.0;
+            let (r, g, b) = hsl_to_rgb(h, s, (l + offset).clamp(0.0, 1.0));
+            pixel[0] = r;
+            pixel[1] = g;
+            pixel[2] = b;
+        }
+        Ok(out)
+    }
+}
+
+impl ClutOp for HueVsLum {
+    fn build_clut(&self) -> Clut3D {
+        let lut = build_curve_lut_f32(&self.points, 360);
+        Clut3D::from_fn(33, move |r, g, b| {
+            let (h, s, l) = rgb_to_hsl(r, g, b);
+            let idx = (h.round() as usize).min(359);
+            let offset = (lut[idx] - 0.5) * 2.0;
+            hsl_to_rgb(h, s, (l + offset).clamp(0.0, 1.0))
+        })
+    }
+}
+
+/// Luminance vs Saturation — adjust saturation based on luminance.
+#[derive(Clone)]
+pub struct LumVsSat {
+    pub points: Vec<(f32, f32)>,
+}
+
+impl Filter for LumVsSat {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        let lut = build_curve_lut_f32(&self.points, 256);
+        let mut out = input.to_vec();
+        for pixel in out.chunks_exact_mut(4) {
+            let (h, s, l) = rgb_to_hsl(pixel[0], pixel[1], pixel[2]);
+            let idx = (l * 255.0).round().clamp(0.0, 255.0) as usize;
+            let mult = lut[idx] * 2.0;
+            let (r, g, b) = hsl_to_rgb(h, (s * mult).clamp(0.0, 1.0), l);
+            pixel[0] = r;
+            pixel[1] = g;
+            pixel[2] = b;
+        }
+        Ok(out)
+    }
+}
+
+impl ClutOp for LumVsSat {
+    fn build_clut(&self) -> Clut3D {
+        let lut = build_curve_lut_f32(&self.points, 256);
+        Clut3D::from_fn(33, move |r, g, b| {
+            let (h, s, l) = rgb_to_hsl(r, g, b);
+            let idx = (l * 255.0).round().clamp(0.0, 255.0) as usize;
+            let mult = lut[idx] * 2.0;
+            hsl_to_rgb(h, (s * mult).clamp(0.0, 1.0), l)
+        })
+    }
+}
+
+/// Saturation vs Saturation — remap saturation based on current saturation.
+#[derive(Clone)]
+pub struct SatVsSat {
+    pub points: Vec<(f32, f32)>,
+}
+
+impl Filter for SatVsSat {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        let lut = build_curve_lut_f32(&self.points, 256);
+        let mut out = input.to_vec();
+        for pixel in out.chunks_exact_mut(4) {
+            let (h, s, l) = rgb_to_hsl(pixel[0], pixel[1], pixel[2]);
+            let idx = (s * 255.0).round().clamp(0.0, 255.0) as usize;
+            let mult = lut[idx] * 2.0;
+            let (r, g, b) = hsl_to_rgb(h, (s * mult).clamp(0.0, 1.0), l);
+            pixel[0] = r;
+            pixel[1] = g;
+            pixel[2] = b;
+        }
+        Ok(out)
+    }
+}
+
+impl ClutOp for SatVsSat {
+    fn build_clut(&self) -> Clut3D {
+        let lut = build_curve_lut_f32(&self.points, 256);
+        Clut3D::from_fn(33, move |r, g, b| {
+            let (h, s, l) = rgb_to_hsl(r, g, b);
+            let idx = (s * 255.0).round().clamp(0.0, 255.0) as usize;
+            let mult = lut[idx] * 2.0;
+            hsl_to_rgb(h, (s * mult).clamp(0.0, 1.0), l)
+        })
+    }
+}
+
+// ─── LUT Application ───────────────────────────────────────────────────────
+
+/// Apply a .cube format 3D LUT.
+///
+/// The Clut3D is pre-built from parsed .cube data. This filter wraps it
+/// as a standard Filter + ClutOp for pipeline integration.
+#[derive(Clone)]
+pub struct ApplyCubeLut {
+    pub clut: Clut3D,
+}
+
+impl Filter for ApplyCubeLut {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        Ok(self.clut.apply(input))
+    }
+}
+
+impl ClutOp for ApplyCubeLut {
+    fn build_clut(&self) -> Clut3D {
+        self.clut.clone()
+    }
+}
+
+/// Apply a Hald CLUT image as a 3D LUT.
+///
+/// The Clut3D is pre-built from parsed Hald image data.
+#[derive(Clone)]
+pub struct ApplyHaldLut {
+    pub clut: Clut3D,
+}
+
+impl Filter for ApplyHaldLut {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        Ok(self.clut.apply(input))
+    }
+}
+
+impl ClutOp for ApplyHaldLut {
+    fn build_clut(&self) -> Clut3D {
+        self.clut.clone()
+    }
+}
+
+// ─── Tone Mapping ──────────────────────────────────────────────────────────
+
+/// Reinhard global tone mapping: `out = v / (1 + v)`.
+/// Maps HDR [0, ∞) to [0, 1).
+#[derive(Clone)]
+pub struct TonemapReinhard;
+
+impl Filter for TonemapReinhard {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        let mut out = input.to_vec();
+        for pixel in out.chunks_exact_mut(4) {
+            for c in &mut pixel[..3] {
+                *c = *c / (1.0 + *c);
+            }
+        }
+        Ok(out)
+    }
+}
+
+impl ClutOp for TonemapReinhard {
+    fn build_clut(&self) -> Clut3D {
+        Clut3D::from_fn(33, |r, g, b| {
+            (r / (1.0 + r), g / (1.0 + g), b / (1.0 + b))
+        })
+    }
+}
+
+/// Drago logarithmic tone mapping.
+#[derive(Clone)]
+pub struct TonemapDrago {
+    /// Maximum luminance in scene (default 1.0 for SDR).
+    pub l_max: f32,
+    /// Bias parameter (0.7-0.9, default 0.85).
+    pub bias: f32,
+}
+
+impl Filter for TonemapDrago {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        let log_max = (1.0 + self.l_max).ln();
+        let bias_pow = (self.bias.ln() / 0.5f32.ln()).max(0.01);
+        let mut out = input.to_vec();
+        for pixel in out.chunks_exact_mut(4) {
+            for c in &mut pixel[..3] {
+                if *c <= 0.0 {
+                    *c = 0.0;
+                } else {
+                    let mapped = (1.0 + *c).ln() / log_max;
+                    *c = mapped.powf(1.0 / bias_pow).clamp(0.0, 1.0);
+                }
+            }
+        }
+        Ok(out)
+    }
+}
+
+impl ClutOp for TonemapDrago {
+    fn build_clut(&self) -> Clut3D {
+        let log_max = (1.0 + self.l_max).ln();
+        let bias_pow = (self.bias.ln() / 0.5f32.ln()).max(0.01);
+        Clut3D::from_fn(33, move |r, g, b| {
+            let drago = |v: f32| -> f32 {
+                if v <= 0.0 {
+                    0.0
+                } else {
+                    ((1.0 + v).ln() / log_max).powf(1.0 / bias_pow).clamp(0.0, 1.0)
+                }
+            };
+            (drago(r), drago(g), drago(b))
+        })
+    }
+}
+
+/// Filmic/ACES tone mapping (Narkowicz 2015 approximation).
+///
+/// Formula: `out = (x*(a*x+b)) / (x*(c*x+d) + e)`
+#[derive(Clone)]
+pub struct TonemapFilmic {
+    pub a: f32,
+    pub b: f32,
+    pub c: f32,
+    pub d: f32,
+    pub e: f32,
+}
+
+impl Default for TonemapFilmic {
+    fn default() -> Self {
+        // Narkowicz 2015 ACES fit
+        Self {
+            a: 2.51,
+            b: 0.03,
+            c: 2.43,
+            d: 0.59,
+            e: 0.14,
+        }
+    }
+}
+
+impl Filter for TonemapFilmic {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        let mut out = input.to_vec();
+        for pixel in out.chunks_exact_mut(4) {
+            for c in &mut pixel[..3] {
+                let x = *c;
+                let num = x * (self.a * x + self.b);
+                let den = x * (self.c * x + self.d) + self.e;
+                *c = (num / den).clamp(0.0, 1.0);
+            }
+        }
+        Ok(out)
+    }
+}
+
+impl ClutOp for TonemapFilmic {
+    fn build_clut(&self) -> Clut3D {
+        let (a, b, c, d, e) = (self.a, self.b, self.c, self.d, self.e);
+        Clut3D::from_fn(33, move |r, g, bi| {
+            let filmic = |x: f32| -> f32 {
+                let num = x * (a * x + b);
+                let den = x * (c * x + d) + e;
+                (num / den).clamp(0.0, 1.0)
+            };
+            (filmic(r), filmic(g), filmic(bi))
+        })
+    }
+}
+
+// ─── Film Grain ────────────────────────────────────────────────────────────
+
+/// Film grain simulation — position-dependent, NOT CLUT-compatible.
+#[derive(Clone)]
+pub struct FilmGrain {
+    /// Grain amount (0.0 = none, 1.0 = heavy).
+    pub amount: f32,
+    /// Grain size in pixels (1.0 = fine, 4.0+ = coarse).
+    pub size: f32,
+    /// Color grain (true) or monochrome (false).
+    pub color: bool,
+    /// Random seed for deterministic output.
+    pub seed: u32,
+}
+
+/// Deterministic hash noise returning [-1, 1].
+fn hash_noise(x: u32, y: u32, seed: u32) -> f32 {
+    let mut h = x
+        .wrapping_mul(374761393)
+        .wrapping_add(y.wrapping_mul(668265263))
+        .wrapping_add(seed.wrapping_mul(1274126177));
+    h = (h ^ (h >> 13)).wrapping_mul(1103515245);
+    h ^= h >> 16;
+    (h as f32 / u32::MAX as f32) * 2.0 - 1.0
+}
+
+impl Filter for FilmGrain {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        let inv_size = 1.0 / self.size.max(0.1);
+        let mut out = input.to_vec();
+        for y in 0..height {
+            for x in 0..width {
+                let idx = (y * width + x) as usize * 4;
+                let sx = (x as f32 * inv_size) as u32;
+                let sy = (y as f32 * inv_size) as u32;
+                let (r, g, b) = (out[idx], out[idx + 1], out[idx + 2]);
+                let luma = bt709_luma(r, g, b);
+                // Parabolic intensity: max grain at midtones, less at black/white
+                let intensity = 4.0 * luma * (1.0 - luma) * self.amount;
+                if self.color {
+                    out[idx] = r + hash_noise(sx, sy, self.seed) * intensity;
+                    out[idx + 1] = g + hash_noise(sx, sy, self.seed.wrapping_add(1)) * intensity;
+                    out[idx + 2] = b + hash_noise(sx, sy, self.seed.wrapping_add(2)) * intensity;
+                } else {
+                    let n = hash_noise(sx, sy, self.seed) * intensity;
+                    out[idx] = r + n;
+                    out[idx + 1] = g + n;
+                    out[idx + 2] = b + n;
+                }
+            }
+        }
+        Ok(out)
+    }
+}
+
+// ─── .cube LUT Parser ──────────────────────────────────────────────────────
+
+/// Parse a .cube format 3D LUT from text content into a Clut3D.
+///
+/// Supports TITLE, DOMAIN_MIN, DOMAIN_MAX, LUT_3D_SIZE directives.
+pub fn parse_cube_lut(content: &str) -> Result<Clut3D, PipelineError> {
+    let mut grid_size: Option<u32> = None;
+    let mut data: Vec<f32> = Vec::new();
+    let mut domain_min = [0.0f32; 3];
+    let mut domain_max = [1.0f32; 3];
+
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') || line.starts_with("TITLE") {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("LUT_3D_SIZE") {
+            grid_size = Some(
+                rest.trim()
+                    .parse::<u32>()
+                    .map_err(|_| PipelineError::InvalidParams("invalid LUT_3D_SIZE".into()))?,
+            );
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("DOMAIN_MIN") {
+            let vals: Vec<f32> = rest
+                .split_whitespace()
+                .filter_map(|s| s.parse().ok())
+                .collect();
+            if vals.len() == 3 {
+                domain_min = [vals[0], vals[1], vals[2]];
+            }
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("DOMAIN_MAX") {
+            let vals: Vec<f32> = rest
+                .split_whitespace()
+                .filter_map(|s| s.parse().ok())
+                .collect();
+            if vals.len() == 3 {
+                domain_max = [vals[0], vals[1], vals[2]];
+            }
+            continue;
+        }
+        // Data line: three floats
+        let vals: Vec<f32> = line
+            .split_whitespace()
+            .filter_map(|s| s.parse().ok())
+            .collect();
+        if vals.len() == 3 {
+            // Normalize to [0,1] from domain
+            for i in 0..3 {
+                let range = (domain_max[i] - domain_min[i]).max(1e-6);
+                data.push((vals[i] - domain_min[i]) / range);
+            }
+        }
+    }
+
+    let n = grid_size.ok_or_else(|| PipelineError::InvalidParams("missing LUT_3D_SIZE".into()))?;
+    let expected = (n * n * n * 3) as usize;
+    if data.len() != expected {
+        return Err(PipelineError::InvalidParams(format!(
+            "expected {expected} values for {n}^3 LUT, got {}",
+            data.len()
+        )));
+    }
+
+    Ok(Clut3D {
+        grid_size: n,
+        data,
+    })
+}
+
+// ─── Tests ─────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_pixel(r: f32, g: f32, b: f32) -> Vec<f32> {
+        vec![r, g, b, 1.0]
+    }
+
+    fn assert_rgb_close(actual: &[f32], expected: (f32, f32, f32), tol: f32, label: &str) {
+        assert!(
+            (actual[0] - expected.0).abs() < tol
+                && (actual[1] - expected.1).abs() < tol
+                && (actual[2] - expected.2).abs() < tol,
+            "{label}: expected ({:.4}, {:.4}, {:.4}), got ({:.4}, {:.4}, {:.4})",
+            expected.0,
+            expected.1,
+            expected.2,
+            actual[0],
+            actual[1],
+            actual[2]
+        );
+    }
+
+    // ── Spline tests ──
+
+    #[test]
+    fn curve_identity() {
+        let pts = vec![(0.0, 0.0), (1.0, 1.0)];
+        let lut = build_curve_lut_f32(&pts, 256);
+        for i in 0..256 {
+            let expected = i as f32 / 255.0;
+            assert!(
+                (lut[i] - expected).abs() < 0.01,
+                "identity curve failed at {i}: got {:.4}, expected {expected:.4}",
+                lut[i]
+            );
+        }
+    }
+
+    #[test]
+    fn curve_invert() {
+        let pts = vec![(0.0, 1.0), (1.0, 0.0)];
+        let lut = build_curve_lut_f32(&pts, 256);
+        assert!((lut[0] - 1.0).abs() < 0.01);
+        assert!((lut[255] - 0.0).abs() < 0.01);
+        assert!((lut[128] - 0.5).abs() < 0.02);
+    }
+
+    #[test]
+    fn curve_s_shaped() {
+        let pts = vec![(0.0, 0.0), (0.25, 0.1), (0.75, 0.9), (1.0, 1.0)];
+        let lut = build_curve_lut_f32(&pts, 256);
+        // Shadows should be darker, highlights brighter than linear
+        assert!(lut[64] < 64.0 / 255.0, "shadows should be compressed");
+        assert!(lut[192] > 192.0 / 255.0, "highlights should be expanded");
+    }
+
+    // ── Curves filters ──
+
+    #[test]
+    fn curves_master_identity() {
+        let input = test_pixel(0.3, 0.5, 0.7);
+        let f = CurvesMaster {
+            points: vec![(0.0, 0.0), (1.0, 1.0)],
+        };
+        let out = f.compute(&input, 1, 1).unwrap();
+        assert_rgb_close(&out, (0.3, 0.5, 0.7), 0.02, "curves identity");
+    }
+
+    #[test]
+    fn curves_red_only_affects_red() {
+        let input = test_pixel(0.5, 0.5, 0.5);
+        let f = CurvesRed {
+            points: vec![(0.0, 0.0), (0.5, 0.8), (1.0, 1.0)],
+        };
+        let out = f.compute(&input, 1, 1).unwrap();
+        assert!(out[0] > 0.5, "Red should be boosted");
+        assert!((out[1] - 0.5).abs() < 0.01, "Green should be unchanged");
+        assert!((out[2] - 0.5).abs() < 0.01, "Blue should be unchanged");
+    }
+
+    #[test]
+    fn curves_master_clut_matches_compute() {
+        let pts = vec![(0.0, 0.0), (0.25, 0.1), (0.75, 0.9), (1.0, 1.0)];
+        let f = CurvesMaster { points: pts };
+        let input = test_pixel(0.4, 0.6, 0.2);
+        let computed = f.compute(&input, 1, 1).unwrap();
+        let clut = f.build_clut();
+        let (cr, cg, cb) = clut.sample(0.4, 0.6, 0.2);
+        assert!(
+            (computed[0] - cr).abs() < 0.05
+                && (computed[1] - cg).abs() < 0.05
+                && (computed[2] - cb).abs() < 0.05,
+            "CLUT mismatch"
+        );
+    }
+
+    // ── ASC CDL ──
+
+    #[test]
+    fn asc_cdl_identity() {
+        let input = test_pixel(0.5, 0.5, 0.5);
+        let f = AscCdl {
+            slope: [1.0; 3],
+            offset: [0.0; 3],
+            power: [1.0; 3],
+            saturation: 1.0,
+        };
+        let out = f.compute(&input, 1, 1).unwrap();
+        assert_rgb_close(&out, (0.5, 0.5, 0.5), 1e-5, "CDL identity");
+    }
+
+    #[test]
+    fn asc_cdl_slope_doubles() {
+        let input = test_pixel(0.3, 0.3, 0.3);
+        let f = AscCdl {
+            slope: [2.0; 3],
+            offset: [0.0; 3],
+            power: [1.0; 3],
+            saturation: 1.0,
+        };
+        let out = f.compute(&input, 1, 1).unwrap();
+        assert_rgb_close(&out, (0.6, 0.6, 0.6), 1e-5, "CDL slope 2x");
+    }
+
+    #[test]
+    fn asc_cdl_saturation() {
+        let input = test_pixel(0.8, 0.2, 0.4);
+        let f = AscCdl {
+            slope: [1.0; 3],
+            offset: [0.0; 3],
+            power: [1.0; 3],
+            saturation: 0.0, // desaturate completely
+        };
+        let out = f.compute(&input, 1, 1).unwrap();
+        // All channels should equal luma
+        assert!(
+            (out[0] - out[1]).abs() < 0.01 && (out[1] - out[2]).abs() < 0.01,
+            "CDL sat=0 should produce grayscale"
+        );
+    }
+
+    // ── Lift/Gamma/Gain ──
+
+    #[test]
+    fn lgg_identity() {
+        let input = test_pixel(0.5, 0.5, 0.5);
+        let f = LiftGammaGain {
+            lift: [0.0; 3],
+            gamma: [1.0; 3],
+            gain: [1.0; 3],
+        };
+        let out = f.compute(&input, 1, 1).unwrap();
+        assert_rgb_close(&out, (0.5, 0.5, 0.5), 0.01, "LGG identity");
+    }
+
+    #[test]
+    fn lgg_gain_doubles() {
+        let input = test_pixel(0.3, 0.3, 0.3);
+        let f = LiftGammaGain {
+            lift: [0.0; 3],
+            gamma: [1.0; 3],
+            gain: [2.0; 3],
+        };
+        let out = f.compute(&input, 1, 1).unwrap();
+        assert_rgb_close(&out, (0.6, 0.6, 0.6), 0.01, "LGG gain 2x");
+    }
+
+    // ── Split Toning ──
+
+    #[test]
+    fn split_toning_zero_strength_identity() {
+        let input = test_pixel(0.5, 0.5, 0.5);
+        let f = SplitToning {
+            shadow_color: [0.0, 0.0, 1.0],
+            highlight_color: [1.0, 0.0, 0.0],
+            balance: 0.0,
+            strength: 0.0,
+        };
+        let out = f.compute(&input, 1, 1).unwrap();
+        assert_rgb_close(&out, (0.5, 0.5, 0.5), 1e-5, "split toning 0 strength");
+    }
+
+    #[test]
+    fn split_toning_dark_gets_shadow_color() {
+        let input = test_pixel(0.1, 0.1, 0.1); // dark pixel
+        let f = SplitToning {
+            shadow_color: [0.0, 0.0, 1.0], // blue shadows
+            highlight_color: [1.0, 0.0, 0.0],
+            balance: 0.0,
+            strength: 1.0,
+        };
+        let out = f.compute(&input, 1, 1).unwrap();
+        assert!(out[2] > out[0], "Dark pixel should be tinted blue");
+    }
+
+    // ── Hue-based curves ──
+
+    #[test]
+    fn hue_vs_sat_neutral_curve() {
+        let input = test_pixel(0.8, 0.2, 0.4);
+        let f = HueVsSat {
+            points: vec![(0.0, 0.5), (1.0, 0.5)], // neutral: mult=1.0
+        };
+        let out = f.compute(&input, 1, 1).unwrap();
+        assert_rgb_close(&out, (0.8, 0.2, 0.4), 0.02, "hue_vs_sat neutral");
+    }
+
+    #[test]
+    fn lum_vs_sat_neutral() {
+        let input = test_pixel(0.5, 0.3, 0.7);
+        let f = LumVsSat {
+            points: vec![(0.0, 0.5), (1.0, 0.5)],
+        };
+        let out = f.compute(&input, 1, 1).unwrap();
+        assert_rgb_close(&out, (0.5, 0.3, 0.7), 0.02, "lum_vs_sat neutral");
+    }
+
+    // ── Tone Mapping ──
+
+    #[test]
+    fn reinhard_maps_midtone() {
+        let input = test_pixel(1.0, 1.0, 1.0);
+        let f = TonemapReinhard;
+        let out = f.compute(&input, 1, 1).unwrap();
+        // 1.0 / (1 + 1.0) = 0.5
+        assert_rgb_close(&out, (0.5, 0.5, 0.5), 1e-5, "reinhard at 1.0");
+    }
+
+    #[test]
+    fn reinhard_preserves_black() {
+        let input = test_pixel(0.0, 0.0, 0.0);
+        let f = TonemapReinhard;
+        let out = f.compute(&input, 1, 1).unwrap();
+        assert_rgb_close(&out, (0.0, 0.0, 0.0), 1e-5, "reinhard at 0.0");
+    }
+
+    #[test]
+    fn reinhard_clut_matches_compute() {
+        let f = TonemapReinhard;
+        let input = test_pixel(0.6, 0.3, 0.8);
+        let computed = f.compute(&input, 1, 1).unwrap();
+        let clut = f.build_clut();
+        let (cr, cg, cb) = clut.sample(0.6, 0.3, 0.8);
+        assert!(
+            (computed[0] - cr).abs() < 0.05
+                && (computed[1] - cg).abs() < 0.05
+                && (computed[2] - cb).abs() < 0.05,
+            "Reinhard CLUT mismatch"
+        );
+    }
+
+    #[test]
+    fn filmic_aces_reasonable_output() {
+        let f = TonemapFilmic::default();
+        let input = test_pixel(0.5, 0.5, 0.5);
+        let out = f.compute(&input, 1, 1).unwrap();
+        // Should produce values in (0, 1)
+        assert!(out[0] > 0.0 && out[0] < 1.0, "Filmic should produce reasonable values");
+    }
+
+    #[test]
+    fn drago_maps_hdr() {
+        let f = TonemapDrago {
+            l_max: 10.0,
+            bias: 0.85,
+        };
+        let input = test_pixel(0.5, 0.5, 0.5);
+        let out = f.compute(&input, 1, 1).unwrap();
+        assert!(out[0] > 0.0 && out[0] <= 1.0, "Drago should produce valid range");
+    }
+
+    // ── Film Grain ──
+
+    #[test]
+    fn film_grain_deterministic() {
+        let input = test_pixel(0.5, 0.5, 0.5);
+        let f = FilmGrain {
+            amount: 0.3,
+            size: 1.0,
+            color: false,
+            seed: 42,
+        };
+        let out1 = f.compute(&input, 1, 1).unwrap();
+        let out2 = f.compute(&input, 1, 1).unwrap();
+        assert_eq!(out1, out2, "Film grain should be deterministic with same seed");
+    }
+
+    #[test]
+    fn film_grain_zero_amount_identity() {
+        let input = test_pixel(0.5, 0.5, 0.5);
+        let f = FilmGrain {
+            amount: 0.0,
+            size: 1.0,
+            color: false,
+            seed: 42,
+        };
+        let out = f.compute(&input, 1, 1).unwrap();
+        assert_rgb_close(&out, (0.5, 0.5, 0.5), 1e-5, "grain amount=0 identity");
+    }
+
+    #[test]
+    fn film_grain_preserves_alpha() {
+        let input = vec![0.5, 0.5, 0.5, 0.42];
+        let f = FilmGrain {
+            amount: 0.5,
+            size: 1.0,
+            color: true,
+            seed: 7,
+        };
+        let out = f.compute(&input, 1, 1).unwrap();
+        assert_eq!(out[3], 0.42, "Grain should preserve alpha");
+    }
+
+    // ── LUT Application ──
+
+    #[test]
+    fn apply_cube_lut_identity() {
+        let clut = Clut3D::identity(17);
+        let f = ApplyCubeLut { clut };
+        let input = test_pixel(0.3, 0.6, 0.9);
+        let out = f.compute(&input, 1, 1).unwrap();
+        assert_rgb_close(&out, (0.3, 0.6, 0.9), 0.02, "cube lut identity");
+    }
+
+    #[test]
+    fn parse_cube_lut_minimal() {
+        let cube_text = "\
+LUT_3D_SIZE 2
+0.0 0.0 0.0
+1.0 0.0 0.0
+0.0 1.0 0.0
+1.0 1.0 0.0
+0.0 0.0 1.0
+1.0 0.0 1.0
+0.0 1.0 1.0
+1.0 1.0 1.0
+";
+        let clut = parse_cube_lut(cube_text).unwrap();
+        assert_eq!(clut.grid_size, 2);
+        // Identity LUT: sample at corners
+        let (r, g, b) = clut.sample(0.0, 0.0, 0.0);
+        assert!((r).abs() < 0.01 && (g).abs() < 0.01 && (b).abs() < 0.01);
+        let (r, g, b) = clut.sample(1.0, 1.0, 1.0);
+        assert!((r - 1.0).abs() < 0.01 && (g - 1.0).abs() < 0.01 && (b - 1.0).abs() < 0.01);
+    }
+
+    // ── Alpha preservation ──
+
+    #[test]
+    fn alpha_preserved_all_grading_filters() {
+        let input = vec![0.3, 0.5, 0.7, 0.42];
+        let filters: Vec<Box<dyn Filter>> = vec![
+            Box::new(CurvesMaster {
+                points: vec![(0.0, 0.0), (1.0, 1.0)],
+            }),
+            Box::new(AscCdl {
+                slope: [1.2; 3],
+                offset: [0.01; 3],
+                power: [0.9; 3],
+                saturation: 1.0,
+            }),
+            Box::new(LiftGammaGain {
+                lift: [0.0; 3],
+                gamma: [1.0; 3],
+                gain: [1.0; 3],
+            }),
+            Box::new(SplitToning {
+                shadow_color: [0.0, 0.0, 1.0],
+                highlight_color: [1.0, 0.0, 0.0],
+                balance: 0.0,
+                strength: 0.5,
+            }),
+            Box::new(TonemapReinhard),
+            Box::new(TonemapFilmic::default()),
+            Box::new(TonemapDrago {
+                l_max: 1.0,
+                bias: 0.85,
+            }),
+        ];
+        for (i, f) in filters.iter().enumerate() {
+            let out = f.compute(&input, 1, 1).unwrap();
+            assert_eq!(out[3], 0.42, "Filter {i} should preserve alpha");
+        }
+    }
+}
