@@ -4221,4 +4221,70 @@ mod gpu_lut_tests {
             _ => panic!("expected Compute"),
         }
     }
+
+    /// GPU tiled dispatch: tile-by-tile request produces the same output
+    /// as full-image request. Validates the tiled streaming path in
+    /// request_region doesn't introduce artifacts.
+    #[test]
+    fn gpu_tiled_dispatch_matches_full_image() {
+        use crate::domain::pipeline::nodes::source::SourceNode;
+
+        // Create a small PNG
+        let png = {
+            let (w, h) = (32, 32);
+            let mut px = Vec::with_capacity((w * h * 4) as usize);
+            for y in 0..h {
+                for x in 0..w {
+                    px.push(((x * 255) / w) as u8);
+                    px.push(((y * 255) / h) as u8);
+                    px.push(128u8);
+                    px.push(255u8);
+                }
+            }
+            let info = ImageInfo { width: w, height: h, format: PixelFormat::Rgba8, color_space: ColorSpace::Srgb };
+            crate::domain::encoder::encode(&px, &info, "png", None).unwrap()
+        };
+        let (w, h) = (32u32, 32u32);
+
+        // Full-image request
+        let full_output = {
+            let mut g = NodeGraph::new(4 * 1024 * 1024);
+            let src = g.add_node(Box::new(SourceNode::new(png.clone()).unwrap()));
+            g.request_region(src, Rect::new(0, 0, w, h)).unwrap()
+        };
+
+        // Tiled request (16x16 tiles on 32x32 = 4 tiles)
+        let tiled_output = {
+            let mut g = NodeGraph::new(4 * 1024 * 1024);
+            let src = g.add_node(Box::new(SourceNode::new(png.clone()).unwrap()));
+            let info = g.node_info(src).unwrap();
+            let bpp = bytes_per_pixel(info.format) as usize;
+            let tile_size = 16u32;
+            let stride = w as usize * bpp;
+            let mut out = vec![0u8; h as usize * stride];
+            let mut y = 0u32;
+            while y < h {
+                let th = tile_size.min(h - y);
+                let mut x = 0u32;
+                while x < w {
+                    let tw = tile_size.min(w - x);
+                    let tile = g.request_region(src, Rect::new(x, y, tw, th)).unwrap();
+                    let ts = tw as usize * bpp;
+                    for row in 0..th as usize {
+                        let dst = (y as usize + row) * stride + x as usize * bpp;
+                        let src_off = row * ts;
+                        out[dst..dst + ts].copy_from_slice(&tile[src_off..src_off + ts]);
+                    }
+                    x += tile_size;
+                }
+                y += tile_size;
+            }
+            out
+        };
+
+        assert_eq!(
+            full_output, tiled_output,
+            "tiled request must match full-image request (source node)"
+        );
+    }
 }

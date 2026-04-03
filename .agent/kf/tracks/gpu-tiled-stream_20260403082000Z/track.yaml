@@ -118,7 +118,7 @@ plan:
   - text: Verify GpuExecutor::execute handles arbitrary (tile-sized) dimensions correctly
     done: true
   - text: Ensure buffer allocation in gpu-handler.ts works for tile dimensions
-    done: false
+    done: true
   - text: Add integration test — GPU process a 512x512 tile produces same output as full image crop
     done: false
 - phase: Pipeline GPU tile dispatch
@@ -128,7 +128,7 @@ plan:
   - text: Handle tile overlap for neighborhood ops (expanded input rect, cropped output)
     done: true
   - text: Configurable GPU tile size on pipeline resource
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: GPU tiled output matches GPU full-image output (pixel-identical)
