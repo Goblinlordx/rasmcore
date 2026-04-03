@@ -218,6 +218,50 @@ impl Graph {
     pub fn clear_cache(&mut self) {
         self.cache.clear();
     }
+
+    // ─── Optimizer helpers ──────────────────────────────────────────────
+
+    /// Get a reference to a node by ID (for optimizer inspection).
+    pub fn get_node(&self, node_id: u32) -> &dyn Node {
+        &*self.nodes[node_id as usize]
+    }
+
+    /// Replace a node in the graph (for optimizer fusion).
+    ///
+    /// The cache for this node is invalidated.
+    pub fn replace_node(&mut self, node_id: u32, node: Box<dyn Node>) {
+        self.nodes[node_id as usize] = node;
+        self.cache.invalidate(node_id);
+    }
+
+    /// Get the analytic expression for a node (if it has one).
+    ///
+    /// Returns `Err` if the node doesn't support analytic expressions.
+    pub fn get_node_expression(
+        &self,
+        node_id: u32,
+    ) -> Result<crate::ops::PointOpExpr, PipelineError> {
+        let node = self
+            .nodes
+            .get(node_id as usize)
+            .ok_or(PipelineError::NodeNotFound(node_id))?;
+
+        // Try to downcast to AnalyticOp — this requires the node to expose
+        // its expression. For now, use the node's capabilities check.
+        // The actual expression extraction will be via a trait method added
+        // to Node in a follow-up.
+        // Placeholder: return Input (identity) — real implementation needs
+        // Node trait extension.
+        if node.capabilities().analytic {
+            // TODO: Add fn expression(&self) -> Option<PointOpExpr> to Node trait
+            Ok(crate::ops::PointOpExpr::Input)
+        } else {
+            Err(PipelineError::ComputeError(format!(
+                "node {} does not support analytic expressions",
+                node_id
+            )))
+        }
+    }
 }
 
 /// Adapter that bridges Graph::request_region to the Upstream trait.

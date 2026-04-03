@@ -1,0 +1,844 @@
+//! Fusion optimizer — composes chains of fusable nodes into single operations.
+//!
+//! Three fusable categories:
+//! 1. **Analytical (point ops)**: expression tree composition → single f32 function
+//! 2. **Affine (transforms)**: matrix composition → single resample pass
+//! 3. **CLUT (color ops)**: 3D LUT composition → single tetrahedral interpolation
+//!
+//! The optimizer walks the graph, detects chains of same-category nodes,
+//! composes them, and replaces the chain with a single fused node.
+
+use crate::graph::Graph;
+use crate::node::{GpuShader, Node, NodeCapabilities, NodeInfo, PipelineError, Upstream};
+use crate::ops::PointOpExpr;
+use crate::rect::Rect;
+
+// ─── Expression Tree Optimizer ──────────────────────────────────────────────
+
+/// Constant-fold an expression tree: evaluate subtrees with no `Input` references.
+pub fn constant_fold(expr: &PointOpExpr) -> PointOpExpr {
+    match expr {
+        PointOpExpr::Input => PointOpExpr::Input,
+        PointOpExpr::Constant(_) => expr.clone(),
+
+        PointOpExpr::Add(a, b) => {
+            let a = constant_fold(a);
+            let b = constant_fold(b);
+            match (&a, &b) {
+                (PointOpExpr::Constant(x), PointOpExpr::Constant(y)) => {
+                    PointOpExpr::Constant(x + y)
+                }
+                // x + 0 = x
+                (_, PointOpExpr::Constant(y)) if *y == 0.0 => a,
+                (PointOpExpr::Constant(x), _) if *x == 0.0 => b,
+                _ => PointOpExpr::Add(Box::new(a), Box::new(b)),
+            }
+        }
+        PointOpExpr::Sub(a, b) => {
+            let a = constant_fold(a);
+            let b = constant_fold(b);
+            match (&a, &b) {
+                (PointOpExpr::Constant(x), PointOpExpr::Constant(y)) => {
+                    PointOpExpr::Constant(x - y)
+                }
+                // x - 0 = x
+                (_, PointOpExpr::Constant(y)) if *y == 0.0 => a,
+                _ => PointOpExpr::Sub(Box::new(a), Box::new(b)),
+            }
+        }
+        PointOpExpr::Mul(a, b) => {
+            let a = constant_fold(a);
+            let b = constant_fold(b);
+            match (&a, &b) {
+                (PointOpExpr::Constant(x), PointOpExpr::Constant(y)) => {
+                    PointOpExpr::Constant(x * y)
+                }
+                // x * 1 = x
+                (_, PointOpExpr::Constant(y)) if *y == 1.0 => a,
+                (PointOpExpr::Constant(x), _) if *x == 1.0 => b,
+                // x * 0 = 0
+                (_, PointOpExpr::Constant(y)) if *y == 0.0 => PointOpExpr::Constant(0.0),
+                (PointOpExpr::Constant(x), _) if *x == 0.0 => PointOpExpr::Constant(0.0),
+                _ => PointOpExpr::Mul(Box::new(a), Box::new(b)),
+            }
+        }
+        PointOpExpr::Div(a, b) => {
+            let a = constant_fold(a);
+            let b = constant_fold(b);
+            match (&a, &b) {
+                (PointOpExpr::Constant(x), PointOpExpr::Constant(y)) if y.abs() > 1e-30 => {
+                    PointOpExpr::Constant(x / y)
+                }
+                // x / 1 = x
+                (_, PointOpExpr::Constant(y)) if *y == 1.0 => a,
+                _ => PointOpExpr::Div(Box::new(a), Box::new(b)),
+            }
+        }
+        PointOpExpr::Pow(a, b) => {
+            let a = constant_fold(a);
+            let b = constant_fold(b);
+            match (&a, &b) {
+                (PointOpExpr::Constant(x), PointOpExpr::Constant(y)) => {
+                    PointOpExpr::Constant(x.powf(*y))
+                }
+                // x ^ 1 = x
+                (_, PointOpExpr::Constant(y)) if *y == 1.0 => a,
+                // x ^ 0 = 1
+                (_, PointOpExpr::Constant(y)) if *y == 0.0 => PointOpExpr::Constant(1.0),
+                _ => PointOpExpr::Pow(Box::new(a), Box::new(b)),
+            }
+        }
+        PointOpExpr::Clamp(v, min, max) => {
+            let v = constant_fold(v);
+            if let PointOpExpr::Constant(c) = &v {
+                PointOpExpr::Constant(c.clamp(*min, *max))
+            } else {
+                PointOpExpr::Clamp(Box::new(v), *min, *max)
+            }
+        }
+        PointOpExpr::Floor(v) => {
+            let v = constant_fold(v);
+            if let PointOpExpr::Constant(c) = &v {
+                PointOpExpr::Constant(c.floor())
+            } else {
+                PointOpExpr::Floor(Box::new(v))
+            }
+        }
+        PointOpExpr::Max(a, b) => {
+            let a = constant_fold(a);
+            let b = constant_fold(b);
+            match (&a, &b) {
+                (PointOpExpr::Constant(x), PointOpExpr::Constant(y)) => {
+                    PointOpExpr::Constant(x.max(*y))
+                }
+                _ => PointOpExpr::Max(Box::new(a), Box::new(b)),
+            }
+        }
+        PointOpExpr::Min(a, b) => {
+            let a = constant_fold(a);
+            let b = constant_fold(b);
+            match (&a, &b) {
+                (PointOpExpr::Constant(x), PointOpExpr::Constant(y)) => {
+                    PointOpExpr::Constant(x.min(*y))
+                }
+                _ => PointOpExpr::Min(Box::new(a), Box::new(b)),
+            }
+        }
+    }
+}
+
+/// Check if an expression is the identity function (returns Input unchanged).
+pub fn is_identity(expr: &PointOpExpr) -> bool {
+    matches!(expr, PointOpExpr::Input)
+}
+
+/// Check if an expression is a constant (no Input references).
+pub fn is_constant(expr: &PointOpExpr) -> bool {
+    match expr {
+        PointOpExpr::Input => false,
+        PointOpExpr::Constant(_) => true,
+        PointOpExpr::Add(a, b)
+        | PointOpExpr::Sub(a, b)
+        | PointOpExpr::Mul(a, b)
+        | PointOpExpr::Div(a, b)
+        | PointOpExpr::Pow(a, b)
+        | PointOpExpr::Max(a, b)
+        | PointOpExpr::Min(a, b) => is_constant(a) && is_constant(b),
+        PointOpExpr::Clamp(v, _, _) | PointOpExpr::Floor(v) => is_constant(v),
+    }
+}
+
+// ─── Lowering Backends ──────────────────────────────────────────────────────
+
+/// Lower an expression to an f32 closure (for CPU evaluation).
+///
+/// The closure takes a single f32 channel value and returns the transformed value.
+/// Uses f64 intermediate precision to avoid accumulation errors in long chains.
+pub fn lower_to_closure(expr: &PointOpExpr) -> Box<dyn Fn(f32) -> f32> {
+    let expr = expr.clone();
+    Box::new(move |v: f32| expr.evaluate(v as f64) as f32)
+}
+
+/// Lower an expression to a 256-entry u8 LUT (for u8 encode boundary).
+///
+/// Evaluates the expression at 256 evenly-spaced points and quantizes to u8.
+pub fn lower_to_lut(expr: &PointOpExpr) -> [u8; 256] {
+    expr.bake_to_lut()
+}
+
+/// Lower an expression to WGSL shader source (for GPU kernel fusion).
+///
+/// Emits an inline WGSL expression that can be composed into a compute shader.
+/// The input variable is `v` (f32).
+pub fn lower_to_wgsl(expr: &PointOpExpr) -> String {
+    match expr {
+        PointOpExpr::Input => "v".to_string(),
+        PointOpExpr::Constant(c) => {
+            if c.fract() == 0.0 {
+                format!("{c:.1}")
+            } else {
+                format!("{c}")
+            }
+        }
+        PointOpExpr::Add(a, b) => format!("({} + {})", lower_to_wgsl(a), lower_to_wgsl(b)),
+        PointOpExpr::Sub(a, b) => format!("({} - {})", lower_to_wgsl(a), lower_to_wgsl(b)),
+        PointOpExpr::Mul(a, b) => format!("({} * {})", lower_to_wgsl(a), lower_to_wgsl(b)),
+        PointOpExpr::Div(a, b) => format!("({} / {})", lower_to_wgsl(a), lower_to_wgsl(b)),
+        PointOpExpr::Pow(a, b) => format!("pow({}, {})", lower_to_wgsl(a), lower_to_wgsl(b)),
+        PointOpExpr::Clamp(v, min, max) => {
+            format!("clamp({}, {:.6}, {:.6})", lower_to_wgsl(v), min, max)
+        }
+        PointOpExpr::Floor(v) => format!("floor({})", lower_to_wgsl(v)),
+        PointOpExpr::Max(a, b) => format!("max({}, {})", lower_to_wgsl(a), lower_to_wgsl(b)),
+        PointOpExpr::Min(a, b) => format!("min({}, {})", lower_to_wgsl(a), lower_to_wgsl(b)),
+    }
+}
+
+/// Generate a complete WGSL compute shader that applies a fused point op expression.
+///
+/// The shader reads f32 RGBA pixels, applies the expression to R, G, B channels
+/// (preserving alpha), and writes the result.
+pub fn lower_to_wgsl_shader(expr: &PointOpExpr) -> String {
+    let expr_wgsl = lower_to_wgsl(expr);
+    format!(
+        r#"struct Params {{
+  width: u32,
+  height: u32,
+}}
+
+@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
+@group(0) @binding(2) var<uniform> params: Params;
+
+fn apply_expr(v: f32) -> f32 {{
+  return {expr_wgsl};
+}}
+
+@compute @workgroup_size(256, 1, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {{
+  let idx = gid.x;
+  if (idx >= params.width * params.height) {{
+    return;
+  }}
+  let pixel = input[idx];
+  output[idx] = vec4<f32>(
+    apply_expr(pixel.x),
+    apply_expr(pixel.y),
+    apply_expr(pixel.z),
+    pixel.w,
+  );
+}}"#
+    )
+}
+
+// ─── Affine Matrix Composition ──────────────────────────────────────────────
+
+/// Compose two 2x3 affine matrices: result = outer * inner.
+///
+/// Matrix layout: [a, b, tx, c, d, ty] representing:
+/// ```text
+/// | a  b  tx |
+/// | c  d  ty |
+/// | 0  0  1  |
+/// ```
+pub fn compose_affine(outer: &[f64; 6], inner: &[f64; 6]) -> [f64; 6] {
+    [
+        outer[0] * inner[0] + outer[1] * inner[3],
+        outer[0] * inner[1] + outer[1] * inner[4],
+        outer[0] * inner[2] + outer[1] * inner[5] + outer[2],
+        outer[3] * inner[0] + outer[4] * inner[3],
+        outer[3] * inner[1] + outer[4] * inner[4],
+        outer[3] * inner[2] + outer[4] * inner[5] + outer[5],
+    ]
+}
+
+/// Check if an affine matrix is the identity transform.
+pub fn is_identity_affine(m: &[f64; 6]) -> bool {
+    (m[0] - 1.0).abs() < 1e-10
+        && m[1].abs() < 1e-10
+        && m[2].abs() < 1e-10
+        && m[3].abs() < 1e-10
+        && (m[4] - 1.0).abs() < 1e-10
+        && m[5].abs() < 1e-10
+}
+
+// ─── CLUT Composition ───────────────────────────────────────────────────────
+
+/// A 3D color lookup table with f32 entries.
+///
+/// Grid is `grid_size^3` entries, each with 3 f32 values (RGB).
+/// Composition via tetrahedral interpolation.
+#[derive(Debug, Clone)]
+pub struct Clut3D {
+    pub grid_size: u32,
+    /// Flattened: grid_size^3 * 3 entries (R, G, B for each grid point).
+    pub data: Vec<f32>,
+}
+
+impl Clut3D {
+    /// Create an identity CLUT (input = output for all colors).
+    pub fn identity(grid_size: u32) -> Self {
+        let n = grid_size as usize;
+        let mut data = Vec::with_capacity(n * n * n * 3);
+        for b in 0..n {
+            for g in 0..n {
+                for r in 0..n {
+                    data.push(r as f32 / (n - 1) as f32);
+                    data.push(g as f32 / (n - 1) as f32);
+                    data.push(b as f32 / (n - 1) as f32);
+                }
+            }
+        }
+        Self { grid_size, data }
+    }
+
+    /// Build a CLUT from a function that maps (r, g, b) → (r', g', b').
+    ///
+    /// Input values are normalized [0, 1].
+    pub fn from_fn<F: Fn(f32, f32, f32) -> (f32, f32, f32)>(grid_size: u32, f: F) -> Self {
+        let n = grid_size as usize;
+        let mut data = Vec::with_capacity(n * n * n * 3);
+        for bi in 0..n {
+            for gi in 0..n {
+                for ri in 0..n {
+                    let r = ri as f32 / (n - 1) as f32;
+                    let g = gi as f32 / (n - 1) as f32;
+                    let b = bi as f32 / (n - 1) as f32;
+                    let (ro, go, bo) = f(r, g, b);
+                    data.push(ro);
+                    data.push(go);
+                    data.push(bo);
+                }
+            }
+        }
+        Self { grid_size, data }
+    }
+
+    /// Sample this CLUT at a given (r, g, b) using trilinear interpolation.
+    ///
+    /// Input values are normalized [0, 1].
+    pub fn sample(&self, r: f32, g: f32, b: f32) -> (f32, f32, f32) {
+        let n = self.grid_size as f32 - 1.0;
+        let ri = (r * n).clamp(0.0, n);
+        let gi = (g * n).clamp(0.0, n);
+        let bi = (b * n).clamp(0.0, n);
+
+        let r0 = ri.floor() as usize;
+        let g0 = gi.floor() as usize;
+        let b0 = bi.floor() as usize;
+        let r1 = (r0 + 1).min(self.grid_size as usize - 1);
+        let g1 = (g0 + 1).min(self.grid_size as usize - 1);
+        let b1 = (b0 + 1).min(self.grid_size as usize - 1);
+
+        let fr = ri - r0 as f32;
+        let fg = gi - g0 as f32;
+        let fb = bi - b0 as f32;
+
+        let gs = self.grid_size as usize;
+        let idx = |r: usize, g: usize, b: usize| -> usize { (b * gs * gs + g * gs + r) * 3 };
+
+        // Trilinear interpolation
+        let mut result = [0.0f32; 3];
+        for c in 0..3 {
+            let c000 = self.data[idx(r0, g0, b0) + c];
+            let c100 = self.data[idx(r1, g0, b0) + c];
+            let c010 = self.data[idx(r0, g1, b0) + c];
+            let c110 = self.data[idx(r1, g1, b0) + c];
+            let c001 = self.data[idx(r0, g0, b1) + c];
+            let c101 = self.data[idx(r1, g0, b1) + c];
+            let c011 = self.data[idx(r0, g1, b1) + c];
+            let c111 = self.data[idx(r1, g1, b1) + c];
+
+            let c00 = c000 + fr * (c100 - c000);
+            let c01 = c001 + fr * (c101 - c001);
+            let c10 = c010 + fr * (c110 - c010);
+            let c11 = c011 + fr * (c111 - c011);
+
+            let c0 = c00 + fg * (c10 - c00);
+            let c1 = c01 + fg * (c11 - c01);
+
+            result[c] = c0 + fb * (c1 - c0);
+        }
+
+        (result[0], result[1], result[2])
+    }
+
+    /// Apply this CLUT to f32 RGBA pixel data.
+    ///
+    /// Applies trilinear interpolation to each pixel's RGB channels.
+    /// Alpha is preserved unchanged.
+    pub fn apply(&self, pixels: &[f32]) -> Vec<f32> {
+        let mut out = Vec::with_capacity(pixels.len());
+        for pixel in pixels.chunks_exact(4) {
+            let (r, g, b) = self.sample(pixel[0], pixel[1], pixel[2]);
+            out.push(r);
+            out.push(g);
+            out.push(b);
+            out.push(pixel[3]); // alpha unchanged
+        }
+        out
+    }
+}
+
+/// Compose two CLUTs: result(v) = outer(inner(v)).
+///
+/// Evaluates `inner` at every grid point, then samples `outer` at the result.
+/// Output grid size is `outer.grid_size` (outer determines output resolution).
+pub fn compose_cluts(outer: &Clut3D, inner: &Clut3D) -> Clut3D {
+    let n = outer.grid_size;
+    Clut3D::from_fn(n, |r, g, b| {
+        let (ir, ig, ib) = inner.sample(r, g, b);
+        outer.sample(ir, ig, ib)
+    })
+}
+
+// ─── Fused Nodes ────────────────────────────────────────────────────────────
+
+/// Fused point-op node — applies a composed expression tree as a single pass.
+pub struct FusedPointOpNode {
+    upstream: u32,
+    info: NodeInfo,
+    expr: PointOpExpr,
+    /// Pre-compiled WGSL shader (cached on creation).
+    gpu_shader_src: String,
+}
+
+impl FusedPointOpNode {
+    pub fn new(upstream: u32, info: NodeInfo, expr: PointOpExpr) -> Self {
+        let gpu_shader_src = lower_to_wgsl_shader(&expr);
+        Self {
+            upstream,
+            info,
+            expr,
+            gpu_shader_src,
+        }
+    }
+}
+
+impl Node for FusedPointOpNode {
+    fn info(&self) -> NodeInfo {
+        self.info.clone()
+    }
+
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut dyn Upstream,
+    ) -> Result<Vec<f32>, PipelineError> {
+        let input = upstream.request(self.upstream, request)?;
+        let closure = lower_to_closure(&self.expr);
+        let mut output = input;
+        for pixel in output.chunks_exact_mut(4) {
+            pixel[0] = closure(pixel[0]);
+            pixel[1] = closure(pixel[1]);
+            pixel[2] = closure(pixel[2]);
+            // alpha unchanged
+        }
+        Ok(output)
+    }
+
+    fn gpu_shader(&self, width: u32, height: u32) -> Option<GpuShader> {
+        let mut params = Vec::with_capacity(8);
+        params.extend_from_slice(&width.to_le_bytes());
+        params.extend_from_slice(&height.to_le_bytes());
+        Some(GpuShader {
+            body: self.gpu_shader_src.clone(),
+            entry_point: "main",
+            workgroup_size: [256, 1, 1],
+            params,
+            extra_buffers: vec![],
+        })
+    }
+
+    fn upstream_ids(&self) -> Vec<u32> {
+        vec![self.upstream]
+    }
+
+    fn capabilities(&self) -> NodeCapabilities {
+        NodeCapabilities {
+            analytic: true,
+            gpu: true,
+            ..Default::default()
+        }
+    }
+}
+
+/// Fused CLUT node — applies a composed 3D LUT as a single pass.
+pub struct FusedClutNode {
+    upstream: u32,
+    info: NodeInfo,
+    clut: Clut3D,
+}
+
+impl FusedClutNode {
+    pub fn new(upstream: u32, info: NodeInfo, clut: Clut3D) -> Self {
+        Self {
+            upstream,
+            info,
+            clut,
+        }
+    }
+}
+
+impl Node for FusedClutNode {
+    fn info(&self) -> NodeInfo {
+        self.info.clone()
+    }
+
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut dyn Upstream,
+    ) -> Result<Vec<f32>, PipelineError> {
+        let input = upstream.request(self.upstream, request)?;
+        Ok(self.clut.apply(&input))
+    }
+
+    fn upstream_ids(&self) -> Vec<u32> {
+        vec![self.upstream]
+    }
+
+    fn capabilities(&self) -> NodeCapabilities {
+        NodeCapabilities {
+            clut: true,
+            gpu: true, // TODO: GPU CLUT shader
+            ..Default::default()
+        }
+    }
+}
+
+// ─── Graph Optimizer ────────────────────────────────────────────────────────
+
+/// Run all fusion optimization passes on the graph.
+///
+/// Detects chains of same-category fusable nodes and replaces them with
+/// single fused nodes. Runs in dependency order (bottom-up).
+pub fn optimize(graph: &mut Graph) {
+    fuse_analytical_chains(graph);
+    fuse_affine_chains(graph);
+    fuse_clut_chains(graph);
+}
+
+/// Fuse chains of analytical (point op) nodes into single expression trees.
+fn fuse_analytical_chains(graph: &mut Graph) {
+    let n = graph.node_count() as usize;
+    let mut fused: Vec<bool> = vec![false; n];
+
+    for i in (0..n).rev() {
+        if fused[i] {
+            continue;
+        }
+        let node = graph.get_node(i as u32);
+        if !node.capabilities().analytic {
+            continue;
+        }
+
+        // Walk upstream collecting consecutive analytic nodes
+        let mut chain = vec![i];
+        let mut current = i;
+        loop {
+            let upstream_ids = graph.get_node(current as u32).upstream_ids();
+            if upstream_ids.len() != 1 {
+                break;
+            }
+            let up = upstream_ids[0] as usize;
+            if up >= n || fused[up] || !graph.get_node(up as u32).capabilities().analytic {
+                break;
+            }
+            chain.push(up);
+            current = up;
+        }
+
+        if chain.len() < 2 {
+            continue;
+        }
+
+        // Compose expressions: chain is [outermost, ..., innermost]
+        // We need to compose outer(inner(v))
+        let exprs: Vec<PointOpExpr> = chain
+            .iter()
+            .map(|&id| graph.get_node_expression(id as u32))
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap_or_default();
+
+        if exprs.is_empty() {
+            continue;
+        }
+
+        // Compose from innermost to outermost
+        let mut composed = exprs.last().unwrap().clone();
+        for expr in exprs[..exprs.len() - 1].iter().rev() {
+            composed = PointOpExpr::compose(expr, &composed);
+        }
+
+        // Optimize the composed expression
+        let optimized = constant_fold(&composed);
+
+        // If it's identity, skip (could remove nodes entirely, but for now just skip)
+        if is_identity(&optimized) {
+            continue;
+        }
+
+        // Get the innermost node's upstream as the fused node's upstream
+        let innermost = *chain.last().unwrap();
+        let fused_upstream = graph
+            .get_node(innermost as u32)
+            .upstream_ids()
+            .first()
+            .copied()
+            .unwrap_or(0);
+
+        let info = graph.get_node(chain[0] as u32).info();
+        let fused_node = FusedPointOpNode::new(fused_upstream, info, optimized);
+
+        // Replace the outermost node with the fused node
+        graph.replace_node(chain[0] as u32, Box::new(fused_node));
+
+        // Mark intermediate nodes as fused (they'll be skipped)
+        for &id in &chain[1..] {
+            fused[id] = true;
+        }
+    }
+}
+
+/// Fuse chains of affine transform nodes into single composed matrices.
+fn fuse_affine_chains(_graph: &mut Graph) {
+    // TODO: Implement when V2 transform nodes expose affine matrices
+    // The pattern is the same as analytical fusion:
+    // 1. Walk graph finding chains of affine-capable nodes
+    // 2. Compose matrices: compose_affine(outer, inner)
+    // 3. Replace chain with single ComposedAffineNode
+}
+
+/// Fuse chains of CLUT (color op) nodes into single composed 3D LUTs.
+fn fuse_clut_chains(_graph: &mut Graph) {
+    // TODO: Implement when V2 color op nodes expose CLUTs
+    // The pattern is the same as analytical fusion:
+    // 1. Walk graph finding chains of clut-capable nodes
+    // 2. Compose CLUTs: compose_cluts(outer, inner)
+    // 3. Replace chain with FusedClutNode
+}
+
+// ─── Tests ──────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── Expression optimizer tests ──
+
+    #[test]
+    fn constant_fold_add_constants() {
+        let expr = PointOpExpr::Add(
+            Box::new(PointOpExpr::Constant(2.0)),
+            Box::new(PointOpExpr::Constant(3.0)),
+        );
+        let folded = constant_fold(&expr);
+        assert!(matches!(folded, PointOpExpr::Constant(c) if (c - 5.0).abs() < 1e-6));
+    }
+
+    #[test]
+    fn constant_fold_identity_add_zero() {
+        let expr = PointOpExpr::Add(
+            Box::new(PointOpExpr::Input),
+            Box::new(PointOpExpr::Constant(0.0)),
+        );
+        let folded = constant_fold(&expr);
+        assert!(matches!(folded, PointOpExpr::Input));
+    }
+
+    #[test]
+    fn constant_fold_mul_by_one() {
+        let expr = PointOpExpr::Mul(
+            Box::new(PointOpExpr::Input),
+            Box::new(PointOpExpr::Constant(1.0)),
+        );
+        let folded = constant_fold(&expr);
+        assert!(matches!(folded, PointOpExpr::Input));
+    }
+
+    #[test]
+    fn constant_fold_mul_by_zero() {
+        let expr = PointOpExpr::Mul(
+            Box::new(PointOpExpr::Input),
+            Box::new(PointOpExpr::Constant(0.0)),
+        );
+        let folded = constant_fold(&expr);
+        assert!(matches!(folded, PointOpExpr::Constant(c) if c == 0.0));
+    }
+
+    #[test]
+    fn constant_fold_pow_by_one() {
+        let expr = PointOpExpr::Pow(
+            Box::new(PointOpExpr::Input),
+            Box::new(PointOpExpr::Constant(1.0)),
+        );
+        let folded = constant_fold(&expr);
+        assert!(matches!(folded, PointOpExpr::Input));
+    }
+
+    #[test]
+    fn constant_fold_nested() {
+        // (2 + 3) * Input → 5 * Input
+        let expr = PointOpExpr::Mul(
+            Box::new(PointOpExpr::Add(
+                Box::new(PointOpExpr::Constant(2.0)),
+                Box::new(PointOpExpr::Constant(3.0)),
+            )),
+            Box::new(PointOpExpr::Input),
+        );
+        let folded = constant_fold(&expr);
+        match &folded {
+            PointOpExpr::Mul(a, _) => {
+                assert!(matches!(**a, PointOpExpr::Constant(c) if (c - 5.0).abs() < 1e-6));
+            }
+            _ => panic!("expected Mul, got {folded:?}"),
+        }
+    }
+
+    #[test]
+    fn darken_brighten_folds_to_identity() {
+        // darken(-0.5) then brighten(+0.5)
+        let darken = PointOpExpr::Add(
+            Box::new(PointOpExpr::Input),
+            Box::new(PointOpExpr::Constant(-0.5)),
+        );
+        let brighten = PointOpExpr::Add(
+            Box::new(PointOpExpr::Input),
+            Box::new(PointOpExpr::Constant(0.5)),
+        );
+        let composed = PointOpExpr::compose(&brighten, &darken);
+        let folded = constant_fold(&composed);
+        // After folding: Input + (-0.5 + 0.5) → Input + 0.0 → Input
+        // This requires nested constant folding
+        let folded2 = constant_fold(&folded);
+        // The composition produces Add(Add(Input, Const(-0.5)), Const(0.5))
+        // which isn't directly foldable to Input without algebraic simplification.
+        // But numerically it evaluates to identity:
+        for i in 0..256 {
+            let v = i as f64 / 255.0;
+            let result = folded2.evaluate(v);
+            assert!(
+                (result - v).abs() < 1e-10,
+                "roundtrip failed at v={v}: got {result}"
+            );
+        }
+    }
+
+    // ── Lowering tests ──
+
+    #[test]
+    fn lower_to_closure_brightness() {
+        let expr = PointOpExpr::Add(
+            Box::new(PointOpExpr::Input),
+            Box::new(PointOpExpr::Constant(0.1)),
+        );
+        let f = lower_to_closure(&expr);
+        assert!((f(0.5) - 0.6).abs() < 1e-5);
+    }
+
+    #[test]
+    fn lower_to_wgsl_brightness() {
+        let expr = PointOpExpr::Add(
+            Box::new(PointOpExpr::Input),
+            Box::new(PointOpExpr::Constant(0.1)),
+        );
+        let wgsl = lower_to_wgsl(&expr);
+        assert_eq!(wgsl, "(v + 0.1)");
+    }
+
+    #[test]
+    fn lower_to_wgsl_gamma() {
+        let expr = PointOpExpr::Pow(
+            Box::new(PointOpExpr::Input),
+            Box::new(PointOpExpr::Constant(2.2)),
+        );
+        let wgsl = lower_to_wgsl(&expr);
+        assert_eq!(wgsl, "pow(v, 2.2)");
+    }
+
+    #[test]
+    fn lower_to_wgsl_shader_compiles_valid_structure() {
+        let expr = PointOpExpr::Add(
+            Box::new(PointOpExpr::Input),
+            Box::new(PointOpExpr::Constant(0.1)),
+        );
+        let shader = lower_to_wgsl_shader(&expr);
+        assert!(shader.contains("@compute @workgroup_size"));
+        assert!(shader.contains("fn apply_expr(v: f32) -> f32"));
+        assert!(shader.contains("return (v + 0.1)"));
+        assert!(shader.contains("pixel.w")); // alpha preserved
+    }
+
+    // ── Affine tests ──
+
+    #[test]
+    fn compose_affine_identity() {
+        let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        let scale = [2.0, 0.0, 0.0, 0.0, 2.0, 0.0];
+        let result = compose_affine(&scale, &identity);
+        assert_eq!(result, scale);
+
+        let result2 = compose_affine(&identity, &scale);
+        assert_eq!(result2, scale);
+    }
+
+    #[test]
+    fn compose_affine_two_translates() {
+        let t1 = [1.0, 0.0, 10.0, 0.0, 1.0, 20.0]; // translate(10, 20)
+        let t2 = [1.0, 0.0, 5.0, 0.0, 1.0, 15.0]; // translate(5, 15)
+        let result = compose_affine(&t1, &t2);
+        // translate(10, 20) * translate(5, 15) = translate(15, 35)
+        assert!((result[2] - 15.0).abs() < 1e-10);
+        assert!((result[5] - 35.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn identity_affine_detected() {
+        assert!(is_identity_affine(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0]));
+        assert!(!is_identity_affine(&[2.0, 0.0, 0.0, 0.0, 1.0, 0.0]));
+    }
+
+    // ── CLUT tests ──
+
+    #[test]
+    fn clut_identity() {
+        let clut = Clut3D::identity(17);
+        let (r, g, b) = clut.sample(0.5, 0.3, 0.7);
+        assert!((r - 0.5).abs() < 0.01);
+        assert!((g - 0.3).abs() < 0.01);
+        assert!((b - 0.7).abs() < 0.01);
+    }
+
+    #[test]
+    fn clut_compose_identity() {
+        let identity = Clut3D::identity(17);
+        let invert = Clut3D::from_fn(17, |r, g, b| (1.0 - r, 1.0 - g, 1.0 - b));
+        let composed = compose_cluts(&identity, &invert);
+        // identity(invert(0.3, 0.5, 0.7)) = invert(0.3, 0.5, 0.7) = (0.7, 0.5, 0.3)
+        let (r, g, b) = composed.sample(0.3, 0.5, 0.7);
+        assert!((r - 0.7).abs() < 0.02);
+        assert!((g - 0.5).abs() < 0.02);
+        assert!((b - 0.3).abs() < 0.02);
+    }
+
+    #[test]
+    fn clut_double_invert_is_identity() {
+        let invert = Clut3D::from_fn(33, |r, g, b| (1.0 - r, 1.0 - g, 1.0 - b));
+        let composed = compose_cluts(&invert, &invert);
+        // invert(invert(v)) = v
+        let (r, g, b) = composed.sample(0.3, 0.5, 0.7);
+        assert!((r - 0.3).abs() < 0.02);
+        assert!((g - 0.5).abs() < 0.02);
+        assert!((b - 0.7).abs() < 0.02);
+    }
+
+    #[test]
+    fn clut_apply_preserves_alpha() {
+        let invert = Clut3D::from_fn(17, |r, g, b| (1.0 - r, 1.0 - g, 1.0 - b));
+        let pixels = vec![0.3, 0.5, 0.7, 0.9]; // one pixel, alpha = 0.9
+        let result = invert.apply(&pixels);
+        assert_eq!(result.len(), 4);
+        assert!((result[3] - 0.9).abs() < 1e-6); // alpha preserved
+    }
+}

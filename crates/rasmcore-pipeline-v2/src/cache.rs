@@ -95,6 +95,16 @@ impl SpatialCache {
         self.order.clear();
     }
 
+    /// Invalidate all cached entries for a specific node.
+    pub fn invalidate(&mut self, node_id: u32) {
+        if let Some(entries) = self.entries.remove(&node_id) {
+            for entry in &entries {
+                self.current_bytes -= entry.data.len() * 4;
+            }
+        }
+        self.order.retain(|(id, _)| *id != node_id);
+    }
+
     /// Current cache usage in bytes.
     pub fn usage_bytes(&self) -> usize {
         self.current_bytes
