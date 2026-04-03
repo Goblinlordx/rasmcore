@@ -1,65 +1,31 @@
 id: v2-wit-adapter_20260404170900Z
-title: "Wire WIT adapter to V2 pipeline — fix web UI"
+title: "Fix V1 resize for f32 + error stringification — unblock web UI"
 type: bug
 status: pending
 created: "2026-04-04"
 updated: "2026-04-04"
 spec:
   summary: >
-    Wire WIT adapter to V2 pipeline. Web UI broken because V1 decode now
-    produces f32 but V1 resize/encode only handle u8/u16.
+    3-line resize fix + preview-worker error stringification. Unblocks web UI
+    while the V2 codegen rewrite happens in parallel.
   context: |
-    The web UI calls WIT functions (read, resize, writePng, filters) via
-    adapter/pipeline_adapter.rs which wraps V1 NodeGraph. After V2 codec
-    migration, V1 decode produces f32 pixels but V1 resize (fast_image_resize)
-    and V1 PNG encoder only handle u8/u16. Error: "resize from Rgba32f not
-    supported by SIMD backend".
-  codebase_analysis: |
-    - adapter/pipeline_adapter.rs: PipelineResource wraps V1 NodeGraph
-    - V1 resize: domain/transform/resize.rs - missing F32x4 pixel type mapping
-    - V1 sink: domain/pipeline/nodes/sink.rs - no f32->u8 quantize before encode
-    - fast_image_resize 5.5.0 already supports PixelType::F32x4
-    - V2 codecs-v2 encoders handle f32->sRGB->u8 quantization internally
+    The f32 pipeline promotion (Rgba32f after decode) broke V1 resize because
+    fast_image_resize pixel type mapping only covered u8/u16. fast_image_resize
+    5.5.0 already supports F32x4/F32x3/F32 natively. Also, ComponentError
+    payloads log as [object Object] — need JSON.stringify.
   acceptance_criteria:
     - Web UI loads images without error
-    - Web UI applies filters and renders preview
-    - writePng works end-to-end on f32 pixel data
-    - Resize works on f32 data
-    - Error messages in preview-worker are human-readable
+    - Preview-worker errors show actual payload not [object Object]
+    - V1 resize handles Rgba32f/Rgb32f/Gray32f pixel formats
   out_of_scope: |
-    Full V1 removal. Porting remaining V1 filters. GPU dispatch.
-  technical_notes: |
-    Phase 1 (immediate fix): Patch V1 resize to map Rgba32f->F32x4 in
-    fast_image_resize (already supported). Add f32->u8 quantize step in
-    V1 sink before calling format encoders. This unblocks web UI immediately.
-
-    Phase 2+ (V2 adapter): Wire PipelineResource to use V2 Graph for the
-    full read->process->write cycle. V2 codecs handle f32 natively.
+    V2 adapter rewrite. Codegen changes. V1 removal.
 plan:
-  - phase: "Immediate fix — unblock web UI"
+  - phase: "Immediate fix"
     tasks:
-      - text: "Add Rgba32f/Rgb32f/Gray32f to V1 resize (map to fir F32x4/F32x3/F32)"
+      - text: "Add f32 pixel types to V1 resize (Rgba32f->F32x4, Rgb32f->F32x3, Gray32f->F32)"
         done: false
-      - text: "Add f32-to-u8 quantization in V1 sink before encoding"
+      - text: "Fix preview-worker error stringification (JSON.stringify payload)"
         done: false
-      - text: "Fix preview-worker error stringification"
-        done: false
-      - text: "Verify web UI loads and applies filters end-to-end"
-        done: false
-  - phase: "V2 adapter wiring"
-    tasks:
-      - text: "Create V2 source node wrapping decoded f32 pixels"
-        done: false
-      - text: "Wire PipelineResource to V2 Graph for read/write"
-        done: false
-      - text: "Map WIT filter calls to V2 Filter dispatch"
-        done: false
-      - text: "Return clear error for V1-only filters not in V2"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "End-to-end JPEG -> resize -> solarize -> PNG works in web UI"
-        done: false
-      - text: "WASM component build succeeds"
+      - text: "Verify WASM build + web UI loads and renders"
         done: false
 extra: {}
