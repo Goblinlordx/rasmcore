@@ -88,7 +88,7 @@ function loadImage(bytes) {
       const tw = Math.max(1, Math.round(info.width * scale));
       const th = Math.max(1, Math.round(info.height * scale));
       const resized = cachedPipe.resize(src, { width: tw, height: th, filter: 'bilinear' });
-      const png = cachedPipe.writePng(resized, {}, undefined);
+      const png = cachedPipe.write(resized, 'png', undefined, undefined);
       previewBytes = png;
       // Re-create pipeline with downscaled source for caching
       cachedPipe = new Pipeline();
@@ -135,7 +135,7 @@ function processChain(chain) {
       current = applyStep(pipe, current, step);
     }
 
-    const output = pipe.writePng(current, {}, undefined);
+    const output = pipe.write(current, 'png', undefined, undefined);
     const totalMs = Math.round(performance.now() - t0);
 
     if (layerCache) {

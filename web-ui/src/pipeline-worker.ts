@@ -153,7 +153,7 @@ function loadImage(bytes) {
       const tw = Math.round(info.width * scale);
       const th = Math.round(info.height * scale);
       const resized = pipe.resize(src, { width: tw, height: th, filter: 'bilinear' });
-      thumbBytes = pipe.writePng(resized, {}, undefined);
+      thumbBytes = pipe.write(resized, 'png', undefined, undefined);
     } else {
       thumbBytes = imageBytes;
     }
@@ -187,7 +187,7 @@ function processChain(chain, mode) {
       timings.push({ name: step.name, ms: Math.round(performance.now() - t) });
     }
 
-    const output = pipe.writePng(current, {}, undefined);
+    const output = pipe.write(current, 'png', undefined, undefined);
     const totalMs = Math.round(performance.now() - t0);
 
     if (layerCache) {
@@ -265,7 +265,7 @@ function compositeLayers(layerDefs) {
       }
     }
 
-    const output = pipe.writePng(resultNode, {}, undefined);
+    const output = pipe.write(resultNode, 'png', undefined, undefined);
     const totalMs = Math.round(performance.now() - t0);
     const buf = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength);
     self.postMessage({ type: 'result', png: buf, timings: [], totalMs, mode: 'full' }, [buf]);
