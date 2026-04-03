@@ -1,89 +1,115 @@
 id: codegen-v2-pipeline_20260404172300Z
-title: "Codegen V2 pipeline adapter — replace V1 in WIT dispatch"
+title: Codegen V2 pipeline adapter — replace V1 in WIT dispatch
 type: refactor
 status: pending
-created: "2026-04-04"
-updated: "2026-04-04"
+created: '2026-04-04'
+updated: '2026-04-03'
 spec:
-  summary: >
-    Rewrite codegen and PipelineResource to use V2 Graph + codecs-v2 instead
-    of V1. After this, V1 pipeline is no longer in the hot path.
-  context: |
-    The WIT adapter (pipeline_adapter.rs) wraps V1 NodeGraph. The codegen
+  summary: 'Rewrite codegen and PipelineResource to use V2 Graph + codecs-v2 instead of V1. After this, V1 pipeline is no
+    longer in the hot path.
+
+    '
+  context: 'The WIT adapter (pipeline_adapter.rs) wraps V1 NodeGraph. The codegen
+
     (rasmcore-codegen) emits V1 ImageNode impls and V1 adapter dispatch.
+
     V2 pipeline exists with f32-native Graph, 70+ Filter impls, and codecs-v2
+
     for all 14 formats. The codegen needs to target V2 instead of V1.
 
+
     Key codegen modules to update:
+
     - pipeline.rs (642 lines) — emit V2 Filter usage, not V1 ImageNode
+
     - adapter.rs (399 lines) — emit V2 dispatch, not V1 CpuFilter calls
+
     - pipeline_write.rs (443 lines) — use codecs-v2 encoders
+
     - transform.rs (467 lines) — use V2 transform nodes
 
+
     Modules that stay: manifest.rs, wit.rs, helpers.rs, metrics.rs
-  codebase_analysis: |
-    PipelineResource at adapter/pipeline_adapter.rs:290 wraps V1 NodeGraph.
+
+    '
+  codebase_analysis: 'PipelineResource at adapter/pipeline_adapter.rs:290 wraps V1 NodeGraph.
+
     read() at line 363 decodes + promotes to Rgba32f via V1 PromoteNode.
+
     Generated macros (from OUT_DIR) provide filter/write/transform methods.
+
     V2 Graph at rasmcore-pipeline-v2/src/graph.rs has add_node + request_full.
+
     V2 codecs at rasmcore-codecs-v2 have decode_auto + encode for all formats.
+
     V2 filters at rasmcore-pipeline-v2/src/filters/ implement Filter trait.
+
+    '
   acceptance_criteria:
-    - PipelineResource uses V2 Graph instead of V1 NodeGraph
-    - read() uses codecs-v2 decode -> f32 source node in V2 graph
-    - write methods use codecs-v2 encode (f32 -> gamma -> quantize -> format)
-    - Codegen pipeline.rs emits V2 Filter struct construction
-    - Codegen adapter.rs emits V2 dispatch (WIT config -> V2 filter -> graph)
-    - WASM component builds and web UI works end-to-end
-    - V1 NodeGraph no longer instantiated in adapter path
-  out_of_scope: |
-    Full V1 code deletion. Porting remaining 200+ V1-only filters to V2.
+  - PipelineResource uses V2 Graph instead of V1 NodeGraph
+  - read() uses codecs-v2 decode -> f32 source node in V2 graph
+  - write methods use codecs-v2 encode (f32 -> gamma -> quantize -> format)
+  - Codegen pipeline.rs emits V2 Filter struct construction
+  - Codegen adapter.rs emits V2 dispatch (WIT config -> V2 filter -> graph)
+  - WASM component builds and web UI works end-to-end
+  - V1 NodeGraph no longer instantiated in adapter path
+  out_of_scope: 'Full V1 code deletion. Porting remaining 200+ V1-only filters to V2.
+
     GPU dispatch via V2. Metadata preservation. Tiling/streaming encode.
-  technical_notes: |
-    Phase 1 focuses on the adapter: replace NodeGraph with V2 Graph, wire
+
+    '
+  technical_notes: 'Phase 1 focuses on the adapter: replace NodeGraph with V2 Graph, wire
+
     read/write through codecs-v2. This alone fixes the web UI.
 
+
     Phase 2-3 update codegen to emit V2 code. The codegen discovers filters
+
     via register_filter annotations and ConfigParams derives. It needs to
+
     emit V2 Filter struct constructors instead of V1 ImageNode impls.
 
+
     Filters not in V2 should return a clear NotImplemented error through
+
     the WIT interface rather than silently falling back to V1.
+
+    '
 plan:
-  - phase: "PipelineResource V2 core"
-    tasks:
-      - text: "Replace NodeGraph with V2 Graph in PipelineResource"
-        done: false
-      - text: "Implement read() via codecs-v2 decode_auto -> V2 source node"
-        done: false
-      - text: "Implement write_png/jpeg/webp via V2 graph.request_full -> codecs-v2 encode"
-        done: false
-      - text: "Implement resize() via V2 spatial filter or V2-aware resize"
-        done: false
-      - text: "Verify load image + write PNG works end-to-end in WASM"
-        done: false
-  - phase: "Codegen filter dispatch"
-    tasks:
-      - text: "Update pipeline.rs to emit V2 Filter struct construction"
-        done: false
-      - text: "Update adapter.rs to emit V2 dispatch (WIT config -> V2 struct -> graph)"
-        done: false
-      - text: "Update generate_adapter_macro to use V2 Graph.add_node"
-        done: false
-  - phase: "Codegen write + transform"
-    tasks:
-      - text: "Update pipeline_write.rs to use codecs-v2 encoders"
-        done: false
-      - text: "Update transform.rs for V2 transform dispatch"
-        done: false
-      - text: "Remove f32/u8 auto-wrap and proxy_scale logic from codegen"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "WASM component build succeeds"
-        done: false
-      - text: "Web UI loads image, applies filters, renders preview"
-        done: false
-      - text: "V1 NodeGraph no longer instantiated in adapter"
-        done: false
+- phase: PipelineResource V2 core
+  tasks:
+  - text: Replace NodeGraph with V2 Graph in PipelineResource
+    done: true
+  - text: Implement read() via codecs-v2 decode_auto -> V2 source node
+    done: true
+  - text: Implement write_png/jpeg/webp via V2 graph.request_full -> codecs-v2 encode
+    done: true
+  - text: Implement resize() via V2 spatial filter or V2-aware resize
+    done: true
+  - text: Verify load image + write PNG works end-to-end in WASM
+    done: true
+- phase: Codegen filter dispatch
+  tasks:
+  - text: Update pipeline.rs to emit V2 Filter struct construction
+    done: false
+  - text: Update adapter.rs to emit V2 dispatch (WIT config -> V2 struct -> graph)
+    done: false
+  - text: Update generate_adapter_macro to use V2 Graph.add_node
+    done: false
+- phase: Codegen write + transform
+  tasks:
+  - text: Update pipeline_write.rs to use codecs-v2 encoders
+    done: false
+  - text: Update transform.rs for V2 transform dispatch
+    done: false
+  - text: Remove f32/u8 auto-wrap and proxy_scale logic from codegen
+    done: false
+- phase: Verification
+  tasks:
+  - text: WASM component build succeeds
+    done: false
+  - text: Web UI loads image, applies filters, renders preview
+    done: false
+  - text: V1 NodeGraph no longer instantiated in adapter
+    done: false
 extra: {}
