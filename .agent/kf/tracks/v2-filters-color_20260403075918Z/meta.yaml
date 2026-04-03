@@ -1,5 +1,5 @@
 title: V2 filters — color ops (hue, saturate, channel_mixer, etc.)
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-04-03'
