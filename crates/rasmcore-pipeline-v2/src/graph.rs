@@ -222,6 +222,10 @@ impl Upstream for GraphUpstream {
         // not reentrant on the same node. Different nodes can safely recurse.
         unsafe { &mut *self.graph }.request_region(upstream_id, rect)
     }
+
+    fn info(&self, upstream_id: u32) -> Result<NodeInfo, PipelineError> {
+        unsafe { &*self.graph }.node_info(upstream_id)
+    }
 }
 
 /// Crop f32 pixel data from a source rect to a destination rect.

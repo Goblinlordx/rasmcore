@@ -71,6 +71,10 @@ pub struct TileHint {
 pub trait Upstream {
     /// Request pixel data for a region from an upstream node.
     fn request(&mut self, upstream_id: u32, rect: Rect) -> Result<Vec<f32>, PipelineError>;
+
+    /// Query upstream node info (dimensions, color space).
+    /// Useful for transforms that need to know source dimensions dynamically.
+    fn info(&self, upstream_id: u32) -> Result<NodeInfo, PipelineError>;
 }
 
 /// The core pipeline node trait.
