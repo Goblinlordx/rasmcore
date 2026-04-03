@@ -104,16 +104,19 @@ pub trait GpuFilter {
     /// Return GPU operations with explicit buffer format selection.
     ///
     /// Override to provide f32 shader variants when `buffer_format` is `F32Vec4`.
-    /// Default delegates to `gpu_ops()` (backward compatible — all existing filters
-    /// return u32 shaders regardless of format).
+    /// Default: only delegates to `gpu_ops()` for U32Packed requests.
+    /// For F32Vec4, returns None (CPU fallback) unless explicitly overridden.
+    /// This prevents U32Packed shaders from silently receiving f32 data.
     fn gpu_ops_with_format(
         &self,
         width: u32,
         height: u32,
         buffer_format: rasmcore_pipeline::gpu::BufferFormat,
     ) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
-        let _ = buffer_format;
-        self.gpu_ops(width, height)
+        match buffer_format {
+            rasmcore_pipeline::gpu::BufferFormat::U32Packed => self.gpu_ops(width, height),
+            rasmcore_pipeline::gpu::BufferFormat::F32Vec4 => None, // must override for f32
+        }
     }
 }
 
