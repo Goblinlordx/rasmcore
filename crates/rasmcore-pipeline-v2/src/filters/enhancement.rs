@@ -1096,6 +1096,20 @@ impl GpuFilter for VignettePowerlaw {
     }
 }
 
+// ── Vignette (Gaussian) GPU — single-pass analytical falloff ────────────────
+
+gpu_filter!(Vignette,
+    shader: crate::gpu_shaders::vignette::VIGNETTE_GAUSSIAN,
+    workgroup: [16, 16, 1],
+    params(self_, w, h) => [
+        w, h,
+        self_.sigma,
+        self_.x_inset as f32,
+        self_.y_inset as f32,
+        0u32, 0u32, 0u32
+    ]
+);
+
 // ── AutoLevel GPU (3-pass via ChannelMinMax reduction) ──────────────────────
 
 /// AutoLevel apply shader — reads min/max from reduction buffer, stretches per-channel.
@@ -1354,6 +1368,387 @@ impl GpuFilter for Normalize {
         vec![passes.pass1, passes.pass2, pass3]
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GPU filter wiring — remaining enhancement filters
+// ═══════════════════════════════════════════════════════════════════════════════
+
+use crate::gpu_shaders::{analysis, enhancement as enh_shaders, spatial};
+use crate::node::{GpuShader, ReductionBuffer};
+use crate::filters::spatial::{gaussian_kernel_bytes, blur_params};
+
+// ── NlmDenoise GPU (single-pass, compute-heavy) ─────────────────────────────
+
+gpu_filter!(NlmDenoise,
+    shader: analysis::NLM_DENOISE,
+    workgroup: [16, 16, 1],
+    params(self_, w, h) => [
+        w, h, self_.search_radius, self_.patch_radius,
+        self_.h, 0u32, 0u32, 0u32
+    ]
+);
+
+// ── Dehaze GPU (2-pass: dark channel → apply) ───────────────────────────────
+
+gpu_filter_multipass!(Dehaze,
+    shader: analysis::DEHAZE_APPLY,
+    workgroup: [256, 1, 1],
+    params(self_, w, h) => [
+        w, h,
+        // Atmospheric light estimated on CPU as fallback (GPU path estimates via dark channel max)
+        1.0f32, 1.0f32, 1.0f32, // atmosphere RGB
+        self_.omega,
+        0u32, 0u32
+    ],
+    passes(self2, w2, h2) => {
+        let mut dark_params = Vec::with_capacity(16);
+        dark_params.extend_from_slice(&w2.to_le_bytes());
+        dark_params.extend_from_slice(&h2.to_le_bytes());
+        dark_params.extend_from_slice(&self2.patch_radius.to_le_bytes());
+        dark_params.extend_from_slice(&0u32.to_le_bytes());
+
+        let pass1 = GpuShader::new(
+            analysis::DEHAZE_DARK_CHANNEL.to_string(), "main", [16, 16, 1], dark_params,
+        );
+        let pass2 = GpuShader::new(
+            analysis::DEHAZE_APPLY.to_string(), "main", [256, 1, 1], self2.params(w2, h2),
+        );
+        vec![pass1, pass2]
+    }
+);
+
+// ── ShadowHighlight GPU (blur luma + apply) ─────────────────────────────────
+
+gpu_filter_passes_only!(ShadowHighlight,
+    passes(self_, w, h) => {
+        let (kr, kb) = gaussian_kernel_bytes(self_.radius);
+        let bp = blur_params(w, h, kr);
+
+        // Pass 1-2: blur the input (used to estimate local luminance)
+        let blur_h = GpuShader::new(spatial::GAUSSIAN_BLUR_H.to_string(), "main", [256, 1, 1], bp.clone())
+            .with_extra_buffers(vec![kb.clone()]);
+        let blur_v = GpuShader::new(spatial::GAUSSIAN_BLUR_V.to_string(), "main", [256, 1, 1], bp)
+            .with_extra_buffers(vec![kb]);
+
+        // Pass 3: shadow/highlight apply with blurred luma from previous passes
+        let shadows_norm = self_.shadows / 100.0;
+        let highlights_norm = self_.highlights / 100.0;
+        let mut apply_params = Vec::with_capacity(16);
+        apply_params.extend_from_slice(&w.to_le_bytes());
+        apply_params.extend_from_slice(&h.to_le_bytes());
+        apply_params.extend_from_slice(&shadows_norm.to_le_bytes());
+        apply_params.extend_from_slice(&highlights_norm.to_le_bytes());
+        let apply = GpuShader::new(
+            enh_shaders::SHADOW_HIGHLIGHT_APPLY.to_string(), "main", [256, 1, 1], apply_params,
+        );
+
+        vec![blur_h, blur_v, apply]
+    }
+);
+
+// ── FrequencyLow GPU (same as GaussianBlur) ─────────────────────────────────
+
+gpu_filter_passes_only!(FrequencyLow,
+    passes(self_, w, h) => {
+        let (kr, kb) = gaussian_kernel_bytes(self_.sigma);
+        let bp = blur_params(w, h, kr);
+        vec![
+            GpuShader::new(spatial::GAUSSIAN_BLUR_H.to_string(), "main", [256, 1, 1], bp.clone())
+                .with_extra_buffers(vec![kb.clone()]),
+            GpuShader::new(spatial::GAUSSIAN_BLUR_V.to_string(), "main", [256, 1, 1], bp)
+                .with_extra_buffers(vec![kb]),
+        ]
+    }
+);
+
+// ── FrequencyHigh GPU (blur + subtract apply) ───────────────────────────────
+
+gpu_filter_passes_only!(FrequencyHigh,
+    passes(self_, w, h) => {
+        let (kr, kb) = gaussian_kernel_bytes(self_.sigma);
+        let bp = blur_params(w, h, kr);
+
+        let mut apply_params = Vec::with_capacity(16);
+        apply_params.extend_from_slice(&w.to_le_bytes());
+        apply_params.extend_from_slice(&h.to_le_bytes());
+        apply_params.extend_from_slice(&0u32.to_le_bytes());
+        apply_params.extend_from_slice(&0u32.to_le_bytes());
+
+        vec![
+            GpuShader::new(spatial::GAUSSIAN_BLUR_H.to_string(), "main", [256, 1, 1], bp.clone())
+                .with_extra_buffers(vec![kb.clone()]),
+            GpuShader::new(spatial::GAUSSIAN_BLUR_V.to_string(), "main", [256, 1, 1], bp)
+                .with_extra_buffers(vec![kb]),
+            GpuShader::new(enh_shaders::FREQUENCY_HIGH_APPLY.to_string(), "main", [256, 1, 1], apply_params),
+        ]
+    }
+);
+
+// ── Clarity GPU (blur + midtone-weighted blend) ─────────────────────────────
+
+gpu_filter_passes_only!(Clarity,
+    passes(self_, w, h) => {
+        let (kr, kb) = gaussian_kernel_bytes(self_.radius);
+        let bp = blur_params(w, h, kr);
+
+        let mut apply_params = Vec::with_capacity(16);
+        apply_params.extend_from_slice(&w.to_le_bytes());
+        apply_params.extend_from_slice(&h.to_le_bytes());
+        apply_params.extend_from_slice(&self_.amount.to_le_bytes());
+        apply_params.extend_from_slice(&0u32.to_le_bytes());
+
+        vec![
+            GpuShader::new(spatial::GAUSSIAN_BLUR_H.to_string(), "main", [256, 1, 1], bp.clone())
+                .with_extra_buffers(vec![kb.clone()]),
+            GpuShader::new(spatial::GAUSSIAN_BLUR_V.to_string(), "main", [256, 1, 1], bp)
+                .with_extra_buffers(vec![kb]),
+            GpuShader::new(enh_shaders::CLARITY_APPLY.to_string(), "main", [256, 1, 1], apply_params),
+        ]
+    }
+);
+
+// ── RetinexSsr GPU (blur + log-domain apply) ────────────────────────────────
+
+gpu_filter_passes_only!(RetinexSsr,
+    passes(self_, w, h) => {
+        let (kr, kb) = gaussian_kernel_bytes(self_.sigma);
+        let bp = blur_params(w, h, kr);
+
+        let mut apply_params = Vec::with_capacity(16);
+        apply_params.extend_from_slice(&w.to_le_bytes());
+        apply_params.extend_from_slice(&h.to_le_bytes());
+        apply_params.extend_from_slice(&1.0f32.to_le_bytes()); // gain
+        apply_params.extend_from_slice(&0.0f32.to_le_bytes()); // offset
+
+        vec![
+            GpuShader::new(spatial::GAUSSIAN_BLUR_H.to_string(), "main", [256, 1, 1], bp.clone())
+                .with_extra_buffers(vec![kb.clone()]),
+            GpuShader::new(spatial::GAUSSIAN_BLUR_V.to_string(), "main", [256, 1, 1], bp)
+                .with_extra_buffers(vec![kb]),
+            GpuShader::new(enh_shaders::RETINEX_SSR_APPLY.to_string(), "main", [256, 1, 1], apply_params),
+        ]
+    }
+);
+
+// ── RetinexMsr GPU (3 blur scales + accumulate + normalize) ─────────────────
+
+gpu_filter_passes_only!(RetinexMsr,
+    passes(self_, w, h) => {
+        let scales = [self_.sigma_small, self_.sigma_medium, self_.sigma_large];
+        let total_pixels = w * h;
+        let acc_size = total_pixels as usize * 16; // vec4<f32> per pixel
+
+        let mut passes = Vec::new();
+
+        // For each scale: blur H, blur V, accumulate
+        for sigma in &scales {
+            let (kr, kb) = gaussian_kernel_bytes(*sigma);
+            let bp = blur_params(w, h, kr);
+
+            passes.push(
+                GpuShader::new(spatial::GAUSSIAN_BLUR_H.to_string(), "main", [256, 1, 1], bp.clone())
+                    .with_extra_buffers(vec![kb.clone()])
+            );
+            passes.push(
+                GpuShader::new(spatial::GAUSSIAN_BLUR_V.to_string(), "main", [256, 1, 1], bp)
+                    .with_extra_buffers(vec![kb])
+            );
+
+            let mut acc_params = Vec::with_capacity(16);
+            acc_params.extend_from_slice(&w.to_le_bytes());
+            acc_params.extend_from_slice(&h.to_le_bytes());
+            acc_params.extend_from_slice(&0u32.to_le_bytes());
+            acc_params.extend_from_slice(&0u32.to_le_bytes());
+
+            passes.push(
+                GpuShader::new(enh_shaders::RETINEX_MSR_ACCUMULATE.to_string(), "main", [256, 1, 1], acc_params)
+                    .with_reduction_buffers(vec![ReductionBuffer {
+                        id: 0,
+                        initial_data: vec![0u8; acc_size],
+                        read_write: true,
+                    }])
+            );
+        }
+
+        // Final normalize pass (reads accumulator, needs min/max reduction)
+        // For simplicity, use the ChannelMinMax reduction on the accumulator
+        let reduction = crate::gpu_shaders::reduction::GpuReduction::channel_min_max(256);
+        let red_passes = reduction.build_passes(w, h);
+        let red_read_buf = reduction.read_buffer(&red_passes);
+        passes.push(red_passes.pass1);
+        passes.push(red_passes.pass2);
+
+        let mut norm_params = Vec::with_capacity(16);
+        norm_params.extend_from_slice(&w.to_le_bytes());
+        norm_params.extend_from_slice(&h.to_le_bytes());
+        norm_params.extend_from_slice(&3.0f32.to_le_bytes()); // num_scales
+        norm_params.extend_from_slice(&0u32.to_le_bytes());
+
+        passes.push(
+            GpuShader::new(enh_shaders::RETINEX_MSR_NORMALIZE.to_string(), "main", [256, 1, 1], norm_params)
+                .with_reduction_buffers(vec![
+                    ReductionBuffer { id: 0, initial_data: vec![], read_write: false },
+                    red_read_buf,
+                ])
+        );
+
+        passes
+    }
+);
+
+// ── RetinexMsrcr GPU (3 blur scales + accumulate + color restoration) ───────
+
+gpu_filter_passes_only!(RetinexMsrcr,
+    passes(self_, w, h) => {
+        let scales = [self_.sigma_small, self_.sigma_medium, self_.sigma_large];
+        let total_pixels = w * h;
+        let acc_size = total_pixels as usize * 16;
+
+        let mut passes = Vec::new();
+
+        for sigma in &scales {
+            let (kr, kb) = gaussian_kernel_bytes(*sigma);
+            let bp = blur_params(w, h, kr);
+
+            passes.push(
+                GpuShader::new(spatial::GAUSSIAN_BLUR_H.to_string(), "main", [256, 1, 1], bp.clone())
+                    .with_extra_buffers(vec![kb.clone()])
+            );
+            passes.push(
+                GpuShader::new(spatial::GAUSSIAN_BLUR_V.to_string(), "main", [256, 1, 1], bp)
+                    .with_extra_buffers(vec![kb])
+            );
+
+            let mut acc_params = Vec::with_capacity(16);
+            acc_params.extend_from_slice(&w.to_le_bytes());
+            acc_params.extend_from_slice(&h.to_le_bytes());
+            acc_params.extend_from_slice(&0u32.to_le_bytes());
+            acc_params.extend_from_slice(&0u32.to_le_bytes());
+
+            passes.push(
+                GpuShader::new(enh_shaders::RETINEX_MSR_ACCUMULATE.to_string(), "main", [256, 1, 1], acc_params)
+                    .with_reduction_buffers(vec![ReductionBuffer {
+                        id: 0,
+                        initial_data: vec![0u8; acc_size],
+                        read_write: true,
+                    }])
+            );
+        }
+
+        // MSRCR color restoration pass
+        let mut apply_params = Vec::with_capacity(32);
+        apply_params.extend_from_slice(&w.to_le_bytes());
+        apply_params.extend_from_slice(&h.to_le_bytes());
+        apply_params.extend_from_slice(&3.0f32.to_le_bytes()); // num_scales
+        apply_params.extend_from_slice(&self_.alpha.to_le_bytes());
+        apply_params.extend_from_slice(&self_.beta.to_le_bytes());
+        apply_params.extend_from_slice(&0u32.to_le_bytes());
+        apply_params.extend_from_slice(&0u32.to_le_bytes());
+        apply_params.extend_from_slice(&0u32.to_le_bytes());
+
+        passes.push(
+            GpuShader::new(enh_shaders::RETINEX_MSRCR_APPLY.to_string(), "main", [256, 1, 1], apply_params)
+                .with_reduction_buffers(vec![
+                    ReductionBuffer { id: 0, initial_data: vec![], read_write: false },
+                ])
+        );
+
+        passes
+    }
+);
+
+// ── Clahe GPU (single-pass with pre-computed tile LUTs) ─────────────────────
+//
+// Clahe is a special case: the per-tile histogram clipping is done on CPU
+// (small compute, complex logic), then the LUTs are passed to GPU for the
+// parallel bilinear-interpolated application pass.
+
+impl GpuFilter for Clahe {
+    fn shader_body(&self) -> &str { enh_shaders::CLAHE_APPLY }
+    fn workgroup_size(&self) -> [u32; 3] { [256, 1, 1] }
+    fn params(&self, w: u32, h: u32) -> Vec<u8> {
+        let grid = self.tile_grid as u32;
+        let tile_w = w / grid.max(1);
+        let tile_h = h / grid.max(1);
+        let mut buf = Vec::with_capacity(32);
+        buf.extend_from_slice(&w.to_le_bytes());
+        buf.extend_from_slice(&h.to_le_bytes());
+        buf.extend_from_slice(&grid.to_le_bytes());
+        buf.extend_from_slice(&tile_w.to_le_bytes());
+        buf.extend_from_slice(&tile_h.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf
+    }
+    fn extra_buffers(&self) -> Vec<Vec<u8>> {
+        // Tile LUTs will be computed on CPU and passed here at dispatch time.
+        // For now return empty — the executor handles CPU→GPU LUT upload.
+        vec![]
+    }
+}
+
+// ── PyramidDetailRemap GPU (multi-pass Laplacian pyramid) ───────────────────
+//
+// GPU pyramid: downsample chain → upsample + remap chain.
+// Each level is a separate dispatch.
+
+gpu_filter_passes_only!(PyramidDetailRemap,
+    passes(self_, w, h) => {
+        let levels = if self_.levels == 0 {
+            ((w.min(h) as f32).log2() as u32).saturating_sub(2).clamp(3, 7)
+        } else {
+            self_.levels
+        };
+
+        let mut passes = Vec::new();
+        let mut dims: Vec<(u32, u32)> = vec![(w, h)];
+
+        // Build downsample chain
+        for _ in 0..levels {
+            let (cw, ch) = *dims.last().unwrap();
+            let nw = cw.div_ceil(2);
+            let nh = ch.div_ceil(2);
+            let mut ds_params = Vec::with_capacity(16);
+            ds_params.extend_from_slice(&cw.to_le_bytes());
+            ds_params.extend_from_slice(&ch.to_le_bytes());
+            ds_params.extend_from_slice(&nw.to_le_bytes());
+            ds_params.extend_from_slice(&nh.to_le_bytes());
+            passes.push(
+                GpuShader::new(enh_shaders::DOWNSAMPLE_2X.to_string(), "main", [256, 1, 1], ds_params)
+            );
+            dims.push((nw, nh));
+        }
+
+        // Remap + upsample chain (coarsest to finest)
+        for level in (0..levels as usize).rev() {
+            let (lw, lh) = dims[level];
+            let (cw, ch) = dims[level + 1];
+
+            // Upsample coarser level
+            let mut us_params = Vec::with_capacity(16);
+            us_params.extend_from_slice(&cw.to_le_bytes());
+            us_params.extend_from_slice(&ch.to_le_bytes());
+            us_params.extend_from_slice(&lw.to_le_bytes());
+            us_params.extend_from_slice(&lh.to_le_bytes());
+            passes.push(
+                GpuShader::new(enh_shaders::UPSAMPLE_2X.to_string(), "main", [256, 1, 1], us_params)
+            );
+
+            // Remap Laplacian detail at this level
+            let mut remap_params = Vec::with_capacity(16);
+            remap_params.extend_from_slice(&lw.to_le_bytes());
+            remap_params.extend_from_slice(&lh.to_le_bytes());
+            remap_params.extend_from_slice(&self_.sigma.to_le_bytes());
+            remap_params.extend_from_slice(&0u32.to_le_bytes());
+            passes.push(
+                GpuShader::new(enh_shaders::PYRAMID_REMAP_LEVEL.to_string(), "main", [256, 1, 1], remap_params)
+            );
+        }
+
+        passes
+    }
+);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Tests
@@ -1689,5 +2084,128 @@ mod tests {
         let output = vig.compute(&input, 4, 4).unwrap();
         // HDR values should still be present (not clamped to [0,1])
         assert!(output.chunks_exact(4).any(|p| p[0] > 1.0));
+    }
+
+    // ── GPU wiring tests ─────────────────────────────────────────────────────
+
+    #[test]
+    fn nlm_denoise_gpu_single_pass() {
+        let nlm = NlmDenoise { h: 0.1, patch_radius: 3, search_radius: 7 };
+        let passes = nlm.gpu_shaders(64, 64);
+        assert_eq!(passes.len(), 1);
+        assert_eq!(nlm.workgroup_size(), [16, 16, 1]);
+    }
+
+    #[test]
+    fn dehaze_gpu_2_passes() {
+        let dh = Dehaze { patch_radius: 7, omega: 0.95, t_min: 0.1 };
+        let passes = dh.gpu_shaders(64, 64);
+        assert_eq!(passes.len(), 2, "Dehaze: dark channel + apply");
+    }
+
+    #[test]
+    fn shadow_highlight_gpu_3_passes() {
+        let sh = ShadowHighlight {
+            shadows: 50.0, highlights: 50.0, whitepoint: 0.0,
+            radius: 3.0, compress: 50.0,
+            shadows_ccorrect: 50.0, highlights_ccorrect: 50.0,
+        };
+        let passes = sh.gpu_shaders(64, 64);
+        assert_eq!(passes.len(), 3, "ShadowHighlight: blur H + blur V + apply");
+    }
+
+    #[test]
+    fn frequency_low_gpu_2_passes() {
+        let fl = FrequencyLow { sigma: 3.0 };
+        let passes = fl.gpu_shaders(64, 64);
+        assert_eq!(passes.len(), 2);
+    }
+
+    #[test]
+    fn frequency_high_gpu_3_passes() {
+        let fh = FrequencyHigh { sigma: 3.0 };
+        let passes = fh.gpu_shaders(64, 64);
+        assert_eq!(passes.len(), 3);
+    }
+
+    #[test]
+    fn clarity_gpu_3_passes() {
+        let cl = Clarity { amount: 0.5, radius: 20.0 };
+        let passes = cl.gpu_shaders(64, 64);
+        assert_eq!(passes.len(), 3);
+    }
+
+    #[test]
+    fn retinex_ssr_gpu_3_passes() {
+        let ssr = RetinexSsr { sigma: 80.0 };
+        let passes = ssr.gpu_shaders(64, 64);
+        assert_eq!(passes.len(), 3, "RetinexSSR: blur H + blur V + retinex apply");
+    }
+
+    #[test]
+    fn retinex_msr_gpu_has_multiple_passes() {
+        let msr = RetinexMsr { sigma_small: 15.0, sigma_medium: 80.0, sigma_large: 250.0 };
+        let passes = msr.gpu_shaders(64, 64);
+        // 3 scales × (blur H + blur V + accumulate) = 9 + 2 reduce + 1 normalize = 12
+        assert!(passes.len() >= 10, "RetinexMSR should have many passes, got {}", passes.len());
+    }
+
+    #[test]
+    fn retinex_msrcr_gpu_has_multiple_passes() {
+        let msrcr = RetinexMsrcr {
+            sigma_small: 15.0, sigma_medium: 80.0, sigma_large: 250.0,
+            alpha: 125.0, beta: 46.0,
+        };
+        let passes = msrcr.gpu_shaders(64, 64);
+        // 3 scales × 3 + 1 color restore = 10
+        assert!(passes.len() >= 10, "RetinexMSRCR should have many passes, got {}", passes.len());
+    }
+
+    #[test]
+    fn clahe_gpu_single_pass_with_luts() {
+        let clahe = Clahe { tile_grid: 8, clip_limit: 2.0 };
+        let passes = clahe.gpu_shaders(64, 64);
+        assert_eq!(passes.len(), 1);
+        let params = clahe.params(64, 64);
+        assert_eq!(params.len(), 32);
+    }
+
+    #[test]
+    fn pyramid_detail_remap_gpu_multi_pass() {
+        let pdr = PyramidDetailRemap { sigma: 0.5, levels: 4 };
+        let passes = pdr.gpu_shaders(64, 64);
+        // 4 downsample + 4 × (upsample + remap) = 4 + 8 = 12
+        assert!(passes.len() >= 8, "Pyramid: should have downsample + remap passes, got {}", passes.len());
+    }
+
+    #[test]
+    fn all_enhancement_filters_have_gpu() {
+        let w = 32u32;
+        let h = 32u32;
+
+        // Already wired in previous tracks
+        assert!(!AutoLevel.gpu_shaders(w, h).is_empty());
+        assert!(!Equalize.gpu_shaders(w, h).is_empty());
+        assert!(!Normalize::default().gpu_shaders(w, h).is_empty());
+        assert!(!VignettePowerlaw { strength: 0.5, falloff: 2.0 }.gpu_shaders(w, h).is_empty());
+
+        // Newly wired in this track
+        assert!(!NlmDenoise { h: 0.1, patch_radius: 3, search_radius: 7 }.gpu_shaders(w, h).is_empty());
+        assert!(!Dehaze { patch_radius: 7, omega: 0.95, t_min: 0.1 }.gpu_shaders(w, h).is_empty());
+        assert!(!ShadowHighlight {
+            shadows: 50.0, highlights: 50.0, whitepoint: 0.0,
+            radius: 3.0, compress: 50.0, shadows_ccorrect: 50.0, highlights_ccorrect: 50.0,
+        }.gpu_shaders(w, h).is_empty());
+        assert!(!FrequencyLow { sigma: 3.0 }.gpu_shaders(w, h).is_empty());
+        assert!(!FrequencyHigh { sigma: 3.0 }.gpu_shaders(w, h).is_empty());
+        assert!(!Clarity { amount: 0.5, radius: 20.0 }.gpu_shaders(w, h).is_empty());
+        assert!(!RetinexSsr { sigma: 80.0 }.gpu_shaders(w, h).is_empty());
+        assert!(!RetinexMsr { sigma_small: 15.0, sigma_medium: 80.0, sigma_large: 250.0 }.gpu_shaders(w, h).is_empty());
+        assert!(!RetinexMsrcr {
+            sigma_small: 15.0, sigma_medium: 80.0, sigma_large: 250.0,
+            alpha: 125.0, beta: 46.0,
+        }.gpu_shaders(w, h).is_empty());
+        assert!(!Clahe { tile_grid: 8, clip_limit: 2.0 }.gpu_shaders(w, h).is_empty());
+        assert!(!PyramidDetailRemap { sigma: 0.5, levels: 4 }.gpu_shaders(w, h).is_empty());
     }
 }

@@ -7,8 +7,8 @@
 //!
 //! No format dispatch. No u8/u16 paths. Just f32.
 
-use crate::node::PipelineError;
-use crate::ops::Filter;
+use crate::node::{GpuShader, PipelineError};
+use crate::ops::{Filter, GpuFilter};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -495,6 +495,200 @@ impl Filter for DisplacementMap {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// GPU filter implementations — declarative via gpu_filter! macros
+// ═══════════════════════════════════════════════════════════════════════════════
+
+use crate::gpu_shaders::spatial;
+
+/// Helper: generate a 1D Gaussian kernel as f32 bytes for GPU extra_buffer.
+pub fn gaussian_kernel_bytes(radius: f32) -> (u32, Vec<u8>) {
+    let sigma = radius;
+    let ksize = ((sigma * 6.0 + 1.0).round() as usize) | 1;
+    let ksize = ksize.max(3);
+    let center = ksize / 2;
+    let mut kernel = Vec::with_capacity(ksize);
+    let mut sum = 0.0f32;
+    for i in 0..ksize {
+        let x = i as f32 - center as f32;
+        let w = (-0.5 * (x / sigma).powi(2)).exp();
+        kernel.push(w);
+        sum += w;
+    }
+    let inv = 1.0 / sum;
+    let mut bytes = Vec::with_capacity(ksize * 4);
+    for w in &kernel {
+        bytes.extend_from_slice(&(w * inv).to_le_bytes());
+    }
+    (center as u32, bytes)
+}
+
+/// Helper: build width/height/radius/pad params.
+pub fn blur_params(width: u32, height: u32, kernel_radius: u32) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(16);
+    buf.extend_from_slice(&width.to_le_bytes());
+    buf.extend_from_slice(&height.to_le_bytes());
+    buf.extend_from_slice(&kernel_radius.to_le_bytes());
+    buf.extend_from_slice(&0u32.to_le_bytes());
+    buf
+}
+
+// ── GaussianBlur GPU (2-pass separable H+V) ──────────────────────────────────
+
+gpu_filter_passes_only!(GaussianBlur,
+    passes(self_, w, h) => {
+        let (kr, kb) = gaussian_kernel_bytes(self_.radius);
+        let params = blur_params(w, h, kr);
+        vec![
+            GpuShader::new(spatial::GAUSSIAN_BLUR_H.to_string(), "main", [256, 1, 1], params.clone())
+                .with_extra_buffers(vec![kb.clone()]),
+            GpuShader::new(spatial::GAUSSIAN_BLUR_V.to_string(), "main", [256, 1, 1], params)
+                .with_extra_buffers(vec![kb]),
+        ]
+    }
+);
+
+// ── BoxBlur GPU (2-pass separable H+V) ───────────────────────────────────────
+
+gpu_filter_passes_only!(BoxBlur,
+    passes(self_, w, h) => {
+        let params = blur_params(w, h, self_.radius);
+        vec![
+            GpuShader::new(spatial::BOX_BLUR_H.to_string(), "main", [256, 1, 1], params.clone()),
+            GpuShader::new(spatial::BOX_BLUR_V.to_string(), "main", [256, 1, 1], params),
+        ]
+    }
+);
+
+// ── Sharpen GPU (blur H + blur V + unsharp apply) ────────────────────────────
+
+gpu_filter_passes_only!(Sharpen,
+    passes(self_, w, h) => {
+        let (kr, kb) = gaussian_kernel_bytes(self_.radius);
+        let blur_p = blur_params(w, h, kr);
+        let mut apply_params = Vec::with_capacity(16);
+        apply_params.extend_from_slice(&w.to_le_bytes());
+        apply_params.extend_from_slice(&h.to_le_bytes());
+        apply_params.extend_from_slice(&self_.amount.to_le_bytes());
+        apply_params.extend_from_slice(&0u32.to_le_bytes());
+        vec![
+            GpuShader::new(spatial::GAUSSIAN_BLUR_H.to_string(), "main", [256, 1, 1], blur_p.clone())
+                .with_extra_buffers(vec![kb.clone()]),
+            GpuShader::new(spatial::GAUSSIAN_BLUR_V.to_string(), "main", [256, 1, 1], blur_p)
+                .with_extra_buffers(vec![kb]),
+            // Apply shader reads blurred input; extra_buffer = original (snapshotted before blur)
+            GpuShader::new(spatial::SHARPEN_APPLY.to_string(), "main", [256, 1, 1], apply_params),
+        ]
+    }
+);
+
+// ── HighPass GPU (blur H + blur V + subtract apply) ─────────────────────────
+
+gpu_filter_passes_only!(HighPass,
+    passes(self_, w, h) => {
+        let (kr, kb) = gaussian_kernel_bytes(self_.radius);
+        let blur_p = blur_params(w, h, kr);
+        let mut apply_params = Vec::with_capacity(16);
+        apply_params.extend_from_slice(&w.to_le_bytes());
+        apply_params.extend_from_slice(&h.to_le_bytes());
+        apply_params.extend_from_slice(&0u32.to_le_bytes());
+        apply_params.extend_from_slice(&0u32.to_le_bytes());
+        vec![
+            GpuShader::new(spatial::GAUSSIAN_BLUR_H.to_string(), "main", [256, 1, 1], blur_p.clone())
+                .with_extra_buffers(vec![kb.clone()]),
+            GpuShader::new(spatial::GAUSSIAN_BLUR_V.to_string(), "main", [256, 1, 1], blur_p)
+                .with_extra_buffers(vec![kb]),
+            GpuShader::new(spatial::HIGH_PASS_APPLY.to_string(), "main", [256, 1, 1], apply_params),
+        ]
+    }
+);
+
+// ── Median GPU (single-pass sorting network) ────────────────────────────────
+
+gpu_filter!(Median,
+    shader: spatial::MEDIAN,
+    workgroup: [16, 16, 1],
+    params(self_, w, h) => [w, h, self_.radius, 0u32]
+);
+
+// ── Convolve GPU (single-pass with kernel extra_buffer) ─────────────────────
+
+impl GpuFilter for Convolve {
+    fn shader_body(&self) -> &str { spatial::CONVOLVE }
+    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn params(&self, w: u32, h: u32) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(32);
+        buf.extend_from_slice(&w.to_le_bytes());
+        buf.extend_from_slice(&h.to_le_bytes());
+        buf.extend_from_slice(&self.kernel_width.to_le_bytes());
+        buf.extend_from_slice(&self.kernel_height.to_le_bytes());
+        buf.extend_from_slice(&(1.0f32 / self.divisor).to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf
+    }
+    fn extra_buffers(&self) -> Vec<Vec<u8>> {
+        // Pack kernel weights as f32 bytes
+        let mut kb = Vec::with_capacity(self.kernel.len() * 4);
+        for &w in &self.kernel {
+            kb.extend_from_slice(&w.to_le_bytes());
+        }
+        vec![kb]
+    }
+}
+
+// ── Bilateral GPU (single-pass neighborhood) ────────────────────────────────
+
+gpu_filter!(Bilateral,
+    shader: spatial::BILATERAL,
+    workgroup: [16, 16, 1],
+    params(self_, w, h) => [
+        w, h, self_.diameter / 2, 0u32,
+        -0.5f32 / (self_.sigma_color * self_.sigma_color),
+        -0.5f32 / (self_.sigma_space * self_.sigma_space),
+        0u32, 0u32
+    ]
+);
+
+// ── MotionBlur GPU (single-pass directional) ────────────────────────────────
+
+gpu_filter!(MotionBlur,
+    shader: spatial::MOTION_BLUR,
+    workgroup: [256, 1, 1],
+    params(self_, w, h) => [
+        w, h, self_.length.ceil() as u32, 0u32,
+        self_.angle.to_radians().cos(),
+        self_.angle.to_radians().sin(),
+        1.0f32 / (self_.length.ceil() + 1.0),
+        0u32
+    ]
+);
+
+// ── DisplacementMap GPU (single-pass with map extra_buffer) ─────────────────
+
+impl GpuFilter for DisplacementMap {
+    fn shader_body(&self) -> &str { spatial::DISPLACEMENT_MAP }
+    fn workgroup_size(&self) -> [u32; 3] { [256, 1, 1] }
+    fn params(&self, w: u32, h: u32) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(16);
+        buf.extend_from_slice(&w.to_le_bytes());
+        buf.extend_from_slice(&h.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf
+    }
+    fn extra_buffers(&self) -> Vec<Vec<u8>> {
+        // Interleave map_x and map_y as f32 pairs
+        let mut buf = Vec::with_capacity(self.map_x.len() * 8);
+        for (&mx, &my) in self.map_x.iter().zip(self.map_y.iter()) {
+            buf.extend_from_slice(&mx.to_le_bytes());
+            buf.extend_from_slice(&my.to_le_bytes());
+        }
+        vec![buf]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -657,5 +851,114 @@ mod tests {
         assert_eq!(Median { radius: 1 }.compute(&input, 32, 32).unwrap().len(), n);
         assert_eq!(HighPass { radius: 2.0 }.compute(&input, 32, 32).unwrap().len(), n);
         assert_eq!(MotionBlur { angle: 45.0, length: 5.0 }.compute(&input, 32, 32).unwrap().len(), n);
+    }
+
+    // ── GPU wiring tests ─────────────────────────────────────────────────────
+
+    use crate::ops::GpuFilter;
+
+    #[test]
+    fn gaussian_blur_gpu_produces_2_passes() {
+        let blur = GaussianBlur { radius: 3.0 };
+        let passes = blur.gpu_shaders(64, 64);
+        assert_eq!(passes.len(), 2, "GaussianBlur should have H+V passes");
+        // Kernel buffer should be in extra_buffers
+        assert!(!passes[0].extra_buffers.is_empty());
+        assert!(!passes[1].extra_buffers.is_empty());
+    }
+
+    #[test]
+    fn box_blur_gpu_produces_2_passes() {
+        let blur = BoxBlur { radius: 3 };
+        let passes = blur.gpu_shaders(64, 64);
+        assert_eq!(passes.len(), 2);
+    }
+
+    #[test]
+    fn sharpen_gpu_produces_3_passes() {
+        let sharp = Sharpen { radius: 2.0, amount: 1.0 };
+        let passes = sharp.gpu_shaders(64, 64);
+        assert_eq!(passes.len(), 3, "Sharpen: blur H + blur V + unsharp apply");
+    }
+
+    #[test]
+    fn high_pass_gpu_produces_3_passes() {
+        let hp = HighPass { radius: 2.0 };
+        let passes = hp.gpu_shaders(64, 64);
+        assert_eq!(passes.len(), 3);
+    }
+
+    #[test]
+    fn median_gpu_single_pass() {
+        let med = Median { radius: 1 };
+        let passes = med.gpu_shaders(64, 64);
+        assert_eq!(passes.len(), 1);
+        assert_eq!(med.workgroup_size(), [16, 16, 1]);
+        // Params: width, height, radius, pad
+        let params = med.params(64, 64);
+        assert_eq!(params.len(), 16);
+    }
+
+    #[test]
+    fn convolve_gpu_has_kernel_buffer() {
+        let conv = Convolve {
+            kernel: vec![0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+            kernel_width: 3,
+            kernel_height: 3,
+            divisor: 1.0,
+        };
+        let bufs = conv.extra_buffers();
+        assert_eq!(bufs.len(), 1);
+        assert_eq!(bufs[0].len(), 9 * 4); // 9 f32 weights
+    }
+
+    #[test]
+    fn bilateral_gpu_single_pass() {
+        let bilat = Bilateral { diameter: 5, sigma_color: 0.1, sigma_space: 3.0 };
+        let passes = bilat.gpu_shaders(64, 64);
+        assert_eq!(passes.len(), 1);
+        // Params should be 32 bytes (8 × u32/f32)
+        let params = bilat.params(64, 64);
+        assert_eq!(params.len(), 32);
+    }
+
+    #[test]
+    fn motion_blur_gpu_single_pass() {
+        let mb = MotionBlur { angle: 45.0, length: 10.0 };
+        let passes = mb.gpu_shaders(64, 64);
+        assert_eq!(passes.len(), 1);
+        let params = mb.params(64, 64);
+        assert_eq!(params.len(), 32);
+    }
+
+    #[test]
+    fn displacement_map_gpu_has_map_buffer() {
+        let n = 8 * 8;
+        let dm = DisplacementMap {
+            map_x: vec![0.0; n],
+            map_y: vec![0.0; n],
+        };
+        let bufs = dm.extra_buffers();
+        assert_eq!(bufs.len(), 1);
+        assert_eq!(bufs[0].len(), n * 8); // 2 × f32 per pixel
+    }
+
+    #[test]
+    fn all_spatial_filters_have_gpu() {
+        // Every spatial filter must implement GpuFilter — verify gpu_shaders() is non-empty
+        let w = 32u32;
+        let h = 32u32;
+
+        assert!(!GaussianBlur { radius: 3.0 }.gpu_shaders(w, h).is_empty());
+        assert!(!BoxBlur { radius: 2 }.gpu_shaders(w, h).is_empty());
+        assert!(!Sharpen { radius: 2.0, amount: 1.0 }.gpu_shaders(w, h).is_empty());
+        assert!(!Median { radius: 1 }.gpu_shaders(w, h).is_empty());
+        assert!(!Convolve {
+            kernel: vec![1.0; 9], kernel_width: 3, kernel_height: 3, divisor: 9.0,
+        }.gpu_shaders(w, h).is_empty());
+        assert!(!Bilateral { diameter: 5, sigma_color: 0.1, sigma_space: 3.0 }.gpu_shaders(w, h).is_empty());
+        assert!(!MotionBlur { angle: 0.0, length: 5.0 }.gpu_shaders(w, h).is_empty());
+        assert!(!HighPass { radius: 2.0 }.gpu_shaders(w, h).is_empty());
+        assert!(!DisplacementMap { map_x: vec![0.0; 1024], map_y: vec![0.0; 1024] }.gpu_shaders(w, h).is_empty());
     }
 }

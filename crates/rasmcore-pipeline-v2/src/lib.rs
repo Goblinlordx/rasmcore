@@ -25,6 +25,8 @@ pub mod cache;
 pub mod hash;
 pub mod registry;
 pub mod ops;
+#[macro_use]
+pub mod gpu_macros;
 pub mod filter_node;
 pub mod color_math;
 pub mod color_convert;

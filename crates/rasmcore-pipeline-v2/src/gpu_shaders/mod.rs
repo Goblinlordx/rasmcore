@@ -5,4 +5,7 @@
 //! multiple shader constants (one per pass).
 
 pub mod analysis;
+pub mod enhancement;
 pub mod reduction;
+pub mod spatial;
+pub mod vignette;
