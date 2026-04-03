@@ -3027,6 +3027,7 @@ dependencies = [
  "rasmcore-kernel",
  "rasmcore-macros",
  "rasmcore-pipeline",
+ "rasmcore-pipeline-v2",
  "rasmcore-pnm",
  "rasmcore-qoi",
  "rasmcore-raw",
