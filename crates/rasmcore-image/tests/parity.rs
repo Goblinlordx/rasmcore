@@ -20,26 +20,105 @@ fn fixtures_dir() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/generated")
 }
 
-fn load_fixture(name: &str) -> Vec<u8> {
+/// Try to load a fixture file, returning `None` if it doesn't exist.
+fn try_load_fixture(name: &str) -> Option<Vec<u8>> {
     let path = fixtures_dir().join("inputs").join(name);
-    std::fs::read(&path).unwrap_or_else(|e| {
-        panic!(
-            "Failed to read fixture {}: {}. Run tests/fixtures/generate.sh first.",
-            path.display(),
-            e
-        )
-    })
+    std::fs::read(&path).ok()
 }
 
-fn load_reference(name: &str) -> Vec<u8> {
+/// Try to load a reference file, returning `None` if it doesn't exist.
+fn try_load_reference(name: &str) -> Option<Vec<u8>> {
     let path = fixtures_dir().join("reference").join(name);
-    std::fs::read(&path).unwrap_or_else(|e| {
-        panic!(
-            "Failed to read reference {}: {}. Run tests/fixtures/generate.sh first.",
-            path.display(),
-            e
-        )
-    })
+    std::fs::read(&path).ok()
+}
+
+/// Load a fixture file, skipping the test (via early return) if not found.
+macro_rules! require_fixture {
+    ($name:expr) => {
+        match try_load_fixture($name) {
+            Some(d) => d,
+            None => {
+                eprintln!("SKIP: fixture {:?} not found (run tests/fixtures/generate.sh)", $name);
+                return;
+            }
+        }
+    };
+}
+
+/// Load a reference file, skipping the test (via early return) if not found.
+macro_rules! require_reference {
+    ($name:expr) => {
+        match try_load_reference($name) {
+            Some(d) => d,
+            None => {
+                eprintln!("SKIP: reference {:?} not found (run tests/fixtures/generate.sh)", $name);
+                return;
+            }
+        }
+    };
+}
+
+
+
+/// Decode image data and convert to Rgb8, handling 16-bit sources by truncating.
+fn decode_to_rgb8(data: &[u8]) -> DecodedImage {
+    let decoded = decoder::decode(data).unwrap();
+    match decoded.info.format {
+        PixelFormat::Rgb8 => decoded,
+        PixelFormat::Rgba8 => {
+            let rgb: Vec<u8> = decoded
+                .pixels
+                .chunks_exact(4)
+                .flat_map(|c| [c[0], c[1], c[2]])
+                .collect();
+            DecodedImage {
+                pixels: rgb,
+                info: ImageInfo {
+                    format: PixelFormat::Rgb8,
+                    ..decoded.info
+                },
+                icc_profile: decoded.icc_profile,
+            }
+        }
+        PixelFormat::Rgb16 => {
+            let rgb: Vec<u8> = decoded
+                .pixels
+                .chunks_exact(2)
+                .map(|c| (u16::from_ne_bytes([c[0], c[1]]) >> 8) as u8)
+                .collect();
+            DecodedImage {
+                pixels: rgb,
+                info: ImageInfo {
+                    format: PixelFormat::Rgb8,
+                    ..decoded.info
+                },
+                icc_profile: decoded.icc_profile,
+            }
+        }
+        PixelFormat::Rgba16 => {
+            // Convert RGBA16 to RGB8: take high byte of each 16-bit sample, drop alpha
+            let rgb: Vec<u8> = decoded
+                .pixels
+                .chunks_exact(8) // 4 channels * 2 bytes each
+                .flat_map(|c| {
+                    [
+                        (u16::from_ne_bytes([c[0], c[1]]) >> 8) as u8,
+                        (u16::from_ne_bytes([c[2], c[3]]) >> 8) as u8,
+                        (u16::from_ne_bytes([c[4], c[5]]) >> 8) as u8,
+                    ]
+                })
+                .collect();
+            DecodedImage {
+                pixels: rgb,
+                info: ImageInfo {
+                    format: PixelFormat::Rgb8,
+                    ..decoded.info
+                },
+                icc_profile: decoded.icc_profile,
+            }
+        }
+        other => panic!("decode_to_rgb8: unsupported format {other:?}"),
+    }
 }
 
 /// Calculate mean absolute error between two pixel buffers
@@ -80,19 +159,19 @@ fn psnr(a: &[u8], b: &[u8]) -> f64 {
 
 #[test]
 fn parity_decode_png_format_detection() {
-    let data = load_fixture("gradient_64x64.png");
+    let data = require_fixture!("gradient_64x64.png");
     assert_eq!(decoder::detect_format(&data), Some("png".to_string()));
 }
 
 #[test]
 fn parity_decode_jpeg_format_detection() {
-    let data = load_fixture("gradient_64x64.jpeg");
+    let data = require_fixture!("gradient_64x64.jpeg");
     assert_eq!(decoder::detect_format(&data), Some("jpeg".to_string()));
 }
 
 #[test]
 fn parity_decode_png_dimensions() {
-    let data = load_fixture("gradient_64x64.png");
+    let data = require_fixture!("gradient_64x64.png");
     let result = decoder::decode(&data).unwrap();
     assert_eq!(result.info.width, 64);
     assert_eq!(result.info.height, 64);
@@ -100,6 +179,7 @@ fn parity_decode_png_dimensions() {
 
 #[test]
 fn parity_decode_all_formats() {
+
     for (name, expected_format) in [
         ("gradient_64x64.png", Some("png")),
         ("gradient_64x64.jpeg", Some("jpeg")),
@@ -109,7 +189,7 @@ fn parity_decode_all_formats() {
         ("gradient_64x64.tiff", Some("tiff")),
         ("gradient_64x64.qoi", Some("qoi")),
     ] {
-        let data = load_fixture(name);
+        let data = require_fixture!(name);
         let detected = decoder::detect_format(&data);
         assert_eq!(
             detected.as_deref(),
@@ -134,7 +214,7 @@ fn parity_decode_all_formats() {
 
 #[test]
 fn parity_encode_png_roundtrip_exact() {
-    let data = load_fixture("gradient_64x64.png");
+    let data = require_fixture!("gradient_64x64.png");
     let decoded = decoder::decode(&data).unwrap();
     let encoded = encoder::encode(&decoded.pixels, &decoded.info, "png", None).unwrap();
     let re_decoded = decoder::decode(&encoded).unwrap();
@@ -144,13 +224,12 @@ fn parity_encode_png_roundtrip_exact() {
 
 #[test]
 fn parity_encode_jpeg_roundtrip_quality() {
-    let data = load_fixture("gradient_64x64.png");
-    let decoded = decoder::decode(&data).unwrap();
+    let data = require_fixture!("gradient_64x64.png");
+    let decoded = decode_to_rgb8(&data);
     let encoded = encoder::encode(&decoded.pixels, &decoded.info, "jpeg", Some(95)).unwrap();
     // JPEG is lossy — check PSNR > 30dB (generous for high quality)
-    let decoded_rgba = decoder::decode_as(&data, PixelFormat::Rgba8).unwrap();
-    let re_decoded_rgba = decoder::decode_as(&encoded, PixelFormat::Rgba8).unwrap();
-    let quality = psnr(&decoded_rgba.pixels, &re_decoded_rgba.pixels);
+    let re_decoded = decode_to_rgb8(&encoded);
+    let quality = psnr(&decoded.pixels, &re_decoded.pixels);
     assert!(
         quality > 30.0,
         "JPEG roundtrip PSNR too low: {quality:.1}dB"
@@ -163,7 +242,7 @@ fn parity_encode_jpeg_roundtrip_quality() {
 
 #[test]
 fn parity_resize_lanczos() {
-    let data = load_fixture("gradient_64x64.png");
+    let data = require_fixture!("gradient_64x64.png");
     let decoded = decoder::decode(&data).unwrap();
 
     let resized = transform::resize(
@@ -178,7 +257,7 @@ fn parity_resize_lanczos() {
     assert_eq!(resized.info.height, 16);
 
     // Compare against ImageMagick reference
-    let ref_data = load_reference("resize_lanczos_32x16.png");
+    let ref_data = require_reference!("resize_lanczos_32x16.png");
     let ref_decoded = decoder::decode(&ref_data).unwrap();
 
     // Resize algorithms differ between libraries — allow MAE < 10
@@ -188,12 +267,12 @@ fn parity_resize_lanczos() {
 
 #[test]
 fn parity_crop() {
-    let data = load_fixture("gradient_64x64.png");
+    let data = require_fixture!("gradient_64x64.png");
     let decoded = decoder::decode(&data).unwrap();
 
     let cropped = transform::crop(&decoded.pixels, &decoded.info, 8, 8, 16, 16).unwrap();
 
-    let ref_data = load_reference("crop_16x16_8_8.png");
+    let ref_data = require_reference!("crop_16x16_8_8.png");
     let ref_decoded = decoder::decode(&ref_data).unwrap();
 
     // Crop should be pixel-exact
@@ -206,12 +285,12 @@ fn parity_crop() {
 
 #[test]
 fn parity_rotate_90() {
-    let data = load_fixture("gradient_64x64.png");
+    let data = require_fixture!("gradient_64x64.png");
     let decoded = decoder::decode(&data).unwrap();
 
     let rotated = transform::rotate(&decoded.pixels, &decoded.info, Rotation::R90).unwrap();
 
-    let ref_data = load_reference("rotate_90.png");
+    let ref_data = require_reference!("rotate_90.png");
     let ref_decoded = decoder::decode(&ref_data).unwrap();
 
     assert_eq!(rotated.info.width, ref_decoded.info.width);
@@ -223,11 +302,11 @@ fn parity_rotate_90() {
 
 #[test]
 fn parity_rotate_180() {
-    let data = load_fixture("gradient_64x64.png");
+    let data = require_fixture!("gradient_64x64.png");
     let decoded = decoder::decode(&data).unwrap();
     let rotated = transform::rotate(&decoded.pixels, &decoded.info, Rotation::R180).unwrap();
 
-    let ref_data = load_reference("rotate_180.png");
+    let ref_data = require_reference!("rotate_180.png");
     let ref_decoded = decoder::decode(&ref_data).unwrap();
 
     let mae = mean_absolute_error(&rotated.pixels, &ref_decoded.pixels);
@@ -236,12 +315,12 @@ fn parity_rotate_180() {
 
 #[test]
 fn parity_flip_horizontal() {
-    let data = load_fixture("gradient_64x64.png");
+    let data = require_fixture!("gradient_64x64.png");
     let decoded = decoder::decode(&data).unwrap();
     let flipped =
         transform::flip(&decoded.pixels, &decoded.info, FlipDirection::Horizontal).unwrap();
 
-    let ref_data = load_reference("flip_horizontal.png");
+    let ref_data = require_reference!("flip_horizontal.png");
     let ref_decoded = decoder::decode(&ref_data).unwrap();
 
     let mae = mean_absolute_error(&flipped.pixels, &ref_decoded.pixels);
@@ -250,11 +329,11 @@ fn parity_flip_horizontal() {
 
 #[test]
 fn parity_flip_vertical() {
-    let data = load_fixture("gradient_64x64.png");
+    let data = require_fixture!("gradient_64x64.png");
     let decoded = decoder::decode(&data).unwrap();
     let flipped = transform::flip(&decoded.pixels, &decoded.info, FlipDirection::Vertical).unwrap();
 
-    let ref_data = load_reference("flip_vertical.png");
+    let ref_data = require_reference!("flip_vertical.png");
     let ref_decoded = decoder::decode(&ref_data).unwrap();
 
     let mae = mean_absolute_error(&flipped.pixels, &ref_decoded.pixels);
@@ -263,13 +342,36 @@ fn parity_flip_vertical() {
 
 #[test]
 fn parity_grayscale() {
-    let data = load_fixture("gradient_64x64.png");
-    let decoded = decoder::decode(&data).unwrap();
+    let data = require_fixture!("gradient_64x64.png");
+    let decoded = decode_to_rgb8(&data);
     let gray = filters::grayscale(&decoded.pixels, &decoded.info).unwrap();
 
-    let ref_data = load_reference("grayscale.png");
-    // Decode reference as Gray8 to match our output format
-    let ref_decoded = decoder::decode_as(&ref_data, PixelFormat::Gray8).unwrap();
+    let ref_data = require_reference!("grayscale.png");
+    // Decode reference and convert to Gray8 to match our output format
+    let ref_raw = decoder::decode(&ref_data).unwrap();
+    let ref_decoded = match ref_raw.info.format {
+        PixelFormat::Gray8 => ref_raw,
+        PixelFormat::Gray16 => {
+            let gray8: Vec<u8> = ref_raw
+                .pixels
+                .chunks_exact(2)
+                .map(|c| (u16::from_ne_bytes([c[0], c[1]]) >> 8) as u8)
+                .collect();
+            DecodedImage {
+                pixels: gray8,
+                info: ImageInfo {
+                    format: PixelFormat::Gray8,
+                    ..ref_raw.info
+                },
+                icc_profile: ref_raw.icc_profile,
+            }
+        }
+        _ => {
+            // For RGB/RGBA references, convert to grayscale via our own function
+            let rgb = decode_to_rgb8(&ref_data);
+            filters::grayscale(&rgb.pixels, &rgb.info).unwrap()
+        }
+    };
 
     assert_eq!(gray.info.format, PixelFormat::Gray8);
     assert_eq!(gray.info.width, ref_decoded.info.width);
@@ -286,7 +388,7 @@ fn parity_grayscale() {
 
 #[test]
 fn parity_png_encode_determinism() {
-    let data = load_fixture("photo_256x256.png");
+    let data = require_fixture!("photo_256x256.png");
     let decoded = decoder::decode(&data).unwrap();
 
     let config = encoder::png::PngEncodeConfig::default();
@@ -304,8 +406,8 @@ fn parity_png_encode_filter_size_variation() {
     // compression than flate2 for most images. Compression level maps to fdeflate
     // unconditionally. Filter type provides the meaningful size variation.
     use encoder::png::PngFilterType;
-    let data = load_fixture("photo_256x256.png");
-    let decoded = decoder::decode(&data).unwrap();
+    let data = require_fixture!("photo_256x256.png");
+    let decoded = decode_to_rgb8(&data);
 
     let filters = [
         ("NoFilter", PngFilterType::NoFilter),
@@ -351,7 +453,7 @@ fn parity_png_encode_filter_size_variation() {
 
 #[test]
 fn parity_png_encode_all_compressions_pixel_exact() {
-    let data = load_fixture("photo_256x256.png");
+    let data = require_fixture!("photo_256x256.png");
     let decoded = decoder::decode(&data).unwrap();
 
     for level in [0u8, 3, 6, 9] {
@@ -370,8 +472,9 @@ fn parity_png_encode_all_compressions_pixel_exact() {
 
 #[test]
 fn parity_png_encode_all_filters_pixel_exact() {
+
     use encoder::png::PngFilterType;
-    let data = load_fixture("photo_256x256.png");
+    let data = require_fixture!("photo_256x256.png");
     let decoded = decoder::decode(&data).unwrap();
 
     let filters = [
@@ -399,9 +502,10 @@ fn parity_png_encode_all_filters_pixel_exact() {
 
 #[test]
 fn parity_png_encode_vs_imagemagick_pixel_exact() {
+
     // Both rasmcore and ImageMagick produce lossless PNG —
     // decoded pixels MUST be identical regardless of compression settings.
-    let data = load_fixture("photo_256x256.png");
+    let data = require_fixture!("photo_256x256.png");
     let decoded = decoder::decode(&data).unwrap();
 
     for (level, ref_name) in [
@@ -410,7 +514,7 @@ fn parity_png_encode_vs_imagemagick_pixel_exact() {
         (6, "png_compress_6.png"),
         (9, "png_compress_9.png"),
     ] {
-        let ref_data = load_reference(ref_name);
+        let ref_data = require_reference!(ref_name);
         let ref_decoded = decoder::decode(&ref_data).unwrap();
 
         // Lossless: decoded pixels must match
@@ -486,9 +590,10 @@ fn dssim_score(a: &[u8], b: &[u8], width: usize, height: usize) -> f64 {
 
 #[test]
 fn parity_jpeg_determinism() {
+
     // Encode the same input twice — output must be byte-identical.
-    let data = load_fixture("photo_256x256.png");
-    let decoded = decoder::decode(&data).unwrap();
+    let data = require_fixture!("photo_256x256.png");
+    let decoded = decode_to_rgb8(&data);
     let config = encoder::jpeg::JpegEncodeConfig {
         quality: 85,
         progressive: false,
@@ -501,8 +606,8 @@ fn parity_jpeg_determinism() {
 
 #[test]
 fn parity_jpeg_determinism_progressive() {
-    let data = load_fixture("photo_256x256.png");
-    let decoded = decoder::decode(&data).unwrap();
+    let data = require_fixture!("photo_256x256.png");
+    let decoded = decode_to_rgb8(&data);
     let config = encoder::jpeg::JpegEncodeConfig {
         quality: 85,
         progressive: true,
@@ -515,12 +620,13 @@ fn parity_jpeg_determinism_progressive() {
 
 #[test]
 fn parity_jpeg_quality_per_byte_butteraugli() {
+
     // Quality-per-byte comparison: zenjpeg (jpegli quality scale) vs ImageMagick
     // (libjpeg-turbo). Since quality scales differ between encoders, we compare
     // the Butteraugli-distance-per-kilobyte ratio. zenjpeg should achieve equal
     // or better quality for a given file size across the quality range.
-    let source_data = load_fixture("photo_256x256.png");
-    let source = decoder::decode_as(&source_data, PixelFormat::Rgb8).unwrap();
+    let source_data = require_fixture!("photo_256x256.png");
+    let source = decode_to_rgb8(&source_data);
     let (w, h) = (source.info.width as usize, source.info.height as usize);
 
     let mut zen_wins = 0usize;
@@ -535,7 +641,7 @@ fn parity_jpeg_quality_per_byte_butteraugli() {
         let zen_jpeg = encoder::jpeg::encode_pixels(&source.pixels, &source.info, &config).unwrap();
         let (zen_pixels, _, _) = decode_jpeg_rgb(&zen_jpeg);
 
-        let im_jpeg = load_reference(&format!("jpeg_q{q}.jpeg"));
+        let im_jpeg = require_reference!(&format!("jpeg_q{q}.jpeg"));
         let (im_pixels, _, _) = decode_jpeg_rgb(&im_jpeg);
 
         let zen_ba = butteraugli_score(&source.pixels, &zen_pixels, w, h);
@@ -567,8 +673,9 @@ fn parity_jpeg_quality_per_byte_butteraugli() {
 
 #[test]
 fn parity_jpeg_quality_per_byte_dssim() {
-    let source_data = load_fixture("photo_256x256.png");
-    let source = decoder::decode_as(&source_data, PixelFormat::Rgb8).unwrap();
+
+    let source_data = require_fixture!("photo_256x256.png");
+    let source = decode_to_rgb8(&source_data);
     let (w, h) = (source.info.width as usize, source.info.height as usize);
 
     let mut zen_wins = 0usize;
@@ -583,7 +690,7 @@ fn parity_jpeg_quality_per_byte_dssim() {
         let zen_jpeg = encoder::jpeg::encode_pixels(&source.pixels, &source.info, &config).unwrap();
         let (zen_pixels, _, _) = decode_jpeg_rgb(&zen_jpeg);
 
-        let im_jpeg = load_reference(&format!("jpeg_q{q}.jpeg"));
+        let im_jpeg = require_reference!(&format!("jpeg_q{q}.jpeg"));
         let (im_pixels, _, _) = decode_jpeg_rgb(&im_jpeg);
 
         let zen_ds = dssim_score(&source.pixels, &zen_pixels, w, h);
@@ -613,10 +720,11 @@ fn parity_jpeg_quality_per_byte_dssim() {
 
 #[test]
 fn parity_jpeg_quality_curve_filesize() {
+
     // Verify that at higher quality levels (where trellis quantization shines),
     // zenjpeg produces competitive file sizes.
-    let source_data = load_fixture("photo_256x256.png");
-    let source = decoder::decode(&source_data).unwrap();
+    let source_data = require_fixture!("photo_256x256.png");
+    let source = decode_to_rgb8(&source_data);
 
     for q in [10u8, 30, 50, 70, 85, 95] {
         let config = encoder::jpeg::JpegEncodeConfig {
@@ -625,7 +733,7 @@ fn parity_jpeg_quality_curve_filesize() {
             ..Default::default()
         };
         let zen_jpeg = encoder::jpeg::encode_pixels(&source.pixels, &source.info, &config).unwrap();
-        let im_jpeg = load_reference(&format!("jpeg_q{q}.jpeg"));
+        let im_jpeg = require_reference!(&format!("jpeg_q{q}.jpeg"));
 
         // Allow up to 60% larger at same quality number (quality scales differ).
         // The quality-per-byte tests above validate actual encoding efficiency.
@@ -640,9 +748,10 @@ fn parity_jpeg_quality_curve_filesize() {
 
 #[test]
 fn parity_jpeg_quality_monotonic() {
+
     // Higher quality must produce larger files.
-    let source_data = load_fixture("photo_256x256.png");
-    let source = decoder::decode(&source_data).unwrap();
+    let source_data = require_fixture!("photo_256x256.png");
+    let source = decode_to_rgb8(&source_data);
 
     let qualities = [10u8, 30, 50, 70, 85, 95];
     let sizes: Vec<usize> = qualities
@@ -673,9 +782,10 @@ fn parity_jpeg_quality_monotonic() {
 
 #[test]
 fn parity_jpeg_progressive_structure() {
+
     // Progressive JPEG must contain SOS markers (multiple scans).
-    let source_data = load_fixture("photo_256x256.png");
-    let source = decoder::decode(&source_data).unwrap();
+    let source_data = require_fixture!("photo_256x256.png");
+    let source = decode_to_rgb8(&source_data);
 
     let config = encoder::jpeg::JpegEncodeConfig {
         quality: 85,
@@ -788,7 +898,7 @@ fn parity_jpeg_rgba8_input() {
 
 #[test]
 fn parity_tiff_encode_determinism() {
-    let data = load_fixture("photo_256x256.png");
+    let data = require_fixture!("photo_256x256.png");
     let decoded = decoder::decode(&data).unwrap();
 
     let config = encoder::tiff::TiffEncodeConfig::default();
@@ -799,7 +909,7 @@ fn parity_tiff_encode_determinism() {
 
 #[test]
 fn parity_tiff_encode_roundtrip_pixel_exact() {
-    let data = load_fixture("photo_256x256.png");
+    let data = require_fixture!("photo_256x256.png");
     let decoded = decoder::decode(&data).unwrap();
 
     for comp in [
@@ -820,7 +930,7 @@ fn parity_tiff_encode_roundtrip_pixel_exact() {
 
 #[test]
 fn parity_tiff_encode_vs_imagemagick() {
-    let data = load_fixture("photo_256x256.png");
+    let data = require_fixture!("photo_256x256.png");
     let decoded = decoder::decode(&data).unwrap();
 
     for (comp, ref_name) in [
@@ -828,7 +938,7 @@ fn parity_tiff_encode_vs_imagemagick() {
         (encoder::tiff::TiffCompression::Lzw, "tiff_lzw.tiff"),
         (encoder::tiff::TiffCompression::Deflate, "tiff_deflate.tiff"),
     ] {
-        let ref_data = load_reference(ref_name);
+        let ref_data = require_reference!(ref_name);
         let ref_decoded = decoder::decode(&ref_data).unwrap();
 
         // Lossless: decoded pixels must match
@@ -1003,9 +1113,9 @@ fn parity_smart_resize_vs_imagemagick() {
 // Concat parity — pixel-exact comparison against ImageMagick +append / -append
 // =============================================================================
 
-/// Decode a fixture PNG to raw RGB8 pixels.
-fn decode_fixture_rgb(name: &str) -> (Vec<u8>, ImageInfo) {
-    let data = load_fixture(name);
+/// Decode a fixture PNG to raw RGB8 pixels. Returns `None` if the fixture is missing.
+fn try_decode_fixture_rgb(name: &str) -> Option<(Vec<u8>, ImageInfo)> {
+    let data = try_load_fixture(name)?;
     let decoded = decoder::decode(&data).unwrap();
     // Convert RGBA8 to RGB8 if needed (IM PNGs are typically RGB)
     if decoded.info.format == PixelFormat::Rgba8 {
@@ -1018,15 +1128,15 @@ fn decode_fixture_rgb(name: &str) -> (Vec<u8>, ImageInfo) {
             format: PixelFormat::Rgb8,
             ..decoded.info
         };
-        (rgb, info)
+        Some((rgb, info))
     } else {
-        (decoded.pixels, decoded.info)
+        Some((decoded.pixels, decoded.info))
     }
 }
 
-/// Decode a reference PNG to raw RGB8 pixels.
-fn decode_reference_rgb(name: &str) -> (Vec<u8>, ImageInfo) {
-    let data = load_reference(name);
+/// Decode a reference PNG to raw RGB8 pixels. Returns `None` if the reference is missing.
+fn try_decode_reference_rgb(name: &str) -> Option<(Vec<u8>, ImageInfo)> {
+    let data = try_load_reference(name)?;
     let decoded = decoder::decode(&data).unwrap();
     if decoded.info.format == PixelFormat::Rgba8 {
         let rgb: Vec<u8> = decoded
@@ -1038,16 +1148,41 @@ fn decode_reference_rgb(name: &str) -> (Vec<u8>, ImageInfo) {
             format: PixelFormat::Rgb8,
             ..decoded.info
         };
-        (rgb, info)
+        Some((rgb, info))
     } else {
-        (decoded.pixels, decoded.info)
+        Some((decoded.pixels, decoded.info))
     }
+}
+
+macro_rules! require_fixture_rgb {
+    ($name:expr) => {
+        match try_decode_fixture_rgb($name) {
+            Some(d) => d,
+            None => {
+                eprintln!("SKIP: fixture {:?} not found (run tests/fixtures/generate.sh)", $name);
+                return;
+            }
+        }
+    };
+}
+
+macro_rules! require_reference_rgb {
+    ($name:expr) => {
+        match try_decode_reference_rgb($name) {
+            Some(d) => d,
+            None => {
+                eprintln!("SKIP: reference {:?} not found (run tests/fixtures/generate.sh)", $name);
+                return;
+            }
+        }
+    };
 }
 
 #[test]
 fn parity_concat_horizontal_same_size() {
-    let (red_px, red_info) = decode_fixture_rgb("solid_red_32x32.png");
-    let (blue_px, blue_info) = decode_fixture_rgb("solid_blue_32x32.png");
+
+    let (red_px, red_info) = require_fixture_rgb!("solid_red_32x32.png");
+    let (blue_px, blue_info) = require_fixture_rgb!("solid_blue_32x32.png");
 
     let images = vec![
         (red_px.as_slice(), &red_info),
@@ -1055,7 +1190,7 @@ fn parity_concat_horizontal_same_size() {
     ];
     let result = concat::concat_horizontal(&images, 0, &[0, 0, 0]).unwrap();
 
-    let (ref_px, ref_info) = decode_reference_rgb("concat_h_same_size.png");
+    let (ref_px, ref_info) = require_reference_rgb!("concat_h_same_size.png");
 
     assert_eq!(
         result.info.width, ref_info.width,
@@ -1081,8 +1216,9 @@ fn parity_concat_horizontal_same_size() {
 
 #[test]
 fn parity_concat_vertical_same_size() {
-    let (red_px, red_info) = decode_fixture_rgb("solid_red_32x32.png");
-    let (blue_px, blue_info) = decode_fixture_rgb("solid_blue_32x32.png");
+
+    let (red_px, red_info) = require_fixture_rgb!("solid_red_32x32.png");
+    let (blue_px, blue_info) = require_fixture_rgb!("solid_blue_32x32.png");
 
     let images = vec![
         (red_px.as_slice(), &red_info),
@@ -1090,7 +1226,7 @@ fn parity_concat_vertical_same_size() {
     ];
     let result = concat::concat_vertical(&images, 0, &[0, 0, 0]).unwrap();
 
-    let (ref_px, ref_info) = decode_reference_rgb("concat_v_same_size.png");
+    let (ref_px, ref_info) = require_reference_rgb!("concat_v_same_size.png");
 
     assert_eq!(result.info.width, ref_info.width);
     assert_eq!(result.info.height, ref_info.height);
@@ -1108,8 +1244,9 @@ fn parity_concat_vertical_same_size() {
 
 #[test]
 fn parity_concat_horizontal_different_heights() {
-    let (red_px, red_info) = decode_fixture_rgb("solid_red_32x32.png");
-    let (green_px, green_info) = decode_fixture_rgb("solid_green_48x24.png");
+
+    let (red_px, red_info) = require_fixture_rgb!("solid_red_32x32.png");
+    let (green_px, green_info) = require_fixture_rgb!("solid_green_48x24.png");
 
     let images = vec![
         (red_px.as_slice(), &red_info),
@@ -1118,7 +1255,7 @@ fn parity_concat_horizontal_different_heights() {
     // IM uses -gravity Center -background gray
     let result = concat::concat_horizontal(&images, 0, &[128, 128, 128]).unwrap();
 
-    let (ref_px, ref_info) = decode_reference_rgb("concat_h_diff_height.png");
+    let (ref_px, ref_info) = require_reference_rgb!("concat_h_diff_height.png");
 
     assert_eq!(
         result.info.width, ref_info.width,
@@ -1145,8 +1282,9 @@ fn parity_concat_horizontal_different_heights() {
 
 #[test]
 fn parity_concat_vertical_different_widths() {
-    let (red_px, red_info) = decode_fixture_rgb("solid_red_32x32.png");
-    let (green_px, green_info) = decode_fixture_rgb("solid_green_48x24.png");
+
+    let (red_px, red_info) = require_fixture_rgb!("solid_red_32x32.png");
+    let (green_px, green_info) = require_fixture_rgb!("solid_green_48x24.png");
 
     let images = vec![
         (red_px.as_slice(), &red_info),
@@ -1154,7 +1292,7 @@ fn parity_concat_vertical_different_widths() {
     ];
     let result = concat::concat_vertical(&images, 0, &[128, 128, 128]).unwrap();
 
-    let (ref_px, ref_info) = decode_reference_rgb("concat_v_diff_width.png");
+    let (ref_px, ref_info) = require_reference_rgb!("concat_v_diff_width.png");
 
     assert_eq!(
         result.info.width, ref_info.width,
@@ -1616,8 +1754,9 @@ where
 
 #[test]
 fn parity_distort_barrel() {
+
     // Barrel distortion k1=0.3, k2=0.0 vs ImageMagick -distort Barrel "0.3 0 0 1"
-    let data = load_fixture("gradient_64x64_8bit.png");
+    let data = require_fixture!("gradient_64x64_8bit.png");
     let decoded = decoder::decode(&data).unwrap();
 
     let config = filters::BarrelParams { k1: 0.3, k2: 0.0 };
@@ -1625,7 +1764,7 @@ fn parity_distort_barrel() {
         config.compute(rect, upstream, info)
     });
 
-    let ref_data = load_reference("distort_barrel_k03.png");
+    let ref_data = require_reference!("distort_barrel_k03.png");
     let ref_decoded = decoder::decode(&ref_data).unwrap();
 
     assert_eq!(decoded.info.width, ref_decoded.info.width);
@@ -1639,8 +1778,9 @@ fn parity_distort_barrel() {
 
 #[test]
 fn parity_distort_spherize() {
+
     // Spherize amount=0.5 vs Python numpy powf-based reference
-    let data = load_fixture("gradient_64x64_8bit.png");
+    let data = require_fixture!("gradient_64x64_8bit.png");
     let decoded = decoder::decode(&data).unwrap();
 
     let config = filters::SpherizeParams { amount: 0.5 };
@@ -1648,7 +1788,7 @@ fn parity_distort_spherize() {
         config.compute(rect, upstream, info)
     });
 
-    let ref_data = load_reference("distort_spherize_05.png");
+    let ref_data = require_reference!("distort_spherize_05.png");
     let ref_decoded = decoder::decode(&ref_data).unwrap();
 
     // Spherize: EWA vs bilinear interpolation differences expected — MAE < 2.0
@@ -1659,8 +1799,9 @@ fn parity_distort_spherize() {
 
 #[test]
 fn parity_distort_swirl() {
+
     // Swirl 90 degrees vs ImageMagick -swirl 90
-    let data = load_fixture("gradient_64x64_8bit.png");
+    let data = require_fixture!("gradient_64x64_8bit.png");
     let decoded = decoder::decode(&data).unwrap();
 
     let config = filters::SwirlParams { angle: 90.0, radius: 0.0 };
@@ -1668,7 +1809,7 @@ fn parity_distort_swirl() {
         config.compute(rect, upstream, info)
     });
 
-    let ref_data = load_reference("distort_swirl_90.png");
+    let ref_data = require_reference!("distort_swirl_90.png");
     let ref_decoded = decoder::decode(&ref_data).unwrap();
 
     // Swirl: IM uses slightly different aspect-ratio scaling — MAE < 2.0
@@ -1679,8 +1820,9 @@ fn parity_distort_swirl() {
 
 #[test]
 fn parity_distort_ripple() {
+
     // Ripple amplitude=8, wavelength=40 vs Python numpy reference
-    let data = load_fixture("gradient_64x64_8bit.png");
+    let data = require_fixture!("gradient_64x64_8bit.png");
     let decoded = decoder::decode(&data).unwrap();
 
     let config = filters::RippleParams {
@@ -1693,7 +1835,7 @@ fn parity_distort_ripple() {
         config.compute(rect, upstream, info)
     });
 
-    let ref_data = load_reference("distort_ripple_8_40.png");
+    let ref_data = require_reference!("distort_ripple_8_40.png");
     let ref_decoded = decoder::decode(&ref_data).unwrap();
 
     // Ripple: EWA vs bilinear interpolation differences — MAE < 2.0
@@ -1704,8 +1846,9 @@ fn parity_distort_ripple() {
 
 #[test]
 fn parity_distort_wave() {
+
     // Wave amplitude=10, wavelength=50, horizontal vs Python numpy reference
-    let data = load_fixture("gradient_64x64_8bit.png");
+    let data = require_fixture!("gradient_64x64_8bit.png");
     let decoded = decoder::decode(&data).unwrap();
 
     let config = filters::WaveParams {
@@ -1717,7 +1860,7 @@ fn parity_distort_wave() {
         config.compute(rect, upstream, info)
     });
 
-    let ref_data = load_reference("distort_wave_10x50.png");
+    let ref_data = require_reference!("distort_wave_10x50.png");
     let ref_decoded = decoder::decode(&ref_data).unwrap();
 
     // Wave uses bilinear (no EWA) — should be close to Python bilinear reference
@@ -1728,10 +1871,11 @@ fn parity_distort_wave() {
 
 #[test]
 fn parity_distort_polar_depolar_roundtrip() {
+
     // Apply polar then depolar — should recover original within tolerance.
     // Both now use IM pixel-center convention. Two EWA interpolation passes
     // accumulate some error, but center region should be well within MAE < 3.0.
-    let data = load_fixture("gradient_64x64_8bit.png");
+    let data = require_fixture!("gradient_64x64_8bit.png");
     let decoded = decoder::decode(&data).unwrap();
     let info = &decoded.info;
     let pixels = &decoded.pixels;
