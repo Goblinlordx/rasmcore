@@ -13,7 +13,7 @@
 | solarize | solarize_f32.wgsl | 0.0000 | Done |
 | invert | invert_f32.wgsl | — | Shader ready, no params struct |
 
-## Color + Grading Ops (IN PROGRESS)
+## Color + Grading Ops (COMPLETE)
 | Filter | Shader | MAE | Status |
 |--------|--------|-----|--------|
 | sepia | sepia_f32.wgsl | 0.0001 | Done |
@@ -21,18 +21,18 @@
 | saturate | saturate_f32.wgsl | 0.0196 | Done |
 | modulate | modulate_f32.wgsl | 0.0000 | Done |
 | channel_mixer | channel_mixer_f32.wgsl | 0.0005 | Done |
-| vibrance | vibrance_f32.wgsl | — | Shader written, CPU formula mismatch |
-| colorize | — | — | Complex (W3C blend mode + LAB), deferred |
-| color_balance | — | — | Pending |
+| vibrance | vibrance_f32.wgsl | 0.0001 | Done |
+| colorize | — | — | Pending (W3C blend + LAB) |
+| color_balance | — | — | Pending (9 params + tonal weighting) |
 
-## Simple Effect Ops
+## Effect Ops (IN PROGRESS)
 | Filter | Shader | MAE | Status |
 |--------|--------|-----|--------|
-| film_grain | — | — | Pending |
-| gaussian_noise | — | — | Pending |
+| gaussian_noise | gaussian_noise_f32.wgsl | N/A (PRNG) | Done (deterministic test) |
 | uniform_noise | — | — | Pending |
+| film_grain | — | — | Pending |
 
 ## Summary
-- **13 shaders completed** with validated parity (19/19 GPU tests pass)
-- **2 shaders written** but not wired (invert, vibrance)
-- **~7 remaining** in this wave (color_balance, colorize, vibrance, 3 noise, film_grain)
+- **15 shaders completed** with validated parity (21/21 GPU tests pass)
+- **1 shader ready** (invert — no params struct yet)
+- **~5 remaining** (colorize, color_balance, uniform_noise, film_grain + invert wiring)
