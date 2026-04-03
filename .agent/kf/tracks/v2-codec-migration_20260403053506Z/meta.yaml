@@ -1,5 +1,5 @@
 title: V2 codec migration — unified decode/encode
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-04-03'
