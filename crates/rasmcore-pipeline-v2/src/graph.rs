@@ -20,10 +20,11 @@ use crate::rect::Rect;
 /// Knows nothing about specific operations — just dispatches through the
 /// `Node` trait.
 pub struct Graph {
-    nodes: Vec<Box<dyn Node>>,
+    pub(crate) nodes: Vec<Box<dyn Node>>,
     cache: SpatialCache,
     gpu_executor: Option<Rc<dyn GpuExecutor>>,
     demand_strategy: DemandStrategy,
+    pub(crate) aces_strict: bool,
 }
 
 impl Graph {
@@ -34,6 +35,7 @@ impl Graph {
             cache: SpatialCache::new(cache_budget),
             gpu_executor: None,
             demand_strategy: DemandStrategy::default(),
+            aces_strict: false,
         }
     }
 

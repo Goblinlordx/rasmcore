@@ -131,6 +131,8 @@ pub struct OperationCapabilities {
     pub affine: bool,
     /// Can be fused via 3D CLUT composition.
     pub clut: bool,
+    /// Safe to use in ACES pipelines (linear math, no sRGB assumptions).
+    pub aces_safe: bool,
 }
 
 /// Static registration metadata for a pipeline operation.
@@ -223,6 +225,7 @@ mod tests {
                 analytic: true,
                 affine: false,
                 clut: false,
+                aces_safe: true,
             },
         }
     }
@@ -283,7 +286,7 @@ mod tests {
             kind: OperationKind::Transform,
             params: &TEST_CROP_PARAMS,
             capabilities: OperationCapabilities {
-                gpu: false, analytic: false, affine: false, clut: false,
+                gpu: false, analytic: false, affine: false, clut: false, aces_safe: true,
             },
         }
     }

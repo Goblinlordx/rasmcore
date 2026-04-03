@@ -125,6 +125,34 @@ pub struct TileHint {
     pub overlap_radius: u32,
 }
 
+/// ACES compliance level for a node.
+///
+/// Used by `Graph::validate_aces()` to check if a pipeline is
+/// ACES-compliant before execution. Nodes that perform linear math
+/// (point ops, convolutions, matrix multiplies) are inherently compliant.
+/// Nodes with sRGB-specific perceptual assumptions are non-compliant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AcesCompliance {
+    /// Fully ACES-compliant. Operates in linear or ACES color spaces.
+    /// Linear math: brightness, blur, resize, matrix ops, compositing.
+    Compliant,
+    /// Operates correctly in ACES Log spaces (ACEScct, ACEScc).
+    /// Grading ops: curves, CDL, lift/gamma/gain.
+    Log,
+    /// Not ACES-compliant. Uses sRGB perceptual assumptions,
+    /// hardcoded gamma curves, or display-referred math.
+    NonCompliant,
+    /// Compliance not yet audited or unknown.
+    Unknown,
+}
+
+impl AcesCompliance {
+    /// True if this node is safe to use in an ACES pipeline.
+    pub fn is_aces_safe(self) -> bool {
+        matches!(self, AcesCompliance::Compliant | AcesCompliance::Log)
+    }
+}
+
 /// Upstream data provider — passed to `Node::compute` for demand-driven execution.
 pub trait Upstream {
     /// Request pixel data for a region from an upstream node.
@@ -189,6 +217,14 @@ pub trait Node {
     /// Fusion capabilities of this node.
     fn capabilities(&self) -> NodeCapabilities {
         NodeCapabilities::default()
+    }
+
+    /// ACES compliance level of this node.
+    ///
+    /// Default: Unknown. Override to declare compliance status.
+    /// Used by `Graph::validate_aces()` to check pipeline integrity.
+    fn aces_compliance(&self) -> AcesCompliance {
+        AcesCompliance::Unknown
     }
 
     /// Color space this node expects its input to be in.

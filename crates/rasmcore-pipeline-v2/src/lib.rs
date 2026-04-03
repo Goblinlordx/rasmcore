@@ -31,12 +31,14 @@ pub mod color_convert;
 pub mod fusion;
 pub mod staged;
 pub mod gpu_shaders;
+pub mod aces_audit;
 pub mod noise;
 pub mod filters;
 
 // Re-export core types at crate root
 pub use rect::{Rect, Overlap};
-pub use node::{Node, NodeInfo, NodeCapabilities, GpuShader, TileHint, PipelineError, Upstream, InputRectEstimate};
+pub use node::{Node, NodeInfo, NodeCapabilities, GpuShader, TileHint, PipelineError, Upstream, InputRectEstimate, AcesCompliance};
+pub use aces_audit::{AcesViolation, AcesAuditResult};
 pub use color_space::ColorSpace;
 pub use gpu::{GpuError, GpuExecutor};
 pub use graph::Graph;
