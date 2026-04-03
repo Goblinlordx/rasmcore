@@ -66,7 +66,7 @@ plan:
 - phase: Color + grading ops
   tasks:
   - text: Write WGSL shaders for hue_rotate, saturate, sepia, colorize, channel_mixer, vibrance, modulate, color_balance
-    done: false
+    done: true
   - text: Write WGSL shaders for curves, LUT, gradient_map, split_toning, asc_cdl, lift_gamma_gain
     done: false
   - text: GPU parity tests for color/grading ops
