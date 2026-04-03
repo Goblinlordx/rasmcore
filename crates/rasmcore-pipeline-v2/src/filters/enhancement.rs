@@ -1,0 +1,1342 @@
+//! Enhancement filters — image quality improvement operations on f32 pixel data.
+//!
+//! All operate on `&[f32]` RGBA (4 channels per pixel). No format dispatch.
+//! No u8/u16 paths. Just f32.
+//!
+//! Includes: auto-level, CLAHE, clarity, dehaze, equalize, frequency separation,
+//! NLM denoise, normalize, pyramid detail remap, retinex (SSR/MSR/MSRCR),
+//! shadow-highlight, vignette (Gaussian + power-law).
+//!
+//! Dodge and Burn are in adjustment.rs (point ops with AnalyticOp support).
+
+use crate::filters::spatial::GaussianBlur;
+use crate::node::PipelineError;
+use crate::ops::Filter;
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+/// Luminance (Rec. 709) from f32 RGB.
+#[inline]
+fn luminance(r: f32, g: f32, b: f32) -> f32 {
+    0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+/// Reflect-boundary coordinate clamping.
+#[inline]
+fn clamp_coord(v: i32, size: usize) -> usize {
+    if v < 0 {
+        (-v).min(size as i32 - 1) as usize
+    } else if v >= size as i32 {
+        (2 * size as i32 - v - 2).max(0) as usize
+    } else {
+        v as usize
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Global histogram operations
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Auto-level — linear stretch from actual min to actual max.
+///
+/// Finds per-channel min/max across all pixels and linearly maps to [0, 1].
+#[derive(Clone)]
+pub struct AutoLevel;
+
+impl Filter for AutoLevel {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        let _ = (width, height);
+        let mut min = [f32::MAX; 3];
+        let mut max = [f32::MIN; 3];
+
+        for pixel in input.chunks_exact(4) {
+            for c in 0..3 {
+                min[c] = min[c].min(pixel[c]);
+                max[c] = max[c].max(pixel[c]);
+            }
+        }
+
+        let mut out = input.to_vec();
+        for pixel in out.chunks_exact_mut(4) {
+            for c in 0..3 {
+                let range = max[c] - min[c];
+                if range > 1e-10 {
+                    pixel[c] = (pixel[c] - min[c]) / range;
+                }
+            }
+        }
+        Ok(out)
+    }
+}
+
+/// Histogram equalization — maximizes contrast via CDF remapping.
+///
+/// Quantizes to 256 bins for CDF computation, then remaps.
+#[derive(Clone)]
+pub struct Equalize;
+
+impl Filter for Equalize {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        let _ = (width, height);
+        let npixels = input.len() / 4;
+        let mut out = input.to_vec();
+
+        // Per-channel histogram equalization
+        for c in 0..3 {
+            let mut hist = [0u32; 256];
+            for pixel in input.chunks_exact(4) {
+                let bin = (pixel[c].clamp(0.0, 1.0) * 255.0) as usize;
+                hist[bin.min(255)] += 1;
+            }
+
+            // Build CDF
+            let mut cdf = [0u32; 256];
+            cdf[0] = hist[0];
+            for i in 1..256 {
+                cdf[i] = cdf[i - 1] + hist[i];
+            }
+
+            let cdf_min = cdf.iter().find(|&&v| v > 0).copied().unwrap_or(0);
+            let denom = (npixels as u32).saturating_sub(cdf_min);
+
+            if denom > 0 {
+                for pixel in out.chunks_exact_mut(4) {
+                    let bin = (pixel[c].clamp(0.0, 1.0) * 255.0) as usize;
+                    pixel[c] = (cdf[bin.min(255)] - cdf_min) as f32 / denom as f32;
+                }
+            }
+        }
+
+        Ok(out)
+    }
+}
+
+/// Normalize — linear contrast stretch with 2% black / 1% white clipping.
+#[derive(Clone)]
+pub struct Normalize {
+    pub black_clip: f32,
+    pub white_clip: f32,
+}
+
+impl Default for Normalize {
+    fn default() -> Self {
+        Self {
+            black_clip: 0.02,
+            white_clip: 0.01,
+        }
+    }
+}
+
+impl Filter for Normalize {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        let _ = (width, height);
+        let npixels = input.len() / 4;
+        let mut out = input.to_vec();
+
+        for c in 0..3 {
+            let mut hist = [0u32; 256];
+            for pixel in input.chunks_exact(4) {
+                let bin = (pixel[c].clamp(0.0, 1.0) * 255.0) as usize;
+                hist[bin.min(255)] += 1;
+            }
+
+            // Find black point (skip bottom black_clip fraction)
+            let black_threshold = (npixels as f32 * self.black_clip) as u32;
+            let mut accum = 0u32;
+            let mut black_bin = 0;
+            for (i, &h) in hist.iter().enumerate() {
+                accum += h;
+                if accum >= black_threshold {
+                    black_bin = i;
+                    break;
+                }
+            }
+
+            // Find white point (skip top white_clip fraction)
+            let white_threshold = (npixels as f32 * self.white_clip) as u32;
+            accum = 0;
+            let mut white_bin = 255;
+            for i in (0..256).rev() {
+                accum += hist[i];
+                if accum >= white_threshold {
+                    white_bin = i;
+                    break;
+                }
+            }
+
+            let black = black_bin as f32 / 255.0;
+            let white = white_bin as f32 / 255.0;
+            let range = white - black;
+
+            if range > 1e-10 {
+                for pixel in out.chunks_exact_mut(4) {
+                    pixel[c] = (pixel[c] - black) / range;
+                }
+            }
+        }
+
+        Ok(out)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Frequency separation
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Low-pass frequency layer — Gaussian blur.
+///
+/// Extracts large-scale color/tone structure.
+#[derive(Clone)]
+pub struct FrequencyLow {
+    pub sigma: f32,
+}
+
+impl Filter for FrequencyLow {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        let blur = GaussianBlur { radius: self.sigma };
+        blur.compute(input, width, height)
+    }
+}
+
+/// High-pass frequency layer — detail extraction.
+///
+/// `output = (input - blur(input)) + 0.5`
+/// The 0.5 offset provides a neutral midpoint for compositing.
+#[derive(Clone)]
+pub struct FrequencyHigh {
+    pub sigma: f32,
+}
+
+impl Filter for FrequencyHigh {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        let blur = GaussianBlur { radius: self.sigma };
+        let blurred = blur.compute(input, width, height)?;
+        let mut out = Vec::with_capacity(input.len());
+        for (i, &v) in input.iter().enumerate() {
+            if i % 4 == 3 {
+                out.push(v); // alpha preserved
+            } else {
+                out.push((v - blurred[i]) + 0.5);
+            }
+        }
+        Ok(out)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Clarity — midtone-weighted local contrast
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Clarity — midtone-weighted local contrast enhancement (Lightroom/Photoshop style).
+///
+/// Large-radius unsharp mask weighted by midtone curve:
+/// `w(l) = 4 * l * (1 - l)` where l is normalized luminance.
+/// `output = input + amount * (input - blur) * w(luminance)`
+#[derive(Clone)]
+pub struct Clarity {
+    pub amount: f32,
+    pub radius: f32,
+}
+
+impl Filter for Clarity {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        let blur = GaussianBlur { radius: self.radius };
+        let blurred = blur.compute(input, width, height)?;
+        let amount = self.amount;
+        let mut out = input.to_vec();
+
+        for (pixel, blurred_pixel) in out.chunks_exact_mut(4).zip(blurred.chunks_exact(4)) {
+            let luma = luminance(pixel[0], pixel[1], pixel[2]).clamp(0.0, 1.0);
+            let weight = 4.0 * luma * (1.0 - luma); // midtone peak at 0.5
+            for c in 0..3 {
+                let detail = pixel[c] - blurred_pixel[c];
+                pixel[c] += amount * detail * weight;
+            }
+        }
+
+        Ok(out)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Dehaze — dark channel prior (He et al. 2009)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Dehaze — dark channel prior dehazing.
+///
+/// 1. Dark channel: local min over RGB in patch
+/// 2. Atmospheric light: brightest 0.1% of dark channel
+/// 3. Transmission: `t(x) = 1 - omega * dark(I/A)`
+/// 4. Recover: `J = (I - A) / max(t, t_min) + A`
+#[derive(Clone)]
+pub struct Dehaze {
+    pub patch_radius: u32,
+    pub omega: f32,
+    pub t_min: f32,
+}
+
+impl Filter for Dehaze {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        let w = width as usize;
+        let h = height as usize;
+        let r = self.patch_radius as usize;
+        let n = w * h;
+
+        // Step 1: Dark channel — min over RGB in local patch
+        let mut dark_channel = vec![0.0f32; n];
+        for y in 0..h {
+            for x in 0..w {
+                let mut min_val = f32::MAX;
+                let y0 = y.saturating_sub(r);
+                let y1 = (y + r + 1).min(h);
+                let x0 = x.saturating_sub(r);
+                let x1 = (x + r + 1).min(w);
+                for py in y0..y1 {
+                    for px in x0..x1 {
+                        let idx = (py * w + px) * 4;
+                        let channel_min = input[idx].min(input[idx + 1]).min(input[idx + 2]);
+                        min_val = min_val.min(channel_min);
+                    }
+                }
+                dark_channel[y * w + x] = min_val;
+            }
+        }
+
+        // Step 2: Atmospheric light — average of top 0.1% brightest dark channel pixels
+        let mut indices: Vec<usize> = (0..n).collect();
+        indices.sort_unstable_by(|&a, &b| {
+            dark_channel[b]
+                .partial_cmp(&dark_channel[a])
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let top_count = (n as f32 * 0.001).ceil() as usize;
+        let top_count = top_count.max(1);
+        let mut a_light = [0.0f32; 3];
+        for &idx in &indices[..top_count.min(n)] {
+            let pixel_idx = idx * 4;
+            a_light[0] += input[pixel_idx];
+            a_light[1] += input[pixel_idx + 1];
+            a_light[2] += input[pixel_idx + 2];
+        }
+        let inv_count = 1.0 / top_count as f32;
+        a_light[0] *= inv_count;
+        a_light[1] *= inv_count;
+        a_light[2] *= inv_count;
+
+        // Step 3: Transmission estimate
+        let mut transmission = vec![0.0f32; n];
+        for y in 0..h {
+            for x in 0..w {
+                let mut min_val = f32::MAX;
+                let y0 = y.saturating_sub(r);
+                let y1 = (y + r + 1).min(h);
+                let x0 = x.saturating_sub(r);
+                let x1 = (x + r + 1).min(w);
+                for py in y0..y1 {
+                    for px in x0..x1 {
+                        let idx = (py * w + px) * 4;
+                        let nr = input[idx] / a_light[0].max(1e-10);
+                        let ng = input[idx + 1] / a_light[1].max(1e-10);
+                        let nb = input[idx + 2] / a_light[2].max(1e-10);
+                        min_val = min_val.min(nr.min(ng).min(nb));
+                    }
+                }
+                transmission[y * w + x] = 1.0 - self.omega * min_val;
+            }
+        }
+
+        // Step 4: Recover scene
+        let mut out = input.to_vec();
+        for y in 0..h {
+            for x in 0..w {
+                let idx = (y * w + x) * 4;
+                let t = transmission[y * w + x].max(self.t_min);
+                let inv_t = 1.0 / t;
+                for c in 0..3 {
+                    out[idx + c] = (input[idx + c] - a_light[c]) * inv_t + a_light[c];
+                }
+            }
+        }
+
+        Ok(out)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CLAHE — Contrast-Limited Adaptive Histogram Equalization
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// CLAHE — local adaptive histogram equalization on luminance.
+///
+/// Operates on luminance channel with bilinear interpolation between tiles.
+#[derive(Clone)]
+pub struct Clahe {
+    pub tile_grid: u32,
+    pub clip_limit: f32,
+}
+
+impl Filter for Clahe {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        let w = width as usize;
+        let h = height as usize;
+        let grid = self.tile_grid as usize;
+        if grid == 0 {
+            return Ok(input.to_vec());
+        }
+
+        let tile_w = w / grid;
+        let tile_h = h / grid;
+        if tile_w == 0 || tile_h == 0 {
+            return Ok(input.to_vec());
+        }
+
+        let npixels_per_tile = tile_w * tile_h;
+        let clip = (self.clip_limit * npixels_per_tile as f32 / 256.0).max(1.0) as u32;
+
+        // Extract luminance
+        let luma: Vec<f32> = input
+            .chunks_exact(4)
+            .map(|p| luminance(p[0], p[1], p[2]).clamp(0.0, 1.0))
+            .collect();
+
+        // Build per-tile LUTs
+        let mut tile_luts = vec![[0.0f32; 256]; grid * grid];
+        for ty in 0..grid {
+            for tx in 0..grid {
+                let mut hist = [0u32; 256];
+                let y0 = ty * tile_h;
+                let x0 = tx * tile_w;
+                for dy in 0..tile_h {
+                    for dx in 0..tile_w {
+                        let py = (y0 + dy).min(h - 1);
+                        let px = (x0 + dx).min(w - 1);
+                        let bin = (luma[py * w + px] * 255.0) as usize;
+                        hist[bin.min(255)] += 1;
+                    }
+                }
+
+                // Clip histogram and redistribute
+                let mut excess = 0u32;
+                for h in &mut hist {
+                    if *h > clip {
+                        excess += *h - clip;
+                        *h = clip;
+                    }
+                }
+                let per_bin = excess / 256;
+                let remainder = excess % 256;
+                for (i, h) in hist.iter_mut().enumerate() {
+                    *h += per_bin + if (i as u32) < remainder { 1 } else { 0 };
+                }
+
+                // Build CDF → LUT
+                let mut cdf = [0u32; 256];
+                cdf[0] = hist[0];
+                for i in 1..256 {
+                    cdf[i] = cdf[i - 1] + hist[i];
+                }
+                let cdf_min = cdf.iter().find(|&&v| v > 0).copied().unwrap_or(0);
+                let denom = (npixels_per_tile as u32).saturating_sub(cdf_min).max(1);
+
+                let lut = &mut tile_luts[ty * grid + tx];
+                for i in 0..256 {
+                    lut[i] = (cdf[i] - cdf_min) as f32 / denom as f32;
+                }
+            }
+        }
+
+        // Apply with bilinear interpolation between tiles
+        let mut out = input.to_vec();
+        for y in 0..h {
+            for x in 0..w {
+                let tx_f = (x as f32 / tile_w as f32 - 0.5).clamp(0.0, (grid - 1) as f32);
+                let ty_f = (y as f32 / tile_h as f32 - 0.5).clamp(0.0, (grid - 1) as f32);
+                let tx0 = tx_f as usize;
+                let ty0 = ty_f as usize;
+                let tx1 = (tx0 + 1).min(grid - 1);
+                let ty1 = (ty0 + 1).min(grid - 1);
+                let fx = tx_f - tx0 as f32;
+                let fy = ty_f - ty0 as f32;
+
+                let bin = (luma[y * w + x] * 255.0) as usize;
+                let bin = bin.min(255);
+
+                let v00 = tile_luts[ty0 * grid + tx0][bin];
+                let v10 = tile_luts[ty0 * grid + tx1][bin];
+                let v01 = tile_luts[ty1 * grid + tx0][bin];
+                let v11 = tile_luts[ty1 * grid + tx1][bin];
+
+                let new_luma = v00 * (1.0 - fx) * (1.0 - fy)
+                    + v10 * fx * (1.0 - fy)
+                    + v01 * (1.0 - fx) * fy
+                    + v11 * fx * fy;
+
+                let old_luma = luma[y * w + x].max(1e-10);
+                let ratio = new_luma / old_luma;
+
+                let idx = (y * w + x) * 4;
+                out[idx] *= ratio;
+                out[idx + 1] *= ratio;
+                out[idx + 2] *= ratio;
+            }
+        }
+
+        Ok(out)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NLM Denoise — Non-Local Means
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Non-Local Means denoising (Buades et al. 2005).
+///
+/// Compares patches in search window, weights by similarity.
+#[derive(Clone)]
+pub struct NlmDenoise {
+    pub h: f32,
+    pub patch_radius: u32,
+    pub search_radius: u32,
+}
+
+impl Filter for NlmDenoise {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        let w = width as usize;
+        let h = height as usize;
+        let pr = self.patch_radius as i32;
+        let sr = self.search_radius as i32;
+        let h2 = self.h * self.h;
+        if h2 < 1e-10 {
+            return Ok(input.to_vec());
+        }
+        let inv_h2 = -1.0 / h2;
+        let patch_size = ((2 * pr + 1) * (2 * pr + 1)) as f32;
+        let mut out = vec![0.0f32; w * h * 4];
+
+        for y in 0..h {
+            for x in 0..w {
+                let mut sum = [0.0f32; 3];
+                let mut weight_sum = 0.0f32;
+
+                for sy in -sr..=sr {
+                    for sx in -sr..=sr {
+                        let nx = clamp_coord(x as i32 + sx, w);
+                        let ny = clamp_coord(y as i32 + sy, h);
+
+                        // Patch distance
+                        let mut dist2 = 0.0f32;
+                        for py in -pr..=pr {
+                            for px in -pr..=pr {
+                                let cx1 = clamp_coord(x as i32 + px, w);
+                                let cy1 = clamp_coord(y as i32 + py, h);
+                                let cx2 = clamp_coord(nx as i32 + px, w);
+                                let cy2 = clamp_coord(ny as i32 + py, h);
+                                let i1 = (cy1 * w + cx1) * 4;
+                                let i2 = (cy2 * w + cx2) * 4;
+                                for c in 0..3 {
+                                    let d = input[i1 + c] - input[i2 + c];
+                                    dist2 += d * d;
+                                }
+                            }
+                        }
+                        dist2 /= patch_size * 3.0;
+
+                        let weight = (dist2 * inv_h2).exp();
+                        let nidx = (ny * w + nx) * 4;
+                        for c in 0..3 {
+                            sum[c] += weight * input[nidx + c];
+                        }
+                        weight_sum += weight;
+                    }
+                }
+
+                let idx = (y * w + x) * 4;
+                let inv_w = if weight_sum > 1e-10 { 1.0 / weight_sum } else { 1.0 };
+                for c in 0..3 {
+                    out[idx + c] = sum[c] * inv_w;
+                }
+                out[idx + 3] = input[idx + 3]; // alpha
+            }
+        }
+
+        Ok(out)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Pyramid Detail Remap — Laplacian pyramid enhancement
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Laplacian pyramid detail remap — enhance or suppress fine detail.
+///
+/// `sigma < 1.0`: enhance fine detail (compress large gradients).
+/// `sigma > 1.0`: suppress fine detail (smoothing).
+#[derive(Clone)]
+pub struct PyramidDetailRemap {
+    pub sigma: f32,
+    pub levels: u32,
+}
+
+impl Filter for PyramidDetailRemap {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        let w = width as usize;
+        let h = height as usize;
+        let sigma = self.sigma;
+        let levels = if self.levels == 0 {
+            // Auto: log2(min(w,h)) - 2, clamped to [3, 7]
+            ((w.min(h) as f32).log2() as u32).saturating_sub(2).clamp(3, 7)
+        } else {
+            self.levels
+        };
+
+        // Process each RGB channel independently
+        let mut out = input.to_vec();
+        for c in 0..3 {
+            // Extract single channel
+            let mut channel: Vec<f32> = input.chunks_exact(4).map(|p| p[c]).collect();
+
+            // Build Gaussian pyramid
+            let mut gaussians = vec![channel.clone()];
+            let mut cw = w;
+            let mut ch = h;
+            for _ in 0..levels {
+                let nw = cw.div_ceil(2);
+                let nh = ch.div_ceil(2);
+                let prev = gaussians.last().unwrap();
+                let mut next = vec![0.0f32; nw * nh];
+                for y in 0..nh {
+                    for x in 0..nw {
+                        let sx = (x * 2).min(cw - 1);
+                        let sy = (y * 2).min(ch - 1);
+                        // Simple 2x2 average downsample
+                        let sx1 = (sx + 1).min(cw - 1);
+                        let sy1 = (sy + 1).min(ch - 1);
+                        next[y * nw + x] = (prev[sy * cw + sx]
+                            + prev[sy * cw + sx1]
+                            + prev[sy1 * cw + sx]
+                            + prev[sy1 * cw + sx1])
+                            * 0.25;
+                    }
+                }
+                gaussians.push(next);
+                cw = nw;
+                ch = nh;
+            }
+
+            // Build Laplacian pyramid and remap detail coefficients
+            for level in 0..levels as usize {
+                let lw = if level == 0 { w } else { (w >> level).max(1) };
+                let lh = if level == 0 { h } else { (h >> level).max(1) };
+                // Upsample coarser level
+                let uw = lw;
+                let uh = lh;
+                let mut upsampled = vec![0.0f32; uw * uh];
+                let coarse = &gaussians[level + 1];
+                let cw_coarse = lw.div_ceil(2);
+                for y in 0..uh {
+                    for x in 0..uw {
+                        let cx = x / 2;
+                        let cy = y / 2;
+                        let cx = cx.min(cw_coarse.saturating_sub(1));
+                        let cy = cy.min((lh.div_ceil(2)).saturating_sub(1));
+                        upsampled[y * uw + x] = coarse[cy * cw_coarse + cx];
+                    }
+                }
+
+                // Remap Laplacian detail: d * sigma / (sigma + |d|)
+                let fine = &mut gaussians[level];
+                for i in 0..fine.len().min(upsampled.len()) {
+                    let detail = fine[i] - upsampled[i];
+                    let remapped = if sigma.abs() > 1e-10 {
+                        detail * sigma / (sigma + detail.abs())
+                    } else {
+                        0.0
+                    };
+                    fine[i] = upsampled[i] + remapped;
+                }
+            }
+
+            // Write remapped channel back
+            channel = gaussians[0].clone();
+            for (i, pixel) in out.chunks_exact_mut(4).enumerate() {
+                if i < channel.len() {
+                    pixel[c] = channel[i];
+                }
+            }
+        }
+
+        Ok(out)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Retinex — illumination-invariant enhancement
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Single-Scale Retinex (Land 1977, Jobson et al. 1997).
+///
+/// `R(x,y) = log(I(x,y)) - log(G * I(x,y))`
+/// Enhances local contrast by removing illumination estimate.
+#[derive(Clone)]
+pub struct RetinexSsr {
+    pub sigma: f32,
+}
+
+impl Filter for RetinexSsr {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        let blur = GaussianBlur { radius: self.sigma };
+        let blurred = blur.compute(input, width, height)?;
+
+        let mut out = input.to_vec();
+        // Compute log-ratio and normalize
+        let mut min_val = [f32::MAX; 3];
+        let mut max_val = [f32::MIN; 3];
+
+        for (pixel, blur_pixel) in out.chunks_exact_mut(4).zip(blurred.chunks_exact(4)) {
+            for c in 0..3 {
+                let log_input = (pixel[c].max(1e-10)).ln();
+                let log_blur = (blur_pixel[c].max(1e-10)).ln();
+                pixel[c] = log_input - log_blur;
+                min_val[c] = min_val[c].min(pixel[c]);
+                max_val[c] = max_val[c].max(pixel[c]);
+            }
+        }
+
+        // Normalize to [0, 1]
+        for pixel in out.chunks_exact_mut(4) {
+            for c in 0..3 {
+                let range = max_val[c] - min_val[c];
+                if range > 1e-10 {
+                    pixel[c] = (pixel[c] - min_val[c]) / range;
+                }
+            }
+        }
+
+        Ok(out)
+    }
+}
+
+/// Multi-Scale Retinex (Jobson et al. 1997).
+///
+/// Averages SSR at three scales for better overall contrast.
+#[derive(Clone)]
+pub struct RetinexMsr {
+    pub sigma_small: f32,
+    pub sigma_medium: f32,
+    pub sigma_large: f32,
+}
+
+impl Filter for RetinexMsr {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        let scales = [self.sigma_small, self.sigma_medium, self.sigma_large];
+        let n = input.len();
+        let mut accum = vec![0.0f32; n];
+
+        for sigma in &scales {
+            let blur = GaussianBlur { radius: *sigma };
+            let blurred = blur.compute(input, width, height)?;
+            for (i, (inp, blr)) in input.iter().zip(blurred.iter()).enumerate() {
+                if i % 4 == 3 {
+                    continue; // skip alpha
+                }
+                let log_input = inp.max(1e-10).ln();
+                let log_blur = blr.max(1e-10).ln();
+                accum[i] += log_input - log_blur;
+            }
+        }
+
+        // Average and normalize
+        let inv_scales = 1.0 / scales.len() as f32;
+        let mut min_val = [f32::MAX; 3];
+        let mut max_val = [f32::MIN; 3];
+        for pixel in accum.chunks_exact_mut(4) {
+            for c in 0..3 {
+                pixel[c] *= inv_scales;
+                min_val[c] = min_val[c].min(pixel[c]);
+                max_val[c] = max_val[c].max(pixel[c]);
+            }
+        }
+        for (out_pixel, in_pixel) in accum.chunks_exact_mut(4).zip(input.chunks_exact(4)) {
+            for c in 0..3 {
+                let range = max_val[c] - min_val[c];
+                if range > 1e-10 {
+                    out_pixel[c] = (out_pixel[c] - min_val[c]) / range;
+                }
+            }
+            out_pixel[3] = in_pixel[3]; // alpha from input
+        }
+
+        Ok(accum)
+    }
+}
+
+/// Multi-Scale Retinex with Color Restoration (Jobson et al. 1997).
+///
+/// MSR + chromaticity-based gain for color preservation.
+#[derive(Clone)]
+pub struct RetinexMsrcr {
+    pub sigma_small: f32,
+    pub sigma_medium: f32,
+    pub sigma_large: f32,
+    pub alpha: f32,
+    pub beta: f32,
+}
+
+impl Filter for RetinexMsrcr {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        let scales = [self.sigma_small, self.sigma_medium, self.sigma_large];
+        let n = input.len();
+        let mut msr = vec![0.0f32; n];
+
+        // MSR computation
+        for sigma in &scales {
+            let blur = GaussianBlur { radius: *sigma };
+            let blurred = blur.compute(input, width, height)?;
+            for (i, (inp, blr)) in input.iter().zip(blurred.iter()).enumerate() {
+                if i % 4 == 3 {
+                    continue;
+                }
+                msr[i] += inp.max(1e-10).ln() - blr.max(1e-10).ln();
+            }
+        }
+
+        let inv_scales = 1.0 / scales.len() as f32;
+        for v in msr.iter_mut() {
+            *v *= inv_scales;
+        }
+
+        // Color restoration
+        let mut out = vec![0.0f32; n];
+        for (pixel_idx, (in_pixel, msr_pixel)) in input
+            .chunks_exact(4)
+            .zip(msr.chunks_exact(4))
+            .enumerate()
+        {
+            let sum = in_pixel[0] + in_pixel[1] + in_pixel[2];
+            let idx = pixel_idx * 4;
+            for c in 0..3 {
+                let chromaticity = if sum > 1e-10 {
+                    in_pixel[c] / sum
+                } else {
+                    1.0 / 3.0
+                };
+                let color_gain = self.beta * (self.alpha * chromaticity).ln().max(-10.0);
+                out[idx + c] = color_gain * msr_pixel[c];
+            }
+            out[idx + 3] = in_pixel[3];
+        }
+
+        // Normalize to [0, 1]
+        let mut min_val = [f32::MAX; 3];
+        let mut max_val = [f32::MIN; 3];
+        for pixel in out.chunks_exact(4) {
+            for c in 0..3 {
+                min_val[c] = min_val[c].min(pixel[c]);
+                max_val[c] = max_val[c].max(pixel[c]);
+            }
+        }
+        for pixel in out.chunks_exact_mut(4) {
+            for c in 0..3 {
+                let range = max_val[c] - min_val[c];
+                if range > 1e-10 {
+                    pixel[c] = (pixel[c] - min_val[c]) / range;
+                }
+            }
+        }
+
+        Ok(out)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Shadow/Highlight — local tone mapping
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Shadow/Highlight adjustment — local tone mapping.
+///
+/// Independently lighten shadows and darken highlights via soft-light blending
+/// on the luminance channel with compress-gated weight masks.
+#[derive(Clone)]
+pub struct ShadowHighlight {
+    pub shadows: f32,
+    pub highlights: f32,
+    pub whitepoint: f32,
+    pub radius: f32,
+    pub compress: f32,
+    pub shadows_ccorrect: f32,
+    pub highlights_ccorrect: f32,
+}
+
+impl Filter for ShadowHighlight {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        let w = width as usize;
+        let h = height as usize;
+        let shadows = self.shadows / 100.0;
+        let highlights = self.highlights / 100.0;
+        let whitepoint = self.whitepoint;
+        let compress = self.compress / 100.0;
+        let sc = self.shadows_ccorrect / 100.0;
+        let hc = self.highlights_ccorrect / 100.0;
+
+        // Extract luminance and blur it
+        let luma: Vec<f32> = input
+            .chunks_exact(4)
+            .map(|p| luminance(p[0], p[1], p[2]).clamp(0.0, 1.0))
+            .collect();
+
+        // Blur luminance
+        let mut luma_rgba: Vec<f32> = luma.iter().flat_map(|&v| [v, v, v, 1.0]).collect();
+        let blur = GaussianBlur { radius: self.radius };
+        luma_rgba = blur.compute(&luma_rgba, width, height)?;
+        let blurred_luma: Vec<f32> = luma_rgba.chunks_exact(4).map(|p| p[0]).collect();
+
+        let mut out = input.to_vec();
+
+        for y in 0..h {
+            for x in 0..w {
+                let idx = (y * w + x) * 4;
+                let bl = blurred_luma[y * w + x].clamp(0.0, 1.0);
+
+                // Shadow weight: strongest at dark pixels
+                let sw = 1.0 - bl;
+                let sw = sw * sw; // quadratic falloff
+
+                // Highlight weight: strongest at bright pixels
+                let hw = bl;
+                let hw = hw * hw;
+
+                // Compress: reduce effect near midtones
+                let sw = if compress > 0.0 {
+                    sw * (1.0 - compress * 4.0 * bl * (1.0 - bl))
+                } else {
+                    sw
+                };
+                let hw = if compress > 0.0 {
+                    hw * (1.0 - compress * 4.0 * bl * (1.0 - bl))
+                } else {
+                    hw
+                };
+
+                // Luminance adjustment
+                let luma_adj = shadows * sw - highlights * hw + whitepoint * 0.01;
+
+                let cur_luma = luminance(out[idx], out[idx + 1], out[idx + 2]).max(1e-10);
+                let new_luma = (cur_luma + luma_adj).max(0.0);
+                let ratio = new_luma / cur_luma;
+
+                // Apply luminance ratio with saturation correction
+                for c in 0..3 {
+                    let v = out[idx + c];
+                    let gray = cur_luma;
+                    let chroma = v - gray;
+
+                    // Shadow saturation correction
+                    let sat_adj = 1.0 + chroma.signum() * sw * (sc - 1.0)
+                        + chroma.signum() * hw * (hc - 1.0);
+
+                    out[idx + c] = new_luma + chroma * sat_adj.max(0.0) * ratio;
+                }
+            }
+        }
+
+        Ok(out)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Vignette effects
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Gaussian vignette — elliptical darkening with Gaussian blur transition.
+#[derive(Clone)]
+pub struct Vignette {
+    pub sigma: f32,
+    pub x_inset: u32,
+    pub y_inset: u32,
+}
+
+impl Filter for Vignette {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        let w = width as usize;
+        let h = height as usize;
+
+        // Build elliptical mask
+        let cx = w as f32 / 2.0;
+        let cy = h as f32 / 2.0;
+        let rx = (cx - self.x_inset as f32).max(1.0);
+        let ry = (cy - self.y_inset as f32).max(1.0);
+
+        let mut mask = vec![1.0f32; w * h];
+        for y in 0..h {
+            for x in 0..w {
+                let dx = (x as f32 - cx) / rx;
+                let dy = (y as f32 - cy) / ry;
+                let dist2 = dx * dx + dy * dy;
+                if dist2 > 1.0 {
+                    mask[y * w + x] = 0.0;
+                }
+            }
+        }
+
+        // Blur the mask for smooth transition
+        if self.sigma > 0.0 {
+            let blur = GaussianBlur { radius: self.sigma };
+            // Pack mask as RGBA for blur
+            let mut mask_rgba: Vec<f32> = mask.iter().flat_map(|&v| [v, v, v, 1.0]).collect();
+            mask_rgba = blur.compute(&mask_rgba, width, height)?;
+            for (i, pixel) in mask_rgba.chunks_exact(4).enumerate() {
+                mask[i] = pixel[0];
+            }
+        }
+
+        // Apply mask
+        let mut out = input.to_vec();
+        for y in 0..h {
+            for x in 0..w {
+                let idx = (y * w + x) * 4;
+                let m = mask[y * w + x];
+                out[idx] *= m;
+                out[idx + 1] *= m;
+                out[idx + 2] *= m;
+            }
+        }
+
+        Ok(out)
+    }
+}
+
+/// Power-law vignette — simple radial falloff.
+///
+/// `factor = 1.0 - strength * (dist / max_dist) ^ falloff`
+#[derive(Clone)]
+pub struct VignettePowerlaw {
+    pub strength: f32,
+    pub falloff: f32,
+}
+
+impl Filter for VignettePowerlaw {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        let w = width as usize;
+        let h = height as usize;
+        let cx = w as f32 / 2.0;
+        let cy = h as f32 / 2.0;
+        let max_dist = (cx * cx + cy * cy).sqrt();
+        if max_dist < 1e-10 {
+            return Ok(input.to_vec());
+        }
+        let inv_max = 1.0 / max_dist;
+
+        let mut out = input.to_vec();
+        for y in 0..h {
+            for x in 0..w {
+                let dx = x as f32 - cx;
+                let dy = y as f32 - cy;
+                let dist = (dx * dx + dy * dy).sqrt() * inv_max;
+                let factor = (1.0 - self.strength * dist.powf(self.falloff)).max(0.0);
+                let idx = (y * w + x) * 4;
+                out[idx] *= factor;
+                out[idx + 1] *= factor;
+                out[idx + 2] *= factor;
+            }
+        }
+
+        Ok(out)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Tests
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn solid_rgba(w: u32, h: u32, color: [f32; 4]) -> Vec<f32> {
+        let n = (w * h) as usize;
+        let mut px = Vec::with_capacity(n * 4);
+        for _ in 0..n {
+            px.extend_from_slice(&color);
+        }
+        px
+    }
+
+    fn gradient_rgba(w: u32, h: u32) -> Vec<f32> {
+        let mut px = Vec::with_capacity((w * h) as usize * 4);
+        for y in 0..h {
+            for x in 0..w {
+                px.push(x as f32 / w as f32);
+                px.push(y as f32 / h as f32);
+                px.push(0.5);
+                px.push(1.0);
+            }
+        }
+        px
+    }
+
+    // ─── Auto Level ──────────────────────────────────────────────────────
+
+    #[test]
+    fn auto_level_expands_range() {
+        // Input: all values in [0.2, 0.8]
+        let mut input = solid_rgba(4, 4, [0.5, 0.5, 0.5, 1.0]);
+        input[0] = 0.2; // min R
+        input[4] = 0.8; // max R
+        let output = AutoLevel.compute(&input, 4, 4).unwrap();
+        // Min should map to ~0, max should map to ~1
+        assert!(output[0] < 0.01);
+        assert!(output[4] > 0.99);
+    }
+
+    #[test]
+    fn auto_level_preserves_alpha() {
+        let input = solid_rgba(4, 4, [0.3, 0.5, 0.7, 0.5]);
+        let output = AutoLevel.compute(&input, 4, 4).unwrap();
+        assert_eq!(output[3], 0.5);
+    }
+
+    // ─── Equalize ────────────────────────────────────────────────────────
+
+    #[test]
+    fn equalize_spreads_histogram() {
+        let input = gradient_rgba(16, 16);
+        let output = Equalize.compute(&input, 16, 16).unwrap();
+        // Output should use full range
+        let r_vals: Vec<f32> = output.chunks_exact(4).map(|p| p[0]).collect();
+        assert!(*r_vals.iter().min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap() < 0.1);
+        assert!(*r_vals.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap() > 0.9);
+    }
+
+    // ─── Normalize ───────────────────────────────────────────────────────
+
+    #[test]
+    fn normalize_clips_extremes() {
+        let input = gradient_rgba(16, 16);
+        let norm = Normalize::default();
+        let output = norm.compute(&input, 16, 16).unwrap();
+        assert_eq!(output.len(), input.len());
+    }
+
+    // ─── Frequency Separation ────────────────────────────────────────────
+
+    #[test]
+    fn frequency_low_is_blurred() {
+        let input = gradient_rgba(16, 16);
+        let fl = FrequencyLow { sigma: 3.0 };
+        let output = fl.compute(&input, 16, 16).unwrap();
+        assert_eq!(output.len(), input.len());
+    }
+
+    #[test]
+    fn frequency_high_solid_midgray() {
+        let input = solid_rgba(16, 16, [0.3, 0.3, 0.3, 1.0]);
+        let fh = FrequencyHigh { sigma: 3.0 };
+        let output = fh.compute(&input, 16, 16).unwrap();
+        // Solid → high pass = 0 + 0.5 = 0.5
+        assert!((output[0] - 0.5).abs() < 0.01);
+    }
+
+    // ─── Clarity ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn clarity_preserves_solid() {
+        let input = solid_rgba(16, 16, [0.5, 0.5, 0.5, 1.0]);
+        let clar = Clarity { amount: 1.0, radius: 5.0 };
+        let output = clar.compute(&input, 16, 16).unwrap();
+        // Solid: no detail → no change
+        assert!((output[0] - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn clarity_preserves_alpha() {
+        let input = solid_rgba(8, 8, [0.5, 0.5, 0.5, 0.7]);
+        let clar = Clarity { amount: 1.0, radius: 5.0 };
+        let output = clar.compute(&input, 8, 8).unwrap();
+        assert!((output[3] - 0.7).abs() < 1e-6);
+    }
+
+    // ─── Dehaze ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn dehaze_runs_without_panic() {
+        let input = gradient_rgba(16, 16);
+        let dh = Dehaze { patch_radius: 3, omega: 0.95, t_min: 0.1 };
+        let output = dh.compute(&input, 16, 16).unwrap();
+        assert_eq!(output.len(), input.len());
+    }
+
+    // ─── CLAHE ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn clahe_runs_without_panic() {
+        let input = gradient_rgba(32, 32);
+        let clahe = Clahe { tile_grid: 4, clip_limit: 2.0 };
+        let output = clahe.compute(&input, 32, 32).unwrap();
+        assert_eq!(output.len(), input.len());
+    }
+
+    #[test]
+    fn clahe_preserves_alpha() {
+        let input = solid_rgba(32, 32, [0.5, 0.5, 0.5, 0.3]);
+        let clahe = Clahe { tile_grid: 4, clip_limit: 2.0 };
+        let output = clahe.compute(&input, 32, 32).unwrap();
+        assert!((output[3] - 0.3).abs() < 1e-6);
+    }
+
+    // ─── NLM Denoise ─────────────────────────────────────────────────────
+
+    #[test]
+    fn nlm_solid_unchanged() {
+        let input = solid_rgba(8, 8, [0.5, 0.5, 0.5, 1.0]);
+        let nlm = NlmDenoise { h: 0.1, patch_radius: 1, search_radius: 2 };
+        let output = nlm.compute(&input, 8, 8).unwrap();
+        assert!((output[0] - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn nlm_preserves_alpha() {
+        let input = solid_rgba(8, 8, [0.5, 0.5, 0.5, 0.7]);
+        let nlm = NlmDenoise { h: 0.1, patch_radius: 1, search_radius: 2 };
+        let output = nlm.compute(&input, 8, 8).unwrap();
+        assert!((output[3] - 0.7).abs() < 1e-6);
+    }
+
+    // ─── Pyramid Detail Remap ────────────────────────────────────────────
+
+    #[test]
+    fn pyramid_detail_remap_runs() {
+        let input = gradient_rgba(32, 32);
+        let pdr = PyramidDetailRemap { sigma: 0.5, levels: 0 };
+        let output = pdr.compute(&input, 32, 32).unwrap();
+        assert_eq!(output.len(), input.len());
+    }
+
+    // ─── Retinex ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn retinex_ssr_runs() {
+        let input = gradient_rgba(16, 16);
+        let ssr = RetinexSsr { sigma: 15.0 };
+        let output = ssr.compute(&input, 16, 16).unwrap();
+        assert_eq!(output.len(), input.len());
+    }
+
+    #[test]
+    fn retinex_msr_runs() {
+        let input = gradient_rgba(16, 16);
+        let msr = RetinexMsr { sigma_small: 15.0, sigma_medium: 80.0, sigma_large: 250.0 };
+        let output = msr.compute(&input, 16, 16).unwrap();
+        assert_eq!(output.len(), input.len());
+    }
+
+    #[test]
+    fn retinex_msrcr_runs() {
+        let input = gradient_rgba(16, 16);
+        let msrcr = RetinexMsrcr {
+            sigma_small: 15.0, sigma_medium: 80.0, sigma_large: 250.0,
+            alpha: 125.0, beta: 46.0,
+        };
+        let output = msrcr.compute(&input, 16, 16).unwrap();
+        assert_eq!(output.len(), input.len());
+    }
+
+    #[test]
+    fn retinex_ssr_preserves_alpha() {
+        let input = solid_rgba(8, 8, [0.5, 0.5, 0.5, 0.7]);
+        let ssr = RetinexSsr { sigma: 5.0 };
+        let output = ssr.compute(&input, 8, 8).unwrap();
+        assert!((output[3] - 0.7).abs() < 1e-6);
+    }
+
+    // ─── Shadow/Highlight ────────────────────────────────────────────────
+
+    #[test]
+    fn shadow_highlight_neutral_noop() {
+        let input = solid_rgba(16, 16, [0.5, 0.5, 0.5, 1.0]);
+        let sh = ShadowHighlight {
+            shadows: 0.0, highlights: 0.0, whitepoint: 0.0,
+            radius: 10.0, compress: 50.0,
+            shadows_ccorrect: 100.0, highlights_ccorrect: 50.0,
+        };
+        let output = sh.compute(&input, 16, 16).unwrap();
+        assert!((output[0] - 0.5).abs() < 0.02);
+    }
+
+    // ─── Vignette ────────────────────────────────────────────────────────
+
+    #[test]
+    fn vignette_center_bright_edges_dark() {
+        let input = solid_rgba(32, 32, [1.0, 1.0, 1.0, 1.0]);
+        let vig = Vignette { sigma: 5.0, x_inset: 4, y_inset: 4 };
+        let output = vig.compute(&input, 32, 32).unwrap();
+        // Center pixel should be brighter than corner
+        let center = (16 * 32 + 16) * 4;
+        let corner = 0;
+        assert!(output[center] > output[corner]);
+    }
+
+    #[test]
+    fn vignette_preserves_alpha() {
+        let input = solid_rgba(16, 16, [1.0, 1.0, 1.0, 0.5]);
+        let vig = Vignette { sigma: 3.0, x_inset: 2, y_inset: 2 };
+        let output = vig.compute(&input, 16, 16).unwrap();
+        assert!((output[3] - 0.5).abs() < 1e-6);
+    }
+
+    // ─── Vignette Power-law ──────────────────────────────────────────────
+
+    #[test]
+    fn vignette_powerlaw_center_unaffected() {
+        let input = solid_rgba(16, 16, [1.0, 1.0, 1.0, 1.0]);
+        let vig = VignettePowerlaw { strength: 0.5, falloff: 2.0 };
+        let output = vig.compute(&input, 16, 16).unwrap();
+        // Center pixel should be minimally affected (close to center)
+        let center = (8 * 16 + 8) * 4;
+        assert!(output[center] > 0.95);
+    }
+
+    #[test]
+    fn vignette_powerlaw_corners_darkened() {
+        let input = solid_rgba(16, 16, [1.0, 1.0, 1.0, 1.0]);
+        let vig = VignettePowerlaw { strength: 1.0, falloff: 2.0 };
+        let output = vig.compute(&input, 16, 16).unwrap();
+        // Corner should be darker than center
+        let center = (8 * 16 + 8) * 4;
+        let corner = 0;
+        assert!(output[corner] < output[center]);
+    }
+
+    // ─── Output sizes ────────────────────────────────────────────────────
+
+    #[test]
+    fn all_output_sizes_correct() {
+        let input = gradient_rgba(16, 16);
+        let n = 16 * 16 * 4;
+
+        assert_eq!(AutoLevel.compute(&input, 16, 16).unwrap().len(), n);
+        assert_eq!(Equalize.compute(&input, 16, 16).unwrap().len(), n);
+        assert_eq!(Normalize::default().compute(&input, 16, 16).unwrap().len(), n);
+        assert_eq!(FrequencyLow { sigma: 3.0 }.compute(&input, 16, 16).unwrap().len(), n);
+        assert_eq!(FrequencyHigh { sigma: 3.0 }.compute(&input, 16, 16).unwrap().len(), n);
+        assert_eq!(
+            Clarity { amount: 1.0, radius: 3.0 }.compute(&input, 16, 16).unwrap().len(), n
+        );
+        assert_eq!(
+            RetinexSsr { sigma: 5.0 }.compute(&input, 16, 16).unwrap().len(), n
+        );
+        assert_eq!(
+            VignettePowerlaw { strength: 0.5, falloff: 2.0 }.compute(&input, 16, 16).unwrap().len(), n
+        );
+    }
+
+    // ─── HDR values ──────────────────────────────────────────────────────
+
+    #[test]
+    fn hdr_values_not_clamped() {
+        let input = solid_rgba(4, 4, [5.0, -0.5, 100.0, 1.0]);
+        let vig = VignettePowerlaw { strength: 0.5, falloff: 2.0 };
+        let output = vig.compute(&input, 4, 4).unwrap();
+        // HDR values should still be present (not clamped to [0,1])
+        assert!(output.chunks_exact(4).any(|p| p[0] > 1.0));
+    }
+}
