@@ -1,0 +1,139 @@
+id: aces-pipeline-integration_20260403050702Z
+title: ACES pipeline integration — IDTs, metadata, compliance program readiness
+type: feature
+status: pending
+created: '2026-04-03'
+updated: '2026-04-03'
+spec:
+  summary: 'Full ACES pipeline integration: Input Device Transforms for major
+
+    camera systems, ACES Metadata File (AMF) support, and compliance
+
+    with the Academy ACES Logo Program requirements.
+
+    '
+  context: 'This track completes the ACES story. With core math (Track 1) and
+
+    output transforms (Track 2), we can process and display in ACES.
+
+    This track adds:
+
+    - IDTs (Input Device Transforms) — camera-specific → ACES2065-1
+
+    - AMF (ACES Metadata File) — XML sidecar for interchange
+
+    - Full round-trip pipeline for ACES Compliant status
+
+    - Documentation for the ACES Logo Program submission
+
+
+    The ACES Logo Program has two tiers:
+
+    - ACES Compatible: supports ACES2065-1 interchange + basic RRT+ODT
+
+    - ACES Compliant: full pipeline, IDTs, AMF, round-trip capability
+
+
+    Target: ACES Compliant.
+
+    '
+  codebase_analysis: "After the prerequisite tracks, the pipeline will be:\n  Decode → Promote (linearize) → [ACES2065-1 or\
+    \ ACEScg working space]\n    → Filters (linear f32, unclamped HDR)\n    → [LMT (creative look)]\n    → RRT+ODT (display\
+    \ transform)\n    → Encode\n\nIDTs needed for major camera systems:\n- ARRI: LogC3 (Alexa), LogC4 (Alexa 35) → ACES\n\
+    - RED: REDWideGamutRGB + Log3G10 → ACES\n- Sony: S-Gamut3.Cine + S-Log3 → ACES\n- Canon: Cinema Gamut + Canon Log 2/3\
+    \ → ACES\n- Blackmagic: BMD Film Gen 5 → ACES\n- Panasonic: V-Gamut + V-Log → ACES\n\nEach IDT is: camera-specific transfer\
+    \ function (log→linear) +\n3x3 matrix (camera gamut → AP0). The aces-dev repo has all of\nthese as CTL files.\n\nAMF (S-2019-001)\
+    \ is an XML format that describes:\n- Which IDT was applied\n- Which LMTs are in the chain\n- Which RRT+ODT combination\
+    \ for output\n- Per-clip transform metadata\n\nEXR already supports ACES container attributes (chromaticities,\nwhiteLuminance).\
+    \ Our EXR decoder/encoder (decoder/mod.rs, encoder/exr.rs)\nneeds to read/write these.\n"
+  acceptance_criteria:
+  - IDTs for ARRI LogC3/LogC4, RED Log3G10, Sony S-Log3, Canon Log 2/3
+  - IDT auto-detection from image metadata (EXIF, EXR attributes)
+  - ACES Metadata File (AMF) read and write
+  - EXR ACES container attributes (chromaticities, acesImageContainerFlag)
+  - Full round-trip pipeline (scene → ACES2065-1 → process → RRT+ODT → display)
+  - Inverse transforms for round-trip (InvRRT, InvODT) for applicable transforms
+  - ACES working space selector (ACES2065-1 or ACEScg, user choice)
+  - Documentation package for ACES Logo Program submission
+  - Numerical validation of all IDTs against aces-dev CTL reference
+  - CPU implementation for all transforms (f32, f64 intermediate precision)
+  - GPU compute shaders for performance-critical transforms (transfer functions, matrix multiplies, tone curves)
+  - GPU output matches CPU output within f32 precision tolerance
+  out_of_scope: 'OCIO integration (alternative implementation path, not required).
+
+    ACES 2.0 output transform (separate track when spec finalizes).
+
+    Custom camera profiling tools (for cameras without standard IDTs).
+
+    Real-time on-set monitoring pipeline.
+
+    '
+  technical_notes: "IDT structure (each camera):\n  struct InputDeviceTransform {\n      name: &'static str,          // e.g.,\
+    \ \"ARRI LogC3 EI800\"\n      camera: &'static str,        // e.g., \"ARRI Alexa\"\n      transfer_fn: fn(f32) -> f32,\
+    \ // log → linear (e.g., LogC3 decode)\n      matrix_to_ap0: [f64; 9],     // camera gamut → ACES2065-1 (3x3)\n  }\n\n\
+    Example ARRI LogC3:\n  Transfer: piecewise linear+log with exposure-dependent parameters\n  Matrix: ARRI Wide Gamut →\
+    \ XYZ → chromatic adapt → AP0\n\nExample Sony S-Log3:\n  Transfer: S-Log3 decode (piecewise, documented in Sony tech docs)\n\
+    \  Matrix: S-Gamut3.Cine → XYZ → chromatic adapt → AP0\n\nAMF format (simplified):\n  <aces:acesMetadataFile>\n    <aces:pipeline>\n\
+    \      <aces:inputTransform applied=\"true\">\n        <aces:transformId>urn:ampas:aces:transformId:v1.5:IDT.ARRI.Alexa-v3-raw-EI800-CCT6500.a1.v2</aces:transformId>\n\
+    \      </aces:inputTransform>\n      <aces:lookTransform applied=\"true\">\n        <aces:transformId>urn:ampas:aces:transformId:v1.5:LMT.Academy.ACES_1.3_to_Filmic.a1.v1</aces:transformId>\n\
+    \      </aces:lookTransform>\n      <aces:outputTransform>\n        <aces:transformId>urn:ampas:aces:transformId:v1.5:RRTODT.Academy.Rec709_100nits_dim.a1.v2</aces:transformId>\n\
+    \      </aces:outputTransform>\n    </aces:pipeline>\n  </aces:acesMetadataFile>\n\nFor expression tree integration:\n\
+    \  IDT transfer functions are PointOpExpr-expressible.\n  IDT matrices are 3x3 matrix multiplies (ColorOpExpr or similar).\n\
+    \  The entire chain IDT→LMT→RRT→ODT can be fused via the\n  analytic-pointop-fusion infrastructure into a single GPU shader\n\
+    \  or CPU closure.\n"
+plan:
+- phase: Input Device Transforms
+  tasks:
+  - text: Implement ARRI LogC3 IDT (transfer function + matrix to AP0)
+    done: false
+  - text: Implement ARRI LogC4 IDT (Alexa 35)
+    done: false
+  - text: Implement RED Log3G10 + REDWideGamutRGB IDT
+    done: false
+  - text: Implement Sony S-Log3 + S-Gamut3.Cine IDT
+    done: false
+  - text: Implement Canon Log 2 + Cinema Gamut IDT
+    done: false
+  - text: Implement Blackmagic Film Gen 5 IDT
+    done: false
+  - text: IDT auto-detection from EXR/EXIF metadata
+    done: false
+- phase: ACES Metadata File
+  tasks:
+  - text: AMF XML parser (read acesMetadataFile)
+    done: false
+  - text: AMF XML writer (generate acesMetadataFile)
+    done: false
+  - text: EXR ACES container attributes read/write (chromaticities, acesImageContainerFlag)
+    done: false
+- phase: Pipeline integration
+  tasks:
+  - text: ACES working space config on pipeline (ACES2065-1 or ACEScg)
+    done: false
+  - text: Auto-insert IDT after decode when ACES mode enabled
+    done: false
+  - text: Inverse transforms (InvRRT, InvODT) for round-trip workflows
+    done: false
+  - text: Full pipeline test (camera raw → IDT → process → LMT → RRT+ODT → encode)
+    done: false
+- phase: GPU compute shaders
+  tasks:
+  - text: GPU shaders for camera IDT transfer functions (LogC3, S-Log3, Log3G10, etc.)
+    done: false
+  - text: GPU fused IDT shader — transfer function + matrix as single kernel
+    done: false
+  - text: GPU full pipeline fusion — IDT→LMT→RRT→ODT as single shader or minimal passes
+    done: false
+  - text: GPU parity test — GPU IDT output matches CPU for all camera transforms
+    done: false
+- phase: Compliance validation
+  tasks:
+  - text: Validate all IDTs against aces-dev CTL reference values
+    done: false
+  - text: Validate RRT+ODT round-trip through inverse transforms
+    done: false
+  - text: Validate ACES2065-1 EXR interchange (read/write/roundtrip)
+    done: false
+  - text: Prepare ACES Logo Program documentation package
+    done: false
+extra: {}

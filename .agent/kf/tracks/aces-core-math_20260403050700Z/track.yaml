@@ -1,0 +1,154 @@
+id: aces-core-math_20260403050700Z
+title: ACES core math — color space matrices, transfer functions, chromatic adaptation
+type: feature
+status: pending
+created: '2026-04-03'
+updated: '2026-04-03'
+spec:
+  summary: 'Implement the foundational ACES color math: AP0/AP1 primaries,
+
+    D60 illuminant, chromatic adaptation, and ACEScct/ACEScc/ACESproxy
+
+    transfer functions. Pure math module, no pipeline integration.
+
+    '
+  context: 'ACES (Academy Color Encoding System) is the film/TV industry standard
+
+    for color management. It defines color spaces, transfer functions, and
+
+    a canonical viewing pipeline used by DaVinci Resolve, Nuke, Maya,
+
+    and every ACES-compliant tool.
+
+
+    Target: ACES Compliant status per the Academy Logo Program.
+
+
+    This track implements the mathematical foundation. All ACES transforms
+
+    (RRT, ODTs, IDTs) build on these primitives.
+
+
+    Reference: aces-dev repository (github.com/AcademySoftwareFoundation/aces-dev)
+
+    contains the normative CTL (Color Transformation Language) source.'
+  codebase_analysis: 'Existing color math in color_spaces.rs:
+
+    - sRGB ↔ Linear transfer (lines 17-32)
+
+    - ProPhoto RGB primaries + XYZ matrices (lines 35-100)
+
+    - Adobe RGB primaries + XYZ matrices (lines 102-156)
+
+    - CIE Lab via XYZ D65 (lines 158-269)
+
+    - OKLab (lines 271-401)
+
+
+    Pattern: each color space has:
+
+    - Forward/inverse transfer function (gamma/log)
+
+    - 3x3 RGB-to-XYZ and XYZ-to-RGB matrices
+
+    - Convenience conversion to/from sRGB
+
+
+    ACES needs:
+
+    - AP0 primaries (ACES2065-1): R(0.7347,0.2653) G(0.0,1.0) B(0.0001,-0.077)
+
+    - AP1 primaries (ACEScg/cc/cct): R(0.713,0.293) G(0.165,0.830) B(0.128,0.044)
+
+    - D60 white point: (0.32168, 0.33767) — NOT D65
+
+    - Bradford chromatic adaptation D60↔D65 matrix
+
+    - ACEScct transfer: toe region + log region
+
+    - ACEScc transfer: pure log (no toe)
+
+
+    These follow the exact same pattern as existing ProPhoto/Adobe code.
+
+    '
+  acceptance_criteria:
+  - AP0 (ACES2065-1) RGB-to-XYZ and XYZ-to-RGB 3x3 matrices at f64 precision
+  - AP1 (ACEScg) RGB-to-XYZ and XYZ-to-RGB 3x3 matrices at f64 precision
+  - Bradford chromatic adaptation matrix D60→D65 and D65→D60
+  - ACEScct forward and inverse transfer functions matching CTL reference
+  - ACEScc forward and inverse transfer functions matching CTL reference
+  - ACESproxy 10-bit and 12-bit encoding/decoding
+  - Conversion functions between all ACES spaces and sRGB/Linear
+  - Numerical validation against aces-dev CTL reference (< 1e-6 error)
+  - All functions work on f32 with f64 intermediate precision
+  - CPU implementation for all transforms (f32, f64 intermediate precision)
+  - GPU compute shaders for performance-critical transforms (transfer functions, matrix multiplies, tone curves)
+  - GPU output matches CPU output within f32 precision tolerance
+  out_of_scope: 'RRT and ODT implementation (Track 2).
+
+    Pipeline integration (Track 3).
+
+    OCIO integration.
+
+    '
+  technical_notes: "ACES2065-1 (AP0) primaries — spectral locus enclosing, wider than human vision:\n  R: (0.73470, 0.26530)\n\
+    \  G: (0.00000, 1.00000)\n  B: (0.00010, -0.07700)\n  W: D60 = (0.32168, 0.33767)\n\nACEScg (AP1) primaries — practical\
+    \ working gamut:\n  R: (0.71300, 0.29300)\n  G: (0.16500, 0.83000)\n  B: (0.12800, 0.04400)\n  W: D60 = (0.32168, 0.33767)\n\
+    \nACEScct transfer function (S-2016-001):\n  Forward (linear → log):\n    x <= 0.0078125:  y = 10.5402377416545 * x +\
+    \ 0.0729055341958355\n    x >  0.0078125:  y = (log2(x) + 9.72) / 17.52\n  Inverse (log → linear):\n    y <= 0.155251141552511:\
+    \  x = (y - 0.0729055341958355) / 10.5402377416545\n    y >  0.155251141552511:  x = 2^(y * 17.52 - 9.72)\n\nACEScc transfer\
+    \ function (S-2014-003):\n  Forward: y = (log2(x) + 9.72) / 17.52  (pure log, no toe)\n  Inverse: x = 2^(y * 17.52 - 9.72)\n\
+    \  For x <= 0: y = (log2(2^-16) + 9.72) / 17.52  (clamp to min)\n  For x < 2^-15: y = (log2(2^-16 + x * 0.5) + 9.72) /\
+    \ 17.52\n\nBradford chromatic adaptation D60→D65:\n  Compute via: M_adapt = M_bradford * diag(dst_cone/src_cone) * M_bradford_inv\n\
+    \  D60 XYZ = (0.952646, 1.0, 1.008825)  from (0.32168, 0.33767)\n  D65 XYZ = (0.950456, 1.0, 1.089058)  from (0.3127,\
+    \ 0.3290)\n\nAll these are documented in the aces-dev CTL files:\n  - ACEScct: transforms/ctl/ACEScct/ACEScct_to_ACES.ctl\n\
+    \  - ACEScc: transforms/ctl/ACEScc/ACEScc_to_ACES.ctl\n  - Matrices: transforms/ctl/lib/ACESlib.Utilities_Color.ctl\n"
+plan:
+- phase: Primaries and matrices
+  tasks:
+  - text: Implement AP0 (ACES2065-1) RGB↔XYZ matrices at f64 precision
+    done: false
+  - text: Implement AP1 (ACEScg) RGB↔XYZ matrices at f64 precision
+    done: false
+  - text: Implement Bradford chromatic adaptation D60↔D65
+    done: false
+  - text: Implement AP0↔AP1 direct conversion matrix (AP0-to-XYZ * adapt * XYZ-to-AP1)
+    done: false
+- phase: Transfer functions
+  tasks:
+  - text: Implement ACEScct forward and inverse transfer functions
+    done: false
+  - text: Implement ACEScc forward and inverse transfer functions
+    done: false
+  - text: Implement ACESproxy 10-bit and 12-bit encode/decode
+    done: false
+- phase: Convenience conversions
+  tasks:
+  - text: sRGB-linear ↔ ACES2065-1 conversion (sRGB→XYZ-D65 → adapt-D65→D60 → XYZ→AP0)
+    done: false
+  - text: sRGB-linear ↔ ACEScg conversion (sRGB→XYZ-D65 → adapt → XYZ→AP1)
+    done: false
+  - text: ACEScg ↔ ACEScct conversion (apply/remove transfer function)
+    done: false
+  - text: Add ACES variants to ColorSpace enum (Aces2065_1, AcesCg, AcesCct, AcesCc)
+    done: false
+- phase: GPU compute shaders
+  tasks:
+  - text: GPU shader for ACEScct forward/inverse transfer function
+    done: false
+  - text: GPU shader for ACEScc forward/inverse transfer function
+    done: false
+  - text: GPU shader for 3x3 matrix multiply (AP0↔AP1, chromatic adaptation)
+    done: false
+  - text: GPU parity test — GPU output matches CPU for all ACES conversions
+    done: false
+- phase: Validation
+  tasks:
+  - text: Numerical test against aces-dev CTL reference values (< 1e-6 per channel)
+    done: false
+  - text: Round-trip test sRGB → ACES2065-1 → sRGB (< 1e-5 error)
+    done: false
+  - text: Round-trip test ACEScg → ACEScct → ACEScg (bit-exact for f32)
+    done: false
+extra: {}

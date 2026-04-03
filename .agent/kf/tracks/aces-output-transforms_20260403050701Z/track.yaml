@@ -1,0 +1,128 @@
+id: aces-output-transforms_20260403050701Z
+title: ACES output transforms — RRT + ODTs for display-referred output
+type: feature
+status: pending
+created: '2026-04-03'
+updated: '2026-04-03'
+spec:
+  summary: 'Implement the ACES Reference Rendering Transform (RRT) and Output
+
+    Device Transforms (ODTs) for sRGB, Rec.709, P3, and Rec.2020.
+
+    Integrates with the display-transform pipeline stage.
+
+    '
+  context: "The ACES viewing pipeline:\n  Scene data (linear) → RRT → ODT → Display\n\nThe RRT is a canonical tone/gamut mapping\
+    \ that converts scene-referred\nlinear data to display-referred data. It handles:\n- Tone mapping (compress infinite dynamic\
+    \ range to display range)\n- Highlight desaturation (bright highlights roll off to white)\n- Shadow detail preservation\n\
+    - Gamut mapping (AP0/AP1 → display gamut)\n\nThe ODT adapts the RRT output to a specific display:\n- sRGB (SDR monitors)\n\
+    - Rec.709 (broadcast)\n- DCI-P3 (cinema, wide-gamut monitors)\n- Rec.2020 (HDR at 1000/2000/4000 nits)\n\nThe RRT+ODT\
+    \ combined is what OCIO calls a \"Processor\" — it can be\ncollapsed into a single fused transform (our expression tree\
+    \ IR or\na baked 3D LUT). This is the display transform that makes linear\ndata look correct on screen.\n\nACES 1.x uses\
+    \ a segmented spline RRT. ACES 2.0 (in development)\nreplaces it with a Hellwig 2022 CAM-based approach. We should\nimplement\
+    \ ACES 1.x first (the current standard) with architecture\nthat supports 2.0 when it finalizes.\n\nCreative transforms\
+    \ (LMTs — Look Modification Transforms) are\nSEPARATE from the RRT+ODT. LMTs are artistic looks applied BEFORE\nthe RRT.\
+    \ Users can create custom LMTs (film emulation, stylized\nlooks) or use standard ones. The pipeline is:\n  Scene → [LMT\
+    \ (creative)] → RRT → ODT → Display\nLMTs are optional and user-driven. RRT+ODT is the mandatory\n\"correct rendering\"\
+    \ stage.\n"
+  codebase_analysis: "display-transform track (display-transform_20260403034039Z) adds:\n- ViewTransform enum with Linear\
+    \ and Srgb variants\n- DemoteNode applies view transform before quantization\n\nThis track extends ViewTransform to include\
+    \ ACES output transforms:\n  enum ViewTransform {\n      Srgb,           // simple gamma (current)\n      Linear,    \
+    \     // passthrough for EXR/HDR\n      AcesRrtSrgb,    // RRT + sRGB ODT (SDR monitors)\n      AcesRrtRec709,  // RRT\
+    \ + Rec.709 ODT (broadcast)\n      AcesRrtP3,      // RRT + P3-D65 ODT (wide-gamut)\n      AcesRrtRec2020Pq1000, // RRT\
+    \ + Rec.2020 PQ 1000 nit (HDR)\n      Lut3D(ColorLut3D),    // user-supplied 3D LUT\n  }\n\nThe RRT itself is a segmented\
+    \ spline (from aces-dev CTL):\n- Input: ACEScg linear (AP1, D60)\n- Segmented_Spline_C9 tone curve (per-channel initially,\
+    \ then mix)\n- Gamut compression\n- Output: OCES (Output Color Encoding Specification)\n\nThe ODT takes OCES and:\n- Applies\
+    \ display-specific gamut mapping\n- Applies display transfer function (gamma 2.4 for Rec.709, sRGB TF, PQ for HDR)\n-\
+    \ Clamps to display range\n\nFor GPU: the entire RRT+ODT can be expressed as our PointOpExpr\ntree (the analytic fusion\
+    \ track) or baked to a 3D LUT for fast eval.\n\nReference: aces-dev/transforms/ctl/rrt/RRT.ctl\n"
+  acceptance_criteria:
+  - ACES RRT implemented matching CTL reference (segmented spline C9)
+  - sRGB ODT (100 nit, D65, sRGB transfer) matching CTL reference
+  - Rec.709 ODT (100 nit, D65, BT.1886 transfer)
+  - P3-D65 ODT (48 nit cinema, D65)
+  - Rec.2020 PQ 1000 nit ODT (HDR)
+  - ViewTransform enum extended with ACES variants
+  - RRT+ODT composable into single fused transform (expression tree or 3D LUT)
+  - LMT (Look Modification Transform) hook point in the pipeline
+  - Numerical validation against CTL reference (< 0.001 code value error)
+  - Visual validation on test images (Marcie, StEM, ColorChecker)
+  - CPU implementation for all transforms (f32, f64 intermediate precision)
+  - GPU compute shaders for performance-critical transforms (transfer functions, matrix multiplies, tone curves)
+  - GPU output matches CPU output within f32 precision tolerance
+  out_of_scope: 'ACES 2.0 output transform (track when spec finalizes).
+
+    Camera-specific IDTs (Track 3).
+
+    Full AMF metadata (Track 3).
+
+    Custom LMT authoring tools (future track).
+
+    '
+  technical_notes: "RRT segmented spline C9 (from aces-dev CTL):\n\nThe RRT uses two segmented splines:\n1. Forward spline:\
+    \ maps scene-linear to intermediate\n2. Inverse spline: used for round-trip\n\nEach spline is defined by 10 control points\
+    \ (C9 = 9 segments):\n  struct SegmentedSplineC9 {\n      min_point: (f64, f64),\n      mid_point: (f64, f64),\n     \
+    \ max_point: (f64, f64),\n      coeffs_low: [f64; 6],   // 5 coeff segments for dark region\n      coeffs_high: [f64;\
+    \ 6],  // 5 coeff segments for bright region\n  }\n\nThe spline evaluation:\n  fn segmented_spline_c9(x: f64, params:\
+    \ &SplineC9) -> f64 {\n      let log_x = log10(max(x, 1e-10));\n      // ... piecewise polynomial evaluation\n  }\n\n\
+    Full RRT pipeline:\n  1. Convert AP0 → AP1 (matrix multiply)\n  2. Clamp negatives (glow module for dark surround)\n \
+    \ 3. Red modifier (hue-preserving highlight desaturation)\n  4. Global desaturation matrix\n  5. Apply RRT tone curve\
+    \ (segmented spline C9)\n  6. Output = OCES\n\nODT pipeline (example: sRGB):\n  1. OCES → display linear (matrix + spline)\n\
+    \  2. Apply cinema surround compensation\n  3. Apply display gamma/transfer (sRGB piecewise)\n  4. Clamp to [0,1] display\
+    \ range\n\n3D LUT baking strategy:\n  For GPU performance, bake RRT+ODT into a 65x65x65 or 33x33x33\n  3D LUT. Apply via\
+    \ tetrahedral interpolation (existing in our\n  ColorLut3D infrastructure). This is standard practice — OCIO\n  does exactly\
+    \ this for its GPU path.\n\nExpression tree integration:\n  For the analytic fusion track, the RRT spline can be expressed\n\
+    \  as a PointOpExpr::Spline variant. This enables fusion with\n  upstream point ops (e.g., exposure → RRT → ODT as single\
+    \ pass).\n"
+plan:
+- phase: RRT implementation
+  tasks:
+  - text: Implement segmented spline C5 and C9 evaluation functions
+    done: false
+  - text: Implement RRT glow module (dark surround compensation)
+    done: false
+  - text: Implement RRT red modifier (hue-preserving desaturation)
+    done: false
+  - text: Implement full RRT pipeline (AP1 input → OCES output)
+    done: false
+  - text: Validate against CTL reference on standard test values
+    done: false
+- phase: ODT implementations
+  tasks:
+  - text: Implement sRGB ODT (OCES → sRGB display, 100 nit, D65)
+    done: false
+  - text: Implement Rec.709 ODT (OCES → BT.1886 display, 100 nit)
+    done: false
+  - text: Implement P3-D65 ODT (OCES → P3 cinema, 48 nit)
+    done: false
+  - text: Implement Rec.2020 PQ 1000 nit ODT (OCES → HDR PQ)
+    done: false
+- phase: Pipeline integration
+  tasks:
+  - text: Extend ViewTransform enum with ACES RRT+ODT variants
+    done: false
+  - text: Add LMT hook point between scene processing and RRT
+    done: false
+  - text: Bake RRT+ODT to 3D LUT for GPU fast path
+    done: false
+  - text: Wire into DemoteNode / display-transform pipeline
+    done: false
+- phase: GPU compute shaders
+  tasks:
+  - text: GPU shader for RRT segmented spline evaluation
+    done: false
+  - text: GPU shader for sRGB ODT (full RRT+ODT as single fused shader)
+    done: false
+  - text: GPU 3D LUT bake path — bake RRT+ODT to 65x65x65 LUT for fast GPU eval
+    done: false
+  - text: GPU parity test — GPU RRT+ODT matches CPU within f32 precision
+    done: false
+- phase: Validation
+  tasks:
+  - text: Numerical parity against aces-dev CTL (< 0.001 code value)
+    done: false
+  - text: Visual test with ACES test images (Marcie, StEM)
+    done: false
+  - text: Round-trip through inverse RRT+ODT (< 1e-4 for invertible range)
+    done: false
+extra: {}
