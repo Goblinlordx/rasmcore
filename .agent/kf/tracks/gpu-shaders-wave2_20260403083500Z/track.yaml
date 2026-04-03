@@ -71,17 +71,17 @@ plan:
   - text: sharpen_f32.wgsl + parity test
     done: true
   - text: median_f32.wgsl + parity test
-    done: false
+    done: true
   - text: bilateral_f32.wgsl + parity test (already has shader — may just need wiring)
-    done: false
+    done: true
   - text: motion_blur_f32.wgsl + parity test
-    done: false
+    done: true
   - text: Remaining spatial (high_pass, guided_filter, spin_blur, zoom_blur)
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: All GPU parity tests pass
-    done: false
+    done: true
   - text: No U32Packed-only filters remain (all have f32 variants)
-    done: false
+    done: true
 extra: {}

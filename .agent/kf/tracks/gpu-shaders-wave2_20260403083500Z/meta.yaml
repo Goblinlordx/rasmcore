@@ -1,6 +1,6 @@
 title: GPU shaders wave 2 — f32 variants for existing U32Packed spatial + distortion
   filters
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-03'
