@@ -3,7 +3,7 @@ title: Documentation refresh — update all docs for V2 architecture
 type: chore
 status: pending
 created: '2026-04-04'
-updated: '2026-04-04'
+updated: '2026-04-03'
 spec:
   summary: 'Rewrite extending.md for V2 derive(Filter) pattern, update architecture.md
 
@@ -85,29 +85,29 @@ plan:
 - phase: Extending guide rewrite
   tasks:
   - text: Rewrite Extension Model Overview for V2 derive(Filter) + CpuFilter
-    done: false
+    done: true
   - text: Update Adding a Filter with V2 examples (InvertV2, WaveParams)
-    done: false
+    done: true
   - text: Add GpuFilter, AnalyticOp, mask generator, compositor sections
-    done: false
+    done: true
   - text: Add param hints section covering rc.point/path/box_select
-    done: false
+    done: true
 - phase: Architecture and migration docs
   tasks:
   - text: Update architecture.md with V2 pipeline, f32-native, GPU-primary
-    done: false
+    done: true
   - text: Add ACES pipeline, cache quantization, selective adjustments to architecture.md
-    done: false
+    done: true
   - text: Review and complete V2_MIGRATION.md
-    done: false
+    done: true
 - phase: Cleanup
   tasks:
   - text: Update code_styleguides/implementation-rules.md for V2 patterns (8 V1 refs)
-    done: false
+    done: true
   - text: Update code_styleguides/param-hints.md for V2 patterns (5 V1 refs)
-    done: false
+    done: true
   - text: Update code_styleguides/file-organization.md for V2 patterns (4 V1 refs)
-    done: false
+    done: true
   - text: Archive registration-docs_20260402042203Z (superseded by this track)
-    done: false
+    done: true
 extra: {}
