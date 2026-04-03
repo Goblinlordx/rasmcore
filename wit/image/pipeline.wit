@@ -109,10 +109,21 @@ interface pipeline {
         size-bytes: u64,
     }
 
+    /// Cache storage quality — controls memory/precision tradeoff.
+    enum cache-quality {
+        /// Full precision (default). 16 bytes/pixel for Rgba32f.
+        full,
+        /// Quantize to u16 on store, promote on read. 8 bytes/pixel (2x saving).
+        q16,
+        /// Quantize to u8 on store, promote on read. 4 bytes/pixel (4x saving).
+        q8,
+    }
+
     resource layer-cache {
         constructor(capacity: u32);
         stats: func() -> cache-stats;
         clear: func();
+        set-cache-quality: func(quality: cache-quality);
     }
 
     /// Pipeline precision mode.
