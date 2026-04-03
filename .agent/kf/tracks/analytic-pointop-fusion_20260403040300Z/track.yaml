@@ -1,0 +1,206 @@
+id: analytic-pointop-fusion_20260403040300Z
+title: Analytic point-op fusion — expression tree IR with kernel fusion
+type: feature
+status: pending
+created: '2026-04-03'
+updated: '2026-04-03'
+spec:
+  summary: |
+    Point ops return symbolic math expressions instead of LUTs. The optimizer
+    composes them into an expression tree IR, then lowers to target backend:
+    f32 closure (CPU), baked LUT (u8 output), or fused WGSL shader (GPU).
+    Eliminates intermediate buffers, quantization, and clamping.
+  context: |
+    Reference architecture: OpenColorIO v2 Processor.
+    OCIO takes a "Transform Stack" (series of color/math operations) and
+    collapses it into a single GPU shader or CPU pixel pipeline. This is
+    the industry standard used by DaVinci Resolve, Nuke, Maya, and every
+    ACES-compliant tool.
+
+    Same pattern: Apple Core Image JIT-compiles filter chains into single
+    GPU kernels. Halide fuses operations by default (operator inlining).
+    NVIDIA kernel fusion eliminates intermediate memory round-trips.
+
+    The technique is called "kernel fusion" in HPC/GPU literature. Instead
+    of running N kernels with intermediate buffers between them, a JIT or
+    code generator strings the math into a single execution block.
+
+    Current rasmcore state: FusedLutNode composes point ops into [u8; 256]
+    LUTs. For f32 pipeline: quantize f32->u8, apply LUT, promote u8->f32
+    (graph.rs:148-162). This destroys precision and clamps HDR values.
+
+    Nuke deliberately does NOT fuse color ops, citing f32 sufficiency:
+    "Color nodes do not concatenate because Nuke works in 32-bit float."
+    But Nuke targets careful VFX artists. For a general-purpose engine,
+    analytic fusion is strictly better: zero precision loss, single-pass
+    performance, no intermediate buffers.
+  codebase_analysis: |
+    Current infrastructure:
+
+    PointOp trait (filter_traits.rs:127-130):
+      fn build_lut(&self) -> [u8; 256]
+
+    FusedLutNode (graph.rs:130-228):
+      Stores [u8; 256]. For f32: quantize->LUT->promote (precision lost).
+      GPU: lut1d_f32.wgsl interpolates LUT texture.
+
+    fuse_point_ops() optimizer (graph.rs:1211-1276):
+      Walks graph, finds PointOp chains, composes via compose_luts().
+
+    LutPointOp enum (point_ops.rs):
+      Variants for each op with build_lut() implementations.
+
+    Point ops that need expression impls:
+      brightness, contrast, gamma, levels, exposure, invert, posterize,
+      sigmoidal_contrast, burn, dodge, curves (piecewise), color_balance
+
+    Existing color math (color_spaces.rs):
+      srgb_to_linear, linear_to_srgb, prophoto/adobe/oklab conversions —
+      these should also be expressible for fusion with the color pipeline
+      tracks (linear-light-ingest, display-transform).
+  acceptance_criteria:
+    - PointOpExpr enum — symbolic expression tree for point-op math
+    - Point-op filters implement fn expr() -> PointOpExpr alongside existing build_lut()
+    - Expression composition via substitution (nest outer around inner)
+    - Constant folding optimizer (Add(Const(a), Const(b)) -> Const(a+b))
+    - Inverse cancellation (Add(x, a) composed with Sub(x, a) -> identity)
+    - Three lowering backends from the same IR
+    - lower_to_closure() -> Box<dyn Fn(f32)->f32> for CPU f32 evaluation
+    - lower_to_lut() -> [u8; 256] for CPU u8 output (replaces compose_luts)
+    - lower_to_wgsl() -> String for GPU shader codegen (kernel fusion)
+    - FusedAnalyticNode replaces FusedLutNode for f32 pipeline
+    - Single-pass pixel evaluation (no intermediate buffers between fused ops)
+    - darken+brighten round-trip is identity (algebraic cancellation)
+    - HDR values >1.0 survive fused chain unclamped
+    - GPU codegen produces inlined WGSL (not uniform-driven dispatch loop)
+    - All existing fusion tests pass (backward compat via lower_to_lut)
+  out_of_scope: |
+    3D CLUT analytic composition (FusedClutNode — different architecture).
+    Full JIT compilation (LLVM/Cranelift — expression tree is interpreted).
+    OCIO integration (separate track — this builds the foundation).
+    Automatic differentiation for Jacobian computation.
+  technical_notes: |
+    ARCHITECTURE: Expression Tree IR + Lowering Backends
+
+    1. THE IR — PointOpExpr (symbolic math):
+
+       enum PointOpExpr {
+           Input,
+           Constant(f32),
+           Add(Box<PointOpExpr>, Box<PointOpExpr>),
+           Sub(Box<PointOpExpr>, Box<PointOpExpr>),
+           Mul(Box<PointOpExpr>, Box<PointOpExpr>),
+           Div(Box<PointOpExpr>, Box<PointOpExpr>),
+           Pow(Box<PointOpExpr>, Box<PointOpExpr>),
+           Clamp(Box<PointOpExpr>, f32, f32),
+           Floor(Box<PointOpExpr>),
+           // Extensible for future ops
+       }
+
+    2. FILTER EXPR IMPLEMENTATIONS:
+
+       brightness(b):  Add(Input, Constant(b))
+       contrast(c):    Add(Mul(Sub(Input, Constant(0.5)), Constant(c)), Constant(0.5))
+       gamma(g):       Pow(Input, Constant(1.0 / g))
+       exposure(ev):   Mul(Input, Constant(2.0f32.powf(ev)))
+       invert:         Sub(Constant(1.0), Input)
+       levels(b,w):    Div(Sub(Input, Constant(b)), Constant(w - b))
+
+    3. COMPOSITION — substitution:
+
+       compose(outer, inner) = outer.substitute(Input, inner)
+
+       brightness(0.1) then contrast(1.5):
+         contrast.substitute(Input, brightness.expr())
+         = Add(Mul(Sub(Add(Input, 0.1), 0.5), 1.5), 0.5)
+
+    4. OPTIMIZER — algebraic simplification:
+
+       constant_fold:    Add(Const(a), Const(b)) -> Const(a+b)
+       identity_elim:    Add(x, Const(0)) -> x
+       inverse_cancel:   Add(Sub(Input, a), a) -> Input
+       mul_identity:     Mul(x, Const(1)) -> x
+       pow_one:          Pow(x, Const(1)) -> x
+
+    5. LOWERING BACKENDS:
+
+       lower_to_closure(expr) -> Box<dyn Fn(f32) -> f32>
+         Recursive evaluator. Used for CPU f32 pixel processing.
+         Evaluate in f64 for intermediate precision, cast result to f32.
+
+       lower_to_lut(expr) -> [u8; 256]
+         Evaluate at 256 points (0/255..255/255), quantize output.
+         Used at u8 encode boundary only.
+
+       lower_to_wgsl(expr) -> String
+         Emit WGSL source code with inlined math. No LUT texture.
+         Example output:
+           fn point_op(v: f32) -> f32 {
+               return ((v + 0.1) - 0.5) * 1.5 + 0.5;
+           }
+         Compose with io_u32/io_f32 fragments for full GPU shader.
+
+    6. PIPELINE INTEGRATION:
+
+       fuse_point_ops() updated:
+         - Detect chains where all nodes implement expr()
+         - Compose expressions via substitution
+         - Run optimizer (constant fold, identity elim)
+         - Create FusedAnalyticNode with the composed expression
+         - FusedAnalyticNode.compute_region: lower_to_closure, apply per pixel
+         - FusedAnalyticNode.gpu_ops: lower_to_wgsl, compose shader
+         - FusedAnalyticNode.as_point_op_lut: lower_to_lut (backward compat)
+plan:
+  - phase: Expression tree IR
+    tasks:
+      - text: Define PointOpExpr enum in new module (domain/point_op_expr.rs)
+        done: false
+      - text: Implement compose(outer, inner) via substitution
+        done: false
+      - text: Implement constant folding optimizer pass
+        done: false
+      - text: Implement identity/inverse cancellation optimizer pass
+        done: false
+  - phase: Filter expression implementations
+    tasks:
+      - text: Add AnalyticPointOp trait with fn expr() -> PointOpExpr to filter_traits.rs
+        done: false
+      - text: Implement expr() for brightness, contrast, gamma, exposure, invert, levels
+        done: false
+      - text: Implement expr() for posterize, sigmoidal_contrast, burn, dodge
+        done: false
+  - phase: Lowering backends
+    tasks:
+      - text: Implement lower_to_closure() — recursive f64 evaluator returning Box<dyn Fn(f32)->f32>
+        done: false
+      - text: Implement lower_to_lut() — evaluate at 256 points, produce [u8; 256]
+        done: false
+      - text: Implement lower_to_wgsl() — emit inlined WGSL source string
+        done: false
+  - phase: FusedAnalyticNode and optimizer integration
+    tasks:
+      - text: Create FusedAnalyticNode storing composed PointOpExpr
+        done: false
+      - text: Implement ImageNode — compute_region via lower_to_closure per pixel per channel
+        done: false
+      - text: Implement as_point_op_lut() via lower_to_lut (backward compat)
+        done: false
+      - text: Implement GpuCapable via lower_to_wgsl (kernel fusion)
+        done: false
+      - text: Update fuse_point_ops() to prefer analytic fusion, fall back to LUT
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test — darken(-0.5) + brighten(+0.5) composes to identity expression
+        done: false
+      - text: Test — HDR values >1.0 survive 10-op fused chain unclamped
+        done: false
+      - text: Test — lower_to_lut matches existing compose_luts output (backward compat)
+        done: false
+      - text: Test — lower_to_wgsl produces valid WGSL (naga validation)
+        done: false
+      - text: Test — GPU fused shader matches CPU fused closure output
+        done: false
+      - text: Regression — all existing fusion tests pass
+        done: false
+extra: {}
