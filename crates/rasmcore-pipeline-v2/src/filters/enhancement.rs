@@ -11,7 +11,7 @@
 
 use crate::filters::spatial::GaussianBlur;
 use crate::node::PipelineError;
-use crate::ops::Filter;
+use crate::ops::{Filter, GpuFilter};
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -1041,6 +1041,58 @@ impl Filter for VignettePowerlaw {
         }
 
         Ok(out)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GPU Shaders
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const VIGNETTE_POWERLAW_WGSL: &str = r#"
+struct Params {
+  width: u32,
+  height: u32,
+  strength: f32,
+  falloff: f32,
+  inv_max_dist: f32,
+  _pad0: u32,
+  _pad1: u32,
+  _pad2: u32,
+}
+@group(0) @binding(2) var<uniform> params: Params;
+
+@compute @workgroup_size(16, 16, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  if (gid.x >= params.width || gid.y >= params.height) { return; }
+  let idx = gid.y * params.width + gid.x;
+  let pixel = load_pixel(idx);
+  let cx = f32(params.width) / 2.0;
+  let cy = f32(params.height) / 2.0;
+  let dx = f32(gid.x) - cx;
+  let dy = f32(gid.y) - cy;
+  let dist = sqrt(dx * dx + dy * dy) * params.inv_max_dist;
+  let factor = max(1.0 - params.strength * pow(dist, params.falloff), 0.0);
+  store_pixel(idx, vec4<f32>(pixel.x * factor, pixel.y * factor, pixel.z * factor, pixel.w));
+}
+"#;
+
+impl GpuFilter for VignettePowerlaw {
+    fn shader_body(&self) -> &str { VIGNETTE_POWERLAW_WGSL }
+    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        let cx = width as f32 / 2.0;
+        let cy = height as f32 / 2.0;
+        let max_dist = (cx * cx + cy * cy).sqrt().max(1.0);
+        let mut buf = Vec::with_capacity(32);
+        buf.extend_from_slice(&width.to_le_bytes());
+        buf.extend_from_slice(&height.to_le_bytes());
+        buf.extend_from_slice(&self.strength.to_le_bytes());
+        buf.extend_from_slice(&self.falloff.to_le_bytes());
+        buf.extend_from_slice(&(1.0f32 / max_dist).to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf
     }
 }
 

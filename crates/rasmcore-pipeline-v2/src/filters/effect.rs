@@ -12,7 +12,7 @@
 use crate::filters::spatial::GaussianBlur;
 use crate::node::PipelineError;
 use crate::noise;
-use crate::ops::Filter;
+use crate::ops::{Filter, GpuFilter};
 
 // PRNG and noise use the shared noise module (crate::noise).
 use noise::{Rng, SEED_GAUSSIAN_NOISE, SEED_UNIFORM_NOISE, SEED_SALT_PEPPER, SEED_POISSON_NOISE, SEED_GLITCH};
@@ -777,6 +777,531 @@ impl Filter for MirrorKaleidoscope {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// GPU Shaders — GpuFilter implementations for per-pixel effect filters
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Helper: build standard params header (width, height) + extra f32/u32 fields.
+fn gpu_params_wh(width: u32, height: u32) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(8);
+    buf.extend_from_slice(&width.to_le_bytes());
+    buf.extend_from_slice(&height.to_le_bytes());
+    buf
+}
+
+fn gpu_params_push_f32(buf: &mut Vec<u8>, v: f32) {
+    buf.extend_from_slice(&v.to_le_bytes());
+}
+
+fn gpu_params_push_u32(buf: &mut Vec<u8>, v: u32) {
+    buf.extend_from_slice(&v.to_le_bytes());
+}
+
+// ── Gaussian Noise GPU ─────────────────────────────────────────────────────
+
+const GAUSSIAN_NOISE_WGSL: &str = r#"
+struct Params {
+  width: u32,
+  height: u32,
+  amount: f32,
+  mean: f32,
+  sigma: f32,
+  seed_lo: u32,
+  seed_hi: u32,
+  _pad: u32,
+}
+@group(0) @binding(2) var<uniform> params: Params;
+
+@compute @workgroup_size(256, 1, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let idx = gid.x;
+  if (idx >= params.width * params.height) { return; }
+  let pixel = load_pixel(idx);
+  // Box-Muller: two uniform -> one gaussian
+  let u1 = max(abs(noise_2d(idx, 0u, params.seed_lo, params.seed_hi) * 0.5 + 0.5), 0.00001);
+  let u2 = noise_2d(idx, 1u, params.seed_lo + 7u, params.seed_hi) * 0.5 + 0.5;
+  let g = sqrt(-2.0 * log(u1)) * cos(6.2831853 * u2);
+  let n = (params.mean + params.sigma * g) * params.amount;
+  store_pixel(idx, vec4<f32>(pixel.x + n, pixel.y + n, pixel.z + n, pixel.w));
+}
+"#;
+
+impl GpuFilter for GaussianNoise {
+    fn shader_body(&self) -> &str { GAUSSIAN_NOISE_WGSL }
+    fn workgroup_size(&self) -> [u32; 3] { [256, 1, 1] }
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        let seed = self.seed ^ noise::SEED_GAUSSIAN_NOISE;
+        let mut buf = gpu_params_wh(width, height);
+        gpu_params_push_f32(&mut buf, self.amount / 100.0);
+        gpu_params_push_f32(&mut buf, self.mean / 255.0);
+        gpu_params_push_f32(&mut buf, self.sigma / 255.0);
+        gpu_params_push_u32(&mut buf, seed as u32);
+        gpu_params_push_u32(&mut buf, (seed >> 32) as u32);
+        gpu_params_push_u32(&mut buf, 0); // pad
+        buf
+    }
+    fn gpu_shader(&self, width: u32, height: u32) -> crate::node::GpuShader {
+        crate::node::GpuShader {
+            body: format!("{}\n{}", noise::NOISE_WGSL, GAUSSIAN_NOISE_WGSL),
+            entry_point: "main",
+            workgroup_size: self.workgroup_size(),
+            params: self.params(width, height),
+            extra_buffers: vec![],
+        }
+    }
+}
+
+// ── Uniform Noise GPU ──────────────────────────────────────────────────────
+
+const UNIFORM_NOISE_WGSL: &str = r#"
+struct Params {
+  width: u32,
+  height: u32,
+  range: f32,
+  seed_lo: u32,
+  seed_hi: u32,
+  _pad0: u32,
+  _pad1: u32,
+  _pad2: u32,
+}
+@group(0) @binding(2) var<uniform> params: Params;
+
+@compute @workgroup_size(256, 1, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let idx = gid.x;
+  if (idx >= params.width * params.height) { return; }
+  let pixel = load_pixel(idx);
+  let n = noise_2d(idx, 0u, params.seed_lo, params.seed_hi) * params.range;
+  store_pixel(idx, vec4<f32>(pixel.x + n, pixel.y + n, pixel.z + n, pixel.w));
+}
+"#;
+
+impl GpuFilter for UniformNoise {
+    fn shader_body(&self) -> &str { UNIFORM_NOISE_WGSL }
+    fn workgroup_size(&self) -> [u32; 3] { [256, 1, 1] }
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        let seed = self.seed ^ noise::SEED_UNIFORM_NOISE;
+        let mut buf = gpu_params_wh(width, height);
+        gpu_params_push_f32(&mut buf, self.range / 255.0);
+        gpu_params_push_u32(&mut buf, seed as u32);
+        gpu_params_push_u32(&mut buf, (seed >> 32) as u32);
+        gpu_params_push_u32(&mut buf, 0);
+        gpu_params_push_u32(&mut buf, 0);
+        gpu_params_push_u32(&mut buf, 0);
+        buf
+    }
+    fn gpu_shader(&self, width: u32, height: u32) -> crate::node::GpuShader {
+        crate::node::GpuShader {
+            body: format!("{}\n{}", noise::NOISE_WGSL, UNIFORM_NOISE_WGSL),
+            entry_point: "main",
+            workgroup_size: self.workgroup_size(),
+            params: self.params(width, height),
+            extra_buffers: vec![],
+        }
+    }
+}
+
+// ── Salt & Pepper Noise GPU ────────────────────────────────────────────────
+
+const SALT_PEPPER_WGSL: &str = r#"
+struct Params {
+  width: u32,
+  height: u32,
+  density: f32,
+  seed_lo: u32,
+  seed_hi: u32,
+  _pad0: u32,
+  _pad1: u32,
+  _pad2: u32,
+}
+@group(0) @binding(2) var<uniform> params: Params;
+
+@compute @workgroup_size(256, 1, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let idx = gid.x;
+  if (idx >= params.width * params.height) { return; }
+  let pixel = load_pixel(idx);
+  let r = noise_2d(idx, 0u, params.seed_lo, params.seed_hi) * 0.5 + 0.5;
+  if (r < params.density) {
+    let bw = noise_2d(idx, 1u, params.seed_lo + 3u, params.seed_hi) * 0.5 + 0.5;
+    let val = select(0.0, 1.0, bw > 0.5);
+    store_pixel(idx, vec4<f32>(val, val, val, pixel.w));
+  } else {
+    store_pixel(idx, pixel);
+  }
+}
+"#;
+
+impl GpuFilter for SaltPepperNoise {
+    fn shader_body(&self) -> &str { SALT_PEPPER_WGSL }
+    fn workgroup_size(&self) -> [u32; 3] { [256, 1, 1] }
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        let seed = self.seed ^ noise::SEED_SALT_PEPPER;
+        let mut buf = gpu_params_wh(width, height);
+        gpu_params_push_f32(&mut buf, self.density);
+        gpu_params_push_u32(&mut buf, seed as u32);
+        gpu_params_push_u32(&mut buf, (seed >> 32) as u32);
+        gpu_params_push_u32(&mut buf, 0);
+        gpu_params_push_u32(&mut buf, 0);
+        gpu_params_push_u32(&mut buf, 0);
+        buf
+    }
+    fn gpu_shader(&self, width: u32, height: u32) -> crate::node::GpuShader {
+        crate::node::GpuShader {
+            body: format!("{}\n{}", noise::NOISE_WGSL, SALT_PEPPER_WGSL),
+            entry_point: "main",
+            workgroup_size: self.workgroup_size(),
+            params: self.params(width, height),
+            extra_buffers: vec![],
+        }
+    }
+}
+
+// ── Poisson Noise GPU ──────────────────────────────────────────────────────
+
+const POISSON_NOISE_WGSL: &str = r#"
+struct Params {
+  width: u32,
+  height: u32,
+  scale: f32,
+  inv_scale: f32,
+  seed_lo: u32,
+  seed_hi: u32,
+  _pad0: u32,
+  _pad1: u32,
+}
+@group(0) @binding(2) var<uniform> params: Params;
+
+@compute @workgroup_size(256, 1, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let idx = gid.x;
+  if (idx >= params.width * params.height) { return; }
+  let pixel = load_pixel(idx);
+  // Gaussian approx for Poisson: noisy = lambda + sqrt(lambda) * gaussian
+  var result = pixel;
+  for (var c = 0u; c < 3u; c = c + 1u) {
+    let val = select(pixel.x, select(pixel.y, pixel.z, c == 2u), c >= 1u);
+    let lambda = max(val, 0.0) * params.scale;
+    let u1 = max(abs(noise_2d(idx * 3u + c, 0u, params.seed_lo, params.seed_hi) * 0.5 + 0.5), 0.00001);
+    let u2 = noise_2d(idx * 3u + c, 1u, params.seed_lo + 5u, params.seed_hi) * 0.5 + 0.5;
+    let g = sqrt(-2.0 * log(u1)) * cos(6.2831853 * u2);
+    let noisy = max(lambda + sqrt(max(lambda, 0.001)) * g, 0.0) * params.inv_scale;
+    switch c {
+      case 0u: { result.x = noisy; }
+      case 1u: { result.y = noisy; }
+      case 2u: { result.z = noisy; }
+      default: {}
+    }
+  }
+  store_pixel(idx, result);
+}
+"#;
+
+impl GpuFilter for PoissonNoise {
+    fn shader_body(&self) -> &str { POISSON_NOISE_WGSL }
+    fn workgroup_size(&self) -> [u32; 3] { [256, 1, 1] }
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        let seed = self.seed ^ noise::SEED_POISSON_NOISE;
+        let mut buf = gpu_params_wh(width, height);
+        gpu_params_push_f32(&mut buf, self.scale);
+        gpu_params_push_f32(&mut buf, 1.0 / self.scale.max(0.001));
+        gpu_params_push_u32(&mut buf, seed as u32);
+        gpu_params_push_u32(&mut buf, (seed >> 32) as u32);
+        gpu_params_push_u32(&mut buf, 0);
+        gpu_params_push_u32(&mut buf, 0);
+        buf
+    }
+    fn gpu_shader(&self, width: u32, height: u32) -> crate::node::GpuShader {
+        crate::node::GpuShader {
+            body: format!("{}\n{}", noise::NOISE_WGSL, POISSON_NOISE_WGSL),
+            entry_point: "main",
+            workgroup_size: self.workgroup_size(),
+            params: self.params(width, height),
+            extra_buffers: vec![],
+        }
+    }
+}
+
+// ── Light Leak GPU ─────────────────────────────────────────────────────────
+
+const LIGHT_LEAK_WGSL: &str = r#"
+struct Params {
+  width: u32,
+  height: u32,
+  intensity: f32,
+  pos_x: f32,
+  pos_y: f32,
+  radius: f32,
+  warmth: f32,
+  _pad: u32,
+}
+@group(0) @binding(2) var<uniform> params: Params;
+
+@compute @workgroup_size(16, 16, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  if (gid.x >= params.width || gid.y >= params.height) { return; }
+  let idx = gid.y * params.width + gid.x;
+  let pixel = load_pixel(idx);
+  let nx = f32(gid.x) / f32(params.width);
+  let ny = f32(gid.y) / f32(params.height);
+  let dx = nx - params.pos_x;
+  let dy = ny - params.pos_y;
+  let dist = sqrt(dx * dx + dy * dy);
+  let falloff = max(1.0 - dist / max(params.radius, 0.001), 0.0);
+  let leak = falloff * falloff * params.intensity;
+  // Screen blend: 1 - (1-a)*(1-b)
+  let lr = 1.0 * params.warmth;
+  let lg = 0.8 * params.warmth;
+  let lb = 0.3 * params.warmth;
+  let r = 1.0 - (1.0 - pixel.x) * (1.0 - lr * leak);
+  let g = 1.0 - (1.0 - pixel.y) * (1.0 - lg * leak);
+  let b = 1.0 - (1.0 - pixel.z) * (1.0 - lb * leak);
+  store_pixel(idx, vec4<f32>(r, g, b, pixel.w));
+}
+"#;
+
+impl GpuFilter for LightLeak {
+    fn shader_body(&self) -> &str { LIGHT_LEAK_WGSL }
+    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        let mut buf = gpu_params_wh(width, height);
+        gpu_params_push_f32(&mut buf, self.intensity);
+        gpu_params_push_f32(&mut buf, self.position_x);
+        gpu_params_push_f32(&mut buf, self.position_y);
+        gpu_params_push_f32(&mut buf, self.radius);
+        gpu_params_push_f32(&mut buf, self.warmth);
+        gpu_params_push_u32(&mut buf, 0);
+        buf
+    }
+}
+
+// ── Glitch GPU ─────────────────────────────────────────────────────────────
+
+const GLITCH_WGSL: &str = r#"
+struct Params {
+  width: u32,
+  height: u32,
+  shift_amount: f32,
+  channel_offset: f32,
+  intensity: f32,
+  band_height: u32,
+  seed_lo: u32,
+  seed_hi: u32,
+}
+@group(0) @binding(2) var<uniform> params: Params;
+
+@compute @workgroup_size(16, 16, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  if (gid.x >= params.width || gid.y >= params.height) { return; }
+  let idx = gid.y * params.width + gid.x;
+  let pixel = load_pixel(idx);
+  let band = gid.y / max(params.band_height, 1u);
+  let n = noise_2d(band, 0u, params.seed_lo, params.seed_hi);
+  if (abs(n) <= 1.0 - params.intensity) {
+    store_pixel(idx, pixel);
+    return;
+  }
+  let shift = i32(n * params.shift_amount);
+  let ch_off = i32(n * params.channel_offset);
+  let w = i32(params.width);
+  let rx = clamp(i32(gid.x) + shift + ch_off, 0, w - 1);
+  let gx = clamp(i32(gid.x) + shift, 0, w - 1);
+  let bx = clamp(i32(gid.x) + shift - ch_off, 0, w - 1);
+  let rp = load_pixel(gid.y * params.width + u32(rx));
+  let gp = load_pixel(gid.y * params.width + u32(gx));
+  let bp = load_pixel(gid.y * params.width + u32(bx));
+  store_pixel(idx, vec4<f32>(rp.x, gp.y, bp.z, pixel.w));
+}
+"#;
+
+impl GpuFilter for Glitch {
+    fn shader_body(&self) -> &str { GLITCH_WGSL }
+    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        let seed = self.seed as u64 ^ noise::SEED_GLITCH;
+        let mut buf = gpu_params_wh(width, height);
+        gpu_params_push_f32(&mut buf, self.shift_amount);
+        gpu_params_push_f32(&mut buf, self.channel_offset);
+        gpu_params_push_f32(&mut buf, self.intensity);
+        gpu_params_push_u32(&mut buf, self.band_height);
+        gpu_params_push_u32(&mut buf, seed as u32);
+        gpu_params_push_u32(&mut buf, (seed >> 32) as u32);
+        buf
+    }
+    fn gpu_shader(&self, width: u32, height: u32) -> crate::node::GpuShader {
+        crate::node::GpuShader {
+            body: format!("{}\n{}", noise::NOISE_WGSL, GLITCH_WGSL),
+            entry_point: "main",
+            workgroup_size: self.workgroup_size(),
+            params: self.params(width, height),
+            extra_buffers: vec![],
+        }
+    }
+}
+
+// ── Chromatic Split GPU ────────────────────────────────────────────────────
+
+const CHROMATIC_SPLIT_WGSL: &str = r#"
+struct Params {
+  width: u32,
+  height: u32,
+  red_dx: f32,
+  red_dy: f32,
+  green_dx: f32,
+  green_dy: f32,
+  blue_dx: f32,
+  blue_dy: f32,
+}
+@group(0) @binding(2) var<uniform> params: Params;
+
+@compute @workgroup_size(16, 16, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  if (gid.x >= params.width || gid.y >= params.height) { return; }
+  let idx = gid.y * params.width + gid.x;
+  let w = i32(params.width);
+  let h = i32(params.height);
+  let rx = clamp(i32(gid.x) + i32(params.red_dx), 0, w - 1);
+  let ry = clamp(i32(gid.y) + i32(params.red_dy), 0, h - 1);
+  let gx = clamp(i32(gid.x) + i32(params.green_dx), 0, w - 1);
+  let gy = clamp(i32(gid.y) + i32(params.green_dy), 0, h - 1);
+  let bx = clamp(i32(gid.x) + i32(params.blue_dx), 0, w - 1);
+  let by = clamp(i32(gid.y) + i32(params.blue_dy), 0, h - 1);
+  let rp = load_pixel(u32(ry) * params.width + u32(rx));
+  let gp = load_pixel(u32(gy) * params.width + u32(gx));
+  let bp = load_pixel(u32(by) * params.width + u32(bx));
+  let pixel = load_pixel(idx);
+  store_pixel(idx, vec4<f32>(rp.x, gp.y, bp.z, pixel.w));
+}
+"#;
+
+impl GpuFilter for ChromaticSplit {
+    fn shader_body(&self) -> &str { CHROMATIC_SPLIT_WGSL }
+    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        let mut buf = gpu_params_wh(width, height);
+        gpu_params_push_f32(&mut buf, self.red_dx);
+        gpu_params_push_f32(&mut buf, self.red_dy);
+        gpu_params_push_f32(&mut buf, self.green_dx);
+        gpu_params_push_f32(&mut buf, self.green_dy);
+        gpu_params_push_f32(&mut buf, self.blue_dx);
+        gpu_params_push_f32(&mut buf, self.blue_dy);
+        buf
+    }
+}
+
+// ── Chromatic Aberration GPU ───────────────────────────────────────────────
+
+const CHROMATIC_ABERRATION_WGSL: &str = r#"
+struct Params {
+  width: u32,
+  height: u32,
+  strength: f32,
+  _pad: u32,
+}
+@group(0) @binding(2) var<uniform> params: Params;
+
+@compute @workgroup_size(16, 16, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  if (gid.x >= params.width || gid.y >= params.height) { return; }
+  let idx = gid.y * params.width + gid.x;
+  let cx = f32(params.width) / 2.0;
+  let cy = f32(params.height) / 2.0;
+  let dx = f32(gid.x) - cx;
+  let dy = f32(gid.y) - cy;
+  let max_d = sqrt(cx * cx + cy * cy);
+  let dist = sqrt(dx * dx + dy * dy);
+  let shift = params.strength * dist / max(max_d, 1.0);
+  let dir_x = select(dx / dist, 0.0, dist < 0.001);
+  let dir_y = select(dy / dist, 0.0, dist < 0.001);
+  let w = i32(params.width);
+  let h = i32(params.height);
+  // Red: shift outward
+  let rrx = clamp(i32(f32(gid.x) + dir_x * shift), 0, w - 1);
+  let rry = clamp(i32(f32(gid.y) + dir_y * shift), 0, h - 1);
+  // Blue: shift inward
+  let brx = clamp(i32(f32(gid.x) - dir_x * shift), 0, w - 1);
+  let bry = clamp(i32(f32(gid.y) - dir_y * shift), 0, h - 1);
+  let rp = load_pixel(u32(rry) * params.width + u32(rrx));
+  let pixel = load_pixel(idx);
+  let bp = load_pixel(u32(bry) * params.width + u32(brx));
+  store_pixel(idx, vec4<f32>(rp.x, pixel.y, bp.z, pixel.w));
+}
+"#;
+
+impl GpuFilter for ChromaticAberration {
+    fn shader_body(&self) -> &str { CHROMATIC_ABERRATION_WGSL }
+    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        let mut buf = gpu_params_wh(width, height);
+        gpu_params_push_f32(&mut buf, self.strength);
+        gpu_params_push_u32(&mut buf, 0);
+        buf
+    }
+}
+
+// ── Mirror Kaleidoscope GPU ────────────────────────────────────────────────
+
+const MIRROR_KALEIDOSCOPE_WGSL: &str = r#"
+struct Params {
+  width: u32,
+  height: u32,
+  segments: u32,
+  angle: f32,
+  mode: u32,
+  _pad0: u32,
+  _pad1: u32,
+  _pad2: u32,
+}
+@group(0) @binding(2) var<uniform> params: Params;
+
+@compute @workgroup_size(16, 16, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  if (gid.x >= params.width || gid.y >= params.height) { return; }
+  let idx = gid.y * params.width + gid.x;
+  var sx = gid.x;
+  var sy = gid.y;
+  let w = params.width;
+  let h = params.height;
+  if (params.mode == 0u) {
+    // Horizontal mirror
+    if (gid.x >= w / 2u) { sx = w - 1u - gid.x; }
+  } else if (params.mode == 1u) {
+    // Vertical mirror
+    if (gid.y >= h / 2u) { sy = h - 1u - gid.y; }
+  } else {
+    // Angular kaleidoscope
+    let cx = f32(w) / 2.0;
+    let cy = f32(h) / 2.0;
+    let dx = f32(gid.x) - cx;
+    let dy = f32(gid.y) - cy;
+    let dist = sqrt(dx * dx + dy * dy);
+    var angle = atan2(dy, dx) - params.angle;
+    let seg_angle = 6.2831853 / f32(max(params.segments, 2u));
+    angle = angle - floor(angle / seg_angle) * seg_angle;
+    if (angle > seg_angle / 2.0) { angle = seg_angle - angle; }
+    angle = angle + params.angle;
+    sx = u32(clamp(cx + dist * cos(angle), 0.0, f32(w - 1u)));
+    sy = u32(clamp(cy + dist * sin(angle), 0.0, f32(h - 1u)));
+  }
+  store_pixel(idx, load_pixel(sy * w + sx));
+}
+"#;
+
+impl GpuFilter for MirrorKaleidoscope {
+    fn shader_body(&self) -> &str { MIRROR_KALEIDOSCOPE_WGSL }
+    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        let mut buf = gpu_params_wh(width, height);
+        gpu_params_push_u32(&mut buf, self.segments);
+        gpu_params_push_f32(&mut buf, self.angle);
+        gpu_params_push_u32(&mut buf, self.mode);
+        gpu_params_push_u32(&mut buf, 0);
+        gpu_params_push_u32(&mut buf, 0);
+        gpu_params_push_u32(&mut buf, 0);
+        buf
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1035,5 +1560,42 @@ mod tests {
         let out = n.compute(&input, 4, 4).unwrap();
         // HDR values should survive (not clamped to [0,1])
         assert!(out.chunks_exact(4).any(|p| p[0] > 1.0));
+    }
+
+    #[test]
+    fn gpu_shaders_are_valid_wgsl_structure() {
+        // Just verify all GPU shader bodies contain required WGSL elements
+        let shaders: Vec<(&str, &str)> = vec![
+            ("GaussianNoise", GAUSSIAN_NOISE_WGSL),
+            ("UniformNoise", UNIFORM_NOISE_WGSL),
+            ("SaltPepper", SALT_PEPPER_WGSL),
+            ("PoissonNoise", POISSON_NOISE_WGSL),
+            ("LightLeak", LIGHT_LEAK_WGSL),
+            ("Glitch", GLITCH_WGSL),
+            ("ChromaticSplit", CHROMATIC_SPLIT_WGSL),
+            ("ChromaticAberration", CHROMATIC_ABERRATION_WGSL),
+            ("MirrorKaleidoscope", MIRROR_KALEIDOSCOPE_WGSL),
+        ];
+        for (name, body) in shaders {
+            assert!(body.contains("@compute"), "{name} missing @compute");
+            assert!(body.contains("fn main("), "{name} missing fn main");
+            assert!(body.contains("struct Params"), "{name} missing Params struct");
+            assert!(
+                body.contains("load_pixel") || body.contains("store_pixel"),
+                "{name} missing pixel I/O"
+            );
+        }
+    }
+
+    #[test]
+    fn gpu_noise_params_sizes_correct() {
+        let g = GaussianNoise { amount: 50.0, mean: 0.0, sigma: 25.0, seed: 42 };
+        assert_eq!(g.params(100, 100).len() % 4, 0, "GaussianNoise params not 4-byte aligned");
+        let u = UniformNoise { range: 50.0, seed: 42 };
+        assert_eq!(u.params(100, 100).len() % 4, 0, "UniformNoise params not 4-byte aligned");
+        let sp = SaltPepperNoise { density: 0.05, seed: 42 };
+        assert_eq!(sp.params(100, 100).len() % 4, 0, "SaltPepper params not 4-byte aligned");
+        let p = PoissonNoise { scale: 100.0, seed: 42 };
+        assert_eq!(p.params(100, 100).len() % 4, 0, "Poisson params not 4-byte aligned");
     }
 }
