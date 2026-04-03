@@ -1,8 +1,10 @@
 title: GPU tiled streaming — process tiles through GPU without full-image VRAM upload
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-04-02'
 updated: '2026-04-03'
 deps:
 - gpu-f32-default_20260403074001Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

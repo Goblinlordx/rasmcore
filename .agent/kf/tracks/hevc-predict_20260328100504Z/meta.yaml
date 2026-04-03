@@ -1,9 +1,11 @@
 title: HEVC Intra Prediction — 35 Angular Modes + DC + Planar
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-03-28'
-updated: '2026-03-28'
+updated: '2026-04-03'
 deps:
 - hevc-params_20260328100501Z
 - hevc-test-vectors_20260328130000Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

@@ -1,8 +1,10 @@
 title: Fluent TypeScript SDK — Chainable API Wrapper over jco Bindings
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-03-29'
-updated: '2026-03-29'
+updated: '2026-04-03'
 deps:
 - demo-wasm-build_20260329101700Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

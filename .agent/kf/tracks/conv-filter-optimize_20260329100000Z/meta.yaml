@@ -1,8 +1,10 @@
 title: Convolution Filter Optimization — Separable Kernels, Histogram Median, SIMD
-status: completed
+status: archived
 type: refactor
 approved: false
 created: '2026-03-28'
-updated: '2026-03-28'
+updated: '2026-04-03'
 deps:
 - convolution-filters_20260329161703Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

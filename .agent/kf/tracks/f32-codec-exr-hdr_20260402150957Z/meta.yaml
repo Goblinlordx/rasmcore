@@ -1,8 +1,10 @@
 title: f32 codec entry points — EXR and HDR native f32 decode/encode
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-04-02'
-updated: '2026-04-02'
+updated: '2026-04-03'
 deps:
 - f32-pipeline-foundation_20260402150956Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

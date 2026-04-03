@@ -1,7 +1,9 @@
 title: Distortion & Artistic Effect Filters — Pixelate, Halftone, Swirl, Spherize,
   Barrel
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-03-30'
-updated: '2026-03-30'
+updated: '2026-04-03'
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

@@ -1,7 +1,9 @@
 title: Extensibility Registry — Proc Macro + Build Script Codegen for Filters, Codecs,
   Transforms
-status: completed
+status: archived
 type: refactor
 approved: false
 created: '2026-03-29'
-updated: '2026-03-29'
+updated: '2026-04-03'
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

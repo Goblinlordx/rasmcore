@@ -1,8 +1,10 @@
 title: Move ConfigParams into filter files
-status: completed
+status: archived
 type: refactor
 approved: false
 created: '2026-04-01'
-updated: '2026-04-01'
+updated: '2026-04-03'
 deps:
 - refactor-extract-shared-helpers_20260401113338Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

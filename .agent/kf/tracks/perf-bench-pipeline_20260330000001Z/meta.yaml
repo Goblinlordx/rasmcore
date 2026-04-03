@@ -1,6 +1,8 @@
 title: Performance Benchmark Pipeline — Decoders, Encoders, Filters vs Reference Tools
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-03-29'
-updated: '2026-03-29'
+updated: '2026-04-03'
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

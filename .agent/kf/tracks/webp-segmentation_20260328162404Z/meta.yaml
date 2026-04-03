@@ -1,6 +1,8 @@
 title: VP8 Encoder Segmentation — Adaptive Per-MB QP via 4-Segment Map
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-03-28'
-updated: '2026-03-28'
+updated: '2026-04-03'
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

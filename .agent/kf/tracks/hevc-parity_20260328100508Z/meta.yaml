@@ -1,8 +1,10 @@
-title: "HEVC Parity Tests \u2014 Validate Against libde265 Reference"
-status: completed
+title: HEVC Parity Tests — Validate Against libde265 Reference
+status: archived
 type: chore
 approved: false
 created: '2026-03-28'
-updated: '2026-03-28'
+updated: '2026-04-03'
 deps:
 - hevc-frame_20260328100507Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

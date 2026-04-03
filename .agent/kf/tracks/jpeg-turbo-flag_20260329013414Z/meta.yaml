@@ -1,9 +1,11 @@
 title: JPEG Turbo Flag — Fast Encode Mode
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-03-29'
-updated: '2026-03-29'
+updated: '2026-04-03'
 deps:
 - jpeg-multipass-trellis_20260329013412Z
 - jpeg-eob-optimization_20260329013413Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

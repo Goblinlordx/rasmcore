@@ -1,5 +1,5 @@
 title: V2 codec migration — unified decode/encode
-status: completed
+status: archived
 type: refactor
 approved: false
 created: '2026-04-03'
@@ -7,3 +7,5 @@ updated: '2026-04-03'
 deps:
 - v2-filter-api_20260403053502Z
 - v2-color-pipeline_20260403053503Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

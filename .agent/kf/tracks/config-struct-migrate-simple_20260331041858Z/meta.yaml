@@ -1,8 +1,10 @@
 title: Migrate Simple Filters to Config Struct Signatures
-status: completed
+status: archived
 type: refactor
 approved: false
 created: '2026-03-31'
-updated: '2026-03-31'
+updated: '2026-04-03'
 deps:
 - config-struct-migrate-multi_20260331041857Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

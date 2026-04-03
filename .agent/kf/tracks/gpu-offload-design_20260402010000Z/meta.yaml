@@ -1,6 +1,8 @@
 title: 'Research: GPU offload architecture design — trait, WIT protocol, shader catalog'
-status: completed
+status: archived
 type: research
 approved: false
 created: '2026-04-01'
-updated: '2026-04-01'
+updated: '2026-04-03'
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

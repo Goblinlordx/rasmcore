@@ -1,8 +1,10 @@
 title: ML execution system — WIT ml-execute, MlCapable trait, host executors
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-04-02'
-updated: '2026-04-02'
+updated: '2026-04-03'
 deps:
 - ml-plugin-architecture_20260402061336Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

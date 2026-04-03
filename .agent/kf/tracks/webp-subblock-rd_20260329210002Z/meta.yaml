@@ -1,8 +1,10 @@
 title: VP8 4x4 Sub-Block RD — Replace SATD with Encode-Trial Mode Selection
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-03-29'
-updated: '2026-03-29'
+updated: '2026-04-03'
 deps:
 - webp-bpred-rd-decision_20260329210001Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

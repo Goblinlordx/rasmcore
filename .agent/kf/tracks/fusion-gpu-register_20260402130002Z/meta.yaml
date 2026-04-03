@@ -1,6 +1,8 @@
 title: Register GPU capability for fused LUT/CLUT nodes after optimization
-status: completed
+status: archived
 type: bug
 approved: false
 created: '2026-04-02'
-updated: '2026-04-02'
+updated: '2026-04-03'
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

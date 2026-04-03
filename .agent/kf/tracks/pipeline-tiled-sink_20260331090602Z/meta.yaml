@@ -1,8 +1,10 @@
 title: Pipeline Tiled Sink — Chunked Execution for Memory Efficiency
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-03-31'
-updated: '2026-03-31'
+updated: '2026-04-03'
 deps:
 - pipeline-dynamic-overlap_20260331090601Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

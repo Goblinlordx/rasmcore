@@ -1,6 +1,8 @@
 title: GPU foundation — GpuCapable trait, WIT import, batch detection
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-04-01'
-updated: '2026-04-01'
+updated: '2026-04-03'
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

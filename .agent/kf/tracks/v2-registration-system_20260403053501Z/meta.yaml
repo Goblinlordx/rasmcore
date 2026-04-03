@@ -1,8 +1,10 @@
 title: V2 registration system — unified build-time registration
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-04-03'
 updated: '2026-04-03'
 deps:
 - v2-pipeline-foundation_20260403053500Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

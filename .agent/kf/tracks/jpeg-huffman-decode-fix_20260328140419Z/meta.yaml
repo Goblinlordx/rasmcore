@@ -1,6 +1,8 @@
 title: JPEG Huffman Decoder — Missing min_code Bounds Check
-status: completed
+status: archived
 type: bug
 approved: false
 created: '2026-03-28'
-updated: '2026-03-28'
+updated: '2026-04-03'
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

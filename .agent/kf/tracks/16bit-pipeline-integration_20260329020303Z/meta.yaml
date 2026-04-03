@@ -1,9 +1,11 @@
 title: 16-Bit Pipeline Integration — Transform, Pipeline Nodes, E2E Testing
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-03-29'
-updated: '2026-03-29'
+updated: '2026-04-03'
 deps:
 - 16bit-point-ops-histogram_20260329020301Z
 - 16bit-filters-color_20260329020302Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

@@ -1,9 +1,11 @@
 title: Smart Crop — Content-Aware Attention Crop + Entropy Crop
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-03-28'
-updated: '2026-03-29'
+updated: '2026-04-03'
 deps:
 - histogram-analysis_20260329161701Z
 - convolution-filters_20260329161703Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

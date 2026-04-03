@@ -1,8 +1,10 @@
 title: Split filters/common.rs into submodules
-status: completed
+status: archived
 type: refactor
 approved: false
 created: '2026-04-01'
-updated: '2026-04-01'
+updated: '2026-04-03'
 deps:
 - fix-bytes-per-pixel-layer_20260401135500Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

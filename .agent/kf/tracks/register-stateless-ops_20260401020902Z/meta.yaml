@@ -1,8 +1,10 @@
 title: Register stateless WIT ops — compare and codec interfaces
-status: completed
+status: archived
 type: refactor
 approved: false
 created: '2026-04-01'
-updated: '2026-04-01'
+updated: '2026-04-03'
 deps:
 - register-transforms_20260401020901Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

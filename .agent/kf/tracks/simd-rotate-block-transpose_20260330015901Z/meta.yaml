@@ -1,8 +1,10 @@
 title: WASM SIMD128 — Block Transpose for rotate_90/270
-status: completed
+status: archived
 type: chore
 approved: false
 created: '2026-03-30'
-updated: '2026-03-30'
+updated: '2026-04-03'
 deps:
 - drop-image-transforms_20260330010101Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

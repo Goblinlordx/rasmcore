@@ -1,8 +1,10 @@
 title: Testing Infrastructure & Host Integration
-status: completed
+status: archived
 type: chore
 approved: false
 created: '2026-03-27'
-updated: '2026-03-27'
+updated: '2026-04-03'
 deps:
 - image-mvp_20260327044101Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

@@ -1,6 +1,8 @@
 title: Complex Text Shaping — rustybuzz + unicode-bidi + unicode-linebreak
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-03-30'
-updated: '2026-03-30'
+updated: '2026-04-03'
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

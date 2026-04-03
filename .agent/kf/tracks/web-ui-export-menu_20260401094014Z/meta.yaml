@@ -1,8 +1,10 @@
 title: Web UI — Download menu + code generation integration
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-04-01'
-updated: '2026-04-01'
+updated: '2026-04-03'
 deps:
 - web-ui-ps-layout_20260401094012Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

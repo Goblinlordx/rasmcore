@@ -1,8 +1,10 @@
 title: JPEG 8x8 DCT + Quantization — Integer Transform and Quality Tables
-status: completed
+status: archived
 type: feature
 approved: true
 created: '2026-03-28'
-updated: '2026-03-28'
+updated: '2026-04-03'
 deps:
 - jpeg-scaffold_20260328080501Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

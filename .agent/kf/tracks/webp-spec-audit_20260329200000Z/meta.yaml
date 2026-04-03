@@ -1,6 +1,8 @@
 title: 'Research: VP8 Encode Pipeline Spec Audit — RFC 6386 Step-by-Step'
-status: completed
+status: archived
 type: research
 approved: false
 created: '2026-03-29'
-updated: '2026-03-29'
+updated: '2026-04-03'
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

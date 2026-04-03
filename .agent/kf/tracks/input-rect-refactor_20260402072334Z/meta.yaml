@@ -1,6 +1,8 @@
 title: 'Refactor: extract input_rect expansion from compute_region for spatial nodes'
-status: completed
+status: archived
 type: refactor
 approved: false
 created: '2026-04-02'
-updated: '2026-04-02'
+updated: '2026-04-03'
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

@@ -1,8 +1,10 @@
 title: JPEG Trellis Quantization — Rate-Distortion Optimized
-status: completed
+status: archived
 type: feature
 approved: true
 created: '2026-03-28'
-updated: '2026-03-28'
+updated: '2026-04-03'
 deps:
 - jpeg-baseline_20260328080504Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

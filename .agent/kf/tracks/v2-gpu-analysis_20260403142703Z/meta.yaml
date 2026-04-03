@@ -1,8 +1,10 @@
 title: V2 GPU — multi-pass analysis filters (histogram, CLAHE, NLM)
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-04-03'
 updated: '2026-04-03'
 deps:
 - v2-filter-api_20260403053502Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

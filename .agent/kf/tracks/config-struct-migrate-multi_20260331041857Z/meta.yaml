@@ -1,8 +1,10 @@
 title: Migrate Multi-Param Filters to Config Struct Signatures
-status: completed
+status: archived
 type: refactor
 approved: false
 created: '2026-03-31'
-updated: '2026-03-31'
+updated: '2026-04-03'
 deps:
 - config-struct-codegen_20260331041856Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

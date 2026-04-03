@@ -1,8 +1,10 @@
 title: SIMD-Optimized Filters — Blur (libblur), Sharpen, Point Ops
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-03-28'
-updated: '2026-03-28'
+updated: '2026-04-03'
 deps:
 - simd-resize_20260328020200Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

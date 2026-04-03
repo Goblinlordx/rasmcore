@@ -1,7 +1,9 @@
 title: f32 pipeline infrastructure — promote at read, quantize at write, auto-wrap
   legacy filters
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-04-02'
-updated: '2026-04-02'
+updated: '2026-04-03'
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

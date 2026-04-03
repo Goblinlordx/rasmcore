@@ -1,8 +1,10 @@
 title: Replace image::DynamicImage in transform.rs with raw buffer ops
-status: completed
+status: archived
 type: refactor
 approved: false
 created: '2026-03-30'
-updated: '2026-03-30'
+updated: '2026-04-03'
 deps:
 - drop-image-trivial-codecs_20260330010100Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

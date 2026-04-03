@@ -1,6 +1,8 @@
 title: Fix V2 WASM component build — WIT/adapter sync
-status: completed
+status: archived
 type: bug
 approved: false
 created: '2026-04-03'
 updated: '2026-04-03'
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

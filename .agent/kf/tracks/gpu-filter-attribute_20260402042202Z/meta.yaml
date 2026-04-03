@@ -1,8 +1,10 @@
 title: GPU registration via filter attribute — eliminate gpu_impls.rs scanning
-status: completed
+status: archived
 type: refactor
 approved: false
 created: '2026-04-02'
-updated: '2026-04-02'
+updated: '2026-04-03'
 deps:
 - unified-codec-registry_20260402042201Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

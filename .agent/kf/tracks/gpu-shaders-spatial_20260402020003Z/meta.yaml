@@ -1,8 +1,10 @@
 title: GPU shaders — spatial ops, distortions, fused affine
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-04-01'
-updated: '2026-04-01'
+updated: '2026-04-03'
 deps:
 - gpu-trait-batch_20260402020000Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

@@ -1,8 +1,10 @@
 title: LayerCache WIT Resource & Pipeline Adapter Wiring
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-03-31'
-updated: '2026-03-31'
+updated: '2026-04-03'
 deps:
 - pipeline-layer-cache_20260331003237Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

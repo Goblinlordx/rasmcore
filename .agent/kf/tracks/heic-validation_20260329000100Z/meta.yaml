@@ -1,6 +1,8 @@
-title: "HEIC Pipeline Validation \u2014 Harden Tests + End-to-End Coverage"
-status: completed
+title: HEIC Pipeline Validation — Harden Tests + End-to-End Coverage
+status: archived
 type: chore
 approved: false
 created: '2026-03-28'
-updated: '2026-03-28'
+updated: '2026-04-03'
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

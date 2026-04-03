@@ -1,8 +1,10 @@
 title: Multi-Frame Encode — GIF Animation and TIFF Multi-Page Write
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-03-30'
-updated: '2026-03-30'
+updated: '2026-04-03'
 deps:
 - frame-sequence-api_20260330050444Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

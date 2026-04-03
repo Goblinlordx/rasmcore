@@ -1,8 +1,10 @@
 title: Script plugin system — Rhai-based filter scripts as pipeline nodes
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-04-02'
-updated: '2026-04-02'
+updated: '2026-04-03'
 deps:
 - plugin-node-system_20260402064200Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

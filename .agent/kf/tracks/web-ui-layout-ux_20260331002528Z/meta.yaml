@@ -1,8 +1,10 @@
 title: Pipeline Builder Layout Overhaul & Layer UX
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-03-31'
-updated: '2026-03-31'
+updated: '2026-04-03'
 deps:
 - web-ui-scaffold_20260331002527Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

@@ -1,8 +1,10 @@
 title: Auto-Generate Pipeline Write Methods from Registered Encoders
-status: completed
+status: archived
 type: refactor
 approved: false
 created: '2026-03-31'
-updated: '2026-03-31'
+updated: '2026-04-03'
 deps:
 - codegen-crate-extract_20260331000001Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

@@ -1,8 +1,10 @@
 title: Demo Pipeline Builder — Visual DAG Editor with Auto-Discovered Operations
-status: completed
+status: archived
 type: feature
 approved: true
 created: '2026-03-29'
-updated: '2026-03-29'
+updated: '2026-04-03'
 deps:
 - demo-webapp_20260329101701Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

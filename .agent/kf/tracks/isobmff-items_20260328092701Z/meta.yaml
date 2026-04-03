@@ -1,8 +1,10 @@
 title: ISOBMFF Item Infrastructure — meta/iinf/iloc/iref Parsing
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-03-28'
-updated: '2026-03-28'
+updated: '2026-04-03'
 deps:
 - isobmff-scaffold_20260328092700Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

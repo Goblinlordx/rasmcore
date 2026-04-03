@@ -1,12 +1,14 @@
 title: 'Research: Architecture Design & Interface Specification'
-status: completed
+status: archived
 type: research
 approved: false
 created: '2026-03-27'
-updated: '2026-03-27'
+updated: '2026-04-03'
 deps:
 - research-wasm-toolchain_20260327035200Z
 - research-rust-crates_20260327035201Z
 - research-wit-interfaces_20260327035202Z
 - research-gpu-wasm_20260327035203Z
 - research-plugin-distribution_20260327035204Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

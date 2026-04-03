@@ -1,8 +1,10 @@
 title: VP8 Rate Control + Loop Filter — Quality Tuning and Deblocking
-status: completed
+status: archived
 type: feature
 approved: true
 created: '2026-03-28'
-updated: '2026-03-28'
+updated: '2026-04-03'
 deps:
 - webp-bitstream_20260328054405Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

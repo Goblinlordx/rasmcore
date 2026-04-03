@@ -1,8 +1,10 @@
 title: VP8 Trellis Candidate Fix — Codec-Aware Quantize + Wire Integration
-status: completed
+status: archived
 type: bug
 approved: false
 created: '2026-03-28'
-updated: '2026-03-28'
+updated: '2026-04-03'
 deps:
 - trellis-webp_20260329180301Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

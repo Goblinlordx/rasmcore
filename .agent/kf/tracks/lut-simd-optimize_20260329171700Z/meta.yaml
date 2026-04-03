@@ -1,8 +1,10 @@
 title: LUT SIMD Optimization — Vectorized 1D + 3D LUT Application with Benchmarks
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-03-28'
-updated: '2026-03-28'
+updated: '2026-04-03'
 deps:
 - lut-fusion-pipeline_20260329170000Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

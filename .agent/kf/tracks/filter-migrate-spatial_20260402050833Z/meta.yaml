@@ -1,8 +1,10 @@
 title: Migrate spatial + distortion filters to derive(Filter) pattern
-status: completed
+status: archived
 type: refactor
 approved: false
 created: '2026-04-02'
-updated: '2026-04-02'
+updated: '2026-04-03'
 deps:
 - filter-derive-foundation_20260402050832Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

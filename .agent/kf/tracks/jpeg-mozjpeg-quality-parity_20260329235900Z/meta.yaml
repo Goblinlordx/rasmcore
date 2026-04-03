@@ -1,9 +1,11 @@
 title: JPEG mozjpeg Quality Parity — Lambda Tuning + Candidate Strategy + DC Trellis
   Alignment
-status: completed
+status: archived
 type: feature
 approved: false
 created: '2026-03-29'
-updated: '2026-03-29'
+updated: '2026-04-03'
 deps:
 - jpeg-quant-tables-csf_20260329235902Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive

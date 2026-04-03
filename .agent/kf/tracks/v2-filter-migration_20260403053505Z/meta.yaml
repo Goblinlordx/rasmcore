@@ -1,5 +1,5 @@
 title: V2 filter migration — port all 210 filters
-status: completed
+status: archived
 type: refactor
 approved: false
 created: '2026-04-03'
@@ -8,3 +8,5 @@ deps:
 - v2-filter-api_20260403053502Z
 - v2-color-pipeline_20260403053503Z
 - v2-fusion-optimizer_20260403053504Z
+archived_at: '2026-04-03'
+archive_reason: bulk-archive
