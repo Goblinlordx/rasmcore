@@ -1087,3 +1087,94 @@ fn gpu_f32_parity_posterize() {
     assert_gpu_parity("posterize_f32 vs cpu_f32", &cpu_f32_result, &gpu_f32_as_u8, 1.0);
     eprintln!("  posterize f32 GPU parity: PASS");
 }
+
+#[test]
+fn gpu_f32_parity_levels() {
+    use rasmcore_pipeline::gpu::BufferFormat;
+    use rasmcore_image::domain::filter_traits::GpuFilter;
+    use rasmcore_image::domain::filters::LevelsParams;
+
+    let gpu = match try_gpu() {
+        Some(g) => g,
+        None => return,
+    };
+
+    let (w, h) = (64, 64);
+    let pixels_u8 = make_gradient_rgba(w, h);
+    let pixels_f32_norm: Vec<u8> = pixels_u8.iter()
+        .flat_map(|&b| (b as f32 / 255.0).to_le_bytes())
+        .collect();
+
+    let config = LevelsParams { black_point: 10.0, white_point: 90.0, gamma: 1.5 };
+    let black = 0.1f32;
+    let white = 0.9f32;
+    let range = white - black;
+    let inv_gamma = 1.0 / 1.5f32;
+
+    let cpu_f32_result: Vec<u8> = pixels_u8.chunks_exact(4).flat_map(|px| {
+        let r = ((px[0] as f32 / 255.0 - black) / range).clamp(0.0, 1.0).powf(inv_gamma);
+        let g = ((px[1] as f32 / 255.0 - black) / range).clamp(0.0, 1.0).powf(inv_gamma);
+        let b = ((px[2] as f32 / 255.0 - black) / range).clamp(0.0, 1.0).powf(inv_gamma);
+        [(r * 255.0 + 0.5) as u8, (g * 255.0 + 0.5) as u8, (b * 255.0 + 0.5) as u8, px[3]]
+    }).collect();
+
+    let ops = config.gpu_ops_with_format(w, h, BufferFormat::F32Vec4)
+        .expect("levels should support f32 GPU");
+    let gpu_f32_bytes = gpu.execute_with_format(&ops, &pixels_f32_norm, w, h, BufferFormat::F32Vec4).unwrap();
+    let gpu_f32_as_u8: Vec<u8> = gpu_f32_bytes.chunks_exact(4)
+        .map(|c| {
+            let v = f32::from_le_bytes([c[0], c[1], c[2], c[3]]);
+            (v * 255.0 + 0.5).clamp(0.0, 255.0) as u8
+        })
+        .collect();
+
+    assert_gpu_parity("levels_f32 vs cpu_f32", &cpu_f32_result, &gpu_f32_as_u8, 1.0);
+    eprintln!("  levels f32 GPU parity: PASS");
+}
+
+#[test]
+fn gpu_f32_parity_sigmoidal_contrast() {
+    use rasmcore_pipeline::gpu::BufferFormat;
+    use rasmcore_image::domain::filter_traits::GpuFilter;
+    use rasmcore_image::domain::filters::SigmoidalContrastParams;
+
+    let gpu = match try_gpu() {
+        Some(g) => g,
+        None => return,
+    };
+
+    let (w, h) = (64, 64);
+    let pixels_u8 = make_gradient_rgba(w, h);
+    let pixels_f32_norm: Vec<u8> = pixels_u8.iter()
+        .flat_map(|&b| (b as f32 / 255.0).to_le_bytes())
+        .collect();
+
+    let config = SigmoidalContrastParams { strength: 5.0, midpoint: 50.0, sharpen: true };
+    let strength = 5.0f32;
+    let midpoint = 0.5f32;
+    let sig = |v: f32| -> f32 { 1.0 / (1.0 + (-strength * (v - midpoint)).exp()) };
+    let sig_0 = sig(0.0);
+    let sig_1 = sig(1.0);
+    let range = sig_1 - sig_0;
+
+    let cpu_f32_result: Vec<u8> = pixels_u8.chunks_exact(4).flat_map(|px| {
+        let apply = |x: f32| -> f32 { ((sig(x) - sig_0) / range).clamp(0.0, 1.0) };
+        let r = apply(px[0] as f32 / 255.0);
+        let g = apply(px[1] as f32 / 255.0);
+        let b = apply(px[2] as f32 / 255.0);
+        [(r * 255.0 + 0.5) as u8, (g * 255.0 + 0.5) as u8, (b * 255.0 + 0.5) as u8, px[3]]
+    }).collect();
+
+    let ops = config.gpu_ops_with_format(w, h, BufferFormat::F32Vec4)
+        .expect("sigmoidal_contrast should support f32 GPU");
+    let gpu_f32_bytes = gpu.execute_with_format(&ops, &pixels_f32_norm, w, h, BufferFormat::F32Vec4).unwrap();
+    let gpu_f32_as_u8: Vec<u8> = gpu_f32_bytes.chunks_exact(4)
+        .map(|c| {
+            let v = f32::from_le_bytes([c[0], c[1], c[2], c[3]]);
+            (v * 255.0 + 0.5).clamp(0.0, 255.0) as u8
+        })
+        .collect();
+
+    assert_gpu_parity("sigmoidal_f32 vs cpu_f32", &cpu_f32_result, &gpu_f32_as_u8, 1.0);
+    eprintln!("  sigmoidal_contrast f32 GPU parity: PASS");
+}
