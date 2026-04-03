@@ -8,9 +8,9 @@
 | gamma | gamma_f32.wgsl | GammaParams | gpu_f32_parity_gamma | 0.0000 | Done |
 | solarize | solarize_f32.wgsl | SolarizeParams | gpu_f32_parity_solarize | 0.0000 | Done |
 | invert | invert_f32.wgsl | — | — | — | Shader ready, no params struct |
-| exposure | — | — | — | — | Pending |
+| exposure | exposure_f32.wgsl | ExposureParams | gpu_f32_parity_exposure | 0.0000 | Done |
 | levels | — | — | — | — | Pending |
-| posterize | — | — | — | — | Pending |
+| posterize | posterize_f32.wgsl | PosterizeParams | gpu_f32_parity_posterize | 0.0000 | Done |
 | sigmoidal_contrast | — | — | — | — | Pending |
 
 ## Color + Grading Ops
@@ -33,9 +33,9 @@
 | uniform_noise | — | — | — | — | Pending |
 
 ## Summary
-- **7 shaders completed** with validated parity (all MAE < 1.0)
+- **9 shaders completed** with validated parity (all MAE < 1.0)
 - **2 shaders written** but not wired (invert: no params, vibrance: formula mismatch)
-- **~15 remaining** in this wave
+- **~13 remaining** in this wave
 
 ## Notes
 - All shaders use 16x16 workgroup, [0,1] normalized f32 I/O
