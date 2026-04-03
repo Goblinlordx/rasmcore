@@ -718,3 +718,52 @@ fn gpu_f32_parity_brightness() {
     assert_gpu_parity("brightness_f32 vs cpu", &cpu_result, &gpu_f32_as_u8, 1.5);
     eprintln!("  brightness f32 GPU parity: PASS");
 }
+
+#[test]
+fn gpu_f32_parity_contrast() {
+    use rasmcore_pipeline::gpu::BufferFormat;
+    use rasmcore_image::domain::filter_traits::GpuFilter;
+    use rasmcore_image::domain::filters::ContrastParams;
+
+    let gpu = match try_gpu() {
+        Some(g) => g,
+        None => return,
+    };
+
+    let (w, h) = (64, 64);
+    let pixels_u8 = make_gradient_rgba(w, h);
+    let pixels_f32_norm: Vec<u8> = pixels_u8.iter()
+        .flat_map(|&b| (b as f32 / 255.0).to_le_bytes())
+        .collect();
+    let info = info_rgba8(w, h);
+
+    let config = ContrastParams { amount: 0.5 };
+
+    // CPU f32 reference — compute contrast in f32 matching the GPU formula
+    let factor = 1.0 + config.amount;
+    let cpu_f32_result: Vec<u8> = pixels_u8.chunks_exact(4).flat_map(|px| {
+        let r = ((px[0] as f32 / 255.0 - 0.5) * factor + 0.5).clamp(0.0, 1.0);
+        let g = ((px[1] as f32 / 255.0 - 0.5) * factor + 0.5).clamp(0.0, 1.0);
+        let b = ((px[2] as f32 / 255.0 - 0.5) * factor + 0.5).clamp(0.0, 1.0);
+        [
+            (r * 255.0 + 0.5) as u8,
+            (g * 255.0 + 0.5) as u8,
+            (b * 255.0 + 0.5) as u8,
+            px[3],
+        ]
+    }).collect();
+
+    // GPU f32
+    let ops = config.gpu_ops_with_format(w, h, BufferFormat::F32Vec4)
+        .expect("contrast should support f32 GPU");
+    let gpu_f32_bytes = gpu.execute_with_format(&ops, &pixels_f32_norm, w, h, BufferFormat::F32Vec4).unwrap();
+    let gpu_f32_as_u8: Vec<u8> = gpu_f32_bytes.chunks_exact(4)
+        .map(|c| {
+            let v = f32::from_le_bytes([c[0], c[1], c[2], c[3]]);
+            (v * 255.0 + 0.5).clamp(0.0, 255.0) as u8
+        })
+        .collect();
+
+    assert_gpu_parity("contrast_f32 vs cpu_f32", &cpu_f32_result, &gpu_f32_as_u8, 1.0);
+    eprintln!("  contrast f32 GPU parity: PASS");
+}
