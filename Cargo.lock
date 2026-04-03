@@ -2851,6 +2851,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rasmcore-codecs-v2"
+version = "0.1.0"
+dependencies = [
+ "inventory",
+ "rasmcore-fits",
+ "rasmcore-image",
+ "rasmcore-pipeline-v2",
+]
+
+[[package]]
 name = "rasmcore-codegen"
 version = "0.1.0"
 dependencies = [
