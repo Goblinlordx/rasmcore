@@ -441,6 +441,10 @@ fn main() {
         let wit_dir = Path::new(&manifest_dir).join("../../wit/image");
         let tmpl_path = wit_dir.join("pipeline.wit.tmpl");
         println!("cargo:rerun-if-changed=../../wit/image/pipeline.wit.tmpl");
+        // Also watch the generated outputs — if a merge/rebase brings a stale
+        // .wit file, cargo will re-run build.rs and regenerate from the template.
+        println!("cargo:rerun-if-changed=../../wit/image/pipeline.wit");
+        println!("cargo:rerun-if-changed=../../wit/image/filters.wit");
 
         // Generate filters.wit from template (replaces generate-wit.cjs)
         let filters_tmpl_path = wit_dir.join("filters.wit.tmpl");
