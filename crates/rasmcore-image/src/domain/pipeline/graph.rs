@@ -121,6 +121,9 @@ static LUT1D_F32_SHADER: std::sync::LazyLock<String> = std::sync::LazyLock::new(
 static LUT3D_SHADER: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
     rasmcore_gpu_shaders::with_pixel_ops(include_str!("shaders/lut3d.wgsl"))
 });
+static LUT3D_F32_SHADER: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    include_str!("shaders/lut3d_f32.wgsl").to_string()
+});
 
 /// A pipeline node that applies a pre-composed LUT, replacing a chain of
 /// consecutive point operations with a single fused lookup table pass.
@@ -259,21 +262,18 @@ impl ImageNode for FusedClutNode {
 impl rasmcore_pipeline::gpu::GpuCapable for FusedClutNode {
     fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
         let grid = self.clut.grid_size as u32;
-
-        // Serialize params: width, height, grid_size, padding
         let mut params = Vec::with_capacity(16);
         params.extend_from_slice(&width.to_le_bytes());
         params.extend_from_slice(&height.to_le_bytes());
         params.extend_from_slice(&grid.to_le_bytes());
-        params.extend_from_slice(&0u32.to_le_bytes()); // padding
+        params.extend_from_slice(&0u32.to_le_bytes());
 
-        // Serialize LUT data: grid^3 x vec4<f32> (rgb + 0.0 padding)
         let mut lut_buf = Vec::with_capacity(self.clut.data.len() * 16);
         for entry in &self.clut.data {
-            lut_buf.extend_from_slice(&entry[0].to_le_bytes()); // r
-            lut_buf.extend_from_slice(&entry[1].to_le_bytes()); // g
-            lut_buf.extend_from_slice(&entry[2].to_le_bytes()); // b
-            lut_buf.extend_from_slice(&0.0f32.to_le_bytes());   // padding (vec4 alignment)
+            lut_buf.extend_from_slice(&entry[0].to_le_bytes());
+            lut_buf.extend_from_slice(&entry[1].to_le_bytes());
+            lut_buf.extend_from_slice(&entry[2].to_le_bytes());
+            lut_buf.extend_from_slice(&0.0f32.to_le_bytes());
         }
 
         Some(vec![rasmcore_pipeline::gpu::GpuOp::Compute {
@@ -282,7 +282,43 @@ impl rasmcore_pipeline::gpu::GpuCapable for FusedClutNode {
             workgroup_size: [256, 1, 1],
             params,
             extra_buffers: vec![lut_buf],
-            buffer_format: rasmcore_pipeline::BufferFormat::U32Packed, // TODO: migrate to f32 CLUT shader
+            buffer_format: rasmcore_pipeline::BufferFormat::U32Packed,
+        }])
+    }
+
+    fn gpu_ops_with_format(
+        &self,
+        width: u32,
+        height: u32,
+        buffer_format: rasmcore_pipeline::BufferFormat,
+    ) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        let grid = self.clut.grid_size as u32;
+        let mut params = Vec::with_capacity(16);
+        params.extend_from_slice(&width.to_le_bytes());
+        params.extend_from_slice(&height.to_le_bytes());
+        params.extend_from_slice(&grid.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes());
+
+        let mut lut_buf = Vec::with_capacity(self.clut.data.len() * 16);
+        for entry in &self.clut.data {
+            lut_buf.extend_from_slice(&entry[0].to_le_bytes());
+            lut_buf.extend_from_slice(&entry[1].to_le_bytes());
+            lut_buf.extend_from_slice(&entry[2].to_le_bytes());
+            lut_buf.extend_from_slice(&0.0f32.to_le_bytes());
+        }
+
+        let (shader, fmt, wg) = match buffer_format {
+            rasmcore_pipeline::BufferFormat::F32Vec4 => (LUT3D_F32_SHADER.clone(), rasmcore_pipeline::BufferFormat::F32Vec4, [16u32, 16, 1]),
+            _ => (LUT3D_SHADER.clone(), rasmcore_pipeline::BufferFormat::U32Packed, [256, 1, 1]),
+        };
+
+        Some(vec![rasmcore_pipeline::gpu::GpuOp::Compute {
+            shader,
+            entry_point: "main",
+            workgroup_size: wg,
+            params,
+            extra_buffers: vec![lut_buf],
+            buffer_format: fmt,
         }])
     }
 }
