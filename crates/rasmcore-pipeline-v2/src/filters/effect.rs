@@ -846,6 +846,7 @@ impl GpuFilter for GaussianNoise {
             workgroup_size: self.workgroup_size(),
             params: self.params(width, height),
             extra_buffers: vec![],
+            reduction_buffers: vec![],
         }
     }
 }
@@ -896,6 +897,7 @@ impl GpuFilter for UniformNoise {
             workgroup_size: self.workgroup_size(),
             params: self.params(width, height),
             extra_buffers: vec![],
+            reduction_buffers: vec![],
         }
     }
 }
@@ -952,6 +954,7 @@ impl GpuFilter for SaltPepperNoise {
             workgroup_size: self.workgroup_size(),
             params: self.params(width, height),
             extra_buffers: vec![],
+            reduction_buffers: vec![],
         }
     }
 }
@@ -1017,6 +1020,7 @@ impl GpuFilter for PoissonNoise {
             workgroup_size: self.workgroup_size(),
             params: self.params(width, height),
             extra_buffers: vec![],
+            reduction_buffers: vec![],
         }
     }
 }
@@ -1134,6 +1138,7 @@ impl GpuFilter for Glitch {
             workgroup_size: self.workgroup_size(),
             params: self.params(width, height),
             extra_buffers: vec![],
+            reduction_buffers: vec![],
         }
     }
 }

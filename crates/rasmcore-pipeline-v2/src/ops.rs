@@ -57,6 +57,7 @@ pub trait GpuFilter {
             workgroup_size: self.workgroup_size(),
             params: self.params(width, height),
             extra_buffers: self.extra_buffers(),
+            reduction_buffers: vec![],
         }
     }
 

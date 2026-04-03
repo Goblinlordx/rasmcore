@@ -53,7 +53,65 @@ pub struct GpuShader {
     /// Serialized uniform parameters (filter-specific, little-endian, 4-byte aligned).
     pub params: Vec<u8>,
     /// Optional extra storage buffers (kernel weights, LUT data, etc.).
+    /// Bound at `@group(0) @binding(3+)` as `storage, read`.
     pub extra_buffers: Vec<Vec<u8>>,
+    /// Mutable reduction buffers that persist across passes in a `gpu_shaders()` chain.
+    ///
+    /// Bound at `@group(0) @binding(3 + extra_buffers.len() + i)`.
+    /// Access mode per pass: `read_write` for reduction passes, `read` for apply passes.
+    ///
+    /// **Executor contract**: buffers with the same `id` across passes in a chain
+    /// are the **same GPU allocation**. Zero-initialized from `initial_data` before
+    /// the first pass that declares them. Contents persist across all subsequent passes.
+    pub reduction_buffers: Vec<ReductionBuffer>,
+}
+
+impl GpuShader {
+    /// Create a GpuShader with no extra/reduction buffers.
+    pub fn new(
+        body: String,
+        entry_point: &'static str,
+        workgroup_size: [u32; 3],
+        params: Vec<u8>,
+    ) -> Self {
+        Self {
+            body,
+            entry_point,
+            workgroup_size,
+            params,
+            extra_buffers: vec![],
+            reduction_buffers: vec![],
+        }
+    }
+
+    /// Add extra (read-only) storage buffers.
+    pub fn with_extra_buffers(mut self, bufs: Vec<Vec<u8>>) -> Self {
+        self.extra_buffers = bufs;
+        self
+    }
+
+    /// Add reduction (mutable, persistent) buffers.
+    pub fn with_reduction_buffers(mut self, bufs: Vec<ReductionBuffer>) -> Self {
+        self.reduction_buffers = bufs;
+        self
+    }
+}
+
+/// A mutable storage buffer that persists across passes in a multi-pass GPU chain.
+///
+/// Used for reduction results (partial sums, histograms, min/max).
+/// The executor matches buffers by `id` — same ID = same GPU allocation.
+#[derive(Debug, Clone)]
+pub struct ReductionBuffer {
+    /// Stable ID linking this buffer across passes. Pass 1 writes (read_write),
+    /// pass 3 reads (read_only) — both reference the same `id`.
+    pub id: u32,
+    /// Initial data (determines allocation size). Zero-initialized on first use.
+    /// Subsequent passes with the same `id` ignore this field.
+    pub initial_data: Vec<u8>,
+    /// Whether this pass needs read_write access (`true` for reduction passes)
+    /// or read-only access (`false` for apply passes that just read the result).
+    pub read_write: bool,
 }
 
 /// Advisory tile size hint from a node.

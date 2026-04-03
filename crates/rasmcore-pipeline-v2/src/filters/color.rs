@@ -1549,17 +1549,10 @@ impl GpuFilter for SparseColor {
     }
 }
 
-// ── WhiteBalanceGrayWorld GPU (2-pass, fully GPU) ───────────────────────────
-//
-// Pass 1: atomic accumulate per-channel sums into extra_buffers[0] (3 x atomic<u32>).
-//         Fixed-point: value * 65536. Passes pixel data through unchanged.
-// Pass 2: reads sums from extra_buffers[0], computes scales inline, applies.
-//         NO CPU readback needed — pass 2 shader does the division on GPU.
-//
-// Executor contract: extra_buffers from pass N persist to pass N+1.
+// ── WhiteBalanceGrayWorld GPU (3-pass zero-atomic via GpuReduction) ─────────
 
-/// Pass 1: Accumulate channel sums via atomics, pass pixels through.
-const WB_GRAY_WORLD_SUM_WGSL: &str = r#"
+/// Pass 3 apply shader: reads channel sums from reduction buffer, applies scales.
+const WB_GRAY_WORLD_APPLY_WGSL: &str = r#"
 struct Params {
   width: u32,
   height: u32,
@@ -1569,47 +1562,19 @@ struct Params {
 @group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
 @group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
 @group(0) @binding(2) var<uniform> params: Params;
-@group(0) @binding(3) var<storage, read_write> sums: array<atomic<u32>>;
-
-@compute @workgroup_size(256, 1, 1)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let idx = gid.x;
-  let total = params.width * params.height;
-  if (idx >= total) { return; }
-  let pixel = input[idx];
-  output[idx] = pixel;
-  atomicAdd(&sums[0], u32(clamp(pixel.x * 65536.0, 0.0, 4294967295.0)));
-  atomicAdd(&sums[1], u32(clamp(pixel.y * 65536.0, 0.0, 4294967295.0)));
-  atomicAdd(&sums[2], u32(clamp(pixel.z * 65536.0, 0.0, 4294967295.0)));
-}
-"#;
-
-/// Pass 2: Read sums from extra_buffers[0], compute scales on GPU, apply per-pixel.
-const WB_GRAY_WORLD_APPLY_WGSL: &str = r#"
-struct Params {
-  width: u32,
-  height: u32,
-  total_pixels: u32,
-  _pad: u32,
-}
-@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
-@group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
-@group(0) @binding(2) var<uniform> params: Params;
-@group(0) @binding(3) var<storage, read> sums: array<u32>;
+@group(0) @binding(3) var<storage, read> reduction: array<vec4<f32>>;
 
 @compute @workgroup_size(256, 1, 1)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let idx = gid.x;
   if (idx >= params.width * params.height) { return; }
 
-  // Recover channel means from fixed-point sums
-  let n = f32(params.total_pixels) * 65536.0;
-  let avg_r = f32(sums[0]) / n;
-  let avg_g = f32(sums[1]) / n;
-  let avg_b = f32(sums[2]) / n;
+  let sums = reduction[0]; // vec4(sum_r, sum_g, sum_b, count)
+  let avg_r = sums.x / max(sums.w, 1.0);
+  let avg_g = sums.y / max(sums.w, 1.0);
+  let avg_b = sums.z / max(sums.w, 1.0);
   let avg_all = (avg_r + avg_g + avg_b) / 3.0;
 
-  // Compute per-channel scales
   let scale_r = select(avg_all / avg_r, 1.0, avg_r < 0.000001);
   let scale_g = select(avg_all / avg_g, 1.0, avg_g < 0.000001);
   let scale_b = select(avg_all / avg_b, 1.0, avg_b < 0.000001);
@@ -1626,7 +1591,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
 impl GpuFilter for WhiteBalanceGrayWorld {
     fn shader_body(&self) -> &str {
-        WB_GRAY_WORLD_SUM_WGSL
+        WB_GRAY_WORLD_APPLY_WGSL
     }
     fn workgroup_size(&self) -> [u32; 3] { [256, 1, 1] }
     fn params(&self, width: u32, height: u32) -> Vec<u8> {
@@ -1637,39 +1602,21 @@ impl GpuFilter for WhiteBalanceGrayWorld {
         buf.extend_from_slice(&0u32.to_le_bytes());
         buf
     }
-    fn extra_buffers(&self) -> Vec<Vec<u8>> {
-        vec![vec![0u8; 12]] // 3 x u32, zero-initialized
-    }
     fn gpu_shaders(&self, width: u32, height: u32) -> Vec<crate::node::GpuShader> {
-        let total = width * height;
+        use crate::gpu_shaders::reduction::GpuReduction;
 
-        // Pass 1: accumulate channel sums into extra_buffers[0]
-        let pass1 = crate::node::GpuShader {
-            body: WB_GRAY_WORLD_SUM_WGSL.to_string(),
-            entry_point: "main",
-            workgroup_size: [256, 1, 1],
-            params: self.params(width, height),
-            extra_buffers: vec![vec![0u8; 12]], // 3 atomic<u32>
-        };
+        let reduction = GpuReduction::channel_sum(256);
+        let passes = reduction.build_passes(width, height);
 
-        // Pass 2: read sums, compute scales on GPU, apply
-        // extra_buffers[0] = pass 1's sums buffer (executor preserves it)
-        let mut apply_params = Vec::with_capacity(16);
-        apply_params.extend_from_slice(&width.to_le_bytes());
-        apply_params.extend_from_slice(&height.to_le_bytes());
-        apply_params.extend_from_slice(&total.to_le_bytes());
-        apply_params.extend_from_slice(&0u32.to_le_bytes());
+        let pass3 = crate::node::GpuShader::new(
+            WB_GRAY_WORLD_APPLY_WGSL.to_string(),
+            "main",
+            [256, 1, 1],
+            self.params(width, height),
+        )
+        .with_reduction_buffers(vec![reduction.read_buffer(&passes)]);
 
-        let pass2 = crate::node::GpuShader {
-            body: WB_GRAY_WORLD_APPLY_WGSL.to_string(),
-            entry_point: "main",
-            workgroup_size: [256, 1, 1],
-            params: apply_params,
-            // Empty — executor binds pass 1's extra_buffers[0] here as read-only
-            extra_buffers: vec![],
-        };
-
-        vec![pass1, pass2]
+        vec![passes.pass1, passes.pass2, pass3]
     }
 }
 

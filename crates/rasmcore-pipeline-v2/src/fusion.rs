@@ -484,6 +484,7 @@ impl Node for FusedPointOpNode {
             workgroup_size: [256, 1, 1],
             params,
             extra_buffers: vec![],
+            reduction_buffers: vec![],
         })
     }
 

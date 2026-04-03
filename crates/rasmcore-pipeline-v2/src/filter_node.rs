@@ -239,6 +239,7 @@ impl<F: Filter + GpuFilter + 'static> Node for GpuFilterNode<F> {
             workgroup_size: self.filter.workgroup_size(),
             params: self.filter.params(width, height),
             extra_buffers: self.filter.extra_buffers(),
+            reduction_buffers: vec![],
         })
     }
 

@@ -45,7 +45,24 @@ impl From<GpuError> for PipelineError {
 /// The pipeline passes f32 pixel data and composed WGSL shaders.
 /// The executor manages GPU resources, buffer allocation, and dispatch.
 ///
-/// All buffers are `array<vec4<f32>>` — no format variants.
+/// All pixel buffers are `array<vec4<f32>>` — no format variants.
+///
+/// # Multi-pass execution
+///
+/// When `ops` contains multiple shaders, the executor chains them via
+/// ping-pong buffers: output of `ops[i]` becomes input of `ops[i+1]`.
+///
+/// # Reduction buffers
+///
+/// Shaders may declare `reduction_buffers` — mutable storage buffers that
+/// persist across the entire chain. The executor must:
+/// 1. Before pass 1: scan all shaders for unique reduction buffer `id`s.
+///    Allocate one GPU buffer per unique ID, sized from `initial_data.len()`,
+///    zero-initialized from `initial_data`.
+/// 2. Per pass: bind each reduction buffer at
+///    `@group(0) @binding(3 + extra_buffers.len() + i)`.
+///    Use `read_write` or `read` access as declared by `ReductionBuffer::read_write`.
+/// 3. **Do not re-initialize** between passes — contents persist.
 pub trait GpuExecutor {
     /// Execute a sequence of GPU operations on f32 pixel data.
     ///
