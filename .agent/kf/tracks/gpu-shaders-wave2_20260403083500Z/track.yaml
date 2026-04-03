@@ -1,77 +1,87 @@
 id: gpu-shaders-wave2_20260403083500Z
-title: "GPU shaders wave 2 — f32 variants for existing U32Packed spatial + distortion filters"
+title: GPU shaders wave 2 — f32 variants for existing U32Packed spatial + distortion filters
 type: feature
 status: pending
 created: '2026-04-03'
 updated: '2026-04-03'
 spec:
-  summary: |
-    Write f32 WGSL shader variants for the 14 filters that already have
+  summary: 'Write f32 WGSL shader variants for the 14 filters that already have
+
     U32Packed GPU shaders. These currently fall back to CPU in the f32
+
     pipeline. Most already have the shader logic — just need f32 I/O.
-  context: |
-    14 filters have U32Packed GPU shaders but no F32Vec4 support. With the
+
+    '
+  context: '14 filters have U32Packed GPU shaders but no F32Vec4 support. With the
+
     f32 pipeline (all data is Rgba32f), their gpu_ops_with_format returns
+
     None for F32Vec4, forcing CPU fallback. Each needs an _f32.wgsl variant
+
     and a gpu_ops_with_format override.
 
+
     blur already has gaussian_blur_f32.wgsl — just needs wiring.
+
     barrel already has barrel_f32.wgsl — already wired.
 
-    The distortion filters (wave, swirl, etc.) just need to swap
-    sample_bilinear for sample_bilinear_f32 and array<u32> for array<vec4<f32>>.
-    The spatial filters (sharpen, median, bilateral) need kernel loops
-    rewritten for f32 I/O.
-  acceptance_criteria:
-    - All 14 filters have F32Vec4 GPU shaders
-    - Each has a GPU parity test (GPU f32 vs CPU f32)
-    - All existing GPU parity tests still pass
-    - No filters fall back to CPU due to missing f32 shader support
-  out_of_scope: |
-    Filters with no GPU shader at all (wave 3+).
-    CPU f32-native migration (separate track).
-  technical_notes: |
-    Filters to migrate (14):
-    Spatial: blur (wire existing), sharpen, median, bilateral, guided_filter,
-             high_pass, motion_blur, spin_blur, zoom_blur
-    Distortion: wave, swirl, spherize, ripple, polar, depolar
 
-    Pattern: copy U32Packed shader, replace array<u32>/pack/unpack with
-    array<vec4<f32>>/identity, use with_sampling_f32 or with_pixel_ops_f32
-    composition helpers.
+    The distortion filters (wave, swirl, etc.) just need to swap
+
+    sample_bilinear for sample_bilinear_f32 and array<u32> for array<vec4<f32>>.
+
+    The spatial filters (sharpen, median, bilateral) need kernel loops
+
+    rewritten for f32 I/O.
+
+    '
+  acceptance_criteria:
+  - All 14 filters have F32Vec4 GPU shaders
+  - Each has a GPU parity test (GPU f32 vs CPU f32)
+  - All existing GPU parity tests still pass
+  - No filters fall back to CPU due to missing f32 shader support
+  out_of_scope: 'Filters with no GPU shader at all (wave 3+).
+
+    CPU f32-native migration (separate track).
+
+    '
+  technical_notes: "Filters to migrate (14):\nSpatial: blur (wire existing), sharpen, median, bilateral, guided_filter,\n\
+    \         high_pass, motion_blur, spin_blur, zoom_blur\nDistortion: wave, swirl, spherize, ripple, polar, depolar\n\n\
+    Pattern: copy U32Packed shader, replace array<u32>/pack/unpack with\narray<vec4<f32>>/identity, use with_sampling_f32\
+    \ or with_pixel_ops_f32\ncomposition helpers.\n"
 plan:
-  - phase: "Distortion filters (swap sampler)"
-    tasks:
-      - text: "wave_f32.wgsl + GpuFilter override + parity test"
-        done: false
-      - text: "swirl_f32.wgsl + GpuFilter override + parity test"
-        done: false
-      - text: "spherize_f32.wgsl + GpuFilter override + parity test"
-        done: false
-      - text: "ripple_f32.wgsl + GpuFilter override + parity test"
-        done: false
-      - text: "polar_f32.wgsl + GpuFilter override + parity test"
-        done: false
-      - text: "depolar_f32.wgsl + GpuFilter override + parity test"
-        done: false
-  - phase: "Spatial filters (kernel rewrite)"
-    tasks:
-      - text: "Wire existing gaussian_blur_f32.wgsl to BlurParams.gpu_ops_with_format"
-        done: false
-      - text: "sharpen_f32.wgsl + parity test"
-        done: false
-      - text: "median_f32.wgsl + parity test"
-        done: false
-      - text: "bilateral_f32.wgsl + parity test (already has shader — may just need wiring)"
-        done: false
-      - text: "motion_blur_f32.wgsl + parity test"
-        done: false
-      - text: "Remaining spatial (high_pass, guided_filter, spin_blur, zoom_blur)"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "All GPU parity tests pass"
-        done: false
-      - text: "No U32Packed-only filters remain (all have f32 variants)"
-        done: false
+- phase: Distortion filters (swap sampler)
+  tasks:
+  - text: wave_f32.wgsl + GpuFilter override + parity test
+    done: true
+  - text: swirl_f32.wgsl + GpuFilter override + parity test
+    done: true
+  - text: spherize_f32.wgsl + GpuFilter override + parity test
+    done: true
+  - text: ripple_f32.wgsl + GpuFilter override + parity test
+    done: true
+  - text: polar_f32.wgsl + GpuFilter override + parity test
+    done: true
+  - text: depolar_f32.wgsl + GpuFilter override + parity test
+    done: true
+- phase: Spatial filters (kernel rewrite)
+  tasks:
+  - text: Wire existing gaussian_blur_f32.wgsl to BlurParams.gpu_ops_with_format
+    done: true
+  - text: sharpen_f32.wgsl + parity test
+    done: true
+  - text: median_f32.wgsl + parity test
+    done: false
+  - text: bilateral_f32.wgsl + parity test (already has shader — may just need wiring)
+    done: false
+  - text: motion_blur_f32.wgsl + parity test
+    done: false
+  - text: Remaining spatial (high_pass, guided_filter, spin_blur, zoom_blur)
+    done: false
+- phase: Verification
+  tasks:
+  - text: All GPU parity tests pass
+    done: false
+  - text: No U32Packed-only filters remain (all have f32 variants)
+    done: false
 extra: {}
