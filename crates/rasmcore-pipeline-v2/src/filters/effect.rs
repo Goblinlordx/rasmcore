@@ -1307,6 +1307,110 @@ impl GpuFilter for MirrorKaleidoscope {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// GPU shaders for remaining CPU-only filters (loaded from .wgsl files)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+impl GpuFilter for Emboss {
+    fn shader_body(&self) -> &str {
+        include_str!("../shaders/emboss.wgsl")
+    }
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        let mut buf = gpu_params_wh(width, height);
+        gpu_params_push_u32(&mut buf, 0); // _pad0
+        gpu_params_push_u32(&mut buf, 0); // _pad1
+        buf
+    }
+}
+
+const CHARCOAL_WGSL: &str = include_str!("../shaders/charcoal.wgsl");
+
+impl GpuFilter for Charcoal {
+    fn shader_body(&self) -> &str {
+        CHARCOAL_WGSL
+    }
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        let mut buf = gpu_params_wh(width, height);
+        gpu_params_push_u32(&mut buf, 0);
+        gpu_params_push_u32(&mut buf, 0);
+        buf
+    }
+}
+
+const EFFECT_FILM_GRAIN_WGSL: &str = include_str!("../shaders/film_grain.wgsl");
+
+impl GpuFilter for FilmGrain {
+    fn shader_body(&self) -> &str {
+        EFFECT_FILM_GRAIN_WGSL
+    }
+    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        let inv_size = 1.0 / self.size.max(1.0);
+        let seed = self.seed ^ noise::SEED_FILM_GRAIN;
+        let mut buf = gpu_params_wh(width, height);
+        gpu_params_push_f32(&mut buf, self.amount);
+        gpu_params_push_f32(&mut buf, inv_size);
+        gpu_params_push_u32(&mut buf, seed as u32);
+        gpu_params_push_u32(&mut buf, (seed >> 32) as u32);
+        gpu_params_push_u32(&mut buf, 0);
+        gpu_params_push_u32(&mut buf, 0);
+        buf
+    }
+    fn gpu_shader(&self, width: u32, height: u32) -> crate::node::GpuShader {
+        crate::node::GpuShader {
+            body: format!("{}\n{}", noise::NOISE_WGSL, EFFECT_FILM_GRAIN_WGSL),
+            entry_point: "main",
+            workgroup_size: self.workgroup_size(),
+            params: self.params(width, height),
+            extra_buffers: vec![],
+            reduction_buffers: vec![],
+        }
+    }
+}
+
+impl GpuFilter for Pixelate {
+    fn shader_body(&self) -> &str {
+        include_str!("../shaders/pixelate.wgsl")
+    }
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        let mut buf = gpu_params_wh(width, height);
+        gpu_params_push_u32(&mut buf, self.block_size.max(1));
+        gpu_params_push_u32(&mut buf, 0);
+        buf
+    }
+}
+
+impl GpuFilter for Halftone {
+    fn shader_body(&self) -> &str {
+        include_str!("../shaders/halftone.wgsl")
+    }
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        let ds = self.dot_size.max(1.0);
+        let freq = std::f32::consts::PI / ds;
+        let mut buf = gpu_params_wh(width, height);
+        gpu_params_push_f32(&mut buf, freq);
+        gpu_params_push_f32(&mut buf, (15.0 + self.angle_offset).to_radians()); // C angle
+        gpu_params_push_f32(&mut buf, (75.0 + self.angle_offset).to_radians()); // M angle
+        gpu_params_push_f32(&mut buf, (0.0 + self.angle_offset).to_radians());  // Y angle
+        gpu_params_push_f32(&mut buf, (45.0 + self.angle_offset).to_radians()); // K angle
+        gpu_params_push_u32(&mut buf, 0);
+        buf
+    }
+}
+
+impl GpuFilter for OilPaint {
+    fn shader_body(&self) -> &str {
+        include_str!("../shaders/oil_paint.wgsl")
+    }
+    fn workgroup_size(&self) -> [u32; 3] { [8, 8, 1] }
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        let mut buf = gpu_params_wh(width, height);
+        gpu_params_push_u32(&mut buf, self.radius);
+        gpu_params_push_u32(&mut buf, 0);
+        buf
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1580,6 +1684,12 @@ mod tests {
             ("ChromaticSplit", CHROMATIC_SPLIT_WGSL),
             ("ChromaticAberration", CHROMATIC_ABERRATION_WGSL),
             ("MirrorKaleidoscope", MIRROR_KALEIDOSCOPE_WGSL),
+            ("Emboss", include_str!("../shaders/emboss.wgsl")),
+            ("Charcoal", CHARCOAL_WGSL),
+            ("FilmGrain", EFFECT_FILM_GRAIN_WGSL),
+            ("Pixelate", include_str!("../shaders/pixelate.wgsl")),
+            ("Halftone", include_str!("../shaders/halftone.wgsl")),
+            ("OilPaint", include_str!("../shaders/oil_paint.wgsl")),
         ];
         for (name, body) in shaders {
             assert!(body.contains("@compute"), "{name} missing @compute");
@@ -1602,5 +1712,18 @@ mod tests {
         assert_eq!(sp.params(100, 100).len() % 4, 0, "SaltPepper params not 4-byte aligned");
         let p = PoissonNoise { scale: 100.0, seed: 42 };
         assert_eq!(p.params(100, 100).len() % 4, 0, "Poisson params not 4-byte aligned");
+        // New GPU filters
+        let e = Emboss;
+        assert_eq!(e.params(100, 100).len() % 4, 0, "Emboss params not 4-byte aligned");
+        let ch = Charcoal { radius: 1.0, sigma: 1.0 };
+        assert_eq!(ch.params(100, 100).len() % 4, 0, "Charcoal params not 4-byte aligned");
+        let fg = FilmGrain { amount: 0.3, size: 2.0, seed: 42 };
+        assert_eq!(fg.params(100, 100).len() % 4, 0, "FilmGrain params not 4-byte aligned");
+        let px = Pixelate { block_size: 4 };
+        assert_eq!(px.params(100, 100).len() % 4, 0, "Pixelate params not 4-byte aligned");
+        let ht = Halftone { dot_size: 4.0, angle_offset: 0.0 };
+        assert_eq!(ht.params(100, 100).len() % 4, 0, "Halftone params not 4-byte aligned");
+        let op = OilPaint { radius: 3 };
+        assert_eq!(op.params(100, 100).len() % 4, 0, "OilPaint params not 4-byte aligned");
     }
 }

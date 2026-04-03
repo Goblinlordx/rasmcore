@@ -1685,6 +1685,60 @@ impl GpuFilter for Quantize {
     }
 }
 
+// ─── GPU shaders for remaining CPU-only color filters ──────────────────────
+
+impl GpuFilter for KmeansQuantize {
+    fn shader_body(&self) -> &str {
+        include_str!("../shaders/kmeans_quantize.wgsl")
+    }
+    fn workgroup_size(&self) -> [u32; 3] { [256, 1, 1] }
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(16);
+        buf.extend_from_slice(&width.to_le_bytes());
+        buf.extend_from_slice(&height.to_le_bytes());
+        buf.extend_from_slice(&self.k.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf
+    }
+    fn extra_buffers(&self) -> Vec<Vec<u8>> {
+        // Palette is computed by the CPU compute() path then passed here.
+        // For GPU dispatch, the pipeline calls compute() first to get the palette,
+        // then re-encodes it. This is handled by the GpuFilterNode wrapper.
+        // Empty here — palette injected by the caller.
+        vec![]
+    }
+}
+
+impl GpuFilter for DitherFloydSteinberg {
+    fn shader_body(&self) -> &str {
+        // GPU uses ordered Bayer dither (parallel) instead of sequential Floyd-Steinberg
+        include_str!("../shaders/ordered_dither.wgsl")
+    }
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        let levels = 1.0 / self.max_colors.max(2) as f32;
+        let mut buf = Vec::with_capacity(16);
+        buf.extend_from_slice(&width.to_le_bytes());
+        buf.extend_from_slice(&height.to_le_bytes());
+        buf.extend_from_slice(&levels.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf
+    }
+}
+
+impl GpuFilter for LabSharpen {
+    fn shader_body(&self) -> &str {
+        include_str!("../shaders/lab_sharpen.wgsl")
+    }
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(16);
+        buf.extend_from_slice(&width.to_le_bytes());
+        buf.extend_from_slice(&height.to_le_bytes());
+        buf.extend_from_slice(&self.amount.to_le_bytes());
+        buf.extend_from_slice(&(self.radius.ceil() as u32).to_le_bytes());
+        buf
+    }
+}
+
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
