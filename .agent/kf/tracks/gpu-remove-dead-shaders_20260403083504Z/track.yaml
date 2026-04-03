@@ -1,0 +1,61 @@
+id: gpu-remove-dead-shaders_20260403083504Z
+title: "Remove dead GPU shaders for LUT/CLUT-fuseable filters"
+type: chore
+status: pending
+created: '2026-04-03'
+updated: '2026-04-03'
+spec:
+  summary: |
+    Remove individual GPU shaders and GpuFilter impls from filters that are
+    LUT/CLUT-fuseable. These are dead code — the pipeline optimizer fuses
+    them into FusedLutNode/FusedClutNode before GPU dispatch.
+  context: |
+    Wave 1 added f32 GPU shaders to 19 per-pixel filters. However, all
+    point ops (brightness, contrast, gamma, etc.) and color ops (sepia,
+    hue_rotate, saturate, etc.) get fused by the pipeline optimizer into
+    FusedLutNode or FusedClutNode before execution. The individual GPU
+    shaders never run — the fused nodes handle GPU dispatch.
+
+    Keeping dead GPU shaders adds confusion and maintenance burden. The
+    correct GPU path for these filters is via the fusion nodes (tracked
+    in gpu-fusion-f32 track).
+  acceptance_criteria:
+    - GpuFilter impls removed from all LUT-fuseable point ops
+    - GpuFilter impls removed from all CLUT-fuseable color ops
+    - _f32.wgsl shader files removed for fused filters
+    - GPU parity tests for individual fused ops removed (replaced by fusion node tests)
+    - Non-fuseable filter GPU shaders retained (noise, film_grain, etc.)
+    - All remaining GPU tests pass
+  technical_notes: |
+    Filters to clean up (LUT-fuseable):
+      brightness, contrast, gamma, exposure, levels, posterize,
+      sigmoidal_contrast, solarize
+
+    Filters to clean up (CLUT-fuseable):
+      sepia, hue_rotate, saturate, modulate, channel_mixer,
+      vibrance, color_balance, colorize
+
+    Filters to KEEP (not fuseable):
+      gaussian_noise, uniform_noise, film_grain (effect ops with PRNG)
+      barrel (distortion — has its own shader)
+
+    The gpu="true" attribute detection in parse/filters.rs should also
+    be cleaned up — with fusion, individual filters don't need GPU flags.
+plan:
+  - phase: "Remove dead shaders"
+    tasks:
+      - text: "Remove GpuFilter impls from 8 point op filters"
+        done: false
+      - text: "Remove GpuFilter impls from 8 color op filters"
+        done: false
+      - text: "Delete _f32.wgsl files for fused filters"
+        done: false
+      - text: "Remove GPU parity tests for individual fused filters"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Remaining GPU tests pass"
+        done: false
+      - text: "Non-fuseable filter GPU shaders still work"
+        done: false
+extra: {}

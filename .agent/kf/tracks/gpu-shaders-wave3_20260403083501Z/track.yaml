@@ -1,0 +1,78 @@
+id: gpu-shaders-wave3_20260403083501Z
+title: "GPU shaders wave 3 — new f32 shaders for remaining per-pixel + simple spatial filters"
+type: feature
+status: pending
+created: '2026-04-03'
+updated: '2026-04-03'
+spec:
+  summary: |
+    Write f32 GPU shaders for ~50 filters that currently have no GPU
+    support. Covers per-pixel ops, simple spatial ops, and morphology.
+    Excludes sequential/CPU-only ops and draw generators.
+  context: |
+    After wave 1 (19 per-pixel) and wave 2 (14 existing U32Packed→f32),
+    ~134 filters still have no GPU. Many are LUT-fuseable (handled by fused
+    nodes), some are CPU-only (sequential algorithms), and some are draw/
+    generator nodes. The remainder (~50) are GPU-suitable per-pixel or
+    simple spatial ops.
+
+    LUT-fuseable filters (28) do NOT need individual GPU shaders — they
+    are fused into a single LUT/CLUT node by the pipeline optimizer.
+
+    CPU-only filters (~15: seam_carve, flood_fill, connected_components,
+    template_match, etc.) stay on CPU with GPU round-trip.
+
+    Draw/generator nodes (~15: draw_*, gradient_*, noise generators) are
+    a separate concern — they generate pixels rather than transform them.
+  acceptance_criteria:
+    - GPU shaders for all easy per-pixel filters listed below
+    - GPU shaders for morphology ops (erode, dilate, open, close, etc.)
+    - GPU shaders for edge detection (sobel, scharr, canny, laplacian)
+    - GPU shaders for simple spatial (box_blur, convolve, average_blur)
+    - Each has a GPU parity test
+  out_of_scope: |
+    CPU-only sequential ops (seam_carve, flood_fill, connected_components).
+    Draw/generator nodes (draw_*, gradient_*, noise texture generators).
+    LUT-fuseable filters (handled by fused nodes).
+  technical_notes: |
+    Easy per-pixel (~25):
+      emboss, equalize, normalize, auto_level, grayscale, premultiply,
+      unpremultiply, pixelate, quantize, photo_filter, vignette,
+      vignette_powerlaw, dodge, burn, shadow_highlight, dehaze, clarity,
+      chromatic_aberration, chromatic_split, threshold_binary,
+      adaptive_threshold, tonemap_drago, tonemap_filmic, tonemap_reinhard,
+      evaluate_abs, glitch, light_leak, mirror_kaleidoscope
+
+    Spatial/kernel (~15):
+      box_blur, average_blur, gaussian_blur_cv, convolve, erode, dilate,
+      morph_open, morph_close, morph_gradient, morph_tophat, morph_blackhat,
+      skeletonize, sobel, scharr, laplacian, canny
+
+    Curves/grading (per-pixel with extra buffers for curve data):
+      curves_master, curves_red, curves_green, curves_blue,
+      hue_vs_sat, hue_vs_lum, lum_vs_sat, sat_vs_sat,
+      apply_cube_lut, apply_hald_lut, gradient_map
+plan:
+  - phase: "Per-pixel ops"
+    tasks:
+      - text: "Write f32 shaders for simple per-pixel ops (~25 filters)"
+        done: false
+      - text: "GPU parity tests for each"
+        done: false
+  - phase: "Morphology + edge detection"
+    tasks:
+      - text: "Write f32 shaders for erode, dilate, morph_* (kernel min/max ops)"
+        done: false
+      - text: "Write f32 shaders for sobel, scharr, laplacian, canny"
+        done: false
+  - phase: "Spatial + curves"
+    tasks:
+      - text: "Write f32 shaders for box_blur, convolve, average_blur"
+        done: false
+      - text: "Write f32 shaders for curves/grading ops with extra buffers"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "All GPU parity tests pass"
+        done: false
+extra: {}

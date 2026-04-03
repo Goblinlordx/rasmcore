@@ -1,0 +1,8 @@
+title: GPU f32 for fusion nodes — FusedLut, FusedClut, ComposedAffine
+status: pending
+type: feature
+approved: false
+created: '2026-04-03'
+updated: '2026-04-03'
+deps:
+- gpu-f32-format-gate_20260403083200Z

@@ -303,3 +303,23 @@ proxy-scale-params_20260403081601Z:
 # GPU tiled streaming — depends on GPU f32 default
 gpu-tiled-stream_20260403082000Z:
   - gpu-f32-default_20260403074001Z
+
+# GPU fusion nodes f32 — highest priority GPU work
+gpu-fusion-f32_20260403083502Z:
+  - gpu-f32-format-gate_20260403083200Z
+
+# GPU shaders wave 2 — spatial/distortion f32 variants
+gpu-shaders-wave2_20260403083500Z:
+  - gpu-f32-format-gate_20260403083200Z
+
+# GPU shaders wave 3 — new shaders for remaining filters
+gpu-shaders-wave3_20260403083501Z:
+  - gpu-shaders-wave2_20260403083500Z
+
+# GPU-side promote — reduce transfer cost
+gpu-promote-node_20260403083503Z:
+  - gpu-f32-format-gate_20260403083200Z
+
+# Remove dead GPU shaders — after fusion nodes have f32
+gpu-remove-dead-shaders_20260403083504Z:
+  - gpu-fusion-f32_20260403083502Z
