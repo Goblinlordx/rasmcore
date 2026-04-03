@@ -23,13 +23,29 @@ pub mod graph;
 pub mod demand;
 pub mod cache;
 pub mod hash;
+pub mod registry;
+pub mod ops;
 
 // Re-export core types at crate root
 pub use rect::{Rect, Overlap};
-pub use node::{Node, NodeInfo, NodeCapabilities, GpuShader, TileHint};
+pub use node::{Node, NodeInfo, NodeCapabilities, GpuShader, TileHint, PipelineError, Upstream};
 pub use color_space::ColorSpace;
 pub use gpu::{GpuError, GpuExecutor};
 pub use graph::Graph;
 pub use demand::{DemandStrategy, DemandHint};
 pub use cache::SpatialCache;
 pub use hash::content_hash;
+
+// Re-export registration system
+pub use registry::{
+    OperationRegistration, OperationKind, OperationCapabilities,
+    ParamDescriptor, ParamType, ParamConstraint, ContextRef,
+    registered_operations, find_operation, operations_by_category,
+    operations_by_kind, param_descriptors,
+};
+
+// Re-export operation traits
+pub use ops::{
+    Filter, GpuFilter, Decoder, Encoder, Transform,
+    AnalyticOp, PointOpExpr, DecodedImage,
+};
