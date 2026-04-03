@@ -1,0 +1,120 @@
+id: v2-gpu-wire-existing_20260404154200Z
+title: Wire GpuFilter to filters with existing WGSL shaders (21 filters)
+type: feature
+status: pending
+created: '2026-04-04'
+updated: '2026-04-04'
+spec:
+  summary: |
+    Implement GpuFilter on 21 V2 filter structs that have WGSL shader
+    source constants already written in gpu_shaders/. The shader code
+    exists — the work is wiring shader_body(), params(), and gpu_shaders()
+    on each struct.
+  context: |
+    The WGSL shader constants were created in the v2-gpu-* tracks but
+    the impl GpuFilter blocks were not added to the filter structs.
+    This is the wiring gap — connect existing shaders to their filters.
+
+    GPU-primary is the target. Zero CPU-only filters. Every filter must
+    have a GPU path — either via GpuFilter (direct shader), AnalyticOp
+    (expression tree fusion), or ClutOp (3D LUT fusion).
+  codebase_analysis: |
+    Existing shader constants in gpu_shaders/analysis.rs:
+    HISTOGRAM_COMPUTE, AUTO_LEVEL_APPLY, EQUALIZE_APPLY,
+    SHADOW_HIGHLIGHT_APPLY, NLM_DENOISE, DEHAZE_DARK_CHANNEL,
+    DEHAZE_APPLY, RETINEX_SSR_APPLY, DITHER_ORDERED, NORMALIZE_APPLY
+
+    Existing shader constants in gpu_shaders/reduction.rs:
+    (check for spatial/distortion shaders)
+
+    Filters to wire (have shaders or trivial to write):
+
+    Enhancement (12 — many have analysis.rs shaders):
+    - Dehaze (2-pass: DEHAZE_DARK_CHANNEL + DEHAZE_APPLY)
+    - ShadowHighlight (2-pass: blur luma + SHADOW_HIGHLIGHT_APPLY)
+    - NlmDenoise (NLM_DENOISE)
+    - RetinexSsr, RetinexMsr, RetinexMsrcr (RETINEX_SSR_APPLY + blur passes)
+    - FrequencyLow, FrequencyHigh (separable gaussian — reuse blur shader)
+    - Clarity (blur + blend — reuse blur shader + per-pixel blend)
+    - Clahe (tiled histogram — multi-pass)
+    - PyramidDetailRemap (Laplacian pyramid — multi-pass blur chain)
+
+    Spatial (9 — V1 had most of these as WGSL):
+    - GaussianBlur (separable H+V — write new f32 shader or port V1)
+    - BoxBlur, Sharpen, HighPass (compose from blur shader)
+    - Median (sorting network shader)
+    - Convolve (general kernel via extra buffer)
+    - Bilateral (spatial + color weight shader)
+    - MotionBlur (directional sampling)
+    - DisplacementMap (extra buffer for field)
+  acceptance_criteria:
+    - impl GpuFilter for all 21 filters listed
+    - Multi-pass filters return Vec<GpuShader> via gpu_shaders()
+    - All GPU outputs match CPU within f32 tolerance
+    - Spatial shaders use load_pixel/store_pixel from io_f32
+    - Enhancement shaders wire to existing gpu_shaders/analysis.rs constants
+    - Tests verify GPU path activates when executor is available
+  out_of_scope: |
+    Effect filters (Track 2). Color filters (Track 2).
+    Writing new WGSL shaders from scratch (most already exist).
+  technical_notes: |
+    Wiring pattern for single-pass:
+      impl GpuFilter for Dehaze {
+          fn shader_body(&self) -> &str { gpu_shaders::analysis::DEHAZE_DARK_CHANNEL }
+          fn params(&self, w: u32, h: u32) -> Vec<u8> { ... }
+      }
+
+    For multi-pass (Dehaze is 2-pass):
+      impl GpuFilter for Dehaze {
+          fn gpu_shaders(&self, w: u32, h: u32) -> Vec<GpuShader> {
+              vec![
+                  GpuShader { body: DEHAZE_DARK_CHANNEL, ... },
+                  GpuShader { body: DEHAZE_APPLY, ... },
+              ]
+          }
+      }
+
+    For spatial (need new shaders — write inline or as constants):
+      GaussianBlur needs 2 dispatches (H + V separable).
+      Sharpen = blur dispatch + unsharp dispatch.
+      HighPass = blur dispatch + subtract dispatch.
+plan:
+  - phase: Enhancement GPU wiring (12 filters)
+    tasks:
+      - text: Wire GpuFilter for Dehaze (2-pass dark channel + apply)
+        done: false
+      - text: Wire GpuFilter for ShadowHighlight (blur luma + curve apply)
+        done: false
+      - text: Wire GpuFilter for NlmDenoise (single pass, compute-heavy)
+        done: false
+      - text: Wire GpuFilter for RetinexSsr, RetinexMsr, RetinexMsrcr (blur + log domain)
+        done: false
+      - text: Wire GpuFilter for FrequencyLow, FrequencyHigh (separable blur decomposition)
+        done: false
+      - text: Wire GpuFilter for Clarity (blur + local contrast blend)
+        done: false
+      - text: Wire GpuFilter for Clahe (tiled histogram multi-pass)
+        done: false
+      - text: Wire GpuFilter for PyramidDetailRemap (Laplacian pyramid)
+        done: false
+  - phase: Spatial GPU wiring (9 filters)
+    tasks:
+      - text: Write GaussianBlur f32 WGSL shader (separable H+V) + wire GpuFilter
+        done: false
+      - text: Wire GpuFilter for BoxBlur, Sharpen, HighPass (compose from blur)
+        done: false
+      - text: Write Median f32 WGSL shader (sorting network) + wire GpuFilter
+        done: false
+      - text: Write Convolve f32 WGSL shader (general kernel) + wire GpuFilter
+        done: false
+      - text: Write Bilateral f32 WGSL shader + wire GpuFilter
+        done: false
+      - text: Write MotionBlur + DisplacementMap WGSL shaders + wire GpuFilter
+        done: false
+  - phase: Verification
+    tasks:
+      - text: All 21 GPU outputs match CPU within f32 tolerance
+        done: false
+      - text: Multi-pass chains execute correctly
+        done: false
+extra: {}
