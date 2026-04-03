@@ -1,104 +1,88 @@
 id: gpu-shaders-wave1_20260403074003Z
-title: "GPU shaders wave 1 — point ops, color ops, and simple per-pixel filters"
+title: GPU shaders wave 1 — point ops, color ops, and simple per-pixel filters
 type: feature
 status: pending
 created: '2026-04-03'
 updated: '2026-04-03'
 spec:
-  summary: |
-    Write WGSL compute shaders for the ~60 easiest filters — point ops,
+  summary: 'Write WGSL compute shaders for the ~60 easiest filters — point ops,
+
     color ops, and simple per-pixel operations. These are trivial GPU
+
     kernels (5-20 lines each) that map 1:1 from input to output pixel.
-  context: |
-    With the f32 pipeline and GPU F32Vec4 default, adding a GPU shader
+
+    '
+  context: 'With the f32 pipeline and GPU F32Vec4 default, adding a GPU shader
+
     to a filter means it runs entirely in VRAM with zero CPU involvement
+
     and zero memory transfer overhead. Point ops and color ops are the
+
     simplest possible shaders — each pixel is independent.
 
+
     Currently 17 filters have GPU shaders (mostly spatial/distortion).
+
     This track adds shaders for the large category of per-pixel ops
+
     that currently only have CPU paths.
-  codebase_analysis: |
-    Point ops needing shaders (trivial per-pixel math):
-      brightness, contrast, gamma, exposure, levels, posterize,
-      sigmoidal_contrast, invert
 
-    Color ops needing shaders (per-pixel color space transform):
-      hue_rotate, saturate, sepia, colorize, channel_mixer, vibrance,
-      modulate, color_balance, white_balance_temperature, photo_filter,
-      selective_color, lab_adjust, lab_sharpen, split_toning, asc_cdl,
-      lift_gamma_gain
-
-    Grading ops (per-pixel with LUT or curve lookup):
-      curves_master, curves_red, curves_green, curves_blue,
-      hue_vs_sat, hue_vs_lum, lum_vs_sat, sat_vs_sat,
-      apply_cube_lut, apply_hald_lut, gradient_map
-
-    Effect ops (per-pixel):
-      solarize, film_grain, gaussian_noise, uniform_noise,
-      salt_pepper_noise, poisson_noise, quantize, dither_ordered,
-      dither_floyd_steinberg
-
-    Each shader is a compute kernel that reads one pixel, applies math,
-    writes one pixel. The WGSL infrastructure (bind groups, dispatch)
-    already exists from the 17 existing shaders.
+    '
+  codebase_analysis: "Point ops needing shaders (trivial per-pixel math):\n  brightness, contrast, gamma, exposure, levels,\
+    \ posterize,\n  sigmoidal_contrast, invert\n\nColor ops needing shaders (per-pixel color space transform):\n  hue_rotate,\
+    \ saturate, sepia, colorize, channel_mixer, vibrance,\n  modulate, color_balance, white_balance_temperature, photo_filter,\n\
+    \  selective_color, lab_adjust, lab_sharpen, split_toning, asc_cdl,\n  lift_gamma_gain\n\nGrading ops (per-pixel with\
+    \ LUT or curve lookup):\n  curves_master, curves_red, curves_green, curves_blue,\n  hue_vs_sat, hue_vs_lum, lum_vs_sat,\
+    \ sat_vs_sat,\n  apply_cube_lut, apply_hald_lut, gradient_map\n\nEffect ops (per-pixel):\n  solarize, film_grain, gaussian_noise,\
+    \ uniform_noise,\n  salt_pepper_noise, poisson_noise, quantize, dither_ordered,\n  dither_floyd_steinberg\n\nEach shader\
+    \ is a compute kernel that reads one pixel, applies math,\nwrites one pixel. The WGSL infrastructure (bind groups, dispatch)\n\
+    already exists from the 17 existing shaders.\n"
   acceptance_criteria:
-    - WGSL compute shaders for all listed point/color/grading/effect ops
-    - GpuFilter trait impl for each filter
-    - GPU parity tests — GPU output matches CPU f32 output within epsilon
-    - Web UI GPU path uses new shaders when WebGPU available
-    - CPU fallback still works when WebGPU unavailable
-  out_of_scope: |
-    Neighborhood/kernel-based shaders (blur, sharpen, morphology — separate track).
+  - WGSL compute shaders for all listed point/color/grading/effect ops
+  - GpuFilter trait impl for each filter
+  - GPU parity tests — GPU output matches CPU f32 output within epsilon
+  - Web UI GPU path uses new shaders when WebGPU available
+  - CPU fallback still works when WebGPU unavailable
+  out_of_scope: 'Neighborhood/kernel-based shaders (blur, sharpen, morphology — separate track).
+
     Complex algorithmic ops (seam carving, connected components — CPU only).
-  technical_notes: |
-    Template for a point op shader:
 
-    @group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
-    @group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
-    @group(0) @binding(2) var<uniform> params: Params;
-
-    @compute @workgroup_size(256)
-    fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-        let idx = gid.x;
-        if (idx >= arrayLength(&input)) { return; }
-        let pixel = input[idx];
-        // ... apply transform ...
-        output[idx] = vec4<f32>(result.rgb, pixel.a);
-    }
-
-    Batch approach: many point ops share the same shader structure.
-    Consider a parameterized shader or shader template to avoid
-    duplicating boilerplate.
+    '
+  technical_notes: "Template for a point op shader:\n\n@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;\n\
+    @group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;\n@group(0) @binding(2) var<uniform> params: Params;\n\
+    \n@compute @workgroup_size(256)\nfn main(@builtin(global_invocation_id) gid: vec3<u32>) {\n    let idx = gid.x;\n    if\
+    \ (idx >= arrayLength(&input)) { return; }\n    let pixel = input[idx];\n    // ... apply transform ...\n    output[idx]\
+    \ = vec4<f32>(result.rgb, pixel.a);\n}\n\nBatch approach: many point ops share the same shader structure.\nConsider a\
+    \ parameterized shader or shader template to avoid\nduplicating boilerplate.\n"
 plan:
-  - phase: "Point ops"
-    tasks:
-      - text: "Write WGSL shaders for brightness, contrast, gamma, exposure, levels, posterize, sigmoidal_contrast, invert"
-        done: false
-      - text: "Add GpuFilter impl for each point op"
-        done: false
-      - text: "GPU parity tests for point ops"
-        done: false
-  - phase: "Color + grading ops"
-    tasks:
-      - text: "Write WGSL shaders for hue_rotate, saturate, sepia, colorize, channel_mixer, vibrance, modulate, color_balance"
-        done: false
-      - text: "Write WGSL shaders for curves, LUT, gradient_map, split_toning, asc_cdl, lift_gamma_gain"
-        done: false
-      - text: "GPU parity tests for color/grading ops"
-        done: false
-  - phase: "Simple effect ops"
-    tasks:
-      - text: "Write WGSL shaders for solarize, film_grain, noise generators, quantize, dither"
-        done: false
-      - text: "GPU parity tests for effect ops"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "All GPU parity tests pass"
-        done: false
-      - text: "WASM component builds"
-        done: false
-      - text: "Web UI uses GPU path for all new shaders"
-        done: false
+- phase: Point ops
+  tasks:
+  - text: Write WGSL shaders for brightness, contrast, gamma, exposure, levels, posterize, sigmoidal_contrast, invert
+    done: true
+  - text: Add GpuFilter impl for each point op
+    done: true
+  - text: GPU parity tests for point ops
+    done: true
+- phase: Color + grading ops
+  tasks:
+  - text: Write WGSL shaders for hue_rotate, saturate, sepia, colorize, channel_mixer, vibrance, modulate, color_balance
+    done: false
+  - text: Write WGSL shaders for curves, LUT, gradient_map, split_toning, asc_cdl, lift_gamma_gain
+    done: false
+  - text: GPU parity tests for color/grading ops
+    done: false
+- phase: Simple effect ops
+  tasks:
+  - text: Write WGSL shaders for solarize, film_grain, noise generators, quantize, dither
+    done: false
+  - text: GPU parity tests for effect ops
+    done: false
+- phase: Verification
+  tasks:
+  - text: All GPU parity tests pass
+    done: false
+  - text: WASM component builds
+    done: false
+  - text: Web UI uses GPU path for all new shaders
+    done: false
 extra: {}
