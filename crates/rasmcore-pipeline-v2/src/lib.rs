@@ -30,6 +30,7 @@ pub mod color_math;
 pub mod color_convert;
 pub mod fusion;
 pub mod staged;
+pub mod filters;
 
 // Re-export core types at crate root
 pub use rect::{Rect, Overlap};
