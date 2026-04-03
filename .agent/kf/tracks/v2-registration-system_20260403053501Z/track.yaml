@@ -1,0 +1,134 @@
+id: v2-registration-system_20260403053501Z
+title: V2 registration system — unified build-time registration for all operations
+type: feature
+status: pending
+created: '2026-04-03'
+updated: '2026-04-03'
+spec:
+  summary: |
+    Single, uniform registration system for filters, codecs, transforms,
+    and color space conversions. Everything registers through the same
+    trait-based mechanism at build time. Zero built-in exceptions.
+  context: |
+    V1 has three separate registration systems:
+    - #[register_filter] macro for 210 filters (via inventory crate)
+    - StaticEncoderRegistration / StaticDecoderRegistration for codecs
+    - Manual node creation for transforms (resize, crop, rotate)
+
+    V2 unifies all of these into a single Registration trait. The
+    pipeline foundation knows nothing about what's registered — it
+    just sees trait objects. A blur filter, a JPEG encoder, and a
+    resize transform all register the same way.
+
+    This means the pipeline crate has zero hardcoded knowledge of
+    any specific operation. You could ship a pipeline with zero
+    filters and add them all via external crates.
+  codebase_analysis: |
+    V1 registration count:
+    - 210 #[register_filter] instances
+    - 13 codec formats (separate encoder/decoder registrations)
+    - ~7 manual transform node types
+    - Build-time codegen in rasmcore-codegen (5,638 LOC) parses these
+
+    V1 codegen pipeline:
+    1. build.rs reads source files
+    2. rasmcore-codegen parses #[register_filter] attributes
+    3. Generates pipeline node structs, WIT interface methods, config records
+    4. Writes to OUT_DIR for include!()
+
+    V2 simplification:
+    - Unify filter/codec/transform into OperationRegistration
+    - Derive macro generates the registration + Node impl
+    - No separate codegen for WIT (WIT generated from registrations)
+    - inventory crate collects registrations at link time (no build.rs AST parsing)
+  acceptance_criteria:
+    - Single OperationRegistration trait for all operation types
+    - derive(Operation) macro generates registration + Node impl
+    - Filter, Codec, Transform are categories within the same system
+    - Build-time collection via inventory (no runtime registration)
+    - Operation metadata queryable (name, category, params, GPU capability)
+    - Parameter descriptors auto-generated from struct fields
+    - No hardcoded operation knowledge in pipeline crate
+    - Backward compat shim for gradual V1 filter migration
+    - CPU and GPU implementations registered through same trait
+  out_of_scope: |
+    WIT generation from registrations (Track 8).
+    Actual filter/codec migration (Tracks 6-7).
+  technical_notes: |
+    Unified registration:
+
+    #[derive(Operation)]
+    #[operation(
+        name = "blur",
+        category = "spatial",
+        kind = "filter",       // filter | encoder | decoder | transform
+        gpu = true,
+    )]
+    struct Blur {
+        #[param(min = 0.0, max = 100.0, default = 3.0)]
+        radius: f32,
+    }
+
+    impl Filter for Blur {
+        fn compute(&self, input: &[f32], w: u32, h: u32) -> Vec<f32> { ... }
+    }
+
+    impl GpuFilter for Blur {
+        fn shader_body(&self) -> &str { include_str!("blur.wgsl") }
+        fn params(&self, w: u32, h: u32) -> Vec<u8> { ... }
+    }
+
+    // Registration is automatic via derive — no manual inventory::submit!
+
+    The derive macro generates:
+    - OperationRegistration with metadata
+    - Node wrapper that implements pipeline_v2::Node
+    - Parameter descriptors for UI/WIT
+    - inventory::submit! for build-time collection
+
+    Query API:
+    fn registered_operations() -> Vec<&'static OperationRegistration>
+    fn find_operation(name: &str) -> Option<&'static OperationRegistration>
+    fn operations_by_category(cat: &str) -> Vec<&'static OperationRegistration>
+plan:
+  - phase: Registration trait
+    tasks:
+      - text: Define OperationRegistration struct (name, category, kind, params, capabilities)
+        done: false
+      - text: Define OperationKind enum (Filter, Encoder, Decoder, Transform, ColorConversion)
+        done: false
+      - text: Define ParamDescriptor (name, type, min, max, default, hint)
+        done: false
+      - text: Query API (registered_operations, find_operation, by_category)
+        done: false
+  - phase: Derive macro
+    tasks:
+      - text: derive(Operation) macro — parse struct fields + attributes
+        done: false
+      - text: Generate OperationRegistration from #[operation(...)] attribute
+        done: false
+      - text: Generate ParamDescriptor from #[param(...)] on fields
+        done: false
+      - text: Generate inventory::submit! for build-time collection
+        done: false
+      - text: Generate Node wrapper (bridges Operation to pipeline_v2::Node)
+        done: false
+  - phase: Filter and GPU traits
+    tasks:
+      - text: Define Filter trait (fn compute(&self, input &[f32], w, h) -> Vec<f32>)
+        done: false
+      - text: Define GpuFilter trait (fn shader_body, fn params, fn workgroup_size)
+        done: false
+      - text: Define Encoder/Decoder traits (fn encode/decode with f32 input/output)
+        done: false
+      - text: Define Transform trait (fn output_dimensions, fn compute)
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test — register a filter, query it, create Node, execute compute
+        done: false
+      - text: Test — register GPU filter, verify shader body and params
+        done: false
+      - text: Test — parameter descriptors match struct fields
+        done: false
+extra: {}

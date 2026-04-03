@@ -1,0 +1,8 @@
+title: V2 filter API — f32-only compute with GPU composition
+status: pending
+type: feature
+approved: false
+created: '2026-04-03'
+updated: '2026-04-03'
+deps:
+- v2-registration-system_20260403053501Z

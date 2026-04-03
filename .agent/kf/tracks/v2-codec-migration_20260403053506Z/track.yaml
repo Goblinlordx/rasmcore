@@ -1,0 +1,79 @@
+id: v2-codec-migration_20260403053506Z
+title: V2 codec migration — unified decode→f32 and f32→encode for all 13 formats
+type: refactor
+status: pending
+created: '2026-04-03'
+updated: '2026-04-03'
+spec:
+  summary: |
+    Port all 13 codec formats to unified V2 codec API. Decoders always
+    output f32 linear. Encoders always accept f32, apply view transform
+    and quantize to output format. No format branching.
+  context: |
+    V1 codecs output various formats (Rgb8, Rgba8, Gray8, Rgb32f) and
+    the pipeline has to handle all of them. V2 simplifies: every decoder
+    outputs Rgba32f linear. Every encoder accepts Rgba32f and handles
+    quantization internally.
+
+    The ingest pipeline becomes:
+      Codec decode → raw format → Promote (format convert + linearize) → Rgba32f linear
+
+    The output pipeline becomes:
+      Rgba32f linear → ViewTransform → Quantize → Codec encode
+
+    Codecs that are natively f32 (EXR, HDR, FITS) skip promote/quantize.
+    Codecs that are natively u8 (JPEG, PNG, WebP) get automatic
+    promote at ingest and quantize+gamma at output.
+  acceptance_criteria:
+    - All 13 decoders registered via V2 OperationRegistration
+    - All decoders output f32 data (native f32 or promoted from u8/u16)
+    - sRGB decoders apply linearization at decode (or promote node does)
+    - Linear decoders (EXR, HDR, FITS) output linear f32 directly
+    - All encoders accept f32 input
+    - sRGB encoders apply gamma encoding before quantization
+    - EXR/HDR/FITS encoders write linear f32 directly
+    - Format auto-detection works with V2 codec registry
+    - Multi-frame support (GIF, WebP animated, TIFF multi-page)
+    - CPU implementations for all codecs
+  out_of_scope: |
+    New codec formats.
+    GPU-accelerated decode/encode (future track).
+    Camera RAW decode (future track with IDTs).
+plan:
+  - phase: Codec traits
+    tasks:
+      - text: Define V2 Decoder trait (fn decode(data) -> DecodedF32)
+        done: false
+      - text: Define V2 Encoder trait (fn encode(f32_data, config) -> Vec<u8>)
+        done: false
+      - text: Unified codec registration via OperationRegistration
+        done: false
+  - phase: Decoder migration
+    tasks:
+      - text: Port PNG, JPEG, WebP decoders to V2 (output f32, linearize sRGB)
+        done: false
+      - text: Port GIF, BMP, QOI, ICO, TGA decoders to V2
+        done: false
+      - text: Port TIFF, DDS, PNM decoders to V2
+        done: false
+      - text: Port EXR, HDR, FITS decoders to V2 (native f32 linear, no conversion)
+        done: false
+  - phase: Encoder migration
+    tasks:
+      - text: Port PNG, JPEG, WebP encoders to V2 (accept f32, gamma+quantize)
+        done: false
+      - text: Port GIF, BMP, QOI, ICO, TGA encoders to V2
+        done: false
+      - text: Port TIFF encoder to V2 (support both u8 and f32 output)
+        done: false
+      - text: Port EXR, HDR, FITS encoders to V2 (accept f32 linear directly)
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Round-trip test all formats (encode→decode matches input within tolerance)
+        done: false
+      - text: sRGB formats produce correct gamma-encoded output
+        done: false
+      - text: Linear formats (EXR/HDR) preserve values without gamma
+        done: false
+extra: {}

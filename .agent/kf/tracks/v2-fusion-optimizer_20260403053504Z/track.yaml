@@ -1,0 +1,127 @@
+id: v2-fusion-optimizer_20260403053504Z
+title: V2 fusion optimizer — expression tree IR, affine composition, CLUT fusion
+type: feature
+status: pending
+created: '2026-04-03'
+updated: '2026-04-03'
+spec:
+  summary: |
+    First-class operation fusion with three fusable categories:
+    analytical (expression tree), affine (matrix composition), and
+    CLUT (3D lookup table). The optimizer walks the graph, composes
+    fusable chains, and lowers to target backend (closure, LUT, WGSL).
+  context: |
+    Operation fusion is the OCIO Processor pattern: take a transform
+    stack and collapse it into a single execution. This eliminates
+    intermediate buffers, reduces GPU passes, and preserves precision.
+
+    Three fusable categories:
+    1. Analytical (point ops): brightness, contrast, gamma, exposure,
+       levels, invert → expression tree IR → single f32 function
+    2. Affine (spatial transforms): resize, rotate, flip, crop →
+       matrix composition → single resample pass
+    3. CLUT (color ops): curves, color balance, LUT application →
+       3D LUT composition → single tetrahedral interpolation
+
+    Each category has its own composition algebra and lowering backends.
+    The optimizer detects chains of same-category nodes and fuses them.
+  acceptance_criteria:
+    - PointOpExpr expression tree IR (Input, Constant, Add, Mul, Pow, etc.)
+    - Expression composition via substitution
+    - Constant folding and identity elimination optimizer passes
+    - lower_to_closure() — f32 CPU evaluation
+    - lower_to_lut() — bake to [u8; 256] at output boundary
+    - lower_to_wgsl() — emit inlined WGSL for GPU kernel fusion
+    - Affine matrix composition (compose two 2x3 matrices into one)
+    - CLUT composition (compose two 3D LUTs via tetrahedral interpolation)
+    - Graph optimizer detects fusable chains and composes them
+    - Fused nodes execute as single pass (one GPU dispatch, one CPU loop)
+    - darken+brighten round-trip compiles to identity expression
+    - All three fusion categories work on both CPU and GPU
+  out_of_scope: |
+    JIT compilation (LLVM/Cranelift).
+    Automatic differentiation.
+    Cross-category fusion (e.g., fusing a point op with an affine).
+  technical_notes: |
+    Expression tree IR (point ops):
+
+    enum PointOpExpr {
+        Input,
+        Constant(f32),
+        Add(Box<PointOpExpr>, Box<PointOpExpr>),
+        Sub(Box<PointOpExpr>, Box<PointOpExpr>),
+        Mul(Box<PointOpExpr>, Box<PointOpExpr>),
+        Div(Box<PointOpExpr>, Box<PointOpExpr>),
+        Pow(Box<PointOpExpr>, Box<PointOpExpr>),
+        Clamp(Box<PointOpExpr>, f32, f32),
+        Floor(Box<PointOpExpr>),
+    }
+
+    Lowering:
+    - lower_to_closure: recursive evaluator, f64 intermediate
+    - lower_to_lut: evaluate at 256 points
+    - lower_to_wgsl: emit WGSL source with inlined math
+
+    Affine composition (spatial transforms):
+    - Same as V1 compose_affine ([f64; 6] outer * inner)
+    - ComposedAffineNode with single resample pass
+    - V2: always f32 bilinear (no EWA Q16 legacy)
+
+    CLUT composition (color ops):
+    - Same as V1: compose two 3D LUTs via tetrahedral lookup
+    - V2: f32 LUT entries (no u8 quantization)
+
+    Optimizer walk:
+    fn optimize_graph(graph: &mut Graph) {
+        fuse_analytical_chains(graph);  // point ops → expression tree
+        fuse_affine_chains(graph);      // transforms → single matrix
+        fuse_clut_chains(graph);        // color ops → single 3D LUT
+    }
+plan:
+  - phase: Expression tree IR
+    tasks:
+      - text: Define PointOpExpr enum
+        done: false
+      - text: Implement compose (substitution)
+        done: false
+      - text: Implement constant folding optimizer
+        done: false
+      - text: Implement identity/inverse cancellation
+        done: false
+  - phase: Lowering backends
+    tasks:
+      - text: lower_to_closure (recursive f64 evaluator)
+        done: false
+      - text: lower_to_lut (evaluate at 256 points for u8 output)
+        done: false
+      - text: lower_to_wgsl (emit inlined WGSL source)
+        done: false
+  - phase: Affine and CLUT fusion
+    tasks:
+      - text: Affine matrix composition (2x3 * 2x3)
+        done: false
+      - text: CLUT composition (3D LUT * 3D LUT)
+        done: false
+      - text: f32-native CLUT entries (no u8 quantization)
+        done: false
+  - phase: Graph optimizer
+    tasks:
+      - text: Detect analytical (PointOp) chains in graph
+        done: false
+      - text: Detect affine (Transform) chains in graph
+        done: false
+      - text: Detect CLUT (ColorOp) chains in graph
+        done: false
+      - text: Replace chains with fused nodes
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test — darken+brighten compiles to identity expression
+        done: false
+      - text: Test — lower_to_wgsl produces valid WGSL (naga)
+        done: false
+      - text: Test — fused GPU shader matches fused CPU closure
+        done: false
+      - text: Test — affine chain fuses to single resample
+        done: false
+extra: {}

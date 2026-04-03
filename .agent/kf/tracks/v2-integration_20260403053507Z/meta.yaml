@@ -1,0 +1,9 @@
+title: V2 integration — WIT, WASM, V1 removal
+status: pending
+type: refactor
+approved: false
+created: '2026-04-03'
+updated: '2026-04-03'
+deps:
+- v2-filter-migration_20260403053505Z
+- v2-codec-migration_20260403053506Z

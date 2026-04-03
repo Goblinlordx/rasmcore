@@ -1,0 +1,10 @@
+title: V2 filter migration — port all 210 filters
+status: pending
+type: refactor
+approved: false
+created: '2026-04-03'
+updated: '2026-04-03'
+deps:
+- v2-filter-api_20260403053502Z
+- v2-color-pipeline_20260403053503Z
+- v2-fusion-optimizer_20260403053504Z

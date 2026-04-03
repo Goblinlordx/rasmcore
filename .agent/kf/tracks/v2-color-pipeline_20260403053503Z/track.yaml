@@ -1,0 +1,105 @@
+id: v2-color-pipeline_20260403053503Z
+title: V2 color pipeline — linear-light, color space tracking, ACES-ready
+type: feature
+status: pending
+created: '2026-04-03'
+updated: '2026-04-03'
+spec:
+  summary: |
+    Built-in linear-light processing, per-node color space tracking,
+    automatic Linear↔Log conversion, and ACES-ready architecture.
+    Replaces the decorative ColorSpace enum with enforced tracking.
+  context: |
+    V2 incorporates all color pipeline requirements from day one:
+    - Linear-light default (sRGB→Linear at ingest)
+    - HDR-safe (no intermediate clamping, values >1.0 preserved)
+    - Per-node color space declaration (VFX=Linear, Grading=Log)
+    - Auto-conversion at node boundaries
+    - ViewTransform at output (Linear→sRGB/Rec.709/ACES ODT)
+    - ACES color spaces as first-class citizens
+
+    This is Tracks A through D of the color pipeline collapsed into
+    the V2 architecture from the start — not retrofitted.
+  acceptance_criteria:
+    - ColorSpace enum with Linear, Srgb, AcesCg, AcesCct, AcesCc, Aces2065_1
+    - Per-node color space tracking (NodeInfo.color_space)
+    - Nodes declare expected input color space via trait method
+    - Graph walker auto-inserts conversion nodes at color space boundaries
+    - sRGB→Linear at ingest (promote node applies transfer function)
+    - Linear→sRGB at output (demote node applies inverse transfer)
+    - ViewTransform enum (Srgb, Linear, AcesRrt*)
+    - HDR-safe — no intermediate clamping, unclamped f32 throughout
+    - ACES transfer functions (ACEScct, ACEScc) built in
+    - AP0/AP1 matrices and D60↔D65 chromatic adaptation
+    - CPU and GPU implementations for all color conversions
+  out_of_scope: |
+    Full ACES RRT+ODT (future track on V2 foundation).
+    Camera IDTs (future track).
+    OCIO integration.
+  technical_notes: |
+    Color space tracking:
+
+    trait Node {
+        fn expected_color_space(&self) -> ColorSpace {
+            ColorSpace::Linear  // default: VFX nodes work in linear
+        }
+    }
+
+    // Grading nodes override:
+    impl Node for CurvesAdjustment {
+        fn expected_color_space(&self) -> ColorSpace {
+            ColorSpace::AcesCct  // grading in log
+        }
+    }
+
+    Graph walker auto-conversion:
+    fn request_region(...) {
+        let upstream_cs = upstream_info.color_space;
+        let node_wants = node.expected_color_space();
+        if upstream_cs != node_wants {
+            // Insert lightweight ColorConvertNode
+            let converted = color_convert(data, upstream_cs, node_wants);
+        }
+    }
+
+    Ingest pipeline:
+    Decode (sRGB u8) → Promote (u8→f32 + sRGB→Linear) → [Linear f32 pipeline]
+
+    Output pipeline:
+    [Linear f32] → ViewTransform (Linear→sRGB) → Quantize (f32→u8) → Encode
+plan:
+  - phase: Color space infrastructure
+    tasks:
+      - text: Define ColorSpace enum (Linear, Srgb, AcesCg, AcesCct, AcesCc, Aces2065_1)
+        done: false
+      - text: Implement sRGB↔Linear transfer functions (CPU)
+        done: false
+      - text: Implement ACEScct↔Linear transfer functions (CPU)
+        done: false
+      - text: Implement AP0/AP1 3x3 matrices and D60↔D65 adaptation (CPU)
+        done: false
+      - text: GPU shaders for all transfer functions and matrix multiplies
+        done: false
+  - phase: Pipeline integration
+    tasks:
+      - text: Add expected_color_space() to Node trait
+        done: false
+      - text: ColorConvertNode — lightweight per-channel transfer + matrix
+        done: false
+      - text: Graph walker auto-inserts ColorConvertNode at boundaries
+        done: false
+      - text: Promote node — u8→f32 + sRGB→Linear at ingest
+        done: false
+      - text: ViewTransform at output — Linear→sRGB/Rec.709 before quantize
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test — blur in linear produces no dark fringes
+        done: false
+      - text: Test — grading node receives Log data automatically
+        done: false
+      - text: Test — ACES round-trip (sRGB→Linear→ACEScg→ACEScct→ACEScg→Linear→sRGB)
+        done: false
+      - text: Test — GPU color conversions match CPU
+        done: false
+extra: {}
