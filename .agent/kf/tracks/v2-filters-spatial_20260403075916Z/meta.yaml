@@ -1,5 +1,5 @@
 title: V2 filters — spatial (blur, sharpen, convolve, median, etc.)
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-04-03'
