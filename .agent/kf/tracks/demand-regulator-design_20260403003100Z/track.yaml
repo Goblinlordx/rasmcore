@@ -108,34 +108,34 @@ plan:
   tasks:
   - text: 'Map current demand flow: sink → request_region → GPU/CPU dispatch → upstream. Identify all decision points where
       tile size is fixed.'
-    done: false
+    done: true
   - text: Profile memory usage for representative workloads (64MP f32, multi-pass blur chain) at different tile sizes. Establish
       baseline.
-    done: false
+    done: true
   - text: Identify which node types benefit from custom tile sizes (neighborhood ops want larger tiles to reduce overlap waste,
       point ops are tile-agnostic).
-    done: false
+    done: true
 - phase: API design alternatives
   tasks:
   - text: 'Design Option A: TileHint trait on nodes — fn preferred_tile_size() -> Option<TileHint>. Graph walker checks hints
       during demand propagation.'
-    done: false
+    done: true
   - text: 'Design Option B: DemandRegulator node — explicit graph node that intercepts requests and re-chunks. User inserts
       where needed.'
-    done: false
+    done: true
   - text: 'Design Option C: Pipeline-level strategy — pipeline.set_demand_strategy(AdaptiveVram { budget_mb: 64 }). Global
       with per-node overrides.'
-    done: false
+    done: true
   - text: 'Write code examples for each option showing: simple case (no config), medium case (set tile hint on blur), advanced
       case (adaptive VRAM budget).'
-    done: false
+    done: true
 - phase: Decision and specification
   tasks:
   - text: 'Build decision matrix comparing options across: API simplicity, flexibility, debuggability, backward compat, implementation
       complexity.'
-    done: false
+    done: true
   - text: Write design.md with chosen approach, full API surface, memory model, and migration path.
-    done: false
+    done: true
   - text: Define implementation tracks that would follow this design (scope, dependencies, rough task count).
-    done: false
+    done: true
 extra: {}
