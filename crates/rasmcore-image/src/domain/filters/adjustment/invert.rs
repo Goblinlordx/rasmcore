@@ -24,3 +24,6 @@ pub fn invert_registered(
     let pixels = pixels.as_slice();
     crate::domain::point_ops::invert(pixels, info)
 }
+// Note: invert has no config struct (zero-param filter), so GpuFilter
+// can't be added here. Invert will get GPU via the derive(Filter) migration
+// (invert_v2 already has a params struct).
