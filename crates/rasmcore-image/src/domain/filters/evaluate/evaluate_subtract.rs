@@ -2,11 +2,13 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Subtract a constant value from each channel (clamped to 0-255).
 
 /// Parameters for evaluate_subtract — subtract constant from each channel.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "evaluate_subtract", category = "evaluate", group = "evaluate", variant = "subtract", reference = "ImageMagick -evaluate Subtract", point_op = "true")]
 pub struct EvaluateSubtractParams {
     /// Value to subtract (0 to 255)
     #[param(min = 0.0, max = 255.0, step = 1.0, default = 0.0)]
@@ -18,20 +20,13 @@ impl LutPointOp for EvaluateSubtractParams {
     }
 }
 
-#[rasmcore_macros::register_filter(
-    name = "evaluate_subtract",
-    category = "evaluate",
-    group = "evaluate",
-    variant = "subtract",
-    reference = "ImageMagick -evaluate Subtract",
-    point_op = "true"
-)]
-pub fn evaluate_subtract(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &EvaluateSubtractParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for EvaluateSubtractParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -40,5 +35,7 @@ pub fn evaluate_subtract(
     };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
-    crate::domain::point_ops::apply_op(pixels, info, &crate::domain::point_ops::PointOp::EvalSubtract(config.value as i16))
+    crate::domain::point_ops::apply_op(pixels, info, &crate::domain::point_ops::PointOp::EvalSubtract(self.value as i16))
 }
+}
+

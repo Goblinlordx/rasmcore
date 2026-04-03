@@ -129,3 +129,4 @@ impl GpuFilter for BarrelParams {
         }])
     }
 }
+

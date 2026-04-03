@@ -2,10 +2,12 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
 /// Split toning — tint shadows and highlights with different hues
+#[filter(name = "split_toning", category = "grading", reference = "shadow/highlight hue tinting", color_op = "true")]
 pub struct SplitToningParams {
     /// Highlight hue (degrees)
     #[param(
@@ -43,18 +45,13 @@ impl ColorLutOp for SplitToningParams {
     }
 }
 
-#[rasmcore_macros::register_filter(
-    name = "split_toning",
-    category = "grading",
-    reference = "shadow/highlight hue tinting",
-    color_op = "true"
-)]
-pub fn split_toning_registered(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &SplitToningParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for SplitToningParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -62,9 +59,9 @@ pub fn split_toning_registered(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let highlight_hue = config.highlight_hue;
-    let shadow_hue = config.shadow_hue;
-    let balance = config.balance;
+    let highlight_hue = self.highlight_hue;
+    let shadow_hue = self.shadow_hue;
+    let balance = self.balance;
 
     let st = crate::domain::color_grading::SplitToning {
         highlight_color: hue_to_rgb_tint(highlight_hue),
@@ -74,3 +71,5 @@ pub fn split_toning_registered(
     };
     crate::domain::color_grading::split_toning(pixels, info, &st)
 }
+}
+

@@ -2,11 +2,13 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Ceiling each channel at a maximum value.
 
 /// Parameters for evaluate_max — ceiling each channel at maximum value.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "evaluate_max", category = "evaluate", group = "evaluate", variant = "max", reference = "ImageMagick -evaluate Max", point_op = "true")]
 pub struct EvaluateMaxParams {
     /// Maximum value (0-255)
     #[param(min = 0, max = 255, step = 1, default = 255)]
@@ -18,20 +20,13 @@ impl LutPointOp for EvaluateMaxParams {
     }
 }
 
-#[rasmcore_macros::register_filter(
-    name = "evaluate_max",
-    category = "evaluate",
-    group = "evaluate",
-    variant = "max",
-    reference = "ImageMagick -evaluate Max",
-    point_op = "true"
-)]
-pub fn evaluate_max(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &EvaluateMaxParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for EvaluateMaxParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -40,5 +35,7 @@ pub fn evaluate_max(
     };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
-    crate::domain::point_ops::apply_op(pixels, info, &crate::domain::point_ops::PointOp::EvalMax(config.value))
+    crate::domain::point_ops::apply_op(pixels, info, &crate::domain::point_ops::PointOp::EvalMax(self.value))
 }
+}
+

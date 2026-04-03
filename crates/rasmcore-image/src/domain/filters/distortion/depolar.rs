@@ -106,3 +106,4 @@ impl GpuFilter for DepolarParams {
         }])
     }
 }
+

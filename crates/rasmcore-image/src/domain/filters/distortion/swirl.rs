@@ -102,3 +102,4 @@ impl GpuFilter for SwirlParams {
         }])
     }
 }
+

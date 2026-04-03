@@ -2,11 +2,13 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Draw an arc (partial ellipse outline) on the image.
 
 /// Parameters for draw_arc.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "draw_arc", category = "draw", group = "draw", variant = "arc", reference = "elliptical arc stroke")]
 pub struct DrawArcParams {
     /// Center X
     #[param(
@@ -69,19 +71,13 @@ pub struct DrawArcParams {
     pub stroke_width: f32,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "draw_arc",
-    category = "draw",
-    group = "draw",
-    variant = "arc",
-    reference = "elliptical arc stroke"
-)]
-pub fn draw_arc_filter(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &DrawArcParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for DrawArcParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -90,22 +86,24 @@ pub fn draw_arc_filter(
     };
     let pixels = pixels.as_slice();
     let color = [
-        config.color.r,
-        config.color.g,
-        config.color.b,
-        config.color.a,
+        self.color.r,
+        self.color.g,
+        self.color.b,
+        self.color.a,
     ];
     let (result, _) = crate::domain::draw::draw_arc(
         pixels,
         info,
-        config.cx,
-        config.cy,
-        config.rx,
-        config.ry,
-        config.start_angle,
-        config.end_angle,
+        self.cx,
+        self.cy,
+        self.rx,
+        self.ry,
+        self.start_angle,
+        self.end_angle,
         color,
-        config.stroke_width,
+        self.stroke_width,
     )?;
     Ok(result)
 }
+}
+

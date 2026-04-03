@@ -168,11 +168,10 @@ fn mask_combine_intersect() {
 fn mask_invert_gray8() {
     let pixels = vec![0u8, 128, 255];
     let info = info_gray8(3, 1);
-    let result = mask_invert(
+    let result = MaskInvertParams { strength: 1.0 }.compute(
         Rect::new(0, 0, 3, 1),
         &mut |_| Ok(pixels.clone()),
         &info,
-        &MaskInvertParams { strength: 1.0 },
     )
     .unwrap();
     assert_eq!(result, vec![255, 127, 0]);
@@ -182,11 +181,10 @@ fn mask_invert_gray8() {
 fn mask_invert_rgb8() {
     let pixels = vec![100, 100, 100, 200, 200, 200];
     let info = info_rgb8(2, 1);
-    let result = mask_invert(
+    let result = MaskInvertParams { strength: 1.0 }.compute(
         Rect::new(0, 0, 2, 1),
         &mut |_| Ok(pixels.clone()),
         &info,
-        &MaskInvertParams { strength: 1.0 },
     )
     .unwrap();
     assert_eq!(result[0], 155); // 255 - 100
@@ -207,11 +205,10 @@ fn mask_feather_blurs_sharp_edge() {
         }
     }
     let info = info_gray8(w, h);
-    let result = mask_feather(
+    let result = MaskFeatherParams { radius: 3.0 }.compute(
         Rect::new(0, 0, w, h),
         &mut |_| Ok(pixels.clone()),
         &info,
-        &MaskFeatherParams { radius: 3.0 },
     )
     .unwrap();
     // Middle row, at boundary: should be intermediate (not 0 or 255)

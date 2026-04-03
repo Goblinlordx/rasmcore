@@ -2,6 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Dehaze an image using the dark channel prior (He et al. 2009).
 ///
@@ -14,7 +15,8 @@ use crate::domain::filters::common::*;
 /// - `t_min`: minimum transmission to avoid noise amplification (typical: 0.1)
 
 /// Parameters for dehaze (dark channel prior).
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "dehaze", category = "enhancement", reference = "He et al. 2009 dark channel prior dehazing")]
 pub struct DehazeParams {
     /// Local patch size for dark channel (typical: 7-15)
     #[param(min = 1, max = 30, step = 1, default = 7)]
@@ -27,17 +29,13 @@ pub struct DehazeParams {
     pub t_min: f32,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "dehaze",
-    category = "enhancement",
-    reference = "He et al. 2009 dark channel prior dehazing"
-)]
-pub fn dehaze(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &DehazeParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for DehazeParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -45,9 +43,9 @@ pub fn dehaze(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let patch_radius = config.patch_radius;
-    let omega = config.omega;
-    let t_min = config.t_min;
+    let patch_radius = self.patch_radius;
+    let omega = self.omega;
+    let t_min = self.t_min;
 
     validate_format(info.format)?;
     let (w, h) = (info.width as usize, info.height as usize);
@@ -219,3 +217,5 @@ pub fn dehaze(
 
     Ok(result)
 }
+}
+

@@ -2,10 +2,12 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
 /// Solarize — invert pixels above threshold for a partial-negative effect
+#[filter(name = "solarize", category = "effect", reference = "Man Ray solarization effect", point_op = "true")]
 pub struct SolarizeParams {
     /// Threshold (0-255): pixels above this are inverted
     #[param(min = 0, max = 255, step = 1, default = 128)]
@@ -17,18 +19,13 @@ impl LutPointOp for SolarizeParams {
     }
 }
 
-#[rasmcore_macros::register_filter(
-    name = "solarize",
-    category = "effect",
-    reference = "Man Ray solarization effect",
-    point_op = "true"
-)]
-pub fn solarize(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &SolarizeParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for SolarizeParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -36,7 +33,9 @@ pub fn solarize(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let threshold = config.threshold;
+    let threshold = self.threshold;
 
     crate::domain::point_ops::solarize(pixels, info, threshold)
 }
+}
+

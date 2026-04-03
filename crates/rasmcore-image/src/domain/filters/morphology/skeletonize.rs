@@ -5,39 +5,17 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Parameters for morphological skeletonization.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "skeletonize", category = "morphology", group = "morphology", variant = "skeletonize", reference = "Zhang-Suen 1984 thinning algorithm")]
 pub struct SkeletonizeParams {
     /// Maximum iterations (0 = run until convergence)
     #[param(min = 0, max = 1000, step = 1, default = 0)]
     pub max_iterations: u32,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "skeletonize",
-    category = "morphology",
-    group = "morphology",
-    variant = "skeletonize",
-    reference = "Zhang-Suen 1984 thinning algorithm"
-)]
-pub fn skeletonize_registered(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &SkeletonizeParams,
-) -> Result<Vec<u8>, ImageError> {
-    // Skeletonize needs the full image (global operation)
-    let full = Rect::new(0, 0, info.width, info.height);
-    let pixels = upstream(full)?;
-    let info = &ImageInfo {
-        width: full.width,
-        height: full.height,
-        ..*info
-    };
-    let result = skeletonize(&pixels, info, config.max_iterations)?;
-    Ok(crop_to_request(&result, full, request, info.format))
-}
 
 /// Zhang-Suen thinning algorithm.
 ///
@@ -226,6 +204,26 @@ impl rasmcore_pipeline::GpuCapable for SkeletonizeParams {
 
         Some(ops)
     }
+}
+
+impl CpuFilter for SkeletonizeParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
+    // Skeletonize needs the full image (global operation)
+    let full = Rect::new(0, 0, info.width, info.height);
+    let pixels = upstream(full)?;
+    let info = &ImageInfo {
+        width: full.width,
+        height: full.height,
+        ..*info
+    };
+    let result = skeletonize(&pixels, info, self.max_iterations)?;
+    Ok(crop_to_request(&result, full, request, info.format))
+}
 }
 
 #[cfg(test)]

@@ -2,6 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Dodge: lighten (increase exposure) selectively in shadows, midtones, or highlights.
 ///
@@ -15,8 +16,9 @@ use crate::domain::filters::common::*;
 ///
 /// Validated: pixel-exact match against reference formula (max_diff=0).
 
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
 /// Dodge — lighten exposure in a selected tonal range
+#[filter(name = "dodge", category = "enhancement")]
 pub struct DodgeParams {
     /// Exposure increase (0-100%)
     #[param(min = 0.0, max = 100.0, step = 1.0, default = 50.0)]
@@ -26,13 +28,13 @@ pub struct DodgeParams {
     pub range: u32,
 }
 
-#[rasmcore_macros::register_filter(name = "dodge", category = "enhancement")]
-pub fn dodge(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &DodgeParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for DodgeParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -40,8 +42,10 @@ pub fn dodge(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let exposure = config.exposure;
-    let range = config.range;
+    let exposure = self.exposure;
+    let range = self.range;
 
     dodge_burn_impl(pixels, info, exposure / 100.0, range, true)
 }
+}
+

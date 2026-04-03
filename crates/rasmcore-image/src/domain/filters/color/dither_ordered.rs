@@ -2,11 +2,13 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Ordered (Bayer) dithering with median-cut palette.
 
 /// Parameters for ordered (Bayer) dithering.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "dither_ordered", category = "color", group = "quantize", variant = "dither_ordered", reference = "Bayer matrix ordered dithering")]
 pub struct DitherOrderedParams {
     /// Maximum number of palette colors
     #[param(min = 2, max = 256, step = 1, default = 256)]
@@ -16,19 +18,13 @@ pub struct DitherOrderedParams {
     pub map_size: u32,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "dither_ordered",
-    category = "color",
-    group = "quantize",
-    variant = "dither_ordered",
-    reference = "Bayer matrix ordered dithering"
-)]
-pub fn dither_ordered_registered(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &DitherOrderedParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for DitherOrderedParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -36,9 +32,11 @@ pub fn dither_ordered_registered(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let max_colors = config.max_colors;
-    let map_size = config.map_size;
+    let max_colors = self.max_colors;
+    let map_size = self.map_size;
 
     let palette = crate::domain::quantize::median_cut(pixels, info, max_colors as usize)?;
     crate::domain::quantize::dither_ordered(pixels, info, &palette, map_size as usize)
 }
+}
+

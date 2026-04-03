@@ -103,3 +103,4 @@ impl GpuFilter for RippleParams {
         }])
     }
 }
+

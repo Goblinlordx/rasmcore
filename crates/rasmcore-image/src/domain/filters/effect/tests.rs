@@ -197,11 +197,10 @@ mod artistic_filter_tests {
     fn oil_paint_preserves_size() {
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = oil_paint(
+        let result = OilPaintParams { radius: 2 }.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &OilPaintParams { radius: 2 },
         )
         .unwrap();
         assert_eq!(result.len(), pixels.len());
@@ -212,11 +211,10 @@ mod artistic_filter_tests {
         // Uniform image → all pixels in same bin → output = input
         let pixels = vec![128u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
-        let result = oil_paint(
+        let result = OilPaintParams { radius: 3 }.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &OilPaintParams { radius: 3 },
         )
         .unwrap();
         assert_eq!(result, pixels);
@@ -786,13 +784,12 @@ mod consumer_effect_tests {
     #[test]
     fn chromatic_split_output_size() {
         let result = run_filter(64, 64, |r, u, info| {
-            chromatic_split(
-                r, u, info,
-                &ChromaticSplitParams {
+            ChromaticSplitParams {
                     red_dx: 5.0, red_dy: 0.0,
                     green_dx: 0.0, green_dy: 0.0,
-                    blue_dx: -5.0, blue_dy: 0.0,
-                },
+                    blue_dx: -5.0, blue_dy: 0.0
+            }.compute(
+                r, u, info,
             )
         });
         assert_eq!(result.len(), 64 * 64 * 3);
@@ -802,13 +799,12 @@ mod consumer_effect_tests {
     fn chromatic_split_zero_is_identity() {
         let pixels = gradient_rgb(32, 32);
         let result = run_filter(32, 32, |r, u, info| {
-            chromatic_split(
-                r, u, info,
-                &ChromaticSplitParams {
+            ChromaticSplitParams {
                     red_dx: 0.0, red_dy: 0.0,
                     green_dx: 0.0, green_dy: 0.0,
-                    blue_dx: 0.0, blue_dy: 0.0,
-                },
+                    blue_dx: 0.0, blue_dy: 0.0
+            }.compute(
+                r, u, info,
             )
         });
         assert_eq!(result, pixels);

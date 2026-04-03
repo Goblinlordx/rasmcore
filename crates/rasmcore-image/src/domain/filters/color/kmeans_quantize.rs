@@ -2,9 +2,11 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "kmeans_quantize", category = "color", group = "quantize", variant = "kmeans", reference = "Lloyd's k-means color clustering (not reference-validated)")]
 pub struct KmeansQuantizeParams {
     /// Number of output colors (k clusters)
     #[param(min = 2, max = 256, step = 1, default = 8)]
@@ -17,19 +19,13 @@ pub struct KmeansQuantizeParams {
     pub seed: u32,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "kmeans_quantize",
-    category = "color",
-    group = "quantize",
-    variant = "kmeans",
-    reference = "Lloyd's k-means color clustering (not reference-validated)"
-)]
-pub fn kmeans_quantize_registered(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &KmeansQuantizeParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for KmeansQuantizeParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -40,9 +36,11 @@ pub fn kmeans_quantize_registered(
     let palette = crate::domain::quantize::kmeans_palette(
         pixels,
         info,
-        config.k as usize,
-        config.max_iterations,
-        config.seed as u64,
+        self.k as usize,
+        self.max_iterations,
+        self.seed as u64,
     )?;
     crate::domain::quantize::quantize(pixels, info, &palette)
 }
+}
+

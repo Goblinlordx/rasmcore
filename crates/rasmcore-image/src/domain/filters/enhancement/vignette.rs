@@ -2,6 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Gaussian vignette effect — ImageMagick-compatible.
 ///
@@ -19,7 +20,8 @@ use crate::domain::filters::common::*;
 #[allow(clippy::too_many_arguments)]
 
 /// Parameters for the default (Gaussian) vignette effect.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "vignette", category = "enhancement", group = "vignette", reference = "Gaussian radial darkening")]
 pub struct VignetteParams {
     /// Gaussian blur sigma controlling the softness of the transition
     #[param(
@@ -50,18 +52,13 @@ pub struct VignetteParams {
     pub tile_offset_y: u32,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "vignette",
-    category = "enhancement",
-    group = "vignette",
-    reference = "Gaussian radial darkening"
-)]
-pub fn vignette(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &VignetteParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for VignetteParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -69,13 +66,13 @@ pub fn vignette(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let sigma = config.sigma;
-    let x_inset = config.x_inset;
-    let y_inset = config.y_inset;
-    let full_width = config.full_width;
-    let full_height = config.full_height;
-    let tile_offset_x = config.tile_offset_x;
-    let tile_offset_y = config.tile_offset_y;
+    let sigma = self.sigma;
+    let x_inset = self.x_inset;
+    let y_inset = self.y_inset;
+    let full_width = self.full_width;
+    let full_height = self.full_height;
+    let tile_offset_x = self.tile_offset_x;
+    let tile_offset_y = self.tile_offset_y;
 
     validate_format(info.format)?;
 
@@ -117,7 +114,7 @@ pub fn vignette(
         return process_via_8bit(pixels, info, |p8, i8| {
             let r = Rect::new(0, 0, i8.width, i8.height);
             let mut u = |_: Rect| Ok(p8.to_vec());
-            vignette(r, &mut u, i8, config)
+            self.compute(r, &mut u, i8)
         });
     }
 
@@ -135,3 +132,5 @@ pub fn vignette(
 
     Ok(result)
 }
+}
+

@@ -7,9 +7,11 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Parameters for the mirror/kaleidoscope effect.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "mirror_kaleidoscope", category = "effect", reference = "mirror and angular kaleidoscope")]
 pub struct MirrorKaleidoscopeParams {
     /// Number of angular segments (2 = simple mirror, 4+ = kaleidoscope)
     #[param(min = 2, max = 24, step = 2, default = 2)]
@@ -47,52 +49,6 @@ impl rasmcore_pipeline::GpuCapable for MirrorKaleidoscopeParams {
     }
 }
 
-#[rasmcore_macros::register_filter(
-    name = "mirror_kaleidoscope",
-    category = "effect",
-    reference = "mirror and angular kaleidoscope"
-)]
-pub fn mirror_kaleidoscope(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &MirrorKaleidoscopeParams,
-) -> Result<Vec<u8>, ImageError> {
-    let pixels = upstream(request)?;
-    let info = &ImageInfo {
-        width: request.width,
-        height: request.height,
-        ..*info
-    };
-    let pixels = pixels.as_slice();
-    validate_format(info.format)?;
-
-    if is_16bit(info.format) {
-        return process_via_8bit(pixels, info, |p8, i8| {
-            let r = Rect::new(0, 0, i8.width, i8.height);
-            let mut u = |_: Rect| Ok(p8.to_vec());
-            mirror_kaleidoscope(r, &mut u, i8, config)
-        });
-    }
-    if is_f32(info.format) {
-        return process_via_standard(pixels, info, |p8, i8| {
-            let r = Rect::new(0, 0, i8.width, i8.height);
-            let mut u = |_: Rect| Ok(p8.to_vec());
-            mirror_kaleidoscope(r, &mut u, i8, config)
-        });
-    }
-
-    let w = info.width as usize;
-    let h = info.height as usize;
-    let ch = channels(info.format);
-    let mode = config.mode;
-
-    match mode {
-        0 => mirror_horizontal(pixels, w, h, ch),
-        1 => mirror_vertical(pixels, w, h, ch),
-        _ => kaleidoscope(pixels, w, h, ch, config.segments.max(2), config.angle),
-    }
-}
 
 /// Simple horizontal mirror: left half reflected to right.
 fn mirror_horizontal(pixels: &[u8], w: usize, h: usize, ch: usize) -> Result<Vec<u8>, ImageError> {
@@ -184,3 +140,48 @@ fn kaleidoscope(
 
     Ok(out)
 }
+
+impl CpuFilter for MirrorKaleidoscopeParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
+    let pixels = pixels.as_slice();
+    validate_format(info.format)?;
+
+    if is_16bit(info.format) {
+        return process_via_8bit(pixels, info, |p8, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            self.compute(r, &mut u, i8)
+        });
+    }
+    if is_f32(info.format) {
+        return process_via_standard(pixels, info, |p8, i8| {
+            let r = Rect::new(0, 0, i8.width, i8.height);
+            let mut u = |_: Rect| Ok(p8.to_vec());
+            self.compute(r, &mut u, i8)
+        });
+    }
+
+    let w = info.width as usize;
+    let h = info.height as usize;
+    let ch = channels(info.format);
+    let mode = self.mode;
+
+    match mode {
+        0 => mirror_horizontal(pixels, w, h, ch),
+        1 => mirror_vertical(pixels, w, h, ch),
+        _ => kaleidoscope(pixels, w, h, ch, self.segments.max(2), self.angle),
+    }
+}
+}
+

@@ -212,15 +212,14 @@ mod perspective_tests {
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = perspective_warp(
+        let result = PerspectiveWarpParams {
+                out_width: 16,
+                out_height: 16
+        }.compute(
             r,
             &mut u,
             &info,
             &identity,
-            &PerspectiveWarpParams {
-                out_width: 16,
-                out_height: 16,
-            },
         )
         .unwrap();
         // With fixed-point, identity warp at integer coords should be exact
@@ -236,15 +235,14 @@ mod perspective_tests {
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = perspective_warp(
+        let result = PerspectiveWarpParams {
+                out_width: 64,
+                out_height: 48
+        }.compute(
             r,
             &mut u,
             &info,
             &identity,
-            &PerspectiveWarpParams {
-                out_width: 64,
-                out_height: 48,
-            },
         )
         .unwrap();
         assert_eq!(result.len(), 64 * 48 * 3);
@@ -256,15 +254,14 @@ mod perspective_tests {
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = perspective_warp(
+        let result = PerspectiveWarpParams {
+                out_width: 16,
+                out_height: 16
+        }.compute(
             r,
             &mut u,
             &info,
             &identity,
-            &PerspectiveWarpParams {
-                out_width: 16,
-                out_height: 16,
-            },
         )
         .unwrap();
         assert_eq!(result.len(), 16 * 16 * 4);
@@ -276,15 +273,14 @@ mod perspective_tests {
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = perspective_warp(
+        let result = PerspectiveWarpParams {
+                out_width: 16,
+                out_height: 16
+        }.compute(
             r,
             &mut u,
             &info,
             &identity,
-            &PerspectiveWarpParams {
-                out_width: 16,
-                out_height: 16,
-            },
         )
         .unwrap();
         assert_eq!(result.len(), 16 * 16);
@@ -310,15 +306,14 @@ mod perspective_tests {
         let mat = [1.0, 0.0, 2.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0];
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = perspective_warp(
+        let result = PerspectiveWarpParams {
+                out_width: w,
+                out_height: h
+        }.compute(
             r,
             &mut u,
             &info,
             &mat,
-            &PerspectiveWarpParams {
-                out_width: w,
-                out_height: h,
-            },
         )
         .unwrap();
 
@@ -336,11 +331,11 @@ mod perspective_tests {
         let (px, info) = make_rgb_image(32, 32);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = perspective_correct(
+        let result = PerspectiveCorrectParams { strength: 0.0
+        }.compute(
             r,
             &mut u,
             &info,
-            &PerspectiveCorrectParams { strength: 0.0 },
         )
         .unwrap();
         assert_eq!(result, px);
@@ -351,11 +346,11 @@ mod perspective_tests {
         let (px, info) = make_rgb_image(64, 48);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = perspective_correct(
+        let result = PerspectiveCorrectParams { strength: 1.0
+        }.compute(
             r,
             &mut u,
             &info,
-            &PerspectiveCorrectParams { strength: 1.0 },
         )
         .unwrap();
         assert_eq!(result.len(), px.len());
@@ -366,11 +361,11 @@ mod perspective_tests {
         let (px, info) = make_rgba_image(32, 32);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = perspective_correct(
+        let result = PerspectiveCorrectParams { strength: 0.5
+        }.compute(
             r,
             &mut u,
             &info,
-            &PerspectiveCorrectParams { strength: 0.5 },
         )
         .unwrap();
         assert_eq!(result.len(), px.len());
@@ -381,11 +376,11 @@ mod perspective_tests {
         let (px, info) = make_gray_image(32, 32);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = perspective_correct(
+        let result = PerspectiveCorrectParams { strength: 0.5
+        }.compute(
             r,
             &mut u,
             &info,
-            &PerspectiveCorrectParams { strength: 0.5 },
         )
         .unwrap();
         assert_eq!(result.len(), px.len());

@@ -2,6 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Frequency separation — low-pass (structure) layer.
 ///
@@ -17,7 +18,8 @@ use crate::domain::filters::common::*;
 ///   Typical values: 2-10 for skin retouching, 10-30 for artistic effects.
 
 /// Parameters for frequency separation — low-pass (structure) layer.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "frequency_low", category = "enhancement", group = "frequency", variant = "low", reference = "Gaussian low-pass separation")]
 pub struct FrequencyLowParams {
     /// Gaussian sigma controlling separation frequency (higher = more in low-pass)
     #[param(
@@ -30,19 +32,13 @@ pub struct FrequencyLowParams {
     pub sigma: f32,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "frequency_low",
-    category = "enhancement",
-    group = "frequency",
-    variant = "low",
-    reference = "Gaussian low-pass separation"
-)]
-pub fn frequency_low(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &FrequencyLowParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for FrequencyLowParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -50,7 +46,7 @@ pub fn frequency_low(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let sigma = config.sigma;
+    let sigma = self.sigma;
 
     validate_format(info.format)?;
     if sigma <= 0.0 {
@@ -58,3 +54,5 @@ pub fn frequency_low(
     }
     blur_impl(pixels, info, &BlurParams { radius: sigma })
 }
+}
+

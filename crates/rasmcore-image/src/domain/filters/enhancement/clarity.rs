@@ -2,6 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Clarity — midtone-weighted local contrast enhancement.
 ///
@@ -13,7 +14,8 @@ use crate::domain::filters::common::*;
 /// - `sigma`: blur radius for local contrast (30-50 typical)
 
 /// Parameters for clarity (midtone local contrast).
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "clarity", category = "enhancement", reference = "midtone-weighted local contrast")]
 pub struct ClarityParams {
     /// Enhancement strength (0.0-2.0 typical)
     #[param(min = 0.0, max = 3.0, step = 0.1, default = 1.0)]
@@ -29,17 +31,13 @@ pub struct ClarityParams {
     pub sigma: f32,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "clarity",
-    category = "enhancement",
-    reference = "midtone-weighted local contrast"
-)]
-pub fn clarity(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &ClarityParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for ClarityParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -47,8 +45,8 @@ pub fn clarity(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let amount = config.amount;
-    let sigma = config.sigma;
+    let amount = self.amount;
+    let sigma = self.sigma;
 
     validate_format(info.format)?;
     let channels = match info.format {
@@ -97,3 +95,5 @@ pub fn clarity(
 
     Ok(result)
 }
+}
+

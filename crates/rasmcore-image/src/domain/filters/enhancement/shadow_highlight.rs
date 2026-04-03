@@ -2,6 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Shadow/highlight adjustment: independently lighten shadows and darken highlights.
 ///
@@ -15,9 +16,10 @@ use crate::domain::filters::common::*;
 /// Reference: GEGL gegl:shadows-highlights (GPL3+).
 /// Validated against GEGL (EXACT tier target).
 
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
 /// Shadow/Highlight adjustment — local tone mapping for shadows and highlights.
 /// Port of GEGL gegl:shadows-highlights (darktable algorithm by Ulrich Pegelow).
+#[filter(name = "shadow_highlight", category = "enhancement")]
 pub struct ShadowHighlightParams {
     /// Adjust exposure of shadows (-100 to 100)
     #[param(min = -100.0, max = 100.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
@@ -48,13 +50,13 @@ pub struct ShadowHighlightParams {
     pub highlights_ccorrect: f32,
 }
 
-#[rasmcore_macros::register_filter(name = "shadow_highlight", category = "enhancement")]
-pub fn shadow_highlight(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &ShadowHighlightParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for ShadowHighlightParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -64,19 +66,19 @@ pub fn shadow_highlight(
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
 
-    let shadows = config.shadows;
-    let highlights = config.highlights;
-    let whitepoint = config.whitepoint;
-    let radius = config.radius;
-    let compress = config.compress;
-    let shadows_ccorrect = config.shadows_ccorrect;
-    let highlights_ccorrect = config.highlights_ccorrect;
+    let shadows = self.shadows;
+    let highlights = self.highlights;
+    let whitepoint = self.whitepoint;
+    let radius = self.radius;
+    let compress = self.compress;
+    let shadows_ccorrect = self.shadows_ccorrect;
+    let highlights_ccorrect = self.highlights_ccorrect;
 
     if is_16bit(info.format) {
         return process_via_8bit(pixels, info, |p8, i8| {
             let r = Rect::new(0, 0, i8.width, i8.height);
             let mut u = |_: Rect| Ok(p8.to_vec());
-            shadow_highlight(r, &mut u, i8, config)
+            self.compute(r, &mut u, i8)
         });
     }
 
@@ -295,3 +297,5 @@ pub fn shadow_highlight(
         Ok(rgb_result)
     }
 }
+}
+

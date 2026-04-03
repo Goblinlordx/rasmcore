@@ -2,6 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Apply a photo filter (warming/cooling color overlay).
 ///
@@ -9,8 +10,9 @@ use crate::domain::filters::common::*;
 /// preserve_luminosity is enabled, the original pixel's luminance is
 /// maintained (only hue/saturation shifts). PS Photo Filter equivalent.
 
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
 /// Photo Filter — warming/cooling color overlay like a camera lens filter.
+#[filter(name = "photo_filter", category = "color")]
 pub struct PhotoFilterParams {
     /// Filter color red
     #[param(min = 0, max = 255, step = 1, default = 236)]
@@ -29,13 +31,13 @@ pub struct PhotoFilterParams {
     pub preserve_luminosity: u32,
 }
 
-#[rasmcore_macros::register_filter(name = "photo_filter", category = "color")]
-pub fn photo_filter(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &PhotoFilterParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for PhotoFilterParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -45,11 +47,11 @@ pub fn photo_filter(
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
 
-    let color_r = config.color_r;
-    let color_g = config.color_g;
-    let color_b = config.color_b;
-    let density = config.density;
-    let preserve_luminosity = config.preserve_luminosity;
+    let color_r = self.color_r;
+    let color_g = self.color_g;
+    let color_b = self.color_b;
+    let density = self.density;
+    let preserve_luminosity = self.preserve_luminosity;
 
     let density = (density / 100.0).clamp(0.0, 1.0);
     if density == 0.0 {
@@ -80,3 +82,5 @@ pub fn photo_filter(
         (nr, ng, nb)
     })
 }
+}
+

@@ -2,6 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Burn: darken (decrease exposure) selectively in shadows, midtones, or highlights.
 ///
@@ -10,8 +11,9 @@ use crate::domain::filters::common::*;
 ///
 /// Validated: pixel-exact match against reference formula (max_diff=0).
 
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
 /// Burn — darken exposure in a selected tonal range
+#[filter(name = "burn", category = "enhancement")]
 pub struct BurnParams {
     /// Exposure decrease (0-100%)
     #[param(min = 0.0, max = 100.0, step = 1.0, default = 50.0)]
@@ -21,13 +23,13 @@ pub struct BurnParams {
     pub range: u32,
 }
 
-#[rasmcore_macros::register_filter(name = "burn", category = "enhancement")]
-pub fn burn(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &BurnParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for BurnParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -35,8 +37,10 @@ pub fn burn(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let exposure = config.exposure;
-    let range = config.range;
+    let exposure = self.exposure;
+    let range = self.range;
 
     dodge_burn_impl(pixels, info, exposure / 100.0, range, false)
 }
+}
+

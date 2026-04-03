@@ -39,15 +39,14 @@ mod photo_enhance_tests {
         let info = test_info(w, h, PixelFormat::Rgb8);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = dehaze(
+        let result = DehazeParams {
+                patch_radius: 7,
+                omega: 0.95,
+                t_min: 0.1
+        }.compute(
             r,
             &mut u,
             &info,
-            &DehazeParams {
-                patch_radius: 7,
-                omega: 0.95,
-                t_min: 0.1,
-            },
         )
         .unwrap();
         assert_eq!(result.len(), pixels.len());
@@ -73,15 +72,14 @@ mod photo_enhance_tests {
         let info = test_info(w, h, PixelFormat::Rgba8);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = dehaze(
+        let result = DehazeParams {
+                patch_radius: 5,
+                omega: 0.8,
+                t_min: 0.1
+        }.compute(
             r,
             &mut u,
             &info,
-            &DehazeParams {
-                patch_radius: 5,
-                omega: 0.8,
-                t_min: 0.1,
-            },
         )
         .unwrap();
         for i in 0..(w * h) as usize {
@@ -105,14 +103,13 @@ mod photo_enhance_tests {
         let info = test_info(w, h, PixelFormat::Rgb8);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = clarity(
+        let result = ClarityParams {
+                amount: 1.0,
+                sigma: 10.0
+        }.compute(
             r,
             &mut u,
             &info,
-            &ClarityParams {
-                amount: 1.0,
-                sigma: 10.0,
-            },
         )
         .unwrap();
         assert_eq!(result.len(), pixels.len());
@@ -131,14 +128,13 @@ mod photo_enhance_tests {
         let (px, info) = make_rgb(32, 32);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = clarity(
+        let result = ClarityParams {
+                amount: 0.0,
+                sigma: 10.0
+        }.compute(
             r,
             &mut u,
             &info,
-            &ClarityParams {
-                amount: 0.0,
-                sigma: 10.0,
-            },
         )
         .unwrap();
         // With amount=0, the detail weighting is 0, so output ≈ input
@@ -159,14 +155,13 @@ mod photo_enhance_tests {
         let (px, info) = make_rgb(32, 32);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = pyramid_detail_remap(
+        let result = PyramidDetailRemapParams {
+                sigma: 0.5,
+                num_levels: 0
+        }.compute(
             r,
             &mut u,
             &info,
-            &PyramidDetailRemapParams {
-                sigma: 0.5,
-                num_levels: 0,
-            },
         )
         .unwrap();
         assert_eq!(result.len(), px.len());
@@ -179,14 +174,13 @@ mod photo_enhance_tests {
         let mut u = |_: Rect| Ok(px.clone());
         // sigma=1.0 means the remapping d * 1.0 / (1.0 + |d|) ≈ d for small d
         // This is close to identity (slight compression of large gradients)
-        let result = pyramid_detail_remap(
+        let result = PyramidDetailRemapParams {
+                sigma: 1.0,
+                num_levels: 4
+        }.compute(
             r,
             &mut u,
             &info,
-            &PyramidDetailRemapParams {
-                sigma: 1.0,
-                num_levels: 4,
-            },
         )
         .unwrap();
         let diff: f64 = px
@@ -206,14 +200,13 @@ mod photo_enhance_tests {
         let (px, info) = make_rgb(64, 64);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = pyramid_detail_remap(
+        let result = PyramidDetailRemapParams {
+                sigma: 0.2,
+                num_levels: 0
+        }.compute(
             r,
             &mut u,
             &info,
-            &PyramidDetailRemapParams {
-                sigma: 0.2,
-                num_levels: 0,
-            },
         )
         .unwrap();
         assert_eq!(result.len(), px.len());
@@ -239,14 +232,13 @@ mod photo_enhance_tests {
         let info = test_info(w, h, PixelFormat::Rgba8);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = pyramid_detail_remap(
+        let result = PyramidDetailRemapParams {
+                sigma: 0.5,
+                num_levels: 3
+        }.compute(
             r,
             &mut u,
             &info,
-            &PyramidDetailRemapParams {
-                sigma: 0.5,
-                num_levels: 3,
-            },
         )
         .unwrap();
         for i in 0..(w * h) as usize {
@@ -528,19 +520,18 @@ mod shadow_highlight_tests {
         let info = rgb_info(16, 16);
         let r = Rect::new(0, 0, 16, 16);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = shadow_highlight(
-            r,
-            &mut u,
-            &info,
-            &ShadowHighlightParams {
+        let result = ShadowHighlightParams {
                 shadows: 0.0,
                 highlights: 0.0,
                 whitepoint: 0.0,
                 radius: 100.0,
                 compress: 50.0,
                 shadows_ccorrect: 100.0,
-                highlights_ccorrect: 50.0,
-            },
+                highlights_ccorrect: 50.0
+        }.compute(
+            r,
+            &mut u,
+            &info,
         )
         .unwrap();
         assert_eq!(result, pixels);
@@ -553,19 +544,18 @@ mod shadow_highlight_tests {
         let info = rgb_info(16, 16);
         let r = Rect::new(0, 0, 16, 16);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = shadow_highlight(
-            r,
-            &mut u,
-            &info,
-            &ShadowHighlightParams {
+        let result = ShadowHighlightParams {
                 shadows: 100.0,
                 highlights: 0.0,
                 whitepoint: 0.0,
                 radius: 100.0,
                 compress: 50.0,
                 shadows_ccorrect: 100.0,
-                highlights_ccorrect: 50.0,
-            },
+                highlights_ccorrect: 50.0
+        }.compute(
+            r,
+            &mut u,
+            &info,
         )
         .unwrap();
         // All pixels should be brighter than original
@@ -584,19 +574,18 @@ mod shadow_highlight_tests {
         let info = rgb_info(16, 16);
         let r = Rect::new(0, 0, 16, 16);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = shadow_highlight(
-            r,
-            &mut u,
-            &info,
-            &ShadowHighlightParams {
+        let result = ShadowHighlightParams {
                 shadows: 0.0,
                 highlights: -100.0,
                 whitepoint: 0.0,
                 radius: 100.0,
                 compress: 50.0,
                 shadows_ccorrect: 100.0,
-                highlights_ccorrect: 50.0,
-            },
+                highlights_ccorrect: 50.0
+        }.compute(
+            r,
+            &mut u,
+            &info,
         )
         .unwrap();
         let mean_orig: f64 = pixels.iter().map(|&v| v as f64).sum::<f64>() / pixels.len() as f64;
@@ -614,19 +603,18 @@ mod shadow_highlight_tests {
         let info = rgb_info(16, 16);
         let r = Rect::new(0, 0, 16, 16);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = shadow_highlight(
-            r,
-            &mut u,
-            &info,
-            &ShadowHighlightParams {
+        let result = ShadowHighlightParams {
                 shadows: 50.0,
                 highlights: -50.0,
                 whitepoint: 0.0,
                 radius: 100.0,
                 compress: 50.0,
                 shadows_ccorrect: 100.0,
-                highlights_ccorrect: 50.0,
-            },
+                highlights_ccorrect: 50.0
+        }.compute(
+            r,
+            &mut u,
+            &info,
         )
         .unwrap();
         // Midtones should be minimally affected (shadow_w and highlight_w near 0 at mid)
@@ -658,19 +646,18 @@ mod shadow_highlight_tests {
         let px = pixels.clone();
         let r = Rect::new(0, 0, 8, 8);
         let mut u = |_: Rect| Ok(px.clone());
-        let result = shadow_highlight(
-            r,
-            &mut u,
-            &info,
-            &ShadowHighlightParams {
+        let result = ShadowHighlightParams {
                 shadows: 50.0,
                 highlights: -50.0,
                 whitepoint: 0.0,
                 radius: 100.0,
                 compress: 50.0,
                 shadows_ccorrect: 100.0,
-                highlights_ccorrect: 50.0,
-            },
+                highlights_ccorrect: 50.0
+        }.compute(
+            r,
+            &mut u,
+            &info,
         )
         .unwrap();
         // Alpha should be exactly preserved
@@ -1017,14 +1004,13 @@ mod dodge_burn_tests {
         let info = rgb_info(8, 8);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = dodge(
+        let result = DodgeParams {
+                exposure: 0.0,
+                range: 1
+        }.compute(
             r,
             &mut u,
             &info,
-            &DodgeParams {
-                exposure: 0.0,
-                range: 1,
-            },
         )
         .unwrap();
         assert_eq!(result, pixels);
@@ -1036,14 +1022,13 @@ mod dodge_burn_tests {
         let info = rgb_info(8, 8);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = burn(
+        let result = BurnParams {
+                exposure: 0.0,
+                range: 1
+        }.compute(
             r,
             &mut u,
             &info,
-            &BurnParams {
-                exposure: 0.0,
-                range: 1,
-            },
         )
         .unwrap();
         assert_eq!(result, pixels);
@@ -1069,14 +1054,13 @@ mod dodge_burn_tests {
         let info = rgb_info(8, 8);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = dodge(
+        let result = DodgeParams {
+                exposure: 100.0,
+                range: 0
+        }.compute(
             r,
             &mut u,
             &info,
-            &DodgeParams {
-                exposure: 100.0,
-                range: 0,
-            },
         )
         .unwrap(); // shadows only
 
@@ -1110,14 +1094,13 @@ mod dodge_burn_tests {
         let info = rgb_info(8, 8);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = burn(
+        let result = BurnParams {
+                exposure: 100.0,
+                range: 2
+        }.compute(
             r,
             &mut u,
             &info,
-            &BurnParams {
-                exposure: 100.0,
-                range: 2,
-            },
         )
         .unwrap(); // highlights only
 
@@ -1151,14 +1134,13 @@ mod dodge_burn_tests {
         };
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = dodge(
+        let result = DodgeParams {
+                exposure: 50.0,
+                range: 1
+        }.compute(
             r,
             &mut u,
             &info,
-            &DodgeParams {
-                exposure: 50.0,
-                range: 1,
-            },
         )
         .unwrap();
         for i in 0..16 {
@@ -1187,14 +1169,13 @@ mod dodge_burn_tests {
         // Dodge midtones at 50%
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = dodge(
+        let result = DodgeParams {
+                exposure: 50.0,
+                range: 1
+        }.compute(
             r,
             &mut u,
             &info,
-            &DodgeParams {
-                exposure: 50.0,
-                range: 1,
-            },
         )
         .unwrap();
         let exposure = 0.5f32;
@@ -1237,14 +1218,13 @@ mod dodge_burn_tests {
         // Burn highlights at 75%
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = burn(
+        let result = BurnParams {
+                exposure: 75.0,
+                range: 2
+        }.compute(
             r,
             &mut u,
             &info,
-            &BurnParams {
-                exposure: 75.0,
-                range: 2,
-            },
         )
         .unwrap();
         let exposure = 0.75f32;

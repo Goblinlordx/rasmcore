@@ -104,3 +104,4 @@ impl GpuFilter for WaveParams {
         }])
     }
 }
+

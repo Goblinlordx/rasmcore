@@ -381,19 +381,16 @@ pub fn vignette_full(
 ) -> Result<Vec<u8>, ImageError> {
     let r = Rect::new(0, 0, info.width, info.height);
     let mut u = |_: Rect| Ok(pixels.to_vec());
-    vignette(
-        r,
-        &mut u,
-        info,
-        &VignetteParams {
-            sigma,
-            x_inset,
-            y_inset,
-            full_width: info.width,
-            full_height: info.height,
-            tile_offset_x: 0,
-            tile_offset_y: 0,
-        },
-    )
+    use crate::domain::filter_traits::CpuFilter;
+    let params = VignetteParams {
+        sigma,
+        x_inset,
+        y_inset,
+        full_width: info.width,
+        full_height: info.height,
+        tile_offset_x: 0,
+        tile_offset_y: 0,
+    };
+    params.compute(r, &mut u, info)
 }
 

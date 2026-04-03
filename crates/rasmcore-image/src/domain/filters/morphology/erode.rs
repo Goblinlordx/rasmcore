@@ -2,11 +2,13 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Morphological erosion (user-facing wrapper).
 
 /// Parameters for morphological erosion.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "erode", category = "morphology", group = "morphology", variant = "erode", reference = "binary erosion")]
 pub struct ErodeParams {
     /// Kernel size (must be odd)
     #[param(min = 3, max = 31, step = 2, default = 3)]
@@ -16,27 +18,14 @@ pub struct ErodeParams {
     pub shape: u32,
 }
 
-impl InputRectProvider for ErodeParams {
-    fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> Rect {
-        let overlap = self.ksize / 2;
-        output.expand_uniform(overlap, bounds_w, bounds_h)
-    }
-}
-
-#[rasmcore_macros::register_filter(
-    name = "erode",
-    category = "morphology",
-    group = "morphology",
-    variant = "erode",
-    reference = "binary erosion"
-)]
-pub fn erode_registered(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &ErodeParams,
-) -> Result<Vec<u8>, ImageError> {
-    let overlap = config.ksize / 2;
+impl CpuFilter for ErodeParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
+    let overlap = self.ksize / 2;
     let expanded = request.expand_uniform(overlap, info.width, info.height);
     let pixels = upstream(expanded)?;
     let info = &ImageInfo {
@@ -45,9 +34,16 @@ pub fn erode_registered(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let ksize = config.ksize;
-    let shape = config.shape;
+    let ksize = self.ksize;
+    let shape = self.shape;
 
     let result = erode(pixels, info, ksize, morph_shape_from_u32(shape))?;
     Ok(crop_to_request(&result, expanded, request, info.format))
 }
+
+    fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> Rect {
+        let overlap = self.ksize / 2;
+        output.expand_uniform(overlap, bounds_w, bounds_h)
+    }
+}
+

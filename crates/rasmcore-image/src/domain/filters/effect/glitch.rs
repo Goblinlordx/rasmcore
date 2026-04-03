@@ -6,6 +6,7 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Deterministic hash noise — returns value in [-1.0, 1.0].
 #[inline]
@@ -19,7 +20,8 @@ fn hash_noise(x: u32, seed: u32) -> f32 {
 }
 
 /// Parameters for the glitch effect.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "glitch", category = "effect", reference = "digital glitch / bad TV scanline displacement")]
 pub struct GlitchParams {
     /// Maximum horizontal displacement in pixels
     #[param(min = 1.0, max = 100.0, step = 1.0, default = 20.0)]
@@ -63,17 +65,13 @@ impl rasmcore_pipeline::GpuCapable for GlitchParams {
     }
 }
 
-#[rasmcore_macros::register_filter(
-    name = "glitch",
-    category = "effect",
-    reference = "digital glitch / bad TV scanline displacement"
-)]
-pub fn glitch(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &GlitchParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for GlitchParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -87,14 +85,14 @@ pub fn glitch(
         return process_via_8bit(pixels, info, |p8, i8| {
             let r = Rect::new(0, 0, i8.width, i8.height);
             let mut u = |_: Rect| Ok(p8.to_vec());
-            glitch(r, &mut u, i8, config)
+            self.compute(r, &mut u, i8)
         });
     }
     if is_f32(info.format) {
         return process_via_standard(pixels, info, |p8, i8| {
             let r = Rect::new(0, 0, i8.width, i8.height);
             let mut u = |_: Rect| Ok(p8.to_vec());
-            glitch(r, &mut u, i8, config)
+            self.compute(r, &mut u, i8)
         });
     }
 
@@ -105,11 +103,11 @@ pub fn glitch(
         return Err(ImageError::UnsupportedFormat("glitch requires RGB".into()));
     }
 
-    let shift_amount = config.shift_amount;
-    let channel_offset = config.channel_offset as isize;
-    let intensity = config.intensity;
-    let band_h = config.band_height.max(1) as usize;
-    let seed = config.seed;
+    let shift_amount = self.shift_amount;
+    let channel_offset = self.channel_offset as isize;
+    let intensity = self.intensity;
+    let band_h = self.band_height.max(1) as usize;
+    let seed = self.seed;
 
     let mut out = pixels.to_vec();
 
@@ -156,3 +154,5 @@ pub fn glitch(
 
     Ok(out)
 }
+}
+

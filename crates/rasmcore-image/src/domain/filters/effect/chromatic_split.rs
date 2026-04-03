@@ -6,9 +6,11 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Parameters for the chromatic split effect.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "chromatic_split", category = "effect", reference = "PicsArt/Pixlr RGB channel split")]
 pub struct ChromaticSplitParams {
     /// Red channel X offset in pixels
     #[param(min = -50.0, max = 50.0, step = 1.0, default = 5.0, hint = "rc.signed_slider")]
@@ -55,17 +57,13 @@ impl rasmcore_pipeline::GpuCapable for ChromaticSplitParams {
     }
 }
 
-#[rasmcore_macros::register_filter(
-    name = "chromatic_split",
-    category = "effect",
-    reference = "PicsArt/Pixlr RGB channel split"
-)]
-pub fn chromatic_split(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &ChromaticSplitParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for ChromaticSplitParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -85,9 +83,9 @@ pub fn chromatic_split(
     }
 
     let offsets = [
-        (config.red_dx, config.red_dy),
-        (config.green_dx, config.green_dy),
-        (config.blue_dx, config.blue_dy),
+        (self.red_dx, self.red_dy),
+        (self.green_dx, self.green_dy),
+        (self.blue_dx, self.blue_dy),
     ];
 
     if is_f32(info.format) {
@@ -117,7 +115,7 @@ pub fn chromatic_split(
         return process_via_8bit(pixels, info, |p8, i8| {
             let r = Rect::new(0, 0, i8.width, i8.height);
             let mut u = |_: Rect| Ok(p8.to_vec());
-            chromatic_split(r, &mut u, i8, config)
+            self.compute(r, &mut u, i8)
         });
     }
 
@@ -138,3 +136,5 @@ pub fn chromatic_split(
     }
     Ok(out)
 }
+}
+

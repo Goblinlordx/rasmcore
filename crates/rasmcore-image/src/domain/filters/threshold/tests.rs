@@ -50,14 +50,13 @@ mod threshold_tests {
         let info = gray_info(2, 2);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(px.to_vec());
-        let out = threshold_binary(
+        let out = ThresholdBinaryParams {
+                thresh: 120,
+                max_value: 255
+        }.compute(
             r,
             &mut u,
             &info,
-            &ThresholdBinaryParams {
-                thresh: 120,
-                max_value: 255,
-            },
         )
         .unwrap();
         assert_eq!(out, vec![0, 0, 255, 255]);

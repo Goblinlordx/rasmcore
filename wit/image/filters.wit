@@ -589,6 +589,14 @@ interface filters {
         max-value: u8,
     }
 
+    record triangle-threshold-config {
+        max-value: u8,
+    }
+
+    record otsu-threshold-config {
+        max-value: u8,
+    }
+
     record adaptive-threshold-config {
         max-value: u8,
         method: u32,
@@ -947,8 +955,8 @@ interface filters {
     evaluate-max: func(pixels: buffer, info: image-info, config: evaluate-max-config) -> result<buffer, rasmcore-error>;
     evaluate-divide: func(pixels: buffer, info: image-info, config: evaluate-divide-config) -> result<buffer, rasmcore-error>;
     threshold-binary: func(pixels: buffer, info: image-info, config: threshold-binary-config) -> result<buffer, rasmcore-error>;
-    triangle-threshold: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
-    otsu-threshold: func(pixels: buffer, info: image-info) -> result<buffer, rasmcore-error>;
+    triangle-threshold: func(pixels: buffer, info: image-info, config: triangle-threshold-config) -> result<buffer, rasmcore-error>;
+    otsu-threshold: func(pixels: buffer, info: image-info, config: otsu-threshold-config) -> result<buffer, rasmcore-error>;
     adaptive-threshold: func(pixels: buffer, info: image-info, config: adaptive-threshold-config) -> result<buffer, rasmcore-error>;
     morph-close: func(pixels: buffer, info: image-info, config: morph-close-config) -> result<buffer, rasmcore-error>;
     morph-tophat: func(pixels: buffer, info: image-info, config: morph-tophat-config) -> result<buffer, rasmcore-error>;

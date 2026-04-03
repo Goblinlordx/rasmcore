@@ -2,6 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 use crate::domain::color_spaces::{rgb_to_lab, lab_to_rgb};
 
 // ── Extract L channel ────────────────────────────────────────────────────
@@ -140,7 +141,8 @@ pub fn lab_extract_b(
 // ── LAB Sharpen (luminosity only) ────────────────────────────────────────
 
 /// Parameters for lab_sharpen.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "lab_sharpen", category = "color", reference = "luminosity-only unsharp mask in CIE LAB")]
 pub struct LabSharpenParams {
     /// Sharpening strength (0 = none, 1 = standard, higher = aggressive)
     #[param(min = 0.0, max = 10.0, step = 0.1, default = 1.0)]
@@ -154,17 +156,94 @@ pub struct LabSharpenParams {
 ///
 /// Converts to LAB, applies unsharp mask to L only (L + amount * (L - blurred_L)),
 /// then converts back. This avoids color fringing artifacts from RGB-domain sharpening.
-#[rasmcore_macros::register_filter(
-    name = "lab_sharpen",
-    category = "color",
-    reference = "luminosity-only unsharp mask in CIE LAB"
-)]
-pub fn lab_sharpen(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &LabSharpenParams,
-) -> Result<Vec<u8>, ImageError> {
+
+
+// ── LAB Adjust (shift a/b channels) ─────────────────────────────────────
+
+/// Parameters for lab_adjust.
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "lab_adjust", category = "color", reference = "CIE LAB a/b channel offset", color_op = "true")]
+pub struct LabAdjustParams {
+    /// Offset for a channel (green-red axis). Positive shifts toward red.
+    #[param(min = -128.0, max = 127.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
+    pub a_offset: f32,
+    /// Offset for b channel (blue-yellow axis). Positive shifts toward yellow.
+    #[param(min = -128.0, max = 127.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
+    pub b_offset: f32,
+}
+
+impl LabAdjustParams {
+    /// Bake the LAB adjust into a 3D CLUT for GPU/fusion support.
+    pub fn build_clut(&self) -> crate::domain::color_lut::ColorLut3D {
+        let a_off = self.a_offset as f64;
+        let b_off = self.b_offset as f64;
+        crate::domain::color_lut::ColorLut3D::from_fn(33, |r, g, b| {
+            let (l, a, bv) = rgb_to_lab(r as f64, g as f64, b as f64);
+            let new_a = (a + a_off).clamp(-128.0, 127.0);
+            let new_b = (bv + b_off).clamp(-128.0, 127.0);
+            let (or, og, ob) = lab_to_rgb(l, new_a, new_b);
+            (or as f32, og as f32, ob as f32)
+        })
+    }
+}
+
+impl CpuFilter for LabAdjustParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
+        let pixels = upstream(request)?;
+        let info = &ImageInfo {
+            width: request.width,
+            height: request.height,
+            ..*info
+        };
+        let pixels = pixels.as_slice();
+        let a_off = self.a_offset as f64;
+        let b_off = self.b_offset as f64;
+
+    let (ch, has_alpha) = match info.format {
+        PixelFormat::Rgb8 => (3usize, false),
+        PixelFormat::Rgba8 => (4usize, true),
+        _ => {
+            return Err(ImageError::UnsupportedFormat(
+                "lab_adjust requires RGB8 or RGBA8".into(),
+            ));
+        }
+    };
+    let n = (info.width as usize) * (info.height as usize);
+    let mut result = vec![0u8; pixels.len()];
+
+    for i in 0..n {
+        let pi = i * ch;
+        let r = pixels[pi] as f64 / 255.0;
+        let g = pixels[pi + 1] as f64 / 255.0;
+        let b = pixels[pi + 2] as f64 / 255.0;
+        let (l, a, bv) = rgb_to_lab(r, g, b);
+        let (ro, go, bo) = lab_to_rgb(l, a + a_off, bv + b_off);
+        result[pi] = (ro.clamp(0.0, 1.0) * 255.0).round() as u8;
+        result[pi + 1] = (go.clamp(0.0, 1.0) * 255.0).round() as u8;
+        result[pi + 2] = (bo.clamp(0.0, 1.0) * 255.0).round() as u8;
+        if has_alpha {
+            result[pi + 3] = pixels[pi + 3];
+        }
+    }
+
+        Ok(result)
+    }
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────
+
+impl CpuFilter for LabSharpenParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -172,8 +251,8 @@ pub fn lab_sharpen(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let amount = config.amount;
-    let radius = config.radius;
+    let amount = self.amount;
+    let radius = self.radius;
 
     let (ch, has_alpha) = match info.format {
         PixelFormat::Rgb8 => (3usize, false),
@@ -240,92 +319,9 @@ pub fn lab_sharpen(
 
     Ok(result)
 }
-
-// ── LAB Adjust (shift a/b channels) ─────────────────────────────────────
-
-/// Parameters for lab_adjust.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
-pub struct LabAdjustParams {
-    /// Offset for a channel (green-red axis). Positive shifts toward red.
-    #[param(min = -128.0, max = 127.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
-    pub a_offset: f32,
-    /// Offset for b channel (blue-yellow axis). Positive shifts toward yellow.
-    #[param(min = -128.0, max = 127.0, step = 1.0, default = 0.0, hint = "rc.signed_slider")]
-    pub b_offset: f32,
 }
 
-impl LabAdjustParams {
-    /// Bake the LAB adjust into a 3D CLUT for GPU/fusion support.
-    pub fn build_clut(&self) -> crate::domain::color_lut::ColorLut3D {
-        let a_off = self.a_offset as f64;
-        let b_off = self.b_offset as f64;
-        crate::domain::color_lut::ColorLut3D::from_fn(33, |r, g, b| {
-            let (l, a, bv) = rgb_to_lab(r as f64, g as f64, b as f64);
-            let new_a = (a + a_off).clamp(-128.0, 127.0);
-            let new_b = (bv + b_off).clamp(-128.0, 127.0);
-            let (or, og, ob) = lab_to_rgb(l, new_a, new_b);
-            (or as f32, og as f32, ob as f32)
-        })
-    }
-}
 
-/// Shift LAB a and b channels for color manipulation.
-///
-/// Converts RGB to LAB, adds offsets to a and b channels, converts back.
-/// Useful for creative color shifting without affecting luminosity.
-#[rasmcore_macros::register_filter(
-    name = "lab_adjust",
-    category = "color",
-    reference = "CIE LAB a/b channel offset",
-    color_op = "true"
-)]
-pub fn lab_adjust(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &LabAdjustParams,
-) -> Result<Vec<u8>, ImageError> {
-    let pixels = upstream(request)?;
-    let info = &ImageInfo {
-        width: request.width,
-        height: request.height,
-        ..*info
-    };
-    let pixels = pixels.as_slice();
-    let a_off = config.a_offset as f64;
-    let b_off = config.b_offset as f64;
-
-    let (ch, has_alpha) = match info.format {
-        PixelFormat::Rgb8 => (3usize, false),
-        PixelFormat::Rgba8 => (4usize, true),
-        _ => {
-            return Err(ImageError::UnsupportedFormat(
-                "lab_adjust requires RGB8 or RGBA8".into(),
-            ));
-        }
-    };
-    let n = (info.width as usize) * (info.height as usize);
-    let mut result = vec![0u8; pixels.len()];
-
-    for i in 0..n {
-        let pi = i * ch;
-        let r = pixels[pi] as f64 / 255.0;
-        let g = pixels[pi + 1] as f64 / 255.0;
-        let b = pixels[pi + 2] as f64 / 255.0;
-        let (l, a, bv) = rgb_to_lab(r, g, b);
-        let (ro, go, bo) = lab_to_rgb(l, a + a_off, bv + b_off);
-        result[pi] = (ro.clamp(0.0, 1.0) * 255.0).round() as u8;
-        result[pi + 1] = (go.clamp(0.0, 1.0) * 255.0).round() as u8;
-        result[pi + 2] = (bo.clamp(0.0, 1.0) * 255.0).round() as u8;
-        if has_alpha {
-            result[pi + 3] = pixels[pi + 3];
-        }
-    }
-
-    Ok(result)
-}
-
-// ── Tests ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -407,14 +403,13 @@ mod tests {
     fn lab_adjust_zero_is_identity() {
         let pixels = solid_rgb(4, 4, 100, 150, 200);
         let info = info_rgb8(4, 4);
-        let result = lab_adjust(
+        let result = LabAdjustParams {
+                a_offset: 0.0,
+                b_offset: 0.0,
+            }.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.clone()),
             &info,
-            &LabAdjustParams {
-                a_offset: 0.0,
-                b_offset: 0.0,
-            },
         )
         .unwrap();
         // Roundtrip through LAB may lose 1 level due to floating-point
@@ -431,14 +426,13 @@ mod tests {
         // A solid color image has no detail, so sharpen should be near-identity
         let pixels = solid_rgb(8, 8, 100, 150, 200);
         let info = info_rgb8(8, 8);
-        let result = lab_sharpen(
+        let result = LabSharpenParams {
+                amount: 2.0,
+                radius: 1.0,
+            }.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.clone()),
             &info,
-            &LabSharpenParams {
-                amount: 2.0,
-                radius: 1.0,
-            },
         )
         .unwrap();
         // Solid image: no edges to sharpen, should be near-identity

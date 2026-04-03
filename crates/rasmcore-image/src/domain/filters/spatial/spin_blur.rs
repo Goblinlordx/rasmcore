@@ -154,3 +154,4 @@ impl GpuFilter for SpinBlurParams {
         }])
     }
 }
+

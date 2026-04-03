@@ -2,6 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Automatic perspective correction — detects dominant lines and rectifies.
 ///
@@ -13,26 +14,21 @@ use crate::domain::filters::common::*;
 /// The output has the same dimensions and format as the input.
 
 /// Parameters for perspective_correct.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "perspective_correct", category = "advanced", group = "perspective", variant = "correct", reference = "automatic perspective rectification")]
 pub struct PerspectiveCorrectParams {
     /// Correction strength (0=none, 1=full)
     #[param(min = 0.0, max = 2.0, step = 0.1, default = 1.0)]
     pub strength: f32,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "perspective_correct",
-    category = "advanced",
-    group = "perspective",
-    variant = "correct",
-    reference = "automatic perspective rectification"
-)]
-pub fn perspective_correct(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &PerspectiveCorrectParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for PerspectiveCorrectParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -40,7 +36,7 @@ pub fn perspective_correct(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let strength = config.strength;
+    let strength = self.strength;
 
     validate_format(info.format)?;
 
@@ -48,7 +44,7 @@ pub fn perspective_correct(
         return process_via_8bit(pixels, info, |p8, i8| {
             let r = Rect::new(0, 0, i8.width, i8.height);
             let mut u = |_: Rect| Ok(p8.to_vec());
-            perspective_correct(r, &mut u, i8, config)
+            self.compute(r, &mut u, i8)
         });
     }
 
@@ -200,3 +196,5 @@ pub fn perspective_correct(
         )
     }
 }
+}
+

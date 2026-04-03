@@ -10,9 +10,11 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Parameters for Harris corner detection.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "harris_corners", category = "analysis", group = "analysis", variant = "harris_corners", reference = "Harris & Stephens 1988")]
 pub struct HarrisCornersParams {
     /// Harris sensitivity parameter (typically 0.04-0.06)
     #[param(min = 0.01, max = 0.3, step = 0.01, default = 0.04)]
@@ -188,19 +190,15 @@ fn box_filter_f32(data: &[f32], w: usize, h: usize, radius: usize) -> Vec<f32> {
 }
 
 /// Registered filter — renders Harris corners as white dots on black Gray8 canvas.
-#[rasmcore_macros::register_filter(
-    name = "harris_corners",
-    category = "analysis",
-    group = "analysis",
-    variant = "harris_corners",
-    reference = "Harris & Stephens 1988"
-)]
-pub fn harris_corners_registered(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &HarrisCornersParams,
-) -> Result<Vec<u8>, ImageError> {
+
+
+impl CpuFilter for HarrisCornersParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -211,10 +209,10 @@ pub fn harris_corners_registered(
     let corners = harris_corners(
         &pixels,
         info,
-        config.k,
-        config.threshold,
-        config.block_size,
-        config.nms_radius,
+        self.k,
+        self.threshold,
+        self.block_size,
+        self.nms_radius,
     )?;
 
     // Render corners as white 3x3 crosses on black canvas
@@ -233,6 +231,7 @@ pub fn harris_corners_registered(
         if cy + 1 < h { out[(cy + 1) * w + cx] = 255; }
     }
     Ok(out)
+}
 }
 
 #[cfg(test)]

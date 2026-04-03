@@ -2,11 +2,13 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Morphological black-hat (user-facing wrapper).
 
 /// Parameters for morphological black-hat.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "morph_blackhat", category = "morphology", group = "morphology", variant = "blackhat", reference = "closing minus input")]
 pub struct MorphBlackhatParams {
     /// Kernel size (must be odd)
     #[param(min = 3, max = 31, step = 2, default = 3)]
@@ -16,19 +18,13 @@ pub struct MorphBlackhatParams {
     pub shape: u32,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "morph_blackhat",
-    category = "morphology",
-    group = "morphology",
-    variant = "blackhat",
-    reference = "closing minus input"
-)]
-pub fn morph_blackhat_registered(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &MorphBlackhatParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for MorphBlackhatParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -36,8 +32,10 @@ pub fn morph_blackhat_registered(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let ksize = config.ksize;
-    let shape = config.shape;
+    let ksize = self.ksize;
+    let shape = self.shape;
 
     morph_blackhat(pixels, info, ksize, morph_shape_from_u32(shape))
 }
+}
+

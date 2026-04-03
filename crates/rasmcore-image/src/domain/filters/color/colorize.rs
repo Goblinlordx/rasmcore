@@ -2,6 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Colorize with selectable method.
 ///
@@ -11,7 +12,8 @@ use crate::domain::filters::common::*;
 ///   weighting by L*. Preserves subtle tint at highlights/shadows.
 ///   Based on the libvips/sharp tint() approach.
 
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "colorize", category = "color", reference = "W3C Compositing Level 1 / Photoshop Color blend mode", color_op = "true")]
 pub struct ColorizeParams {
     /// Target color to blend toward
     pub target: crate::domain::param_types::ColorRgb,
@@ -44,18 +46,13 @@ impl ColorLutOp for ColorizeParams {
     }
 }
 
-#[rasmcore_macros::register_filter(
-    name = "colorize",
-    category = "color",
-    reference = "W3C Compositing Level 1 / Photoshop Color blend mode",
-    color_op = "true"
-)]
-pub fn colorize(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &ColorizeParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for ColorizeParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -65,17 +62,19 @@ pub fn colorize(
     let pixels = pixels.as_slice();
 
     let target_norm = [
-        config.target.r as f32 / 255.0,
-        config.target.g as f32 / 255.0,
-        config.target.b as f32 / 255.0,
+        self.target.r as f32 / 255.0,
+        self.target.g as f32 / 255.0,
+        self.target.b as f32 / 255.0,
     ];
-    let amount = config.amount.clamp(0.0, 1.0);
+    let amount = self.amount.clamp(0.0, 1.0);
 
     // Empty method defaults to "w3c" (ConfigParams Default gives "" for String)
-    let op = if config.method == "lab" {
+    let op = if self.method == "lab" {
         ColorOp::ColorizeLab(target_norm, amount)
     } else {
         ColorOp::Colorize(target_norm, amount)
     };
     apply_color_op(pixels, info, &op)
 }
+}
+

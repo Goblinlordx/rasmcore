@@ -2,11 +2,13 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Logarithmic transform of channel values.
 
 /// Parameters for evaluate_log — logarithmic transform.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "evaluate_log", category = "evaluate", group = "evaluate", variant = "log", reference = "ImageMagick -evaluate Log", point_op = "true")]
 pub struct EvaluateLogParams {
     /// Logarithm base (>1)
     #[param(min = 1.01, max = 100.0, step = 0.1, default = 10.0)]
@@ -18,20 +20,13 @@ impl LutPointOp for EvaluateLogParams {
     }
 }
 
-#[rasmcore_macros::register_filter(
-    name = "evaluate_log",
-    category = "evaluate",
-    group = "evaluate",
-    variant = "log",
-    reference = "ImageMagick -evaluate Log",
-    point_op = "true"
-)]
-pub fn evaluate_log(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &EvaluateLogParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for EvaluateLogParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -40,5 +35,7 @@ pub fn evaluate_log(
     };
     let pixels = pixels.as_slice();
     validate_format(info.format)?;
-    crate::domain::point_ops::apply_op(pixels, info, &crate::domain::point_ops::PointOp::EvalLog(config.base))
+    crate::domain::point_ops::apply_op(pixels, info, &crate::domain::point_ops::PointOp::EvalLog(self.base))
 }
+}
+

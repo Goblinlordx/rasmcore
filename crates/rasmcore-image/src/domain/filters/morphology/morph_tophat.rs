@@ -2,11 +2,13 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Morphological top-hat (user-facing wrapper).
 
 /// Parameters for morphological top-hat.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "morph_tophat", category = "morphology", group = "morphology", variant = "tophat", reference = "input minus opening")]
 pub struct MorphTophatParams {
     /// Kernel size (must be odd)
     #[param(min = 3, max = 31, step = 2, default = 3)]
@@ -16,19 +18,13 @@ pub struct MorphTophatParams {
     pub shape: u32,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "morph_tophat",
-    category = "morphology",
-    group = "morphology",
-    variant = "tophat",
-    reference = "input minus opening"
-)]
-pub fn morph_tophat_registered(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &MorphTophatParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for MorphTophatParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -36,8 +32,10 @@ pub fn morph_tophat_registered(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let ksize = config.ksize;
-    let shape = config.shape;
+    let ksize = self.ksize;
+    let shape = self.shape;
 
     morph_tophat(pixels, info, ksize, morph_shape_from_u32(shape))
 }
+}
+

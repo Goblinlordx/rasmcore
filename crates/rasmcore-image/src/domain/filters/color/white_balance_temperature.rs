@@ -2,11 +2,13 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Temperature-based white balance adjustment.
 
 /// Parameters for white balance temperature adjustment.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "white_balance_temperature", category = "color", group = "white_balance", variant = "temperature", reference = "Planckian locus color temperature")]
 pub struct WhiteBalanceTemperatureParams {
     /// Color temperature in Kelvin
     #[param(
@@ -22,19 +24,13 @@ pub struct WhiteBalanceTemperatureParams {
     pub tint: f32,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "white_balance_temperature",
-    category = "color",
-    group = "white_balance",
-    variant = "temperature",
-    reference = "Planckian locus color temperature"
-)]
-pub fn white_balance_temperature_registered(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &WhiteBalanceTemperatureParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for WhiteBalanceTemperatureParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -42,8 +38,8 @@ pub fn white_balance_temperature_registered(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let temperature = config.temperature;
-    let tint = config.tint;
+    let temperature = self.temperature;
+    let tint = self.tint;
 
     if is_f32(info.format) {
         return process_via_standard(pixels, info, |p8, i8| {
@@ -52,3 +48,5 @@ pub fn white_balance_temperature_registered(
     }
     crate::domain::color_spaces::white_balance_temperature(pixels, info, temperature as f64, tint as f64)
 }
+}
+

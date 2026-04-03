@@ -2,11 +2,13 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Multi-scale Retinex with color restoration (user-facing wrapper).
 
 /// Parameters for multi-scale Retinex with color restoration.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "retinex_msrcr", category = "enhancement", group = "retinex", variant = "msrcr", reference = "Jobson et al. 1997 multi-scale Retinex with color restoration")]
 pub struct RetinexMsrcrParams {
     /// Small-scale Gaussian sigma
     #[param(min = 1.0, max = 100.0, step = 1.0, default = 15.0)]
@@ -25,24 +27,18 @@ pub struct RetinexMsrcrParams {
     pub beta: f32,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "retinex_msrcr",
-    category = "enhancement",
-    group = "retinex",
-    variant = "msrcr",
-    reference = "Jobson et al. 1997 multi-scale Retinex with color restoration"
-)]
-pub fn retinex_msrcr_registered(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &RetinexMsrcrParams,
-) -> Result<Vec<u8>, ImageError> {
-    let sigma_small = config.sigma_small;
-    let sigma_medium = config.sigma_medium;
-    let sigma_large = config.sigma_large;
-    let alpha = config.alpha;
-    let beta = config.beta;
+impl CpuFilter for RetinexMsrcrParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
+    let sigma_small = self.sigma_small;
+    let sigma_medium = self.sigma_medium;
+    let sigma_large = self.sigma_large;
+    let alpha = self.alpha;
+    let beta = self.beta;
 
     retinex_msrcr(
         request,
@@ -53,3 +49,5 @@ pub fn retinex_msrcr_registered(
         beta,
     )
 }
+}
+

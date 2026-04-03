@@ -2,11 +2,13 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Non-local means denoising (user-facing wrapper with scalar params).
 
 /// Parameters for NLM denoising.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "nlm_denoise", category = "enhancement", group = "denoise", variant = "nlm", reference = "Buades et al. 2005 non-local means")]
 pub struct NlmDenoiseParams {
     /// Filter strength (higher = more denoising)
     #[param(min = 1.0, max = 100.0, step = 1.0, default = 10.0)]
@@ -19,19 +21,13 @@ pub struct NlmDenoiseParams {
     pub search_size: u32,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "nlm_denoise",
-    category = "enhancement",
-    group = "denoise",
-    variant = "nlm",
-    reference = "Buades et al. 2005 non-local means"
-)]
-pub fn nlm_denoise_registered(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &NlmDenoiseParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for NlmDenoiseParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -39,9 +35,9 @@ pub fn nlm_denoise_registered(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let h = config.h;
-    let patch_size = config.patch_size;
-    let search_size = config.search_size;
+    let h = self.h;
+    let patch_size = self.patch_size;
+    let search_size = self.search_size;
 
     nlm_denoise(
         pixels,
@@ -54,3 +50,5 @@ pub fn nlm_denoise_registered(
         },
     )
 }
+}
+

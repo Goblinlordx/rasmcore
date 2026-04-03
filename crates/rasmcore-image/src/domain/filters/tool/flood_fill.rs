@@ -2,11 +2,13 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Flood fill (user-facing wrapper returning buffer only).
 
 /// Parameters for flood fill.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "flood_fill", category = "tool", reference = "seed-based flood fill")]
 pub struct FloodFillParams {
     /// Seed X coordinate
     #[param(min = 0, max = 8000, step = 1, default = 0, hint = "rc.point")]
@@ -25,17 +27,13 @@ pub struct FloodFillParams {
     pub connectivity: u32,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "flood_fill",
-    category = "tool",
-    reference = "seed-based flood fill"
-)]
-pub fn flood_fill_registered(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &FloodFillParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for FloodFillParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -43,11 +41,11 @@ pub fn flood_fill_registered(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let seed_x = config.seed_x;
-    let seed_y = config.seed_y;
-    let new_val = config.new_val;
-    let tolerance = config.tolerance;
-    let connectivity = config.connectivity;
+    let seed_x = self.seed_x;
+    let seed_y = self.seed_y;
+    let new_val = self.new_val;
+    let tolerance = self.tolerance;
+    let connectivity = self.connectivity;
 
     let (result, _count) = flood_fill(
         pixels,
@@ -60,3 +58,5 @@ pub fn flood_fill_registered(
     )?;
     Ok(result)
 }
+}
+

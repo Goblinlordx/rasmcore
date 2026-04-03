@@ -2,10 +2,12 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
 /// ASC CDL color grading (slope/offset/power per RGB channel)
+#[filter(name = "asc_cdl", category = "grading", reference = "ASC CDL slope/offset/power color decision list", color_op = "true")]
 pub struct AscCdlParams {
     /// Red slope
     #[param(
@@ -85,19 +87,13 @@ impl ColorLutOp for AscCdlParams {
     }
 }
 
-#[rasmcore_macros::register_filter(
-    name = "asc_cdl",
-    category = "grading",
-    reference = "ASC CDL slope/offset/power color decision list",
-    color_op = "true"
-)]
-#[allow(clippy::too_many_arguments)]
-pub fn asc_cdl_registered(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &AscCdlParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for AscCdlParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -105,15 +101,15 @@ pub fn asc_cdl_registered(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let slope_r = config.slope_r;
-    let slope_g = config.slope_g;
-    let slope_b = config.slope_b;
-    let offset_r = config.offset_r;
-    let offset_g = config.offset_g;
-    let offset_b = config.offset_b;
-    let power_r = config.power_r;
-    let power_g = config.power_g;
-    let power_b = config.power_b;
+    let slope_r = self.slope_r;
+    let slope_g = self.slope_g;
+    let slope_b = self.slope_b;
+    let offset_r = self.offset_r;
+    let offset_g = self.offset_g;
+    let offset_b = self.offset_b;
+    let power_r = self.power_r;
+    let power_g = self.power_g;
+    let power_b = self.power_b;
 
     let cdl = crate::domain::color_grading::AscCdl {
         slope: [slope_r, slope_g, slope_b],
@@ -123,3 +119,5 @@ pub fn asc_cdl_registered(
     };
     crate::domain::color_grading::asc_cdl(pixels, info, &cdl)
 }
+}
+

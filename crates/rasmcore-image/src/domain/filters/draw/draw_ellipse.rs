@@ -2,11 +2,13 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Draw an ellipse on the image.
 
 /// Parameters for draw_ellipse.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "draw_ellipse", category = "draw", group = "draw", variant = "ellipse", reference = "filled/outlined ellipse")]
 pub struct DrawEllipseParams {
     /// Center X
     #[param(
@@ -54,19 +56,13 @@ pub struct DrawEllipseParams {
     pub filled: bool,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "draw_ellipse",
-    category = "draw",
-    group = "draw",
-    variant = "ellipse",
-    reference = "filled/outlined ellipse"
-)]
-pub fn draw_ellipse_filter(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &DrawEllipseParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for DrawEllipseParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -75,21 +71,23 @@ pub fn draw_ellipse_filter(
     };
     let pixels = pixels.as_slice();
     let color = [
-        config.color.r,
-        config.color.g,
-        config.color.b,
-        config.color.a,
+        self.color.r,
+        self.color.g,
+        self.color.b,
+        self.color.a,
     ];
     let (result, _) = crate::domain::draw::draw_ellipse(
         pixels,
         info,
-        config.cx,
-        config.cy,
-        config.rx,
-        config.ry,
+        self.cx,
+        self.cy,
+        self.rx,
+        self.ry,
         color,
-        config.stroke_width,
-        config.filled,
+        self.stroke_width,
+        self.filled,
     )?;
     Ok(result)
 }
+}
+

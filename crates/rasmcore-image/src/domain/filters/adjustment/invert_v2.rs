@@ -83,6 +83,7 @@ impl PointOp for InvertV2 {
     }
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;

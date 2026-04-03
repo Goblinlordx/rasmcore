@@ -2,29 +2,27 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Oil painting effect: for each pixel, find the most frequent intensity
 /// in the neighborhood and output that pixel's color.
 
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
 /// Oil paint effect — neighborhood mode filter
+#[filter(name = "oil_paint", category = "effect", reference = "Kuwahara-variant oil painting simulation")]
 pub struct OilPaintParams {
     /// Radius of the neighborhood (1-10)
     #[param(min = 1, max = 10, step = 1, default = 3)]
     pub radius: u32,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "oil_paint",
-    category = "effect",
-    reference = "Kuwahara-variant oil painting simulation"
-)]
-pub fn oil_paint(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &OilPaintParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for OilPaintParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -32,14 +30,14 @@ pub fn oil_paint(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let radius = config.radius;
+    let radius = self.radius;
 
     validate_format(info.format)?;
     if is_16bit(info.format) {
         return process_via_8bit(pixels, info, |p8, i8| {
             let r = Rect::new(0, 0, i8.width, i8.height);
             let mut u = |_: Rect| Ok(p8.to_vec());
-            oil_paint(r, &mut u, i8, config)
+            self.compute(r, &mut u, i8)
         });
     }
 
@@ -120,3 +118,5 @@ pub fn oil_paint(
 
     Ok(out)
 }
+}
+

@@ -2,10 +2,12 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
 /// Selective color — adjust pixels within a specific hue range
+#[filter(name = "selective_color", category = "color", reference = "hue-range-targeted color adjustment")]
 pub struct SelectiveColorParams {
     /// Target center hue in degrees (0-360)
     #[param(
@@ -30,17 +32,13 @@ pub struct SelectiveColorParams {
     pub lightness: f32,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "selective_color",
-    category = "color",
-    reference = "hue-range-targeted color adjustment"
-)]
-pub fn selective_color_registered(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &SelectiveColorParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for SelectiveColorParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -48,11 +46,11 @@ pub fn selective_color_registered(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let target_hue = config.target_hue;
-    let hue_range = config.hue_range;
-    let hue_shift = config.hue_shift;
-    let saturation = config.saturation;
-    let lightness = config.lightness;
+    let target_hue = self.target_hue;
+    let hue_range = self.hue_range;
+    let hue_shift = self.hue_shift;
+    let saturation = self.saturation;
+    let lightness = self.lightness;
 
     let params = crate::domain::content_aware::SelectiveColorParams {
         hue_range: crate::domain::content_aware::HueRange {
@@ -70,3 +68,5 @@ pub fn selective_color_registered(
     }
     crate::domain::content_aware::selective_color(pixels, info, &params)
 }
+}
+

@@ -9,25 +9,23 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "pixelate", category = "effect", reference = "block mosaic pixelation")]
 pub struct PixelateParams {
     #[param(min = 1, max = 128, step = 1, default = 8)]
     pub block_size: u32,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "pixelate",
-    category = "effect",
-    reference = "block mosaic pixelation"
-)]
-pub fn pixelate(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &PixelateParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for PixelateParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -35,7 +33,7 @@ pub fn pixelate(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let block_size = config.block_size;
+    let block_size = self.block_size;
 
     validate_format(info.format)?;
 
@@ -43,7 +41,7 @@ pub fn pixelate(
         return process_via_8bit(pixels, info, |px, i8| {
             let r = Rect::new(0, 0, i8.width, i8.height);
             let mut u = |_: Rect| Ok(px.to_vec());
-            pixelate(r, &mut u, i8, config)
+            self.compute(r, &mut u, i8)
         });
     }
 
@@ -93,3 +91,5 @@ pub fn pixelate(
 
     Ok(out)
 }
+}
+

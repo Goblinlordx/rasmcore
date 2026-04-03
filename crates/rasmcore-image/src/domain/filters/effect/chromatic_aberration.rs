@@ -7,9 +7,11 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Parameters for the chromatic aberration simulation.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "chromatic_aberration", category = "effect", reference = "lateral chromatic aberration simulation")]
 pub struct ChromaticAberrationParams {
     /// CA strength — radial pixel shift at image corners (0 = none)
     #[param(min = 0.0, max = 20.0, step = 0.5, default = 3.0)]
@@ -40,17 +42,13 @@ impl rasmcore_pipeline::GpuCapable for ChromaticAberrationParams {
     }
 }
 
-#[rasmcore_macros::register_filter(
-    name = "chromatic_aberration",
-    category = "effect",
-    reference = "lateral chromatic aberration simulation"
-)]
-pub fn chromatic_aberration(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &ChromaticAberrationParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for ChromaticAberrationParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -69,7 +67,7 @@ pub fn chromatic_aberration(
         ));
     }
 
-    let strength = config.strength;
+    let strength = self.strength;
     if strength.abs() < 1e-6 {
         return Ok(pixels.to_vec());
     }
@@ -117,7 +115,7 @@ pub fn chromatic_aberration(
         return process_via_8bit(pixels, info, |p8, i8| {
             let r = Rect::new(0, 0, i8.width, i8.height);
             let mut u = |_: Rect| Ok(p8.to_vec());
-            chromatic_aberration(r, &mut u, i8, config)
+            self.compute(r, &mut u, i8)
         });
     }
 
@@ -135,3 +133,5 @@ pub fn chromatic_aberration(
     }
     Ok(out)
 }
+}
+

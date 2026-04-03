@@ -2,10 +2,12 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
 /// Film grain simulation
+#[filter(name = "film_grain", category = "effect", reference = "photographic film grain overlay")]
 pub struct FilmGrainParams {
     /// Grain amount (0 = none, 1 = heavy)
     #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.3)]
@@ -18,36 +20,6 @@ pub struct FilmGrainParams {
     pub seed: u32,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "film_grain",
-    category = "effect",
-    reference = "photographic film grain overlay"
-)]
-pub fn film_grain_registered(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &FilmGrainParams,
-) -> Result<Vec<u8>, ImageError> {
-    let pixels = upstream(request)?;
-    let info = &ImageInfo {
-        width: request.width,
-        height: request.height,
-        ..*info
-    };
-    let pixels = pixels.as_slice();
-    let amount = config.amount;
-    let size = config.size;
-    let seed = config.seed;
-
-    let params = crate::domain::color_grading::FilmGrainParams {
-        amount,
-        size,
-        color: false,
-        seed,
-    };
-    crate::domain::color_grading::film_grain(pixels, info, &params)
-}
 
 impl crate::domain::filter_traits::GpuFilter for FilmGrainParams {
     fn gpu_ops(&self, _width: u32, _height: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
@@ -87,3 +59,32 @@ impl crate::domain::filter_traits::GpuFilter for FilmGrainParams {
         }])
     }
 }
+
+impl CpuFilter for FilmGrainParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    let info = &ImageInfo {
+        width: request.width,
+        height: request.height,
+        ..*info
+    };
+    let pixels = pixels.as_slice();
+    let amount = self.amount;
+    let size = self.size;
+    let seed = self.seed;
+
+    let params = crate::domain::color_grading::FilmGrainParams {
+        amount,
+        size,
+        color: false,
+        seed,
+    };
+    crate::domain::color_grading::film_grain(pixels, info, &params)
+}
+}
+

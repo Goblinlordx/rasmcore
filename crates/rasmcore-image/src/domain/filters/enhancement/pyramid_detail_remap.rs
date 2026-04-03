@@ -2,6 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Pyramid detail remapping — edge-aware detail enhancement/smoothing.
 ///
@@ -21,7 +22,8 @@ use crate::domain::filters::common::*;
 /// - `num_levels`: pyramid depth (0 = auto, typically 5-7)
 
 /// Parameters for pyramid detail remapping.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "pyramid_detail_remap", category = "enhancement", reference = "Laplacian pyramid detail enhancement")]
 pub struct PyramidDetailRemapParams {
     /// Detail remapping strength (0.2=enhance, 1.0=neutral, 3.0=smooth)
     #[param(min = 0.1, max = 5.0, step = 0.1, default = 1.0)]
@@ -31,17 +33,13 @@ pub struct PyramidDetailRemapParams {
     pub num_levels: u32,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "pyramid_detail_remap",
-    category = "enhancement",
-    reference = "Laplacian pyramid detail enhancement"
-)]
-pub fn pyramid_detail_remap(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &PyramidDetailRemapParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for PyramidDetailRemapParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -49,8 +47,8 @@ pub fn pyramid_detail_remap(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let sigma = config.sigma;
-    let num_levels = config.num_levels;
+    let sigma = self.sigma;
+    let num_levels = self.num_levels;
 
     validate_format(info.format)?;
     let channels = match info.format {
@@ -97,3 +95,5 @@ pub fn pyramid_detail_remap(
 
     Ok(result)
 }
+}
+

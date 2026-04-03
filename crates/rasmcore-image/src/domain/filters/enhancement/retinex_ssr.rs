@@ -2,6 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Single-Scale Retinex (SSR).
 ///
@@ -16,7 +17,8 @@ use crate::domain::filters::common::*;
 /// Center/Surround Retinex" (IEEE Trans. Image Processing, 1997)
 
 /// Parameters for single-scale Retinex.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "retinex_ssr", category = "enhancement", group = "retinex", variant = "ssr", reference = "Land 1977 single-scale Retinex")]
 pub struct RetinexSsrParams {
     /// Gaussian scale for surround function
     #[param(
@@ -29,19 +31,13 @@ pub struct RetinexSsrParams {
     pub sigma: f32,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "retinex_ssr",
-    category = "enhancement",
-    group = "retinex",
-    variant = "ssr",
-    reference = "Land 1977 single-scale Retinex"
-)]
-pub fn retinex_ssr(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &RetinexSsrParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for RetinexSsrParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -49,7 +45,7 @@ pub fn retinex_ssr(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let sigma = config.sigma;
+    let sigma = self.sigma;
 
     validate_format(info.format)?;
     let channels = match info.format {
@@ -67,10 +63,7 @@ pub fn retinex_ssr(
     let blurred = {
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.to_vec());
-        {
-            use crate::domain::filter_traits::CpuFilter;
-            GaussianBlurCvParams { sigma }.compute(r, &mut u, info)?
-        }
+        GaussianBlurCvParams { sigma }.compute(r, &mut u, info)?
     };
 
     // Compute log(I/blur(I)) per channel using log(a/b) identity, then normalize
@@ -216,3 +209,5 @@ pub fn retinex_ssr(
 
     Ok(result)
 }
+}
+

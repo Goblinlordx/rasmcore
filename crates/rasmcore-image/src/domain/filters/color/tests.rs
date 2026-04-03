@@ -28,11 +28,7 @@ mod color_manipulation_tests {
     fn channel_mixer_identity_preserves_pixels() {
         let pixels = solid_rgb(4, 4, 100, 150, 200);
         let info = info_rgb8(4, 4);
-        let result = channel_mixer(
-            Rect::new(0, 0, info.width, info.height),
-            &mut |_| Ok(pixels.to_vec()),
-            &info,
-            &ChannelMixerParams {
+        let result = ChannelMixerParams {
                 rr: 1.0,
                 rg: 0.0,
                 rb: 0.0,
@@ -42,7 +38,10 @@ mod color_manipulation_tests {
                 br: 0.0,
                 bg: 0.0,
                 bb: 1.0,
-            },
+            }.compute(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
         )
         .unwrap();
         assert_eq!(result, pixels);
@@ -53,11 +52,7 @@ mod color_manipulation_tests {
         let pixels = solid_rgb(2, 2, 100, 150, 200);
         let info = info_rgb8(2, 2);
         // Output red = 1.0*R + 0*G + 0*B, green = 0, blue = 0
-        let result = channel_mixer(
-            Rect::new(0, 0, info.width, info.height),
-            &mut |_| Ok(pixels.to_vec()),
-            &info,
-            &ChannelMixerParams {
+        let result = ChannelMixerParams {
                 rr: 1.0,
                 rg: 0.0,
                 rb: 0.0,
@@ -67,7 +62,10 @@ mod color_manipulation_tests {
                 br: 0.0,
                 bg: 0.0,
                 bb: 0.0,
-            },
+            }.compute(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
         )
         .unwrap();
         for chunk in result.chunks_exact(3) {
@@ -82,11 +80,7 @@ mod color_manipulation_tests {
         let pixels = solid_rgb(2, 2, 100, 150, 200);
         let info = info_rgb8(2, 2);
         // Swap R and B channels
-        let result = channel_mixer(
-            Rect::new(0, 0, info.width, info.height),
-            &mut |_| Ok(pixels.to_vec()),
-            &info,
-            &ChannelMixerParams {
+        let result = ChannelMixerParams {
                 rr: 0.0,
                 rg: 0.0,
                 rb: 1.0,
@@ -96,7 +90,10 @@ mod color_manipulation_tests {
                 br: 1.0,
                 bg: 0.0,
                 bb: 0.0,
-            },
+            }.compute(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
         )
         .unwrap();
         for chunk in result.chunks_exact(3) {
@@ -111,11 +108,7 @@ mod color_manipulation_tests {
         let pixels = solid_rgb(2, 2, 200, 200, 200);
         let info = info_rgb8(2, 2);
         // 2.0 * R would overflow — should clamp to 255
-        let result = channel_mixer(
-            Rect::new(0, 0, info.width, info.height),
-            &mut |_| Ok(pixels.to_vec()),
-            &info,
-            &ChannelMixerParams {
+        let result = ChannelMixerParams {
                 rr: 2.0,
                 rg: 0.0,
                 rb: 0.0,
@@ -125,7 +118,10 @@ mod color_manipulation_tests {
                 br: 0.0,
                 bg: 0.0,
                 bb: 1.0,
-            },
+            }.compute(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(pixels.to_vec()),
+            &info,
         )
         .unwrap();
         assert_eq!(result[0], 255);
@@ -137,11 +133,10 @@ mod color_manipulation_tests {
     fn vibrance_zero_is_identity() {
         let pixels = solid_rgb(4, 4, 100, 150, 200);
         let info = info_rgb8(4, 4);
-        let result = vibrance(
+        let result = VibranceParams { amount: 0.0 }.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &VibranceParams { amount: 0.0 },
         )
         .unwrap();
         assert_eq!(result, pixels);
@@ -154,11 +149,10 @@ mod color_manipulation_tests {
         // Pixel 2: high saturation (vivid red)
         let pixels = vec![120, 130, 125, 255, 20, 20];
 
-        let result = vibrance(
+        let result = VibranceParams { amount: 50.0 }.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &VibranceParams { amount: 50.0 },
         )
         .unwrap();
 
@@ -181,11 +175,10 @@ mod color_manipulation_tests {
         // Use a moderately saturated color (not fully saturated)
         let pixels = solid_rgb(2, 2, 200, 100, 80);
         let info = info_rgb8(2, 2);
-        let result = vibrance(
+        let result = VibranceParams { amount: -80.0 }.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &VibranceParams { amount: -80.0 },
         )
         .unwrap();
         // Should become less saturated: channels should converge toward each other
@@ -296,15 +289,14 @@ mod color_manipulation_tests {
         let info = info_rgb8(4, 4);
         let r = Rect::new(0, 0, 4, 4);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = sparse_color(
+        let result = SparseColorParams {
+                points: String::new(),
+                power: 2.0
+        }.compute(
             r,
             &mut u,
             &info,
             "2,2:FF0000".to_string(),
-            &SparseColorParams {
-                points: String::new(),
-                power: 2.0,
-            },
         )
         .unwrap();
         // All pixels should be red (only one control point)
@@ -320,15 +312,14 @@ mod color_manipulation_tests {
         let r = Rect::new(0, 0, 8, 1);
         let mut u = |_: Rect| Ok(pixels.clone());
         // Red at x=0, blue at x=7
-        let result = sparse_color(
+        let result = SparseColorParams {
+                points: String::new(),
+                power: 2.0
+        }.compute(
             r,
             &mut u,
             &info,
             "0,0:FF0000;7,0:0000FF".to_string(),
-            &SparseColorParams {
-                points: String::new(),
-                power: 2.0,
-            },
         )
         .unwrap();
         // First pixel should be close to red
@@ -358,15 +349,14 @@ mod color_manipulation_tests {
         let r = Rect::new(0, 0, 4, 4);
         let mut u = |_: Rect| Ok(pixels.clone());
         assert!(
-            sparse_color(
+            SparseColorParams {
+                    points: String::new(),
+                    power: 2.0
+            }.compute(
                 r,
                 &mut u,
                 &info,
                 "invalid".to_string(),
-                &SparseColorParams {
-                    points: String::new(),
-                    power: 2.0
-                }
             )
             .is_err()
         );
@@ -380,15 +370,14 @@ mod color_manipulation_tests {
         let info = info_rgb8(4, 4);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = modulate(
+        let result = ModulateParams {
+                brightness: 100.0,
+                saturation: 100.0,
+                hue: 0.0
+        }.compute(
             r,
             &mut u,
             &info,
-            &ModulateParams {
-                brightness: 100.0,
-                saturation: 100.0,
-                hue: 0.0,
-            },
         )
         .unwrap();
         // Identity: (100%, 100%, 0 deg) should preserve pixels
@@ -406,15 +395,14 @@ mod color_manipulation_tests {
         let info = info_rgb8(2, 2);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = modulate(
+        let result = ModulateParams {
+                brightness: 0.0,
+                saturation: 100.0,
+                hue: 0.0
+        }.compute(
             r,
             &mut u,
             &info,
-            &ModulateParams {
-                brightness: 0.0,
-                saturation: 100.0,
-                hue: 0.0,
-            },
         )
         .unwrap();
         for &v in &result {
@@ -428,15 +416,14 @@ mod color_manipulation_tests {
         let info = info_rgb8(2, 2);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = modulate(
+        let result = ModulateParams {
+                brightness: 100.0,
+                saturation: 0.0,
+                hue: 0.0
+        }.compute(
             r,
             &mut u,
             &info,
-            &ModulateParams {
-                brightness: 100.0,
-                saturation: 0.0,
-                hue: 0.0,
-            },
         )
         .unwrap();
         // Desaturated: all channels should be equal (gray)
@@ -453,15 +440,14 @@ mod color_manipulation_tests {
         // Rotate hue by 120 degrees: red -> green
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = modulate(
+        let result = ModulateParams {
+                brightness: 100.0,
+                saturation: 100.0,
+                hue: 120.0
+        }.compute(
             r,
             &mut u,
             &info,
-            &ModulateParams {
-                brightness: 100.0,
-                saturation: 100.0,
-                hue: 120.0,
-            },
         )
         .unwrap();
         // Should be approximately green
@@ -479,17 +465,16 @@ mod color_manipulation_tests {
         let info = info_rgb8(4, 4);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = photo_filter(
-            r,
-            &mut u,
-            &info,
-            &PhotoFilterParams {
+        let result = PhotoFilterParams {
                 color_r: 255,
                 color_g: 200,
                 color_b: 0,
                 density: 0.0,
-                preserve_luminosity: 1,
-            },
+                preserve_luminosity: 1
+        }.compute(
+            r,
+            &mut u,
+            &info,
         )
         .unwrap();
         assert_eq!(result, pixels);
@@ -502,17 +487,16 @@ mod color_manipulation_tests {
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
         // Warm filter (orange) at 50% density
-        let result = photo_filter(
-            r,
-            &mut u,
-            &info,
-            &PhotoFilterParams {
+        let result = PhotoFilterParams {
                 color_r: 236,
                 color_g: 138,
                 color_b: 0,
                 density: 50.0,
-                preserve_luminosity: 0,
-            },
+                preserve_luminosity: 0
+        }.compute(
+            r,
+            &mut u,
+            &info,
         )
         .unwrap();
         // Red should increase, blue should decrease
@@ -526,17 +510,16 @@ mod color_manipulation_tests {
         let info = info_rgb8(4, 4);
         let r = Rect::new(0, 0, info.width, info.height);
         let mut u = |_: Rect| Ok(pixels.clone());
-        let result = photo_filter(
-            r,
-            &mut u,
-            &info,
-            &PhotoFilterParams {
+        let result = PhotoFilterParams {
                 color_r: 255,
                 color_g: 0,
                 color_b: 0,
                 density: 50.0,
-                preserve_luminosity: 1,
-            },
+                preserve_luminosity: 1
+        }.compute(
+            r,
+            &mut u,
+            &info,
         )
         .unwrap();
         // With preserve_luminosity, the total brightness should be similar

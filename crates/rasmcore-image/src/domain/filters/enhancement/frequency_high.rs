@@ -2,6 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Frequency separation — high-pass (detail) layer.
 ///
@@ -17,7 +18,8 @@ use crate::domain::filters::common::*;
 ///   Typical values: 2-10 for skin retouching, 10-30 for artistic effects.
 
 /// Parameters for frequency separation — high-pass (detail) layer.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "frequency_high", category = "enhancement", group = "frequency", variant = "high", reference = "Gaussian high-pass separation")]
 pub struct FrequencyHighParams {
     /// Gaussian sigma controlling separation frequency (higher = finer detail in high-pass)
     #[param(
@@ -30,19 +32,13 @@ pub struct FrequencyHighParams {
     pub sigma: f32,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "frequency_high",
-    category = "enhancement",
-    group = "frequency",
-    variant = "high",
-    reference = "Gaussian high-pass separation"
-)]
-pub fn frequency_high(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &FrequencyHighParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for FrequencyHighParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -50,7 +46,7 @@ pub fn frequency_high(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let sigma = config.sigma;
+    let sigma = self.sigma;
 
     validate_format(info.format)?;
     if sigma <= 0.0 {
@@ -92,3 +88,5 @@ pub fn frequency_high(
 
     Ok(result)
 }
+}
+

@@ -33,11 +33,10 @@ mod distortion_effect_tests {
     fn pixelate_preserves_size() {
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = pixelate(
+        let result = PixelateParams { block_size: 4 }.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &PixelateParams { block_size: 4 },
         )
         .unwrap();
         assert_eq!(result.len(), pixels.len());
@@ -47,11 +46,10 @@ mod distortion_effect_tests {
     fn pixelate_block_1_is_identity() {
         let pixels: Vec<u8> = (0..64 * 64 * 3).map(|i| (i % 256) as u8).collect();
         let info = rgb_info(64, 64);
-        let result = pixelate(
+        let result = PixelateParams { block_size: 1 }.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &PixelateParams { block_size: 1 },
         )
         .unwrap();
         assert_eq!(result, pixels);
@@ -62,11 +60,10 @@ mod distortion_effect_tests {
         // 4x4 image, block_size=4 → entire image is one block
         let pixels = vec![100u8; 4 * 4 * 3];
         let info = rgb_info(4, 4);
-        let result = pixelate(
+        let result = PixelateParams { block_size: 4 }.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &PixelateParams { block_size: 4 },
         )
         .unwrap();
         assert_eq!(result, pixels);
@@ -77,11 +74,10 @@ mod distortion_effect_tests {
         // 7x5 with block_size=3 → handles edge blocks correctly
         let pixels = vec![128u8; 7 * 5 * 3];
         let info = rgb_info(7, 5);
-        let result = pixelate(
+        let result = PixelateParams { block_size: 3 }.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &PixelateParams { block_size: 3 },
         )
         .unwrap();
         assert_eq!(result.len(), pixels.len());
@@ -91,11 +87,10 @@ mod distortion_effect_tests {
     fn pixelate_gray() {
         let pixels = vec![128u8; 16 * 16];
         let info = gray_info(16, 16);
-        let result = pixelate(
+        let result = PixelateParams { block_size: 4 }.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &PixelateParams { block_size: 4 },
         )
         .unwrap();
         assert_eq!(result.len(), pixels.len());
@@ -107,14 +102,13 @@ mod distortion_effect_tests {
     fn halftone_preserves_size() {
         let pixels = vec![128u8; 32 * 32 * 3];
         let info = rgb_info(32, 32);
-        let result = halftone(
+        let result = HalftoneParams {
+                dot_size: 4.0,
+                angle_offset: 0.0,
+            }.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &HalftoneParams {
-                dot_size: 4.0,
-                angle_offset: 0.0,
-            },
         )
         .unwrap();
         assert_eq!(result.len(), pixels.len());
@@ -126,14 +120,13 @@ mod distortion_effect_tests {
         // should be limited to values from {0, 255} combinations
         let pixels = vec![128u8; 16 * 16 * 3];
         let info = rgb_info(16, 16);
-        let result = halftone(
+        let result = HalftoneParams {
+                dot_size: 4.0,
+                angle_offset: 0.0,
+            }.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &HalftoneParams {
-                dot_size: 4.0,
-                angle_offset: 0.0,
-            },
         )
         .unwrap();
         for &v in &result {
@@ -150,14 +143,13 @@ mod distortion_effect_tests {
         // Pure white → C=0, M=0, Y=0, K=0 → all screens below threshold → white
         let pixels = vec![255u8; 8 * 8 * 3];
         let info = rgb_info(8, 8);
-        let result = halftone(
+        let result = HalftoneParams {
+                dot_size: 4.0,
+                angle_offset: 0.0,
+            }.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &HalftoneParams {
-                dot_size: 4.0,
-                angle_offset: 0.0,
-            },
         )
         .unwrap();
         assert!(result.iter().all(|&v| v == 255));
@@ -168,14 +160,13 @@ mod distortion_effect_tests {
         // Pure black → K=1 → all K screens fire → black
         let pixels = vec![0u8; 8 * 8 * 3];
         let info = rgb_info(8, 8);
-        let result = halftone(
+        let result = HalftoneParams {
+                dot_size: 4.0,
+                angle_offset: 0.0,
+            }.compute(
             Rect::new(0, 0, info.width, info.height),
             &mut |_| Ok(pixels.to_vec()),
             &info,
-            &HalftoneParams {
-                dot_size: 4.0,
-                angle_offset: 0.0,
-            },
         )
         .unwrap();
         assert!(result.iter().all(|&v| v == 0));

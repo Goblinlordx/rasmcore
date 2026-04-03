@@ -6,9 +6,11 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Parameters for the light leak effect.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "light_leak", category = "effect", reference = "procedural warm light leak overlay")]
 pub struct LightLeakParams {
     /// Leak intensity (0 = none, 1 = full)
     #[param(min = 0.0, max = 1.0, step = 0.05, default = 0.5)]
@@ -66,17 +68,13 @@ impl rasmcore_pipeline::GpuCapable for LightLeakParams {
     }
 }
 
-#[rasmcore_macros::register_filter(
-    name = "light_leak",
-    category = "effect",
-    reference = "procedural warm light leak overlay"
-)]
-pub fn light_leak(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &LightLeakParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for LightLeakParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -90,27 +88,27 @@ pub fn light_leak(
         return process_via_8bit(pixels, info, |p8, i8| {
             let r = Rect::new(0, 0, i8.width, i8.height);
             let mut u = |_: Rect| Ok(p8.to_vec());
-            light_leak(r, &mut u, i8, config)
+            self.compute(r, &mut u, i8)
         });
     }
     let w = info.width as usize;
     let h = info.height as usize;
     let ch = channels(info.format);
 
-    let intensity = config.intensity;
+    let intensity = self.intensity;
     if intensity < 1e-6 {
         return Ok(pixels.to_vec());
     }
 
     // Convert warmth hue to RGB tint color (HSL with S=1, L=0.5)
-    let hue = config.warmth.clamp(0.0, 60.0);
+    let hue = self.warmth.clamp(0.0, 60.0);
     let (lr, lg, lb) = crate::domain::color_grading::hsl_to_rgb(hue, 1.0, 0.5);
 
     // Leak center and radius in pixel coordinates
-    let cx = config.position_x * w as f32;
-    let cy = config.position_y * h as f32;
+    let cx = self.position_x * w as f32;
+    let cy = self.position_y * h as f32;
     let diag = ((w * w + h * h) as f32).sqrt();
-    let leak_radius = config.radius * diag;
+    let leak_radius = self.radius * diag;
     let inv_radius = 1.0 / leak_radius.max(1.0);
 
     if is_f32(info.format) {
@@ -175,3 +173,5 @@ pub fn light_leak(
 
     Ok(out)
 }
+}
+

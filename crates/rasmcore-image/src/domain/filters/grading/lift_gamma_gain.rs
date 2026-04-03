@@ -2,10 +2,12 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
 /// Lift/Gamma/Gain 3-way color corrector
+#[filter(name = "lift_gamma_gain", category = "grading", reference = "three-way color corrector (shadows/midtones/highlights)", color_op = "true")]
 pub struct LiftGammaGainParams {
     /// Red lift
     #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0, hint = "rc.color_rgb")]
@@ -84,19 +86,13 @@ impl ColorLutOp for LiftGammaGainParams {
     }
 }
 
-#[rasmcore_macros::register_filter(
-    name = "lift_gamma_gain",
-    category = "grading",
-    reference = "three-way color corrector (shadows/midtones/highlights)",
-    color_op = "true"
-)]
-#[allow(clippy::too_many_arguments)]
-pub fn lift_gamma_gain_registered(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &LiftGammaGainParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for LiftGammaGainParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -104,15 +100,15 @@ pub fn lift_gamma_gain_registered(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let lift_r = config.lift_r;
-    let lift_g = config.lift_g;
-    let lift_b = config.lift_b;
-    let gamma_r = config.gamma_r;
-    let gamma_g = config.gamma_g;
-    let gamma_b = config.gamma_b;
-    let gain_r = config.gain_r;
-    let gain_g = config.gain_g;
-    let gain_b = config.gain_b;
+    let lift_r = self.lift_r;
+    let lift_g = self.lift_g;
+    let lift_b = self.lift_b;
+    let gamma_r = self.gamma_r;
+    let gamma_g = self.gamma_g;
+    let gamma_b = self.gamma_b;
+    let gain_r = self.gain_r;
+    let gain_g = self.gain_g;
+    let gain_b = self.gain_b;
 
     let lgg = crate::domain::color_grading::LiftGammaGain {
         lift: [lift_r, lift_g, lift_b],
@@ -121,3 +117,5 @@ pub fn lift_gamma_gain_registered(
     };
     crate::domain::color_grading::lift_gamma_gain(pixels, info, &lgg)
 }
+}
+

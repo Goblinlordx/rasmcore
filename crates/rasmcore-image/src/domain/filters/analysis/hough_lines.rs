@@ -2,28 +2,24 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "hough_lines", category = "analysis", group = "analysis", variant = "hough_lines", reference = "probabilistic Hough transform (Matas et al. 2000)")]
 pub struct HoughLinesParams {
     pub threshold: u32,
     pub min_length: u32,
     pub max_gap: u32,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "hough_lines",
-    category = "analysis",
-    group = "analysis",
-    variant = "hough_lines",
-    reference = "probabilistic Hough transform (Matas et al. 2000)"
-)]
-pub fn hough_lines_registered(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &HoughLinesParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for HoughLinesParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -31,9 +27,9 @@ pub fn hough_lines_registered(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let threshold = config.threshold;
-    let min_length = config.min_length;
-    let max_gap = config.max_gap;
+    let threshold = self.threshold;
+    let min_length = self.min_length;
+    let max_gap = self.max_gap;
 
     let lines = hough_lines_p(
         pixels,
@@ -77,3 +73,5 @@ pub fn hough_lines_registered(
     }
     Ok(out)
 }
+}
+

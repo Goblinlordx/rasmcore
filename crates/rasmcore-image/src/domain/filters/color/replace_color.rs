@@ -7,9 +7,11 @@
 use crate::domain::color_grading::{hsl_to_rgb, rgb_to_hsl};
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
 /// Replace color — select by HSL range and shift H/S/L.
+#[filter(name = "replace_color", category = "color", reference = "HSL range selection with hue/saturation/lightness shift")]
 pub struct ReplaceColorParams {
     /// Center hue to target (degrees 0-360)
     #[param(
@@ -46,17 +48,14 @@ pub struct ReplaceColorParams {
     pub lum_shift: f32,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "replace_color",
-    category = "color",
-    reference = "HSL range selection with hue/saturation/lightness shift"
-)]
-pub fn replace_color(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &ReplaceColorParams,
-) -> Result<Vec<u8>, ImageError> {
+
+impl CpuFilter for ReplaceColorParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -76,7 +75,7 @@ pub fn replace_color(
     };
 
     let n = (info.width as usize) * (info.height as usize);
-    let half_hue = config.hue_range / 2.0;
+    let half_hue = self.hue_range / 2.0;
     let mut result = pixels.to_vec();
 
     for i in 0..n {
@@ -88,18 +87,18 @@ pub fn replace_color(
         let (h, s, l) = rgb_to_hsl(r, g, b);
 
         // Hue distance (wrapping around 360)
-        let hue_diff = ((h - config.center_hue + 180.0).rem_euclid(360.0)) - 180.0;
+        let hue_diff = ((h - self.center_hue + 180.0).rem_euclid(360.0)) - 180.0;
         if hue_diff.abs() > half_hue {
             continue;
         }
 
         // Saturation range check
-        if s < config.sat_min || s > config.sat_max {
+        if s < self.sat_min || s > self.sat_max {
             continue;
         }
 
         // Lightness range check
-        if l < config.lum_min || l > config.lum_max {
+        if l < self.lum_min || l > self.lum_max {
             continue;
         }
 
@@ -111,9 +110,9 @@ pub fn replace_color(
             1.0
         };
 
-        let new_h = (h + config.hue_shift * weight).rem_euclid(360.0);
-        let new_s = (s + config.sat_shift * weight).clamp(0.0, 1.0);
-        let new_l = (l + config.lum_shift * weight).clamp(0.0, 1.0);
+        let new_h = (h + self.hue_shift * weight).rem_euclid(360.0);
+        let new_s = (s + self.sat_shift * weight).clamp(0.0, 1.0);
+        let new_l = (l + self.lum_shift * weight).clamp(0.0, 1.0);
 
         let (nr, ng, nb) = hsl_to_rgb(new_h, new_s, new_l);
         result[pi] = (nr * 255.0).round().clamp(0.0, 255.0) as u8;
@@ -124,6 +123,8 @@ pub fn replace_color(
 
     Ok(result)
 }
+}
+
 
 #[cfg(test)]
 mod tests {

@@ -2,6 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Combined brightness/saturation/hue adjustment in HSB color space.
 ///
@@ -9,8 +10,9 @@ use crate::domain::filters::common::*;
 /// Uses HSB (same as HSV where B=V=max(R,G,B)), not HSL.
 /// Identity at (100, 100, 0).
 
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
 /// HSB modulate — combined brightness, saturation, hue adjustment.
+#[filter(name = "modulate", category = "color", reference = "luma-preserving HSL modulation", color_op = "true")]
 pub struct ModulateParams {
     /// Brightness percentage (100 = unchanged, 0 = black, 200 = 2x bright)
     #[param(min = 0.0, max = 200.0, step = 1.0, default = 100.0)]
@@ -33,18 +35,13 @@ impl ColorLutOp for ModulateParams {
     }
 }
 
-#[rasmcore_macros::register_filter(
-    name = "modulate",
-    category = "color",
-    reference = "luma-preserving HSL modulation",
-    color_op = "true"
-)]
-pub fn modulate(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &ModulateParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for ModulateParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -52,9 +49,9 @@ pub fn modulate(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let brightness = config.brightness;
-    let saturation = config.saturation;
-    let hue = config.hue;
+    let brightness = self.brightness;
+    let saturation = self.saturation;
+    let hue = self.hue;
 
     apply_color_op(
         pixels,
@@ -66,3 +63,5 @@ pub fn modulate(
         },
     )
 }
+}
+

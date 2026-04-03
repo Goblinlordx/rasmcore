@@ -4,9 +4,11 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
 /// Mask feather parameters.
+#[filter(name = "mask_feather", category = "mask", reference = "gaussian blur on mask for feathered edges")]
 pub struct MaskFeatherParams {
     /// Feather radius (gaussian blur sigma)
     #[param(min = 0.1, max = 100.0, step = 0.1, default = 5.0)]
@@ -17,21 +19,18 @@ pub struct MaskFeatherParams {
 ///
 /// Works on Gray8 (extracts channel, blurs, returns Gray8).
 /// For RGB8: converts to gray, blurs, returns as RGB8 with R=G=B.
-#[rasmcore_macros::register_filter(
-    name = "mask_feather",
-    category = "mask",
-    reference = "gaussian blur on mask for feathered edges"
-)]
-pub fn mask_feather(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &MaskFeatherParams,
-) -> Result<Vec<u8>, ImageError> {
+
+impl CpuFilter for MaskFeatherParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let w = request.width as usize;
     let h = request.height as usize;
-    let sigma = config.radius;
+    let sigma = self.radius;
 
     match info.format {
         PixelFormat::Gray8 => {
@@ -69,3 +68,5 @@ pub fn mask_feather(
         )),
     }
 }
+}
+

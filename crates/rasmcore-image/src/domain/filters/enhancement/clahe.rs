@@ -2,6 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
 /// Apply CLAHE — local adaptive contrast enhancement.
 ///
@@ -13,7 +14,8 @@ use crate::domain::filters::common::*;
 /// - `tile_grid`: number of tiles per dimension (8 = 8x8 grid, OpenCV default)
 
 /// Parameters for CLAHE contrast enhancement.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "clahe", category = "enhancement", reference = "Zuiderveld 1994 contrast-limited adaptive histogram equalization")]
 pub struct ClaheParams {
     /// Contrast amplification clip limit (2.0-4.0 typical)
     #[param(min = 1.0, max = 40.0, step = 0.5, default = 2.0)]
@@ -23,17 +25,13 @@ pub struct ClaheParams {
     pub tile_grid: u32,
 }
 
-#[rasmcore_macros::register_filter(
-    name = "clahe",
-    category = "enhancement",
-    reference = "Zuiderveld 1994 contrast-limited adaptive histogram equalization"
-)]
-pub fn clahe(
-    request: Rect,
-    upstream: &mut UpstreamFn,
-    info: &ImageInfo,
-    config: &ClaheParams,
-) -> Result<Vec<u8>, ImageError> {
+impl CpuFilter for ClaheParams {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
     let pixels = upstream(request)?;
     let info = &ImageInfo {
         width: request.width,
@@ -41,8 +39,8 @@ pub fn clahe(
         ..*info
     };
     let pixels = pixels.as_slice();
-    let clip_limit = config.clip_limit;
-    let tile_grid = config.tile_grid;
+    let clip_limit = self.clip_limit;
+    let tile_grid = self.tile_grid;
 
     if info.format != PixelFormat::Gray8 {
         return Err(ImageError::UnsupportedFormat(
@@ -160,3 +158,5 @@ pub fn clahe(
 
     Ok(result)
 }
+}
+
