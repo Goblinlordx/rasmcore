@@ -1,84 +1,94 @@
 id: aces-rrt-odt_20260403143101Z
-title: "ACES RRT + core ODTs — reference rendering and display transforms"
+title: ACES RRT + core ODTs — reference rendering and display transforms
 type: feature
 status: pending
-created: "2026-04-03"
-updated: "2026-04-03"
+created: '2026-04-03'
+updated: '2026-04-03'
 spec:
-  summary: >
-    Implement ACES Reference Rendering Transform and core Output Device Transforms.
-    Extends ViewTransform with ACES variants for professional color output.
-  context: |
-    The V2 pipeline has ACES color spaces, transfer functions, and AP0/AP1 conversion
+  summary: 'Implement ACES Reference Rendering Transform and core Output Device Transforms. Extends ViewTransform with ACES
+    variants for professional color output.
+
+    '
+  context: 'The V2 pipeline has ACES color spaces, transfer functions, and AP0/AP1 conversion
+
     matrices fully implemented in color_math.rs. The ViewTransform enum currently has
+
     only Srgb, Linear, and Rec709 (simple gamma curves). The critical missing piece is
+
     the ACES output transform chain: RRT (scene-referred to display-referred tone mapping)
+
     and ODTs (display-specific encoding).
-    
+
+
     The RRT is the heart of ACES — it applies a global tone curve (segmented spline),
+
     glow compensation, red modifier for desaturation of bright reds, and gamut compression.
+
     ODTs then map from OCES to specific display devices.
-  codebase_analysis: |
-    Key files:
-    - color_convert.rs: ViewTransform enum (Srgb, Linear, Rec709) + ViewTransformNode
-      Line 19 comment: "Future: AcesRrtSrgb, AcesRrtRec709, AcesRrtP3, etc."
-    - color_math.rs: All AP0/AP1 matrices, sRGB/ACES conversion chains, Bradford CAT
-    - color_space.rs: Aces2065_1, AcesCg, AcesCct, AcesCc defined
-    
-    Segmented spline evaluation, glow module, red modifier, and gamut compression
-    are entirely unimplemented.
+
+    '
+  codebase_analysis: "Key files:\n- color_convert.rs: ViewTransform enum (Srgb, Linear, Rec709) + ViewTransformNode\n  Line\
+    \ 19 comment: \"Future: AcesRrtSrgb, AcesRrtRec709, AcesRrtP3, etc.\"\n- color_math.rs: All AP0/AP1 matrices, sRGB/ACES\
+    \ conversion chains, Bradford CAT\n- color_space.rs: Aces2065_1, AcesCg, AcesCct, AcesCc defined\n\nSegmented spline evaluation,\
+    \ glow module, red modifier, and gamut compression\nare entirely unimplemented.\n"
   acceptance_criteria:
-    - Segmented spline C5/C9 evaluation implemented and tested
-    - RRT pipeline (glow, red modifier, tone curve, gamut compress) implemented
-    - sRGB ODT validated against CTL reference
-    - Rec.709 ODT implemented
-    - P3-D65 ODT implemented
-    - ViewTransform extended with AcesRrtSrgb, AcesRrtRec709, AcesRrtP3
-    - ViewTransformNode handles ACES variants
-    - Round-trip numerical validation against ACES CTL reference
-  out_of_scope: |
-    Rec.2020 PQ/HLG ODTs. Inverse RRT/ODT. Camera IDTs. AMF metadata.
+  - Segmented spline C5/C9 evaluation implemented and tested
+  - RRT pipeline (glow, red modifier, tone curve, gamut compress) implemented
+  - sRGB ODT validated against CTL reference
+  - Rec.709 ODT implemented
+  - P3-D65 ODT implemented
+  - ViewTransform extended with AcesRrtSrgb, AcesRrtRec709, AcesRrtP3
+  - ViewTransformNode handles ACES variants
+  - Round-trip numerical validation against ACES CTL reference
+  out_of_scope: 'Rec.2020 PQ/HLG ODTs. Inverse RRT/ODT. Camera IDTs. AMF metadata.
+
     GPU acceleration. LMT hooks.
-  technical_notes: |
-    Implementation follows ACES Central CTL reference. The RRT is a fixed transform
+
+    '
+  technical_notes: 'Implementation follows ACES Central CTL reference. The RRT is a fixed transform
+
     with no user parameters. ODTs are parameterized by display primaries, white point,
+
     and peak luminance. Segmented spline C9 (9 control points) for RRT, C5 for some ODTs.
+
     Reference: Academy S-2014-003, S-2016-001, TB-2014-012.
+
+    '
 plan:
-  - phase: "Segmented spline foundation"
-    tasks:
-      - text: "Implement segmented spline C5 and C9 evaluator with ACES knot tables"
-        done: false
-      - text: "Test spline against known CTL reference values"
-        done: false
-  - phase: "RRT implementation"
-    tasks:
-      - text: "Implement glow module (desaturation compensation for low-luminance)"
-        done: false
-      - text: "Implement red modifier (hue-preserving desaturation of bright reds)"
-        done: false
-      - text: "Implement RRT tone curve via segmented spline C9"
-        done: false
-      - text: "Implement gamut compression (AP1 to AP0 safe gamut mapping)"
-        done: false
-      - text: "Compose full RRT pipeline function"
-        done: false
-      - text: "Validate RRT output against CTL reference values"
-        done: false
-  - phase: "ODT implementation"
-    tasks:
-      - text: "Implement sRGB ODT (OCES to sRGB display-referred)"
-        done: false
-      - text: "Implement Rec.709 ODT"
-        done: false
-      - text: "Implement P3-D65 ODT"
-        done: false
-      - text: "Validate all ODTs against CTL reference values"
-        done: false
-  - phase: "Pipeline integration"
-    tasks:
-      - text: "Extend ViewTransform enum with AcesRrtSrgb, AcesRrtRec709, AcesRrtP3"
-        done: false
-      - text: "Update ViewTransformNode to handle ACES variants (RRT + ODT chain)"
-        done: false
+- phase: Segmented spline foundation
+  tasks:
+  - text: Implement segmented spline C5 and C9 evaluator with ACES knot tables
+    done: true
+  - text: Test spline against known CTL reference values
+    done: true
+- phase: RRT implementation
+  tasks:
+  - text: Implement glow module (desaturation compensation for low-luminance)
+    done: true
+  - text: Implement red modifier (hue-preserving desaturation of bright reds)
+    done: true
+  - text: Implement RRT tone curve via segmented spline C9
+    done: true
+  - text: Implement gamut compression (AP1 to AP0 safe gamut mapping)
+    done: true
+  - text: Compose full RRT pipeline function
+    done: true
+  - text: Validate RRT output against CTL reference values
+    done: true
+- phase: ODT implementation
+  tasks:
+  - text: Implement sRGB ODT (OCES to sRGB display-referred)
+    done: true
+  - text: Implement Rec.709 ODT
+    done: true
+  - text: Implement P3-D65 ODT
+    done: true
+  - text: Validate all ODTs against CTL reference values
+    done: true
+- phase: Pipeline integration
+  tasks:
+  - text: Extend ViewTransform enum with AcesRrtSrgb, AcesRrtRec709, AcesRrtP3
+    done: true
+  - text: Update ViewTransformNode to handle ACES variants (RRT + ODT chain)
+    done: true
 extra: {}
