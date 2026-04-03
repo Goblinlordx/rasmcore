@@ -91,11 +91,11 @@ plan:
 - phase: Codegen filter dispatch
   tasks:
   - text: Update pipeline.rs to emit V2 Filter struct construction
-    done: false
+    done: true
   - text: Update adapter.rs to emit V2 dispatch (WIT config -> V2 struct -> graph)
-    done: false
+    done: true
   - text: Update generate_adapter_macro to use V2 Graph.add_node
-    done: false
+    done: true
 - phase: Codegen write + transform
   tasks:
   - text: Update pipeline_write.rs to use codecs-v2 encoders
