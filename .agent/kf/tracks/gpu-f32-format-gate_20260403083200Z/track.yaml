@@ -1,95 +1,90 @@
 id: gpu-f32-format-gate_20260403083200Z
-title: "Remove Rgba8 format gate from GPU dispatch + clean up gpu attribute"
+title: Remove Rgba8 format gate from GPU dispatch + clean up gpu attribute
 type: refactor
 status: pending
 created: '2026-04-03'
 updated: '2026-04-03'
 spec:
-  summary: |
-    Remove the Rgba8 format check that blocks GPU dispatch for f32 pipeline
+  summary: 'Remove the Rgba8 format check that blocks GPU dispatch for f32 pipeline
+
     data. Clean up dead gpu="true" attributes. Prerequisite for GPU shader
+
     expansion.
-  context: |
-    The codegen generates a GpuCapable impl for GPU-capable nodes that
-    includes a format gate (pipeline.rs line 143):
-      if self.source_info.format != Rgba8 { return None; }
 
-    With the f32 pipeline, all data is Rgba32f, so this gate rejects GPU
-    for ALL nodes. The fix: remove the Rgba8 gate entirely. The shaders
-    themselves declare their buffer format (U32Packed or F32Vec4) and the
-    graph dispatch already selects the correct format based on pixel format.
+    '
+  context: "The codegen generates a GpuCapable impl for GPU-capable nodes that\nincludes a format gate (pipeline.rs line 143):\n\
+    \  if self.source_info.format != Rgba8 { return None; }\n\nWith the f32 pipeline, all data is Rgba32f, so this gate rejects\
+    \ GPU\nfor ALL nodes. The fix: remove the Rgba8 gate entirely. The shaders\nthemselves declare their buffer format (U32Packed\
+    \ or F32Vec4) and the\ngraph dispatch already selects the correct format based on pixel format.\n\nAdditionally, 7 distortion\
+    \ filters have dead gpu=\"true\" attributes in\ntheir register_filter macros. These are now derive(Filter) filters\nwhere\
+    \ GPU capability is detected from impl GpuFilter scanning (line 40\nof parse/filters.rs). The attributes are dead code.\n"
+  codebase_analysis: 'Key locations:
 
-    Additionally, 7 distortion filters have dead gpu="true" attributes in
-    their register_filter macros. These are now derive(Filter) filters
-    where GPU capability is detected from impl GpuFilter scanning (line 40
-    of parse/filters.rs). The attributes are dead code.
-  codebase_analysis: |
-    Key locations:
     - codegen pipeline.rs:138-155 — GpuCapable impl generation with Rgba8 gate
+
     - codegen pipeline.rs:143,148 — the two Rgba8 checks to remove
+
     - parse/filters.rs:40 — already scans for GpuFilter trait impl
+
     - 7 files with dead gpu="true" — barrel, depolar, polar, ripple, spherize, swirl, wave
 
+
     The GpuFilter trait detection already works for derive(Filter) via
+
     trait impl scanning at parse/filters.rs:40. No new detection needed.
 
+
     The Rgba8 format gate was added when the pipeline only handled u8
+
     data. With f32 pipeline and F32Vec4 buffer format, the gate must go.
+
     Each shader declares its own buffer_format — U32Packed shaders get u32
+
     data, F32Vec4 shaders get f32 data. The graph dispatch handles this.
+
+    '
   acceptance_criteria:
-    - Rgba8 format check removed from generated GpuCapable impl
-    - GPU dispatch works for Rgba32f pipeline data
-    - Existing GPU filters (17 with U32Packed shaders) still work via auto-wrap
-    - Dead gpu="true" attributes removed from 7 distortion filters
-    - All tests pass
-    - WASM component builds
-  out_of_scope: |
-    Removing GpuFilter trait entirely (separate cleanup track).
+  - Rgba8 format check removed from generated GpuCapable impl
+  - GPU dispatch works for Rgba32f pipeline data
+  - Existing GPU filters (17 with U32Packed shaders) still work via auto-wrap
+  - Dead gpu="true" attributes removed from 7 distortion filters
+  - All tests pass
+  - WASM component builds
+  out_of_scope: 'Removing GpuFilter trait entirely (separate cleanup track).
+
     Writing new f32 shaders (gpu-shaders-wave1 track).
+
     Removing gpu field from FilterReg (still used for old-style filters during migration).
-  technical_notes: |
-    The format gate removal is 2 lines. The generated code becomes:
 
-    impl GpuCapable for XxxNode {
-        fn gpu_ops(...) -> Option<Vec<GpuOp>> {
-            use crate::domain::filter_traits::GpuFilter;
-            self.config.gpu_ops(width, height)
-        }
-        fn gpu_ops_with_format(...) -> Option<Vec<GpuOp>> {
-            use crate::domain::filter_traits::GpuFilter;
-            self.config.gpu_ops_with_format(width, height, buffer_format)
-        }
-    }
-
-    No format check needed — the GpuFilter impl itself decides whether
-    it can handle the current format by returning None.
-
-    For existing U32Packed shaders: the graph dispatch passes the buffer
-    format to gpu_ops_with_format(). Shaders that only support U32Packed
-    return None for F32Vec4, causing CPU fallback. As shaders get f32
-    variants (gpu-shaders-wave1), they start returning ops for F32Vec4.
+    '
+  technical_notes: "The format gate removal is 2 lines. The generated code becomes:\n\nimpl GpuCapable for XxxNode {\n   \
+    \ fn gpu_ops(...) -> Option<Vec<GpuOp>> {\n        use crate::domain::filter_traits::GpuFilter;\n        self.config.gpu_ops(width,\
+    \ height)\n    }\n    fn gpu_ops_with_format(...) -> Option<Vec<GpuOp>> {\n        use crate::domain::filter_traits::GpuFilter;\n\
+    \        self.config.gpu_ops_with_format(width, height, buffer_format)\n    }\n}\n\nNo format check needed — the GpuFilter\
+    \ impl itself decides whether\nit can handle the current format by returning None.\n\nFor existing U32Packed shaders:\
+    \ the graph dispatch passes the buffer\nformat to gpu_ops_with_format(). Shaders that only support U32Packed\nreturn None\
+    \ for F32Vec4, causing CPU fallback. As shaders get f32\nvariants (gpu-shaders-wave1), they start returning ops for F32Vec4.\n"
 plan:
-  - phase: "Remove format gate"
-    tasks:
-      - text: "Remove Rgba8 format check from generated GpuCapable gpu_ops() in codegen pipeline.rs"
-        done: false
-      - text: "Remove Rgba8 format check from generated GpuCapable gpu_ops_with_format() in codegen pipeline.rs"
-        done: false
-      - text: "Verify existing GPU filters still work (they return U32Packed, graph handles format mismatch)"
-        done: false
-  - phase: "Clean up dead attributes"
-    tasks:
-      - text: "Remove gpu='true' from barrel, depolar, polar, ripple, spherize, swirl, wave register_filter attrs"
-        done: false
-      - text: "Verify GPU detection still works for these filters via trait impl scanning"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "All domain tests pass"
-        done: false
-      - text: "WASM component builds"
-        done: false
-      - text: "GPU-capable node count unchanged (17 filters)"
-        done: false
+- phase: Remove format gate
+  tasks:
+  - text: Remove Rgba8 format check from generated GpuCapable gpu_ops() in codegen pipeline.rs
+    done: false
+  - text: Remove Rgba8 format check from generated GpuCapable gpu_ops_with_format() in codegen pipeline.rs
+    done: false
+  - text: Verify existing GPU filters still work (they return U32Packed, graph handles format mismatch)
+    done: false
+- phase: Clean up dead attributes
+  tasks:
+  - text: Remove gpu='true' from barrel, depolar, polar, ripple, spherize, swirl, wave register_filter attrs
+    done: true
+  - text: Verify GPU detection still works for these filters via trait impl scanning
+    done: true
+- phase: Verification
+  tasks:
+  - text: All domain tests pass
+    done: true
+  - text: WASM component builds
+    done: true
+  - text: GPU-capable node count unchanged (17 filters)
+    done: true
 extra: {}

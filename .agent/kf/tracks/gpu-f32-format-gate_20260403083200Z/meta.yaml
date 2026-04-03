@@ -1,5 +1,5 @@
 title: Remove Rgba8 format gate from GPU dispatch + clean up gpu attribute
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-04-03'
