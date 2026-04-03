@@ -25,6 +25,7 @@ pub mod cache;
 pub mod hash;
 pub mod registry;
 pub mod ops;
+pub mod filter_node;
 
 // Re-export core types at crate root
 pub use rect::{Rect, Overlap};
@@ -49,3 +50,6 @@ pub use ops::{
     Filter, GpuFilter, Decoder, Encoder, Transform,
     AnalyticOp, PointOpExpr, DecodedImage,
 };
+
+// Re-export node wrappers
+pub use filter_node::{FilterNode, GpuFilterNode, compose_shader, IO_F32};
