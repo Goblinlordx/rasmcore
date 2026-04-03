@@ -1096,6 +1096,159 @@ impl GpuFilter for VignettePowerlaw {
     }
 }
 
+// ── AutoLevel GPU (3-pass via ChannelMinMax reduction) ──────────────────────
+
+/// AutoLevel apply shader — reads min/max from reduction buffer, stretches per-channel.
+const AUTO_LEVEL_APPLY_WGSL: &str = r#"
+struct Params {
+  width: u32,
+  height: u32,
+  _pad0: u32,
+  _pad1: u32,
+}
+@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
+@group(0) @binding(2) var<uniform> params: Params;
+@group(0) @binding(3) var<storage, read> reduction: array<vec4<f32>>;
+
+@compute @workgroup_size(256, 1, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let idx = gid.x;
+  if (idx >= params.width * params.height) { return; }
+
+  let ch_min = reduction[0].xyz;
+  let ch_max = reduction[1].xyz;
+  let range = max(ch_max - ch_min, vec3<f32>(0.00001, 0.00001, 0.00001));
+
+  let pixel = input[idx];
+  output[idx] = vec4<f32>(
+    (pixel.x - ch_min.x) / range.x,
+    (pixel.y - ch_min.y) / range.y,
+    (pixel.z - ch_min.z) / range.z,
+    pixel.w,
+  );
+}
+"#;
+
+impl GpuFilter for AutoLevel {
+    fn shader_body(&self) -> &str { AUTO_LEVEL_APPLY_WGSL }
+    fn workgroup_size(&self) -> [u32; 3] { [256, 1, 1] }
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(16);
+        buf.extend_from_slice(&width.to_le_bytes());
+        buf.extend_from_slice(&height.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf
+    }
+    fn gpu_shaders(&self, width: u32, height: u32) -> Vec<crate::node::GpuShader> {
+        use crate::gpu_shaders::reduction::GpuReduction;
+
+        let reduction = GpuReduction::channel_min_max(256);
+        let passes = reduction.build_passes(width, height);
+
+        let pass3 = crate::node::GpuShader::new(
+            AUTO_LEVEL_APPLY_WGSL.to_string(),
+            "main",
+            [256, 1, 1],
+            self.params(width, height),
+        )
+        .with_reduction_buffers(vec![reduction.read_buffer(&passes)]);
+
+        vec![passes.pass1, passes.pass2, pass3]
+    }
+}
+
+// ── Equalize GPU (3-pass via Histogram256 reduction) ───────────────────────
+
+/// Equalize apply shader — reads per-channel histogram, computes CDF inline, remaps.
+const EQUALIZE_APPLY_WGSL: &str = r#"
+struct Params {
+  width: u32,
+  height: u32,
+  total_pixels: u32,
+  _pad: u32,
+}
+@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
+@group(0) @binding(2) var<uniform> params: Params;
+@group(0) @binding(3) var<storage, read> histogram: array<u32>;
+
+// Compute CDF value for a given bin and channel offset
+fn cdf_at(bin: u32, channel_offset: u32) -> f32 {
+  var sum = 0u;
+  for (var i = 0u; i <= bin; i = i + 1u) {
+    sum += histogram[channel_offset + i];
+  }
+  // Find cdf_min (first non-zero bin)
+  var cdf_min = 0u;
+  for (var i = 0u; i < 256u; i = i + 1u) {
+    let v = histogram[channel_offset + i];
+    if (v > 0u) {
+      cdf_min = v;
+      // Compute cdf_min as cumulative at first non-zero
+      var s = 0u;
+      for (var j = 0u; j <= i; j = j + 1u) {
+        s += histogram[channel_offset + j];
+      }
+      cdf_min = s;
+      break;
+    }
+  }
+  let denom = params.total_pixels - cdf_min;
+  if (denom == 0u) { return f32(bin) / 255.0; }
+  return f32(sum - cdf_min) / f32(denom);
+}
+
+@compute @workgroup_size(256, 1, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let idx = gid.x;
+  if (idx >= params.width * params.height) { return; }
+
+  let pixel = input[idx];
+  let bin_r = u32(clamp(pixel.x * 255.0, 0.0, 255.0));
+  let bin_g = u32(clamp(pixel.y * 255.0, 0.0, 255.0));
+  let bin_b = u32(clamp(pixel.z * 255.0, 0.0, 255.0));
+
+  output[idx] = vec4<f32>(
+    cdf_at(bin_r, 0u),
+    cdf_at(bin_g, 256u),
+    cdf_at(bin_b, 512u),
+    pixel.w,
+  );
+}
+"#;
+
+impl GpuFilter for Equalize {
+    fn shader_body(&self) -> &str { EQUALIZE_APPLY_WGSL }
+    fn workgroup_size(&self) -> [u32; 3] { [256, 1, 1] }
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        let total = width * height;
+        let mut buf = Vec::with_capacity(16);
+        buf.extend_from_slice(&width.to_le_bytes());
+        buf.extend_from_slice(&height.to_le_bytes());
+        buf.extend_from_slice(&total.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf
+    }
+    fn gpu_shaders(&self, width: u32, height: u32) -> Vec<crate::node::GpuShader> {
+        use crate::gpu_shaders::reduction::GpuReduction;
+
+        let reduction = GpuReduction::histogram_256(256);
+        let passes = reduction.build_passes(width, height);
+
+        let pass3 = crate::node::GpuShader::new(
+            EQUALIZE_APPLY_WGSL.to_string(),
+            "main",
+            [256, 1, 1],
+            self.params(width, height),
+        )
+        .with_reduction_buffers(vec![reduction.read_buffer(&passes)]);
+
+        vec![passes.pass1, passes.pass2, pass3]
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1145,6 +1298,30 @@ mod tests {
         let input = solid_rgba(4, 4, [0.3, 0.5, 0.7, 0.5]);
         let output = AutoLevel.compute(&input, 4, 4).unwrap();
         assert_eq!(output[3], 0.5);
+    }
+
+    #[test]
+    fn auto_level_gpu_returns_3_passes() {
+        let f = AutoLevel;
+        let shaders = f.gpu_shaders(100, 100);
+        assert_eq!(shaders.len(), 3, "AutoLevel should use 3-pass ChannelMinMax reduction");
+        // Pass 1+2 have read_write reduction buffers, pass 3 has read-only
+        assert!(shaders[0].reduction_buffers[0].read_write);
+        assert!(!shaders[2].reduction_buffers[0].read_write);
+        // All have same buffer ID
+        assert_eq!(
+            shaders[0].reduction_buffers[0].id,
+            shaders[2].reduction_buffers[0].id,
+        );
+    }
+
+    #[test]
+    fn equalize_gpu_returns_3_passes() {
+        let f = Equalize;
+        let shaders = f.gpu_shaders(100, 100);
+        assert_eq!(shaders.len(), 3, "Equalize should use 3-pass Histogram256 reduction");
+        assert!(shaders[0].reduction_buffers[0].read_write);
+        assert!(!shaders[2].reduction_buffers[0].read_write);
     }
 
     // ─── Equalize ────────────────────────────────────────────────────────

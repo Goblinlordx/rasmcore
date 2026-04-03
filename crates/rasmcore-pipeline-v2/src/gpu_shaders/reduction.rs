@@ -32,6 +32,9 @@ pub enum ReductionKind {
     /// Per-channel min and max → 2 × `vec4<f32>`:
     /// `[0] = (min_r, min_g, min_b, _)`, `[1] = (max_r, max_g, max_b, _)`.
     ChannelMinMax,
+    /// Per-channel 256-bin histogram → 3 × 256 `u32` bins (R, G, B channels).
+    /// Layout: `[0..255] = R bins, [256..511] = G bins, [512..767] = B bins`.
+    Histogram256,
 }
 
 /// Configuration for a GPU reduction.
@@ -66,6 +69,14 @@ impl GpuReduction {
         }
     }
 
+    /// Create a Histogram256 reduction with the given workgroup size.
+    pub fn histogram_256(workgroup_size: u32) -> Self {
+        Self {
+            kind: ReductionKind::Histogram256,
+            workgroup_size,
+        }
+    }
+
     /// Generate passes 1 and 2 (local reduce + global reduce).
     ///
     /// The caller appends their own pass 3 (apply) using [`read_buffer()`]
@@ -81,6 +92,9 @@ impl GpuReduction {
             }
             ReductionKind::ChannelMinMax => {
                 self.build_channel_min_max_passes(width, height, total, num_wg)
+            }
+            ReductionKind::Histogram256 => {
+                self.build_histogram_256_passes(width, height, total, num_wg)
             }
         }
     }
@@ -99,6 +113,12 @@ impl GpuReduction {
                 "@group(0) @binding({binding}) var<storage, read> _reduction: array<vec4<f32>>;\n\
                  fn reduction_min() -> vec3<f32> {{ return _reduction[0].xyz; }}\n\
                  fn reduction_max() -> vec3<f32> {{ return _reduction[1].xyz; }}\n"
+            ),
+            ReductionKind::Histogram256 => format!(
+                "@group(0) @binding({binding}) var<storage, read> _histogram: array<u32>;\n\
+                 fn histogram_r(bin: u32) -> u32 {{ return _histogram[bin]; }}\n\
+                 fn histogram_g(bin: u32) -> u32 {{ return _histogram[256u + bin]; }}\n\
+                 fn histogram_b(bin: u32) -> u32 {{ return _histogram[512u + bin]; }}\n"
             ),
         }
     }
@@ -186,6 +206,65 @@ impl GpuReduction {
 
         let pass1_wgsl = generate_channel_min_max_local(wg);
         let pass2_wgsl = generate_channel_min_max_global(wg);
+
+        let mut params = Vec::with_capacity(16);
+        params.extend_from_slice(&width.to_le_bytes());
+        params.extend_from_slice(&height.to_le_bytes());
+        params.extend_from_slice(&total.to_le_bytes());
+        params.extend_from_slice(&num_wg.to_le_bytes());
+
+        let pass1 = GpuShader {
+            body: pass1_wgsl,
+            entry_point: "main",
+            workgroup_size: [wg, 1, 1],
+            params: params.clone(),
+            extra_buffers: vec![],
+            reduction_buffers: vec![ReductionBuffer {
+                id: buf_id,
+                initial_data: vec![0u8; buf_size],
+                read_write: true,
+            }],
+        };
+
+        let pass2 = GpuShader {
+            body: pass2_wgsl,
+            entry_point: "main",
+            workgroup_size: [wg, 1, 1],
+            params,
+            extra_buffers: vec![],
+            reduction_buffers: vec![ReductionBuffer {
+                id: buf_id,
+                initial_data: vec![],
+                read_write: true,
+            }],
+        };
+
+        ReductionPasses {
+            pass1,
+            pass2,
+            buffer_id: buf_id,
+            buffer_size: buf_size,
+            num_workgroups: num_wg,
+        }
+    }
+
+    // ── Histogram256 implementation ───────────────────────────────────────
+
+    fn build_histogram_256_passes(
+        &self,
+        width: u32,
+        height: u32,
+        total: u32,
+        num_wg: u32,
+    ) -> ReductionPasses {
+        let wg = self.workgroup_size;
+        // Buffer: num_wg × 768 u32 (3 channels × 256 bins × 4 bytes) for pass 1
+        // After pass 2: first 768 u32s = final merged histogram
+        let buf_size = num_wg as usize * 768 * 4;
+        let buf_id = 2; // distinct from ChannelSum(0) and ChannelMinMax(1)
+
+        let pass1_wgsl = generate_histogram_256_local(wg);
+        let pass2_wgsl = generate_histogram_256_global(wg);
 
         let mut params = Vec::with_capacity(16);
         params.extend_from_slice(&width.to_le_bytes());
@@ -467,6 +546,117 @@ fn main(
     )
 }
 
+fn generate_histogram_256_local(wg: u32) -> String {
+    format!(
+        r#"struct Params {{
+  width: u32,
+  height: u32,
+  total_pixels: u32,
+  num_workgroups: u32,
+}}
+
+@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
+@group(0) @binding(2) var<uniform> params: Params;
+@group(0) @binding(3) var<storage, read_write> histograms: array<u32>;
+
+// Per-workgroup local histograms: 3 channels × 256 bins
+var<workgroup> local_hist_r: array<u32, 256>;
+var<workgroup> local_hist_g: array<u32, 256>;
+var<workgroup> local_hist_b: array<u32, 256>;
+
+@compute @workgroup_size({wg}, 1, 1)
+fn main(
+  @builtin(global_invocation_id) gid: vec3<u32>,
+  @builtin(local_invocation_id) lid: vec3<u32>,
+  @builtin(workgroup_id) wid: vec3<u32>,
+) {{
+  let idx = gid.x;
+  let local_id = lid.x;
+
+  // Zero local histograms (each thread clears one bin if local_id < 256)
+  if (local_id < 256u) {{
+    local_hist_r[local_id] = 0u;
+    local_hist_g[local_id] = 0u;
+    local_hist_b[local_id] = 0u;
+  }}
+  workgroupBarrier();
+
+  // Bin this thread's pixel into the local histogram
+  if (idx < params.total_pixels) {{
+    let pixel = input[idx];
+    output[idx] = pixel; // passthrough
+    let bin_r = u32(clamp(pixel.x * 255.0, 0.0, 255.0));
+    let bin_g = u32(clamp(pixel.y * 255.0, 0.0, 255.0));
+    let bin_b = u32(clamp(pixel.z * 255.0, 0.0, 255.0));
+    // Workgroup-local atomics (no global contention)
+    local_hist_r[bin_r] += 1u;
+    local_hist_g[bin_g] += 1u;
+    local_hist_b[bin_b] += 1u;
+  }}
+  workgroupBarrier();
+
+  // Thread 0..255: write local histogram to global buffer
+  if (local_id < 256u) {{
+    let base = wid.x * 768u; // 3 × 256 bins per workgroup
+    histograms[base + local_id] = local_hist_r[local_id];
+    histograms[base + 256u + local_id] = local_hist_g[local_id];
+    histograms[base + 512u + local_id] = local_hist_b[local_id];
+  }}
+}}"#,
+        wg = wg,
+    )
+}
+
+fn generate_histogram_256_global(wg: u32) -> String {
+    format!(
+        r#"struct Params {{
+  width: u32,
+  height: u32,
+  total_pixels: u32,
+  num_workgroups: u32,
+}}
+
+@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
+@group(0) @binding(2) var<uniform> params: Params;
+@group(0) @binding(3) var<storage, read_write> histograms: array<u32>;
+
+@compute @workgroup_size({wg}, 1, 1)
+fn main(
+  @builtin(global_invocation_id) gid: vec3<u32>,
+  @builtin(local_invocation_id) lid: vec3<u32>,
+  @builtin(workgroup_id) wid: vec3<u32>,
+) {{
+  let local_id = lid.x;
+
+  // Workgroup 0: merge all per-workgroup histograms into histograms[0..767]
+  if (wid.x == 0u) {{
+    // Each thread handles a subset of the 768 bins (3 × 256)
+    let bins_per_thread = (768u + {wg_minus_1}u) / {wg}u;
+    let start_bin = local_id * bins_per_thread;
+    let end_bin = min(start_bin + bins_per_thread, 768u);
+
+    for (var bin = start_bin; bin < end_bin; bin = bin + 1u) {{
+      var total = 0u;
+      for (var wg_idx = 0u; wg_idx < params.num_workgroups; wg_idx = wg_idx + 1u) {{
+        total += histograms[wg_idx * 768u + bin];
+      }}
+      histograms[bin] = total;
+    }}
+  }}
+
+  // All workgroups: passthrough pixels
+  let idx = gid.x;
+  if (idx < params.total_pixels) {{
+    output[idx] = input[idx];
+  }}
+}}"#,
+        wg = wg,
+        wg_minus_1 = wg - 1,
+    )
+}
+
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -492,7 +682,7 @@ mod tests {
         assert!(body.contains("partials[wid.x]"));
         assert!(body.contains("for (var stride = 128u;"));
         assert!(body.contains("workgroupBarrier()"));
-        assert!(!body.contains("atomic"), "Should be zero-atomic");
+        assert!(!body.contains("atomicAdd"), "Should be zero-atomic");
     }
 
     #[test]
@@ -599,5 +789,59 @@ mod tests {
         assert_eq!(height, 1080);
         assert_eq!(total, 1920 * 1080);
         assert_eq!(num_wg, (1920 * 1080 + 255) / 256);
+    }
+
+    // ── Histogram256 tests ──
+
+    #[test]
+    fn histogram_256_generates_passes() {
+        let r = GpuReduction::histogram_256(256);
+        let passes = r.build_passes(1920, 1080);
+        // 768 u32 per workgroup (3 channels × 256 bins × 4 bytes)
+        assert_eq!(passes.buffer_size, passes.num_workgroups as usize * 768 * 4);
+        assert_eq!(passes.buffer_id, 2);
+    }
+
+    #[test]
+    fn histogram_256_pass1_has_local_histograms() {
+        let r = GpuReduction::histogram_256(256);
+        let passes = r.build_passes(100, 100);
+        let body = &passes.pass1.body;
+        assert!(body.contains("local_hist_r"));
+        assert!(body.contains("local_hist_g"));
+        assert!(body.contains("local_hist_b"));
+        assert!(body.contains("wid.x * 768u"));
+        assert!(!body.contains("atomicAdd"), "Should be zero-atomic");
+    }
+
+    #[test]
+    fn histogram_256_pass2_merges_workgroups() {
+        let r = GpuReduction::histogram_256(256);
+        let passes = r.build_passes(100, 100);
+        let body = &passes.pass2.body;
+        assert!(body.contains("wg_idx * 768u"), "Should iterate workgroup histograms");
+        assert!(body.contains("if (wid.x == 0u)"), "Merge gated to workgroup 0");
+    }
+
+    #[test]
+    fn histogram_256_result_reader() {
+        let r = GpuReduction::histogram_256(256);
+        let wgsl = r.result_reader_wgsl(5);
+        assert!(wgsl.contains("@group(0) @binding(5)"));
+        assert!(wgsl.contains("fn histogram_r("));
+        assert!(wgsl.contains("fn histogram_g("));
+        assert!(wgsl.contains("fn histogram_b("));
+        assert!(wgsl.contains("_histogram[256u + bin]"));
+    }
+
+    #[test]
+    fn histogram_256_buffer_id_unique() {
+        let sum = GpuReduction::channel_sum(256).build_passes(10, 10);
+        let mm = GpuReduction::channel_min_max(256).build_passes(10, 10);
+        let hist = GpuReduction::histogram_256(256).build_passes(10, 10);
+        let ids = [sum.buffer_id, mm.buffer_id, hist.buffer_id];
+        assert_ne!(ids[0], ids[1]);
+        assert_ne!(ids[0], ids[2]);
+        assert_ne!(ids[1], ids[2]);
     }
 }
