@@ -77,6 +77,45 @@ impl Graph {
     /// 3. Falls back to CPU compute
     ///
     /// Returns `Vec<f32>` with `request.width * request.height * 4` elements.
+    /// Collect a chain of consecutive GPU-capable nodes ending at `node_id`.
+    ///
+    /// Walks upstream from `node_id`, collecting GPU shaders as long as each
+    /// node is GPU-capable with a single upstream. Stops at the first non-GPU
+    /// node or a node with multiple/no upstreams. Returns (source_node_id, shaders).
+    fn collect_gpu_chain(
+        &self,
+        node_id: u32,
+        width: u32,
+        height: u32,
+    ) -> Option<(u32, Vec<crate::node::GpuShader>)> {
+        let mut chain = Vec::new();
+        let mut current = node_id;
+
+        loop {
+            let node = self.nodes.get(current as usize)?;
+            let shaders = node.gpu_shaders(width, height);
+            let upstream_ids = node.upstream_ids();
+
+            match (shaders, upstream_ids.len()) {
+                (Some(s), 1) if !s.is_empty() => {
+                    // Prepend shaders (we're walking backwards)
+                    chain.splice(0..0, s);
+                    current = upstream_ids[0];
+                }
+                _ => {
+                    // Not GPU-capable or has multiple/no upstreams — stop here
+                    break;
+                }
+            }
+        }
+
+        if chain.is_empty() {
+            None
+        } else {
+            Some((current, chain))
+        }
+    }
+
     pub fn request_region(
         &mut self,
         node_id: u32,
@@ -94,47 +133,29 @@ impl Graph {
 
         let info = node.info();
 
-        // 2. GPU-primary dispatch
+        // 2. GPU-primary dispatch — batch consecutive GPU nodes
         if let Some(executor) = &self.gpu_executor {
-            use crate::node::InputRectEstimate;
-            let estimate = node.input_rect(request, info.width, info.height);
-            let gpu_input_rect = match estimate {
-                InputRectEstimate::Exact(r) => r,
-                InputRectEstimate::UpperBound(r) => r,
-                InputRectEstimate::FullImage => {
-                    // Tile barrier: request full upstream image
-                    Rect::new(0, 0, info.width, info.height)
-                }
-            };
-            if let Some(shaders) = node.gpu_shaders(gpu_input_rect.width, gpu_input_rect.height) {
-                let upstream_ids = node.upstream_ids();
-                if let Some(&upstream_id) = upstream_ids.first() {
-                    let executor = executor.clone();
-                    let input = self.request_region(upstream_id, gpu_input_rect)?;
-                    match executor.execute(
-                        &shaders,
-                        &input,
-                        gpu_input_rect.width,
-                        gpu_input_rect.height,
-                    ) {
-                        Ok(gpu_pixels) => {
-                            let pixels = if gpu_input_rect == request {
-                                gpu_pixels
-                            } else {
-                                crop_f32(&gpu_pixels, gpu_input_rect, request)
-                            };
-                            // Cache the result
-                            self.cache.store(
-                                node_id,
-                                request,
-                                pixels.clone(),
-                                crate::hash::ZERO_HASH,
-                            );
-                            return Ok(pixels);
-                        }
-                        Err(_) => {
-                            // GPU failed — fall through to CPU
-                        }
+            if let Some((source_id, gpu_chain)) = self.collect_gpu_chain(node_id, info.width, info.height) {
+                // Get input from the source node (first non-GPU node in the chain)
+                let executor = executor.clone();
+                let input = self.request_region(source_id, request)?;
+                match executor.execute(
+                    &gpu_chain,
+                    &input,
+                    request.width,
+                    request.height,
+                ) {
+                    Ok(gpu_pixels) => {
+                        self.cache.store(
+                            node_id,
+                            request,
+                            gpu_pixels.clone(),
+                            crate::hash::ZERO_HASH,
+                        );
+                        return Ok(gpu_pixels);
+                    }
+                    Err(_) => {
+                        // GPU failed — fall through to CPU
                     }
                 }
             }
