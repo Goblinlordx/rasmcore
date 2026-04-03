@@ -3,65 +3,62 @@ title: Fix test compilation — update test suites for V2 API
 type: bug
 status: pending
 created: '2026-04-04'
-updated: '2026-04-04'
+updated: '2026-04-03'
 spec:
-  summary: |
-    4 test files and the lib test module won't compile after V2 migration.
-    Update API signatures, imports, and struct constructors to match
-    the V2 derive(Filter) pattern.
-  context: |
-    The V2 migration changed filter signatures from bare functions to
-    derive(Filter) structs with CpuFilter::compute(). Test files that
-    call filters directly or construct params structs need updating.
-    160+ passing tests in 9 other suites confirm the core is working —
-    these are test-code-only compilation failures.
-  codebase_analysis: |
-    Failing test files and error counts:
-    - lib tests (125 errors) — inline #[cfg(test)] modules throughout
-      domain/filters/ reference old function signatures and removed types
-    - pro_filter_parity.rs (5 errors) — references old ConfigParams paths
-    - blur_reference_parity.rs (3 errors) — old blur function signature
-    - f32_rounding_proof.rs (3 errors) — old filter function calls
-    - bench.rs (6 errors) — old benchmark function signatures
+  summary: '4 test files and the lib test module won''t compile after V2 migration.
 
-    Common error patterns:
-    - E0425 cannot find function (bare fn moved to CpuFilter::compute)
-    - E0599 no method named compute (wrong type)
-    - E0422 cannot find struct (moved module paths)
-    - E0603 module is private (visibility changes)
+    Update API signatures, imports, and struct constructors to match
+
+    the V2 derive(Filter) pattern.
+
+    '
+  context: 'The V2 migration changed filter signatures from bare functions to
+
+    derive(Filter) structs with CpuFilter::compute(). Test files that
+
+    call filters directly or construct params structs need updating.
+
+    160+ passing tests in 9 other suites confirm the core is working —
+
+    these are test-code-only compilation failures.
+
+    '
+  codebase_analysis: "Failing test files and error counts:\n- lib tests (125 errors) — inline #[cfg(test)] modules throughout\n\
+    \  domain/filters/ reference old function signatures and removed types\n- pro_filter_parity.rs (5 errors) — references\
+    \ old ConfigParams paths\n- blur_reference_parity.rs (3 errors) — old blur function signature\n- f32_rounding_proof.rs\
+    \ (3 errors) — old filter function calls\n- bench.rs (6 errors) — old benchmark function signatures\n\nCommon error patterns:\n\
+    - E0425 cannot find function (bare fn moved to CpuFilter::compute)\n- E0599 no method named compute (wrong type)\n- E0422\
+    \ cannot find struct (moved module paths)\n- E0603 module is private (visibility changes)\n"
   acceptance_criteria:
-    - All 4 test files compile (bench, blur_reference_parity, f32_rounding_proof, pro_filter_parity)
-    - Lib tests (#[cfg(test)] modules) compile
-    - Previously passing tests still pass
-    - No test logic changes — only API signature updates
-  out_of_scope: |
-    Fixing runtime test failures (separate track). Adding new tests.
+  - All 4 test files compile (bench, blur_reference_parity, f32_rounding_proof, pro_filter_parity)
+  - Lib tests (#[cfg(test)] modules) compile
+  - Previously passing tests still pass
+  - No test logic changes — only API signature updates
+  out_of_scope: 'Fixing runtime test failures (separate track). Adding new tests.
+
     Fixing the actual filter implementations.
-  technical_notes: |
-    Systematic approach:
-    1. Fix each file's compilation errors one at a time
-    2. For each error, find the V2 equivalent:
-       - Old: filters::blur(&pixels, &info, radius)
-       - New: BlurParams { radius }.compute(rect, &mut upstream, &info)
-    3. Update struct paths where modules moved
-    4. Fix lib test modules last (most errors, most mechanical)
+
+    '
+  technical_notes: "Systematic approach:\n1. Fix each file's compilation errors one at a time\n2. For each error, find the\
+    \ V2 equivalent:\n   - Old: filters::blur(&pixels, &info, radius)\n   - New: BlurParams { radius }.compute(rect, &mut\
+    \ upstream, &info)\n3. Update struct paths where modules moved\n4. Fix lib test modules last (most errors, most mechanical)\n"
 plan:
-  - phase: External test files
-    tasks:
-      - text: Fix pro_filter_parity.rs (5 compile errors)
-        done: false
-      - text: Fix blur_reference_parity.rs (3 compile errors)
-        done: false
-      - text: Fix f32_rounding_proof.rs (3 compile errors)
-        done: false
-      - text: Fix bench.rs (6 compile errors)
-        done: false
-  - phase: Lib test modules
-    tasks:
-      - text: Fix lib test compilation errors (125 errors across inline test modules)
-        done: false
-  - phase: Verification
-    tasks:
-      - text: All test files compile, previously-passing tests still pass
-        done: false
+- phase: External test files
+  tasks:
+  - text: Fix pro_filter_parity.rs (5 compile errors)
+    done: true
+  - text: Fix blur_reference_parity.rs (3 compile errors)
+    done: true
+  - text: Fix f32_rounding_proof.rs (3 compile errors)
+    done: true
+  - text: Fix bench.rs (6 compile errors)
+    done: true
+- phase: Lib test modules
+  tasks:
+  - text: Fix lib test compilation errors (125 errors across inline test modules)
+    done: true
+- phase: Verification
+  tasks:
+  - text: All test files compile, previously-passing tests still pass
+    done: true
 extra: {}
