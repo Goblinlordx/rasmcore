@@ -1,1102 +1,448 @@
 # Extending rasmcore
 
 This guide explains how to add custom filters, codecs, transforms, and
-other operations to rasmcore. It covers both extending the core crate
-and building external plugin crates.
+other operations to rasmcore using the V2 architecture.
 
 ---
 
 ## Table of Contents
 
 1. [Extension Model Overview](#extension-model-overview)
-2. [Adding a Filter](#adding-a-filter)
-3. [ConfigParams — Typed Parameter Structs](#configparams--typed-parameter-structs)
-4. [Point Operations vs Spatial Operations](#point-operations-vs-spatial-operations) (includes PointOp trait for LUT fusion)
-5. [Adding a Decoder](#adding-a-decoder)
-6. [Adding an Encoder](#adding-an-encoder)
-7. [Adding a LUT Encoder](#adding-a-lut-encoder)
-8. [Adding a LUT Decoder](#adding-a-lut-decoder)
-9. [Adding Generators, Compositors, and Mappers](#adding-generators-compositors-and-mappers)
+2. [Adding a Filter (V2)](#adding-a-filter-v2)
+3. [Parameter Hints](#parameter-hints)
+4. [GPU Filters](#gpu-filters)
+5. [Trait Composition](#trait-composition)
+6. [Mask Generators and Selective Adjustments](#mask-generators-and-selective-adjustments)
+7. [Adding Generators, Compositors, and Mappers](#adding-generators-compositors-and-mappers)
+8. [Adding a Decoder](#adding-a-decoder)
+9. [Adding an Encoder](#adding-an-encoder)
 10. [Pipeline Integration](#pipeline-integration)
 11. [Generated Files — DO NOT EDIT](#generated-files--do-not-edit)
-12. [External Crates / Plugin Model](#external-crates--plugin-model)
-13. [Reference Validation](#reference-validation)
-14. [PRNG Requirement](#prng-requirement)
+12. [Reference Validation](#reference-validation)
+13. [PRNG Requirement](#prng-requirement)
 
 ---
 
 ## Extension Model Overview
 
-rasmcore uses a **registration macro + codegen** architecture:
+rasmcore uses a **derive macro + trait implementation** architecture (V2):
 
-1. You write a function and annotate it with a registration macro
-   (e.g., `#[register_filter]`)
-2. The `rasmcore-macros` crate generates an `inventory` registration at
-   compile time
-3. The `rasmcore-codegen` crate (invoked by `build.rs`) parses your source,
-   extracts registrations, and generates pipeline nodes, SDK methods,
-   CLI dispatch, WIT declarations, and a parameter manifest
-4. You never edit generated files — you edit source and rebuild
+1. Annotate a struct with `#[derive(rasmcore_macros::Filter)]` and `#[filter(...)]`
+2. Implement `CpuFilter` for your struct (required)
+3. Optionally implement `GpuFilter`, `PointOp`, `ColorOp`, or `AnalyticOp`
+4. The codegen pipeline generates WIT declarations, SDK methods, CLI dispatch,
+   pipeline nodes, and a parameter manifest
 
 ```
 Source Code                    Codegen (build.rs)              Generated Output
 ─────────────                  ──────────────────              ────────────────
-#[register_filter]    ──parse──▶  CodegenData    ──generate──▶  pipeline nodes
-#[derive(ConfigParams)]                                         SDK methods
-                                                                CLI dispatch
-                                                                WIT declarations
+#[derive(Filter)]     ──parse──>  CodegenData    ──generate──>  pipeline nodes
+#[filter(...)]                                                  SDK methods
+impl CpuFilter                                                 CLI dispatch
+impl GpuFilter                                                 WIT declarations
                                                                 param manifest
 ```
 
+### V1 vs V2 Pattern
+
+| Aspect | V1 (deprecated) | V2 (current) |
+|--------|-----------------|--------------|
+| Registration | `#[register_filter]` on bare function | `#[derive(Filter)]` + `#[filter(...)]` on struct |
+| Parameters | Separate `#[derive(ConfigParams)]` struct | Struct fields ARE the params |
+| Implementation | Bare function `fn(Rect, UpstreamFn, ImageInfo, Config)` | `impl CpuFilter for MyFilter` |
+| Config access | `config.field` | `self.field` |
+| GPU support | Separate `GpuCapable` trait | `impl GpuFilter for MyFilter` |
+| Optimization | `LutPointOp` trait | `PointOp`, `ColorOp`, `AnalyticOp` traits |
+
 ---
 
-## Adding a Filter
+## Adding a Filter (V2)
 
-### Step 1: Define a ConfigParams struct
+### Step 1: Define the filter struct
 
-Every parameterized filter must have a ConfigParams struct. The struct name
-must be `{PascalCaseFilterName}Params` — codegen links them by naming
-convention.
+Create a file in `crates/rasmcore-image/src/domain/filters/<category>/<name>.rs`:
 
 ```rust
-// In crates/rasmcore-image/src/domain/filters.rs
+use crate::domain::filters::common::*;
+use crate::domain::filter_traits::CpuFilter;
 
-/// Parameters for median filter.
-#[derive(rasmcore_macros::ConfigParams, Clone)]
-pub struct MedianParams {
-    /// Filter radius in pixels
-    #[param(min = 1, max = 20, step = 1, default = 3, hint = "rc.log_slider")]
-    pub radius: u32,
+/// Invert colors with adjustable strength.
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "invert_v2", category = "adjustment", reference = "color inversion")]
+pub struct InvertV2 {
+    /// Strength of inversion (1.0 = full invert, 0.0 = no change)
+    #[param(min = 0.0, max = 1.0, step = 0.1, default = 1.0)]
+    pub strength: f32,
 }
 ```
 
-Zero-parameter filters (e.g., `invert`, `grayscale`) do not need a
-ConfigParams struct.
+The `#[derive(Filter)]` macro generates registration, `Default`, and parameter
+metadata. Each field decorated with `#[param(...)]` becomes a UI-configurable
+parameter.
 
-### Step 2: Write the filter function
-
-The function signature must be:
-
-```rust
-pub fn my_filter(
-    pixels: &[u8],
-    info: &ImageInfo,
-    config: &MyFilterParams,  // omit for zero-param filters
-) -> Result<Vec<u8>, ImageError>
-```
-
-- `pixels` — Input pixel buffer (packed, row-major)
-- `info` — Image dimensions, pixel format, color space
-- `config` — Reference to your ConfigParams struct
-- Returns a new pixel buffer of the same length, or an error
-
-### Step 3: Register with `#[register_filter]`
+### Step 2: Implement CpuFilter
 
 ```rust
-#[rasmcore_macros::register_filter(
-    name = "median",
-    category = "spatial",
-    group = "denoise",
-    variant = "median",
-    reference = "median rank filter"
-)]
-pub fn median(
-    pixels: &[u8],
-    info: &ImageInfo,
-    config: &MedianParams,
-) -> Result<Vec<u8>, ImageError> {
-    let radius = config.radius;
-    // ... implementation ...
+impl CpuFilter for InvertV2 {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
+        let pixels = upstream(request)?;
+
+        // Handle f32 formats natively (V2 pipeline uses Rgba32f)
+        if matches!(info.format, PixelFormat::Rgba32f | PixelFormat::Rgb32f) {
+            let ch = if info.format == PixelFormat::Rgba32f { 4 } else { 3 };
+            let mut samples: Vec<f32> = pixels
+                .chunks_exact(4)
+                .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                .collect();
+            for chunk in samples.chunks_exact_mut(ch) {
+                let color_ch = if ch == 4 { 3 } else { ch };
+                for s in &mut chunk[..color_ch] {
+                    *s = *s * (1.0 - self.strength) + (1.0 - *s) * self.strength;
+                }
+            }
+            return Ok(samples.iter().flat_map(|v| v.to_le_bytes()).collect());
+        }
+
+        // u8 fallback path
+        let mut output = pixels;
+        for &mut ref mut v in output.iter_mut() {
+            let orig = *v;
+            let inv = 255 - orig;
+            *v = ((orig as f32 * (1.0 - self.strength) + inv as f32 * self.strength) + 0.5) as u8;
+        }
+        Ok(output)
+    }
 }
 ```
 
-#### Registration attributes
+### Step 3: Register in the module
 
-| Attribute   | Required | Description |
-|-------------|----------|-------------|
-| `name`      | Yes      | Unique identifier used in WIT, SDK, and CLI |
-| `category`  | No       | Grouping: `spatial`, `color`, `adjustment`, `edge`, `morphology`, `effect`, `enhancement`, `distortion`, `transform`, `generator`, `composite`, `alpha`, `grading`, `tonemapping`, `threshold`, `analysis`, `tool`, `draw`, `advanced` |
-| `group`     | No       | Sub-group for UI (e.g., `blur`, `denoise`, `edge_detect`) |
-| `variant`   | No       | Variant name within the group |
-| `reference` | No       | Algorithm attribution (e.g., `"Canny 1986"`, `"OpenCV cv2.medianBlur"`) |
-| `overlap`   | No       | Tile overlap for spatial ops: `"zero"` (default), `"uniform(N)"`, `"param(name)"`, `"full"` |
-| `output_format` | No   | Output pixel format override (used by mapper pipeline nodes) |
+Add to `crates/rasmcore-image/src/domain/filters/<category>/mod.rs`:
+
+```rust
+mod my_filter;
+pub use my_filter::*;
+```
 
 ### Step 4: Add tests
-
-Every filter must include:
-
-1. **Basic functionality test** — Verify output is correct for known input
-2. **Format coverage** — Test with Rgb8, Rgba8, Gray8 at minimum
-3. **Edge cases** — Zero-size, single pixel, parameter extremes
-4. **Reference parity test** — Compare against a reference implementation
-   (see [Reference Validation](#reference-validation))
 
 ```rust
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::filter_traits::CpuFilter;
 
     #[test]
-    fn median_basic() {
-        let pixels = vec![0, 128, 255, 64, 192, 32, 96, 160, 224];
-        let info = ImageInfo {
-            width: 3, height: 3,
-            format: PixelFormat::Gray8,
-            color_space: ColorSpace::Srgb,
-        };
-        let result = median(&pixels, &info, &MedianParams { radius: 1 }).unwrap();
-        assert_eq!(result.len(), pixels.len());
+    fn invert_v2_default_is_full_invert() {
+        let filter = InvertV2::default();
+        let result = filter.compute(
+            Rect::new(0, 0, 1, 1),
+            &mut |_| Ok(vec![100, 150, 200, 255]),
+            &ImageInfo { width: 1, height: 1, format: PixelFormat::Rgba8, .. },
+        ).unwrap();
+        assert_eq!(result, vec![155, 105, 55, 255]);
     }
 }
 ```
 
-### Step 5: Rebuild
+### Filter attributes
 
-```bash
-cargo build -p rasmcore-image
-```
+| Attribute   | Required | Description |
+|-------------|----------|-------------|
+| `name`      | Yes      | Unique identifier used in WIT, SDK, and CLI |
+| `category`  | Yes      | Grouping: `adjustment`, `spatial`, `color`, `distortion`, `effect`, `enhancement`, `morphology`, `edge`, `threshold`, `draw`, `mask`, `grading`, `tonemapping`, `analysis`, `tool`, `advanced`, `transform` |
+| `group`     | No       | Sub-group for UI (e.g., `blur`, `denoise`) |
+| `variant`   | No       | Variant name within the group |
+| `reference` | No       | Algorithm attribution (e.g., `"Canny 1986"`) |
 
-Codegen automatically runs via `build.rs` and produces pipeline nodes,
-SDK methods, CLI dispatch, and manifest entries for your filter.
+### Param attributes
 
-### Complete example: zero-parameter filter
-
-```rust
-#[rasmcore_macros::register_filter(
-    name = "invert",
-    category = "adjustment",
-    reference = "channel value inversion"
-)]
-pub fn invert(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError> {
-    validate_format(info.format)?;
-    Ok(pixels.iter().map(|&v| 255 - v).collect())
-}
-```
-
-No ConfigParams struct needed. Codegen detects zero parameters and
-generates the appropriate signatures.
+| Attribute | Required | Description |
+|-----------|----------|-------------|
+| `min`     | No       | Minimum value |
+| `max`     | No       | Maximum value |
+| `step`    | No       | Step increment |
+| `default` | Yes      | Default value (used by `Default` impl) |
+| `hint`    | No       | UI rendering hint (see [Parameter Hints](#parameter-hints)) |
 
 ---
 
-## ConfigParams — Typed Parameter Structs
+## Parameter Hints
 
-### The `#[derive(ConfigParams)]` macro
+Hints control how the web UI renders filter parameters. They are metadata
+only and do not affect runtime behavior.
 
-This derive macro generates three things:
+| Hint | UI Control | Use For |
+|------|-----------|---------|
+| `rc.pixels` | Number spinner | Pixel dimensions, coordinates |
+| `rc.log_slider` | Logarithmic slider | Radius, sigma (fine control at low end) |
+| `rc.signed_slider` | Bipolar slider (centered at 0) | Offsets, shifts |
+| `rc.angle_deg` | Angle dial | Rotation, hue angles |
+| `rc.toggle` | Toggle switch | Boolean flags |
+| `rc.seed` | Number input | Random seeds |
+| `rc.temperature_k` | Gradient slider | Color temperature |
+| `rc.color_rgb` | Color picker | RGB colors |
+| `rc.color_rgba` | Color picker + alpha | RGBA colors |
+| `rc.enum` | Dropdown select | Mode/method selection |
+| `rc.text` | Text input | String parameters |
+| `rc.point` | Canvas point selector | Click-to-place coordinates (cx/cy pairs) |
+| `rc.path` | Canvas path drawer | Brush stroke coordinates |
+| `rc.box_select` | Canvas rectangle drag | Crop/selection regions |
 
-1. `param_descriptors()` — Returns parameter metadata for the manifest
-2. `config_hint()` — Returns a UI hint string for the whole struct
-3. `Default` impl — Uses `#[param(default = ...)]` values
-
-### Field attributes
+Example:
 
 ```rust
-#[derive(rasmcore_macros::ConfigParams, Clone)]
-pub struct BlurParams {
-    /// Blur radius in pixels          // ← doc comment becomes the label
-    #[param(
-        min = 0.0,                     // minimum value
-        max = 100.0,                   // maximum value
-        step = 0.5,                    // UI slider step
-        default = 3.0,                 // default value
-        hint = "rc.log_slider"         // UI hint (optional)
-    )]
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "draw_circle", category = "draw")]
+pub struct DrawCircleParams {
+    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 50.0, hint = "rc.point")]
+    pub cx: f32,
+    #[param(min = 0.0, max = 65535.0, step = 1.0, default = 50.0, hint = "rc.point")]
+    pub cy: f32,
+    #[param(min = 1.0, max = 65535.0, step = 1.0, default = 25.0, hint = "rc.log_slider")]
     pub radius: f32,
 }
 ```
 
-### Struct-level hint
+---
+
+## GPU Filters
+
+Filters can provide GPU acceleration via WGSL compute shaders. Implement
+the `GpuFilter` trait alongside `CpuFilter`:
 
 ```rust
-#[derive(rasmcore_macros::ConfigParams, Clone)]
-#[config_hint("rc.color_rgba")]        // UI hint for the whole struct
-pub struct ColorRgba {
-    #[param(min = 0, max = 255, step = 1, default = 255)]
-    pub r: u8,
-    #[param(min = 0, max = 255, step = 1, default = 0)]
-    pub g: u8,
-    #[param(min = 0, max = 255, step = 1, default = 0)]
-    pub b: u8,
-    #[param(min = 0, max = 255, step = 1, default = 255)]
-    pub a: u8,
+use crate::domain::filter_traits::{CpuFilter, GpuFilter};
+
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "wave", category = "distortion", reference = "sinusoidal wave displacement")]
+pub struct WaveParams {
+    #[param(min = 0.0, max = 100.0, step = 1.0, default = 10.0)]
+    pub amplitude: f32,
+    #[param(min = 1.0, max = 500.0, step = 5.0, default = 50.0)]
+    pub wavelength: f32,
+}
+
+impl GpuFilter for WaveParams {
+    fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        self.gpu_ops_with_format(width, height, rasmcore_pipeline::gpu::BufferFormat::U32Packed)
+    }
+
+    fn gpu_ops_with_format(
+        &self, width: u32, height: u32,
+        buffer_format: rasmcore_pipeline::gpu::BufferFormat,
+    ) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        use rasmcore_pipeline::gpu::{BufferFormat, GpuOp};
+        use rasmcore_gpu_shaders as shaders;
+
+        // Load shader with bilinear sampling helpers
+        static WAVE_F32: std::sync::LazyLock<String> =
+            std::sync::LazyLock::new(|| shaders::with_sampling_f32(
+                include_str!("../../../shaders/wave_f32.wgsl")
+            ));
+
+        // Serialize params matching the WGSL Params struct layout
+        let mut params = Vec::with_capacity(32);
+        params.extend_from_slice(&width.to_le_bytes());
+        params.extend_from_slice(&height.to_le_bytes());
+        params.extend_from_slice(&self.amplitude.to_le_bytes());
+        params.extend_from_slice(&self.wavelength.to_le_bytes());
+
+        Some(vec![GpuOp::Compute {
+            shader: WAVE_F32.clone(),
+            entry_point: "main",
+            workgroup_size: [16, 16, 1],
+            params,
+            extra_buffers: vec![],
+            buffer_format: BufferFormat::F32Vec4,
+        }])
+    }
 }
 ```
 
-### Nested ConfigParams
+### Shader composition helpers
 
-Structs can embed other ConfigParams structs. Fields are auto-flattened
-with dot-notation in the manifest (e.g., `color.r`, `color.g`):
+| Helper | Provides | Use For |
+|--------|----------|---------|
+| `shaders::with_sampling_f32(body)` | `sample_bilinear_f32()` | Distortion filters |
+| `shaders::with_io_f32(body)` | `load_pixel()` / `store_pixel()` | Per-pixel ops (liquify) |
 
-```rust
-#[derive(rasmcore_macros::ConfigParams, Clone)]
-pub struct VignetteParams {
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
-    pub strength: f32,
-    pub color: ColorRgba,   // flattened to color.r, color.g, color.b, color.a
-}
-```
+### GPU requirements
 
-### UI hint vocabulary
-
-See `.agent/kf/code_styleguides/param-hints.md` for the full hint
-vocabulary: `rc.angle_deg`, `rc.percentage`, `rc.opacity`, `rc.pixels`,
-`rc.log_slider`, `rc.seed`, `rc.temperature_k`, etc.
+- WGSL Params struct must have `width: u32, height: u32` as first two fields
+- Workgroup size: `[16, 16, 1]` (standard)
+- Shaders go in `crates/rasmcore-image/src/shaders/`
+- GPU output must match CPU within f32 tolerance
 
 ---
 
-## Point Operations vs Spatial Operations
+## Trait Composition
 
-### Point operations
+Filters can implement multiple traits for optimization:
 
-Point operations (brightness, contrast, invert, color adjustments) process
-each pixel independently. They need no overlap — the output pixel depends
-only on the input pixel at the same position.
+| Trait | Purpose | When to Use |
+|-------|---------|-------------|
+| `CpuFilter` | **Required.** CPU compute implementation | Always |
+| `GpuFilter` | GPU shader dispatch | Embarrassingly parallel operations |
+| `PointOp` | 1D LUT for per-channel operations | Brightness, gamma, invert, etc. |
+| `ColorOp` | 3D CLUT for color transforms | Hue rotate, saturate, color balance |
+| `AnalyticOp` | Expression tree IR for fusion | Simple arithmetic (brightness = input + offset) |
 
-Point operations use the default `input_rect()` (returns output rect
-unchanged). No `overlap` attribute needed.
-
-#### Implementing point ops with the PointOp trait (LUT fusion)
-
-If your filter is a **per-channel mapping** (each output channel value
-depends only on the corresponding input channel value), implement the
-`PointOp` trait on your ConfigParams struct. This enables automatic
-**LUT fusion** in the pipeline — consecutive point ops are composed into
-a single 256-entry lookup table and applied in one memory pass.
-
-```rust
-use crate::domain::point_ops::{PointOp, apply_lut};
-
-#[derive(rasmcore_macros::ConfigParams, Clone)]
-pub struct BrightnessParams {
-    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0)]
-    pub amount: f32,
-}
-
-impl PointOp for BrightnessParams {
-    fn build_lut(&self) -> [u8; 256] {
-        let mut lut = [0u8; 256];
-        let offset = (self.amount * 255.0).round() as i16;
-        for (i, entry) in lut.iter_mut().enumerate() {
-            *entry = (i as i16 + offset).clamp(0, 255) as u8;
-        }
-        lut
-    }
-}
-
-#[register_filter(name = "brightness", category = "adjustment")]
-pub fn brightness(pixels: &[u8], info: &ImageInfo, config: &BrightnessParams)
-    -> Result<Vec<u8>, ImageError>
-{
-    apply_lut(pixels, info, &config.build_lut())
-}
-```
-
-The filter function body is always the same one-liner:
-`apply_lut(pixels, info, &config.build_lut())`. The `PointOp` trait is
-what enables the pipeline optimizer to fuse your filter with adjacent
-point ops automatically.
-
-#### How LUT fusion works
-
-When the pipeline encounters consecutive point-op nodes, it composes
-their LUTs at plan time and replaces them with a single fused node:
-
-```
-Pipeline DAG:
-  source -> brightness -> contrast -> gamma -> blur -> levels -> invert -> write
-
-Fusion (plan time):
-  Run 1: [brightness, contrast, gamma]  -> compose into 1 LUT (O(256))
-  Barrier: blur (spatial op, breaks fusion)
-  Run 2: [levels, invert]              -> compose into 1 LUT (O(256))
-
-Execution:
-  source -> fused_lut_1 -> blur -> fused_lut_2 -> write
-  (3 adjustments = 1 memory pass)    (2 adjustments = 1 memory pass)
-```
-
-LUT composition is `fused[i] = second[first[i]]` — 256 iterations,
-trivial cost. The savings come from eliminating memory passes: on a
-100MP RGBA8 image, each pass touches 400MB. Fusing 5 ops saves 1.6GB
-of memory bandwidth.
-
-LUT fusion is a plan-time optimization — all LUTs are composed before
-any pixels are processed. At runtime, each fused chain is a single
-`apply_lut` pass: one table lookup per channel per pixel, no math.
-
-#### When NOT to use PointOp
-
-Do **not** implement `PointOp` if your filter:
-
-- Depends on **multiple channels** (e.g., hue rotation needs R, G, and B
-  together to compute each output channel)
-- Depends on **pixel position** (e.g., vignette, gradient map)
-- Depends on **neighboring pixels** (any spatial operation)
-
-Multi-channel per-pixel operations (hue, saturation, color grading) are
-a different category and will use 3D CLUT fusion in the future.
-
-### Spatial operations
-
-Spatial operations (blur, sharpen, median, morphology, edge detection)
-read a neighborhood around each pixel. When the pipeline processes tiles,
-spatial operations need extra pixels at tile boundaries to compute correct
-output — this is called **overlap**.
-
-Codegen automatically detects overlap from your ConfigParams fields:
-
-| Field name    | Expansion formula          |
-|---------------|----------------------------|
-| `radius`      | expand by `radius` pixels  |
-| `blur_radius` | expand by `blur_radius`    |
-| `ksize`       | expand by `ksize / 2`      |
-| `sigma`       | expand by `ceil(3 * sigma)` |
-| `diameter`    | expand by `diameter / 2`   |
-| `search_size` | expand by `search_size / 2` |
-| `length`      | expand by `length`         |
-
-For filters with fixed kernels (no configurable size), use the `overlap`
-registration attribute:
-
-```rust
-#[rasmcore_macros::register_filter(
-    name = "canny",
-    category = "edge",
-    overlap = "uniform(2)"    // fixed 2px overlap for 3x3 Sobel + NMS
-)]
-```
-
-#### Overlap attribute values
-
-| Value           | Meaning |
-|-----------------|---------|
-| `"zero"`        | No overlap (default, point operation) |
-| `"uniform(N)"`  | Fixed N pixels on all sides |
-| `"param(name)"` | Dynamic — uses the runtime value of the named parameter |
-| `"full"`        | Requests the full image (non-tileable operation) |
-
-### How input_rect works
-
-Each pipeline node implements `input_rect()` on the `ImageNode` trait.
-Given the output rect the downstream node needs, `input_rect()` returns
-the (larger) input rect this node needs from upstream. Codegen generates
-this automatically based on your ConfigParams fields or overlap attribute.
-
-```
-Output tile requested: (10, 10, 32, 32)
-Blur with radius=3:    input_rect → (7, 7, 38, 38)  // expanded by 3 on each side
-Pipeline fetches the larger region, runs the filter, crops to (10, 10, 32, 32)
-```
-
-### Affine Transform Composition
-
-Transform nodes (resize, crop, rotate, flip) implement `AffineOp` to enable
-single-resample optimization. When the pipeline chains multiple transforms,
-the optimizer composes their affine matrices into one and resamples once —
-eliminating multi-pass interpolation artifacts.
-
-#### The `AffineOp` trait
-
-```rust
-pub trait AffineOp {
-    /// Return the 2x3 affine matrix and output dimensions for this transform.
-    fn to_affine(&self) -> ([f64; 6], u32, u32);
-}
-```
-
-The matrix format is `[a, b, tx, c, d, ty]` representing:
-- `x' = a*x + b*y + tx`
-- `y' = c*x + d*y + ty`
-
-#### Implementing AffineOp for a new transform
-
-If your transform node is expressible as a 2x3 affine matrix, implement
-`AffineOp` and override `as_affine_op()` in `ImageNode`:
-
-```rust
-impl AffineOp for MyTransformNode {
-    fn to_affine(&self) -> ([f64; 6], u32, u32) {
-        // Return (matrix, output_width, output_height)
-        ([1.0, 0.0, -self.x as f64, 0.0, 1.0, -self.y as f64],
-         self.width, self.height)
-    }
-}
-
-impl ImageNode for MyTransformNode {
-    // ... other methods ...
-    fn as_affine_op(&self) -> Option<([f64; 6], u32, u32)> {
-        Some(self.to_affine())
-    }
-    fn upstream_id(&self) -> Option<u32> {
-        Some(self.upstream)
-    }
-}
-```
-
-Both `as_affine_op()` and `upstream_id()` must be implemented for the
-optimizer to walk the chain. Non-affine nodes (blur, filters) act as
-composition barriers — the optimizer stops at them.
-
-#### Matrix composition
-
-Use `compose_affine(outer, inner)` to multiply two 2x3 matrices. The
-result applies `inner` first, then `outer`. The optimizer calls this
-automatically when fusing consecutive affine nodes.
-
-#### When NOT to implement AffineOp
-
-- **Nonlinear transforms** (barrel distortion, swirl, perspective warp)
-  — these are not affine and cannot be composed with a 2x3 matrix
-- **Format-changing operations** (grayscale, flatten) — these change the
-  pixel format, not spatial layout
-- **Content-dependent transforms** (seam carving, smart crop) — output
-  depends on image content, not just geometry
+The pipeline fuses consecutive point/color/analytic ops into a single
+pass automatically.
 
 ---
 
-## Adding a Decoder
+## Mask Generators and Selective Adjustments
 
-### Registration macro
+The mask module (`filters/mask/`) provides:
 
-```rust
-#[rasmcore_macros::register_decoder(
-    name = "PNG Decoder",
-    formats = "png"           // space or comma-separated format identifiers
-)]
-pub fn decode_png(data: &[u8]) -> Result<DecodedImage, ImageError> {
-    // ... implementation ...
-    Ok(DecodedImage { pixels, info })
-}
-```
+**Generators** (produce grayscale masks):
+- `mask_gradient_linear` — Linear gradient with angle/position/feather
+- `mask_gradient_radial` — Elliptical gradient from center
+- `mask_luminance_range` — Isolate by luminance (highlights/shadows)
+- `mask_color_range` — Isolate by hue/saturation
+- `mask_from_path` — Rasterize brush stroke points
 
-### Registration struct
+**Operations**:
+- `mask_combine` — Add, subtract, intersect two masks
+- `mask_invert` — Invert mask values
+- `mask_feather` — Gaussian blur for soft edges
 
-The macro generates a `StaticDecoderRegistration`:
+**Compositing**:
+- `masked_blend` — `output = adjusted * mask + original * (1 - mask)`
 
-```rust
-pub struct StaticDecoderRegistration {
-    pub name: &'static str,
-    pub formats: &'static str,
-    pub fn_name: &'static str,
-}
-```
-
-Registrations are collected via `inventory` and available at runtime through
-`registered_decoders()`.
-
-### Decoder function requirements
-
-- Input: raw encoded bytes (`&[u8]`)
-- Output: `Result<DecodedImage, ImageError>` containing decoded pixels + metadata
-- Must detect and handle format variants (bit depth, color mode, compression)
-- Must validate against reference decoders (see `codec-validation.md`)
-
----
-
-## Adding an Encoder
-
-### Registration macro
-
-```rust
-#[rasmcore_macros::register_encoder(
-    name = "PNG Encoder",
-    format = "png",
-    mime = "image/png",
-    extensions = "png"        // comma-separated file extensions
-)]
-pub fn encode_png(
-    pixels: &[u8],
-    info: &ImageInfo,
-    config: &PngEncodeConfig,
-) -> Result<Vec<u8>, ImageError> {
-    // ... implementation ...
-}
-```
-
-### Registration struct
-
-```rust
-pub struct StaticEncoderRegistration {
-    pub name: &'static str,
-    pub format: &'static str,
-    pub mime: &'static str,
-    pub extensions: &'static [&'static str],
-    pub fn_name: &'static str,
-}
-```
-
-### Encoder function requirements
-
-- Input: raw pixels + ImageInfo + format-specific config
-- Output: `Result<Vec<u8>, ImageError>` containing encoded bytes
-- Must validate roundtrip: encode → decode → compare
-- Must validate against reference encoders (see `encoder-params.md`)
-
----
-
-## Adding a LUT Encoder
-
-LUT encoders convert a `ColorLut3D` to a file format (`.cube`, `.3dl`,
-`.csp`, Hald CLUT). They use a separate registry from image encoders
-because they operate on color lookup tables, not pixel buffers.
-
-### Step 1: Create the encoder module
-
-Create a new file in `crates/rasmcore-image/src/domain/encoder/`:
-
-```rust
-// encoder/lutspi3d.rs
-
-use crate::domain::color_lut::ColorLut3D;
-use crate::domain::error::ImageError;
-
-pub fn encode(lut: &ColorLut3D) -> Result<Vec<u8>, ImageError> {
-    // Convert ColorLut3D to your format's byte representation.
-    // lut.grid_size gives the grid dimension (e.g., 33).
-    // lut.data contains grid_size³ entries of [f32; 3] in [0.0, 1.0].
-    // Storage order: data[b * grid_size² + g * grid_size + r].
-    let mut out = String::new();
-    out.push_str(&format!("SPILUT 1.0\n3 3\n{s} {s} {s}\n", s = lut.grid_size));
-    for entry in &lut.data {
-        out.push_str(&format!("{:.6} {:.6} {:.6}\n", entry[0], entry[1], entry[2]));
-    }
-    Ok(out.into_bytes())
-}
-```
-
-### Step 2: Register with `inventory::submit!`
-
-At the bottom of your encoder module, register the encoder:
-
-```rust
-inventory::submit! {
-    &crate::domain::encoder::StaticLutEncoderRegistration {
-        format: "spi3d",
-        extensions: &["spi3d"],
-        encode_fn: encode,
-    }
-}
-```
-
-The `StaticLutEncoderRegistration` struct has three fields:
-
-| Field       | Type                                                    | Description |
-|-------------|---------------------------------------------------------|-------------|
-| `format`    | `&'static str`                                          | Format identifier (e.g., `"spi3d"`) |
-| `extensions`| `&'static [&'static str]`                               | File extensions (e.g., `&["spi3d"]`) |
-| `encode_fn` | `fn(&ColorLut3D) -> Result<Vec<u8>, ImageError>`        | Encode function |
-
-### Step 3: Add `pub mod` to `encoder/mod.rs`
-
-```rust
-pub mod lutspi3d;
-```
-
-### Step 4: Rebuild
-
-```bash
-cargo build -p rasmcore-image
-```
-
-Pipeline integration is automatic — `encoder::is_lut_format()` checks the
-registry, so the pipeline short-circuit in `sink.rs` will recognize your
-format. When the output format matches a registered LUT encoder, the
-pipeline bypasses pixel execution entirely: it extracts the fused
-`ColorLut3D` from all color operations and encodes directly. This means
-LUT-to-LUT transforms cost O(grid_size³) instead of O(width × height).
-
-### Existing LUT encoders
-
-| Format | Module | Output |
-|--------|--------|--------|
-| `.cube` | `encoder/cube.rs` | Text: `LUT_3D_SIZE` header + float triplets |
-| `.3dl` | `encoder/lut3dl.rs` | Text: 10-bit integer triplets, no header |
-| `.csp` | `encoder/lutcsp.rs` | Text: `CSPLUTV100` header + preLUT + float triplets |
-| Hald CLUT | `encoder/hald.rs` | PNG image: RGB8 square image via `serialize_hald()` |
-
----
-
-## Adding a LUT Decoder
-
-LUT decoders parse file bytes into a `ColorLut3D`. They do not use the
-`register_decoder` macro — instead they integrate via format detection in
-`decoder/mod.rs` and parse functions in `color_lut.rs`.
-
-### Step 1: Add a parse function to `color_lut.rs`
-
-```rust
-// In crates/rasmcore-image/src/domain/color_lut.rs
-
-pub fn parse_spi3d(text: &str) -> Result<ColorLut3D, ImageError> {
-    // 1. Parse the header to get grid_size
-    // 2. Parse grid_size³ float triplets into Vec<[f32; 3]>
-    // 3. Validate entry count matches grid_size³
-    // 4. Return ColorLut3D { grid_size, data }
-
-    let mut lines = text.lines().filter(|l| !l.trim().is_empty());
-    // Parse header...
-    let grid_size = /* parse from header */;
-
-    let expected = grid_size * grid_size * grid_size;
-    let mut data = Vec::with_capacity(expected);
-    for line in lines {
-        let parts: Vec<f32> = line.split_whitespace()
-            .map(|s| s.parse().map_err(|_| ImageError::InvalidData("bad float".into())))
-            .collect::<Result<_, _>>()?;
-        if parts.len() >= 3 {
-            data.push([parts[0], parts[1], parts[2]]);
-        }
-    }
-    if data.len() != expected {
-        return Err(ImageError::InvalidData(
-            format!("expected {} entries, got {}", expected, data.len()),
-        ));
-    }
-    Ok(ColorLut3D { grid_size, data })
-}
-```
-
-### Step 2: Add format detection in `decoder/mod.rs`
-
-Add a detection function and wire it into `detect_format()`:
-
-```rust
-// Detection function — checks magic bytes or header keywords
-fn is_spi3d_lut(data: &[u8]) -> bool {
-    let check_len = data.len().min(256);
-    if let Ok(text) = std::str::from_utf8(&data[..check_len]) {
-        text.trim_start().starts_with("SPILUT")
-    } else {
-        false
-    }
-}
-
-// In detect_format(), add before the final None:
-if is_spi3d_lut(header) {
-    return Some("spi3d".to_string());
-}
-```
-
-### Step 3: Add a decode convenience function
-
-```rust
-// In decoder/mod.rs
-pub fn decode_spi3d(data: &[u8]) -> Result<super::color_lut::ColorLut3D, ImageError> {
-    let text = std::str::from_utf8(data)
-        .map_err(|_| ImageError::InvalidData("not valid UTF-8".into()))?;
-    super::color_lut::parse_spi3d(text)
-}
-```
-
-### Step 4: Pipeline integration
-
-LUT files enter the pipeline via `NodeGraph::add_clut_source()`:
-
-```rust
-let clut = decoder::decode_spi3d(bytes)?;
-let source_id = graph.add_clut_source(clut);
-```
-
-This creates a `FusedClutNode` — a source node with no upstream pixels.
-The CLUT participates in color operation fusion and can be written to
-any LUT format via the pipeline short-circuit.
-
-### Detection patterns for common LUT formats
-
-| Format | Detection method |
-|--------|-----------------|
-| `.cube` | UTF-8 text contains `LUT_3D_SIZE` in first 1024 bytes |
-| `.csp` | UTF-8 text starts with `CSPLUTV100` in first 64 bytes |
-| `.3dl` | Heuristic: space-separated integer triplets, no alphabetic chars |
-| Hald CLUT | Detected as PNG image; identified by square dimensions where `∛(dimension)` is integer |
-
-Text-based formats with a unique header keyword are straightforward.
-Formats without a magic header (like `.3dl`) require heuristic detection
-— check for structural patterns in the first few lines.
+This enables Lightroom-style selective adjustments: apply any filter
+stack only within a masked region.
 
 ---
 
 ## Adding Generators, Compositors, and Mappers
 
-### Generators — procedural image sources
+These use V1-style registration macros (not yet migrated to V2):
 
-Generators create images from parameters (no pixel input):
+### Generators
+
+Generators produce images from parameters (no input image):
 
 ```rust
 #[rasmcore_macros::register_generator(
-    name = "perlin_noise",
-    category = "noise"
+    name = "checkerboard", category = "generator",
+    reference = "alternating two-color grid pattern"
 )]
-pub fn perlin_noise(width: u32, height: u32, seed: u32) -> Vec<u8> {
-    // Generate image from parameters — no input pixels
+pub fn checkerboard(width: u32, height: u32, cell_size: u32, ...) -> Vec<u8> {
+    // Returns RGB8 pixel buffer (width * height * 3 bytes)
 }
 ```
 
-### Compositors — multi-input blending
+### Compositors
 
-Compositors combine two or more images:
+Compositors combine two images:
 
 ```rust
 #[rasmcore_macros::register_compositor(
-    name = "blend_normal",
-    category = "composite",
-    group = "blend",
-    variant = "normal"
+    name = "blend", category = "composite",
+    reference = "27-mode photographic blend"
 )]
-pub fn blend_normal(
-    pixels_a: &[u8], info_a: &ImageInfo,
-    pixels_b: &[u8], info_b: &ImageInfo,
-    opacity: f32,
-) -> Vec<u8> {
-    // Blend two images
-}
+pub fn blend(
+    fg_pixels: &[u8], fg_info: &ImageInfo,
+    bg_pixels: &[u8], bg_info: &ImageInfo,
+    mode: BlendMode,
+) -> Result<Vec<u8>, ImageError> { ... }
 ```
 
-### Mappers — format-changing operations
+### Mappers
 
-Mappers transform pixel format (e.g., RGB8 to Gray8):
+Mappers change pixel format (e.g., RGB8 to Gray8):
 
 ```rust
 #[rasmcore_macros::register_mapper(
-    name = "to_grayscale",
-    category = "color"
+    name = "grayscale", category = "color",
+    reference = "luminance-weighted desaturation",
+    output_format = "Gray8"
 )]
-pub fn to_grayscale(pixels: &[u8], info: &ImageInfo) -> Vec<u8> {
-    // Convert pixel format — output dimensions match input,
-    // but pixel format may change
+pub fn grayscale(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), ImageError> {
+    // Returns (new pixels, new ImageInfo with Gray8 format)
 }
 ```
+
+---
+
+## Adding a Decoder
+
+See `crates/rasmcore-image/src/domain/decoder/` for examples. Each format
+implements the codec registration pattern with decode functions that produce
+`DecodedImage { pixels: Vec<u8>, info: ImageInfo }`.
+
+---
+
+## Adding an Encoder
+
+See `crates/rasmcore-image/src/domain/encoder/` for examples. Encoders
+take pixels + ImageInfo + format-specific config and produce encoded bytes.
 
 ---
 
 ## Pipeline Integration
 
-### How filters become pipeline nodes
+The V2 pipeline operates in **f32-native mode**:
 
-When you register a filter, codegen generates a pipeline node struct and
-an `ImageNode` trait implementation. You do not write this code — it is
-generated automatically.
+1. **Ingest**: Source data is promoted to `Rgba32f` immediately after decode
+2. **Processing**: All nodes see `Rgba32f` (16 bytes/pixel) — no format dispatch
+3. **Output**: Demoted to target format at the encode boundary
 
-For a filter with signature `fn blur(pixels, info, config: &BlurParams)`,
-codegen produces:
+GPU dispatch is **primary** — the pipeline tries GPU first, falls back to
+CPU. The `GpuFilter` trait enables this automatically.
 
-```rust
-// AUTO-GENERATED — do not edit
-pub struct BlurNode {
-    upstream: u32,
-    source_info: ImageInfo,
-    config: BlurParams,
-}
+### Layer Cache
 
-impl ImageNode for BlurNode {
-    fn info(&self) -> ImageInfo { self.source_info.clone() }
+The `LayerCache` persists results across pipeline lifetimes using content
+hashes. It supports opt-in quantization:
 
-    fn compute_region(
-        &self,
-        request: Rect,
-        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
-    ) -> Result<Vec<u8>, ImageError> {
-        let upstream_rect = self.input_rect(request, self.source_info.width, self.source_info.height);
-        let src_pixels = upstream_fn(self.upstream, upstream_rect)?;
-        // ... calls filters::blur(&src_pixels, &region_info, &self.config) ...
-        // ... crops result back to requested region ...
-    }
+- `CacheQuality::Full` — 16 bytes/pixel (default)
+- `CacheQuality::Q16` — 8 bytes/pixel (2x memory saving)
+- `CacheQuality::Q8` — 4 bytes/pixel (4x memory saving)
 
-    fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> Rect {
-        output.expand_uniform(self.config.radius as u32, bounds_w, bounds_h)
-    }
-}
-```
-
-### The ImageNode trait
-
-```rust
-pub trait ImageNode {
-    /// Image dimensions and format.
-    fn info(&self) -> ImageInfo;
-
-    /// Compute pixels for the requested region.
-    fn compute_region(
-        &self,
-        request: Rect,
-        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
-    ) -> Result<Vec<u8>, ImageError>;
-
-    /// Input rect needed to produce the given output rect.
-    /// Default: no expansion (point operation).
-    fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> Rect {
-        output.clamp(bounds_w, bounds_h)
-    }
-
-    /// Access pattern hint for cache optimization.
-    fn access_pattern(&self) -> AccessPattern;
-}
-```
-
-### Manual pipeline nodes (transforms)
-
-Transform nodes (resize, crop, rotate, flip) are **not** generated by
-codegen — they are hand-written because they change output dimensions or
-need custom input_rect logic. They follow the same `ImageNode` trait:
-
-```rust
-pub struct ResizeNode {
-    upstream: u32,
-    target_width: u32,
-    target_height: u32,
-    filter: ResizeFilter,
-    source_info: ImageInfo,
-}
-
-impl ImageNode for ResizeNode {
-    fn info(&self) -> ImageInfo {
-        ImageInfo {
-            width: self.target_width,
-            height: self.target_height,
-            ..self.source_info.clone()
-        }
-    }
-
-    fn compute_region(&self, request: Rect, upstream_fn: ...) -> Result<Vec<u8>, ImageError> {
-        // Map output coordinates back to source coordinates
-        // Request the corresponding source region
-        // Perform the resize
-    }
-}
-```
+Quantization is transparent: store() quantizes, get() promotes back to f32.
 
 ---
 
 ## Generated Files — DO NOT EDIT
 
-The following files are produced by codegen during `cargo build`. They
-live in `target/*/build/rasmcore-image-*/out/`. **Never edit these files
-directly** — your changes will be overwritten on the next build.
+The following files are generated by `build.rs` and must not be edited:
 
-| Generated File | Source Generator | Purpose |
-|----------------|-----------------|---------|
-| `generated_filter_adapter.rs` | `adapter::generate()` | WIT guest dispatch for filters |
-| `generated_pipeline_nodes.rs` | `pipeline::generate_nodes()` | Pipeline node structs + ImageNode impls |
-| `generated_pipeline_adapter.rs` | `pipeline::generate_adapter_macro()` | Pipeline filter method macro |
-| `generated_pipeline_mapper_adapter.rs` | `pipeline_mapper::generate_mapper_adapter_macro()` | Pipeline mapper method macro |
-| `generated_sdk_rust.rs` | `sdk_rust::generate()` | Rust native SDK (RcImage builder) |
-| `generated_cli_dispatch.rs` | `cli_dispatch::generate()` | CLI command dispatch table |
-| `param-manifest.json` | `manifest::generate()` | Filter/parameter catalog (JSON) |
-| `param-manifest.hash` | `fnv1a_64()` | Manifest version hash |
+- `src/bindings.rs` — WIT component bindings
+- `target/*/build/rasmcore-image-*/out/generated_*.rs` — Pipeline nodes, adapters, dispatch
+- `target/*/build/rasmcore-image-*/out/param-manifest.json` — Parameter manifest
+- `wit/image/filters.wit` — Filter/mapper/compositor WIT declarations (partially generated)
 
-WIT declarations are printed to stderr during build for manual review.
-
-### How to regenerate
-
-```bash
-cargo build -p rasmcore-image   # triggers build.rs → codegen
-```
-
-### How to add a new generated output
-
-If you are a maintainer adding a new codegen output:
-
-1. Add your generator function in `crates/rasmcore-codegen/src/generate/`
-2. Call it from `generate_all()` in `generate/mod.rs`
-3. Write the output to `out_dir.join("your_file.rs")`
-4. Include it in the appropriate source file with `include!(concat!(env!("OUT_DIR"), "/your_file.rs"))`
-
----
-
-## External Crates / Plugin Model
-
-rasmcore's registration system uses the `inventory` crate, which collects
-registrations across crate boundaries at link time. This means external
-crates can register their own filters, codecs, and operations.
-
-### Using registration macros from external crates
-
-```toml
-# In your Cargo.toml
-[dependencies]
-rasmcore-image = { path = "../rasmcore-image" }  # or version
-rasmcore-macros = { path = "../rasmcore-macros" }
-inventory = "0.3"
-```
-
-```rust
-// In your crate's lib.rs
-use rasmcore_image::domain::types::*;
-use rasmcore_image::domain::error::ImageError;
-
-#[derive(rasmcore_macros::ConfigParams, Clone)]
-pub struct MyCustomBlurParams {
-    #[param(min = 0.0, max = 50.0, step = 0.5, default = 5.0)]
-    pub radius: f32,
-}
-
-#[rasmcore_macros::register_filter(
-    name = "my_custom_blur",
-    category = "spatial",
-    reference = "My custom algorithm"
-)]
-pub fn my_custom_blur(
-    pixels: &[u8],
-    info: &ImageInfo,
-    config: &MyCustomBlurParams,
-) -> Result<Vec<u8>, ImageError> {
-    // Your implementation
-    todo!()
-}
-```
-
-The `inventory` crate ensures your registration is collected when your
-crate is linked into the final binary. The `registered_filters()` function
-will include your filter alongside the built-in ones.
-
-### Manual pipeline node implementation
-
-For filters in external crates, codegen does not automatically generate
-pipeline nodes (it only parses the main `filters.rs` file). You can
-implement `ImageNode` manually:
-
-```rust
-use rasmcore_image::domain::pipeline::graph::{ImageNode, AccessPattern};
-use rasmcore_pipeline::Rect;
-
-pub struct MyCustomBlurNode {
-    upstream: u32,
-    source_info: ImageInfo,
-    config: MyCustomBlurParams,
-}
-
-impl ImageNode for MyCustomBlurNode {
-    fn info(&self) -> ImageInfo { self.source_info.clone() }
-
-    fn compute_region(
-        &self,
-        request: Rect,
-        upstream_fn: &mut dyn FnMut(u32, Rect) -> Result<Vec<u8>, ImageError>,
-    ) -> Result<Vec<u8>, ImageError> {
-        let upstream_rect = self.input_rect(
-            request, self.source_info.width, self.source_info.height
-        );
-        let src_pixels = upstream_fn(self.upstream, upstream_rect)?;
-        let region_info = ImageInfo {
-            width: upstream_rect.width,
-            height: upstream_rect.height,
-            ..self.source_info
-        };
-        let filtered = my_custom_blur(&src_pixels, &region_info, &self.config)?;
-
-        // Crop back to requested region if expanded
-        if upstream_rect == request {
-            Ok(filtered)
-        } else {
-            let bpp = bytes_per_pixel(self.source_info.format);
-            let sub = Rect::new(
-                request.x - upstream_rect.x,
-                request.y - upstream_rect.y,
-                request.width,
-                request.height,
-            );
-            Ok(crop_region(&filtered, Rect::new(0, 0, upstream_rect.width, upstream_rect.height), sub, bpp))
-        }
-    }
-
-    fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> Rect {
-        output.expand_uniform(self.config.radius as u32, bounds_w, bounds_h)
-    }
-
-    fn access_pattern(&self) -> AccessPattern {
-        AccessPattern::LocalNeighborhood
-    }
-}
-```
+Regenerate with `cargo build -p rasmcore-image` (native) or
+`cargo component bindings` (WASM bindings.rs).
 
 ---
 
 ## Reference Validation
 
-**Every implementation must be validated against an authoritative reference.**
-This is not optional. See `docs/REFERENCE_VALIDATION.md` for the full
-validation principle and existing parity records.
-
-### Requirements
-
-1. **Cite the reference** — Document which implementation you are matching
-   (OpenCV, ImageMagick, GEGL, libvips, a specific paper, etc.) in the
-   `reference` attribute of your registration macro.
-
-2. **Write a parity test** — Compare your output against the reference
-   for at least one non-trivial input. Document the alignment metric:
-   - **Bit-exact** — Output is byte-identical to reference
-   - **MAE < N** — Mean absolute error per pixel below threshold
-   - **PSNR > N dB** — Peak signal-to-noise ratio above threshold
-
-3. **Document residuals** — If your output differs from the reference,
-   document exactly why (e.g., floating-point precision, different
-   boundary handling, intentional algorithm improvement).
-
-### Example parity test
-
-```rust
-#[test]
-fn median_parity_vs_opencv() {
-    // Generate test image
-    let (pixels, info) = make_gradient(64, 64, PixelFormat::Gray8);
-
-    // Run our implementation
-    let ours = median(&pixels, &info, &MedianParams { radius: 2 }).unwrap();
-
-    // Run OpenCV via Python subprocess
-    let reference = run_opencv_median(&pixels, &info, 2);
-
-    // Compare
-    let mae = mean_absolute_error(&ours, &reference);
-    assert!(mae < 1.0, "Median MAE vs OpenCV: {mae} (expected < 1.0)");
-}
-```
-
-### Codec validation
-
-Codecs follow a stricter **three-way validation** standard. See
-`.agent/kf/code_styleguides/codec-validation.md` for details.
+Every filter implementation must cite its reference and include parity tests.
+See `docs/REFERENCE_VALIDATION.md` for the full validation standard.
 
 ---
 
 ## PRNG Requirement
 
-Any algorithm that involves randomness **must use a seeded PRNG** — never
-`OsRng`, `thread_rng()`, or any non-deterministic source.
-
-### Why
-
-- Tests must be deterministic and reproducible
-- Same input + same seed = same output, always
-- Cross-platform reproducibility (WASM, native, CI)
-
-### How
+All randomized operations must use deterministic PRNG:
 
 ```rust
-use rand::rngs::SmallRng;
 use rand::SeedableRng;
+use rand::rngs::SmallRng;
 
-pub fn film_grain(
-    pixels: &[u8],
-    info: &ImageInfo,
-    config: &FilmGrainParams,
-) -> Result<Vec<u8>, ImageError> {
-    let mut rng = SmallRng::seed_from_u64(config.seed);
-    // Use rng for all random operations
-}
+let mut rng = SmallRng::seed_from_u64(seed);
 ```
 
-The `seed` parameter should be exposed in the ConfigParams struct so
-users can control reproducibility:
-
-```rust
-#[derive(rasmcore_macros::ConfigParams, Clone)]
-pub struct FilmGrainParams {
-    #[param(min = 0.0, max = 100.0, step = 1.0, default = 25.0)]
-    pub amount: f32,
-    #[param(min = 0, max = 999999, step = 1, default = 42, hint = "rc.seed")]
-    pub seed: u64,
-}
-```
+Never use `OsRng`, `thread_rng()`, or any non-deterministic source.
+Same seed must produce identical output across platforms.
