@@ -67,55 +67,55 @@ plan:
 - phase: Spatial filters (22)
   tasks:
   - text: Port blur, sharpen, median, box_blur, average_blur to V2 f32 API
-    done: false
+    done: true
   - text: Port convolve, high_pass, smart_sharpen, motion_blur to V2
-    done: false
+    done: true
   - text: Port spin_blur, zoom_blur, kuwahara, bilateral to V2
-    done: false
+    done: true
   - text: Port guided_filter, lens_blur, rank_filter, displacement_map to V2
-    done: false
+    done: true
   - text: Port tilt_shift, bokeh_blur, gaussian_blur_cv to V2
-    done: false
+    done: true
 - phase: Distortion + transform filters (15)
   tasks:
   - text: Port wave, swirl, barrel, spherize, ripple, polar, depolar to V2
-    done: false
+    done: true
   - text: Port mesh_warp, liquify (push/pinch/expand/twirl/smooth) to V2
-    done: false
+    done: true
   - text: Port resize, rotate, flip, crop to V2 (with AffineOp)
-    done: false
+    done: true
 - phase: Point ops + adjustment (30)
   tasks:
   - text: Port brightness, contrast, gamma, levels, exposure, invert to V2 (with AnalyticOp)
     done: true
   - text: Port posterize, sigmoidal_contrast, curves, burn, dodge to V2
-    done: false
+    done: true
   - text: Port color_balance, lift_gamma_gain, split_toning to V2
-    done: false
+    done: true
 - phase: Color + enhancement + effect (75)
   tasks:
   - text: Port all color grading filters (17) to V2
-    done: false
+    done: true
   - text: Port all enhancement filters (20) to V2
-    done: false
+    done: true
   - text: Port all effect filters (18) to V2
-    done: false
+    done: true
   - text: Port all color filters (22) to V2
-    done: false
+    done: true
 - phase: Remaining categories (68)
   tasks:
   - text: Port morphology (10), threshold (6), edge (5), mask (11) to V2
-    done: false
+    done: true
   - text: Port analyze (6), alpha (6), composite (6) to V2
-    done: false
+    done: true
   - text: Port draw (9), evaluate (10), generator (7), tool (7) to V2
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Zero format dispatch calls remaining (grep audit)
-    done: false
+    done: true
   - text: All V1 parity tests pass against V2 output (tolerance matching)
-    done: false
+    done: true
   - text: All GPU shaders use io_f32 only
-    done: false
+    done: true
 extra: {}
