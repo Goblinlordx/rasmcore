@@ -5,142 +5,147 @@ status: pending
 created: '2026-04-03'
 updated: '2026-04-03'
 spec:
-  summary: |
-    New pipeline engine crate (rasmcore-pipeline-v2) that is f32-native,
+  summary: 'New pipeline engine crate (rasmcore-pipeline-v2) that is f32-native,
+
     GPU-primary, and knows nothing about specific filters or codecs.
+
     Pure graph topology, demand propagation, tiling, caching, and dispatch.
-  context: |
-    V1 rasmcore-pipeline is already mostly clean (2,152 LOC, no filter
+
+    '
+  context: 'V1 rasmcore-pipeline is already mostly clean (2,152 LOC, no filter
+
     knowledge). But the graph walker in rasmcore-image (graph.rs, 4,200 LOC)
+
     has accumulated format dispatch, GPU/CPU dual-path complexity, and
+
     hardcoded assumptions about u8/f32 coexistence.
 
+
     V2 pipeline foundation starts clean:
+
     - All pixel data is &[f32] (RGBA, 4 channels, normalized)
+
     - GPU dispatch is the primary path, CPU is the fallback
+
     - Graph walker has no format branching — one code path
+
     - Tiling uses the demand regulator design (layered strategy)
+
     - Spatial cache operates on f32 tiles natively
+
     - No PixelFormat enum in the pipeline — format is always f32
-  codebase_analysis: |
-    What to keep from V1:
+
+    '
+  codebase_analysis: 'What to keep from V1:
+
     - Rect geometry (rect.rs) — clean, reuse as-is
+
     - Content hashing (blake3) — clean, reuse
+
     - GpuExecutor trait design — good abstraction, simplify to f32-only
+
     - Layer cache concept — keep, simplify storage to f32
 
+
     What to discard:
+
     - BufferFormat enum (U32Packed vs F32Vec4) — always F32Vec4
+
     - SampleFormat enum — always f32
+
     - GpuConfig.max_full_image_pixels / gpu_tile_size — replace with DemandStrategy
+
     - All format-dispatch logic in graph walker
 
+
     New concepts:
+
     - DemandStrategy enum (Fixed, AdaptiveMemory, AdaptiveVram)
+
     - DemandRegulator node (subgraph override)
+
     - TileHint trait (node advisory)
+
     - NodeCapability flags (AnalyticFusable, AffineFusable, ClutFusable, GpuCapable)
+
+    '
   acceptance_criteria:
-    - New crate rasmcore-pipeline-v2 with zero filter/codec knowledge
-    - Graph topology (add_node, connect, upstream_id, walk)
-    - Demand-driven tile execution (pull model, configurable tile size)
-    - GPU-primary dispatch (GpuExecutor receives f32 tiles, CPU fallback)
-    - DemandStrategy with Fixed/AdaptiveMemory/AdaptiveVram modes
-    - DemandRegulator node for per-subgraph tile control
-    - Spatial cache operating on f32 tile data
-    - Layer cache for cross-pipeline reuse
-    - Content hashing for cache keys
-    - All data paths are f32 — no format dispatch, no PixelFormat enum
-    - CPU and GPU implementations for the dispatch engine
-  out_of_scope: |
-    Filter/codec registration (Track 2).
+  - New crate rasmcore-pipeline-v2 with zero filter/codec knowledge
+  - Graph topology (add_node, connect, upstream_id, walk)
+  - Demand-driven tile execution (pull model, configurable tile size)
+  - GPU-primary dispatch (GpuExecutor receives f32 tiles, CPU fallback)
+  - DemandStrategy with Fixed/AdaptiveMemory/AdaptiveVram modes
+  - DemandRegulator node for per-subgraph tile control
+  - Spatial cache operating on f32 tile data
+  - Layer cache for cross-pipeline reuse
+  - Content hashing for cache keys
+  - All data paths are f32 — no format dispatch, no PixelFormat enum
+  - CPU and GPU implementations for the dispatch engine
+  out_of_scope: 'Filter/codec registration (Track 2).
+
     Color space tracking (Track 4).
+
     Fusion optimizer (Track 5).
+
     WIT interface (Track 8).
-  technical_notes: |
-    Core traits:
 
-    trait Node {
-        fn info(&self) -> NodeInfo;  // width, height, channels (always 4)
-        fn compute(&self, request: Rect, upstream: &mut dyn Upstream) -> Result<Vec<f32>>;
-        fn gpu_shader(&self) -> Option<GpuShader>;  // None = CPU only
-        fn upstream_ids(&self) -> Vec<u32>;
-        fn capabilities(&self) -> NodeCapabilities;
-    }
-
-    struct NodeInfo {
-        width: u32,
-        height: u32,
-        color_space: ColorSpace,  // tracked per-node
-    }
-
-    // No PixelFormat. Always Rgba f32. 4 channels. Period.
-
-    Graph walker:
-    fn request_region(&mut self, node_id: u32, request: Rect) -> Result<Vec<f32>> {
-        // 1. Check cache
-        // 2. Check GPU capability → dispatch to GPU
-        // 3. Fallback to CPU → node.compute()
-        // No format branching. No is_16bit. No process_via_8bit.
-    }
-
-    GPU dispatch:
-    - Always vec4<f32> storage buffers
-    - io_f32.wgsl is the ONLY I/O fragment (no io_u32)
-    - Shader composition: io_f32 + shader body
-    - Tile-sized dispatch (demand regulator controls size)
-
-    DemandStrategy (from design doc):
-    enum DemandStrategy {
-        Fixed { tile_size: u32 },
-        AdaptiveMemory { budget_bytes: usize },
-        AdaptiveVram { vram_budget_bytes: usize, cpu_tile_size: u32 },
-    }
+    '
+  technical_notes: "Core traits:\n\ntrait Node {\n    fn info(&self) -> NodeInfo;  // width, height, channels (always 4)\n\
+    \    fn compute(&self, request: Rect, upstream: &mut dyn Upstream) -> Result<Vec<f32>>;\n    fn gpu_shader(&self) -> Option<GpuShader>;\
+    \  // None = CPU only\n    fn upstream_ids(&self) -> Vec<u32>;\n    fn capabilities(&self) -> NodeCapabilities;\n}\n\n\
+    struct NodeInfo {\n    width: u32,\n    height: u32,\n    color_space: ColorSpace,  // tracked per-node\n}\n\n// No PixelFormat.\
+    \ Always Rgba f32. 4 channels. Period.\n\nGraph walker:\nfn request_region(&mut self, node_id: u32, request: Rect) ->\
+    \ Result<Vec<f32>> {\n    // 1. Check cache\n    // 2. Check GPU capability → dispatch to GPU\n    // 3. Fallback to CPU\
+    \ → node.compute()\n    // No format branching. No is_16bit. No process_via_8bit.\n}\n\nGPU dispatch:\n- Always vec4<f32>\
+    \ storage buffers\n- io_f32.wgsl is the ONLY I/O fragment (no io_u32)\n- Shader composition: io_f32 + shader body\n- Tile-sized\
+    \ dispatch (demand regulator controls size)\n\nDemandStrategy (from design doc):\nenum DemandStrategy {\n    Fixed { tile_size:\
+    \ u32 },\n    AdaptiveMemory { budget_bytes: usize },\n    AdaptiveVram { vram_budget_bytes: usize, cpu_tile_size: u32\
+    \ },\n}\n"
 plan:
-  - phase: Crate scaffold
-    tasks:
-      - text: Create rasmcore-pipeline-v2 crate with Cargo.toml, minimal deps
-        done: false
-      - text: Port Rect geometry from V1 (clean, reuse as-is)
-        done: false
-      - text: Port content hashing from V1
-        done: false
-      - text: Define Node trait (f32-only, GPU-native)
-        done: false
-      - text: Define NodeInfo (width, height, color_space — no PixelFormat)
-        done: false
-  - phase: Graph engine
-    tasks:
-      - text: Graph topology (add_node, connect, upstream traversal)
-        done: false
-      - text: Demand-driven request_region (pull model, single f32 code path)
-        done: false
-      - text: GPU-primary dispatch (check gpu_shader first, CPU fallback)
-        done: false
-      - text: Tile accumulator (stitch tiles into full output)
-        done: false
-  - phase: Demand regulation
-    tasks:
-      - text: DemandStrategy enum (Fixed, AdaptiveMemory, AdaptiveVram)
-        done: false
-      - text: DemandRegulator node (subgraph tile override)
-        done: false
-      - text: TileHint on Node trait (advisory, overlap reporting)
-        done: false
-  - phase: Caching
-    tasks:
-      - text: Spatial cache for f32 tiles (overlap reuse)
-        done: false
-      - text: Layer cache for cross-pipeline f32 reuse
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Unit tests for graph topology and traversal
-        done: false
-      - text: Tile execution test — tiled output matches full-image output
-        done: false
-      - text: GPU dispatch test (with mock executor)
-        done: false
-      - text: Demand strategy test — adaptive sizing respects budget
-        done: false
+- phase: Crate scaffold
+  tasks:
+  - text: Create rasmcore-pipeline-v2 crate with Cargo.toml, minimal deps
+    done: true
+  - text: Port Rect geometry from V1 (clean, reuse as-is)
+    done: true
+  - text: Port content hashing from V1
+    done: true
+  - text: Define Node trait (f32-only, GPU-native)
+    done: true
+  - text: Define NodeInfo (width, height, color_space — no PixelFormat)
+    done: true
+- phase: Graph engine
+  tasks:
+  - text: Graph topology (add_node, connect, upstream traversal)
+    done: true
+  - text: Demand-driven request_region (pull model, single f32 code path)
+    done: true
+  - text: GPU-primary dispatch (check gpu_shader first, CPU fallback)
+    done: true
+  - text: Tile accumulator (stitch tiles into full output)
+    done: true
+- phase: Demand regulation
+  tasks:
+  - text: DemandStrategy enum (Fixed, AdaptiveMemory, AdaptiveVram)
+    done: true
+  - text: DemandRegulator node (subgraph tile override)
+    done: true
+  - text: TileHint on Node trait (advisory, overlap reporting)
+    done: true
+- phase: Caching
+  tasks:
+  - text: Spatial cache for f32 tiles (overlap reuse)
+    done: true
+  - text: Layer cache for cross-pipeline f32 reuse
+    done: true
+- phase: Verification
+  tasks:
+  - text: Unit tests for graph topology and traversal
+    done: true
+  - text: Tile execution test — tiled output matches full-image output
+    done: true
+  - text: GPU dispatch test (with mock executor)
+    done: true
+  - text: Demand strategy test — adaptive sizing respects budget
+    done: true
 extra: {}
