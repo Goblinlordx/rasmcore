@@ -1,0 +1,8 @@
+title: Remove Rgba8 format gate from GPU dispatch + clean up gpu attribute
+status: pending
+type: refactor
+approved: false
+created: '2026-04-03'
+updated: '2026-04-03'
+deps:
+- gpu-f32-default_20260403074001Z

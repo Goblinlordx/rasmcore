@@ -285,8 +285,12 @@ gpu-f32-default_20260403074001Z:
 f32-migrate-filters-wave1_20260403074002Z:
   - f32-pipeline-infra_20260403074000Z
 
-gpu-shaders-wave1_20260403074003Z:
+# GPU format gate removal — prerequisite for GPU shader expansion
+gpu-f32-format-gate_20260403083200Z:
   - gpu-f32-default_20260403074001Z
+
+gpu-shaders-wave1_20260403074003Z:
+  - gpu-f32-format-gate_20260403083200Z
 
 # Memory optimization — cache quantization (depends on f32 pipeline)
 cache-quantize-opt_20260403081600Z:
