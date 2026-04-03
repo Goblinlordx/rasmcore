@@ -1,5 +1,5 @@
 title: Remove dead GPU shaders for LUT/CLUT-fuseable filters
-status: pending
+status: completed
 type: chore
 approved: false
 created: '2026-04-03'
