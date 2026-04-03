@@ -1,80 +1,108 @@
 id: gpu-fusion-f32_20260403083502Z
-title: "GPU f32 for fusion nodes — FusedLut, FusedClut, ComposedAffine"
+title: GPU f32 for fusion nodes — FusedLut, FusedClut, ComposedAffine
 type: feature
 status: pending
 created: '2026-04-03'
 updated: '2026-04-03'
 spec:
-  summary: |
-    Wire f32 GPU shaders for the 3 fusion nodes that the pipeline optimizer
+  summary: 'Wire f32 GPU shaders for the 3 fusion nodes that the pipeline optimizer
+
     creates. These handle the majority of GPU-accelerated operations since
+
     point ops, color ops, and affine transforms all get fused.
-  context: |
-    The pipeline optimizer fuses consecutive operations before execution:
+
+    '
+  context: 'The pipeline optimizer fuses consecutive operations before execution:
+
     - Point ops (brightness, contrast, gamma, etc.) → FusedLutNode (1D LUT)
+
     - Color ops (hue_rotate, sepia, saturate, etc.) → FusedClutNode (3D CLUT)
+
     - Affine transforms (resize, flip, rotate) → ComposedAffineNode
 
+
     Individual filter GPU shaders for LUT-fuseable ops are dead code — the
+
     fused nodes are what actually execute. These fused nodes currently have
+
     U32Packed GPU shaders but not F32Vec4. With the f32 pipeline, they
+
     fall back to CPU.
 
+
     This is HIGH PRIORITY — fused nodes cover the most common interactive
+
     operations (adjustment sliders, color grading, resize/crop).
 
+
     Existing shaders:
+
     - lut1d.wgsl (U32Packed) — needs f32 variant
+
     - lut3d.wgsl (U32Packed) — needs f32 variant
+
     - affine_resample_f32.wgsl — already exists, needs wiring
+
+    '
   acceptance_criteria:
-    - FusedLutNode has f32 GPU shader (1D LUT on vec4<f32> data)
-    - FusedClutNode has f32 GPU shader (3D trilinear CLUT on vec4<f32> data)
-    - ComposedAffineNode uses affine_resample_f32.wgsl for F32Vec4
-    - GPU parity tests for each fusion node
-    - Brightness/contrast/gamma chains run on GPU at f32 precision
-  out_of_scope: |
-    Individual point/color op GPU shaders (dead code — handled by fusion).
+  - FusedLutNode has f32 GPU shader (1D LUT on vec4<f32> data)
+  - FusedClutNode has f32 GPU shader (3D trilinear CLUT on vec4<f32> data)
+  - ComposedAffineNode uses affine_resample_f32.wgsl for F32Vec4
+  - GPU parity tests for each fusion node
+  - Brightness/contrast/gamma chains run on GPU at f32 precision
+  out_of_scope: 'Individual point/color op GPU shaders (dead code — handled by fusion).
+
     Non-fuseable filter GPU shaders (wave 2/3).
-  technical_notes: |
-    FusedLutNode f32: The 1D LUT is 256 entries of u8. For f32 pipeline:
+
+    '
+  technical_notes: 'FusedLutNode f32: The 1D LUT is 256 entries of u8. For f32 pipeline:
+
     - Input is vec4<f32> in [0,1]
+
     - Scale to [0,255], floor to get LUT index, lerp between adjacent entries
+
     - Output the interpolated value / 255.0 as f32
+
     - This gives smooth f32 output from the discrete LUT
 
+
     FusedClutNode f32: The 3D CLUT data is already f32 (the CLUT stores
+
     f32 triplets). The lut3d shader just needs f32 I/O instead of u32.
 
+
     ComposedAffineNode f32: affine_resample_f32.wgsl already exists.
+
     Just need to wire gpu_ops_with_format to return it for F32Vec4.
+
+    '
 plan:
-  - phase: "FusedLutNode f32"
-    tasks:
-      - text: "Write lut1d_f32.wgsl — interpolating 1D LUT on f32 data"
-        done: false
-      - text: "Wire FusedLutNode.gpu_ops_with_format for F32Vec4"
-        done: false
-      - text: "GPU parity test — brightness chain on GPU f32"
-        done: false
-  - phase: "FusedClutNode f32"
-    tasks:
-      - text: "Write lut3d_f32.wgsl — trilinear 3D CLUT on f32 data"
-        done: false
-      - text: "Wire FusedClutNode.gpu_ops_with_format for F32Vec4"
-        done: false
-      - text: "GPU parity test — hue_rotate chain on GPU f32"
-        done: false
-  - phase: "ComposedAffineNode f32"
-    tasks:
-      - text: "Wire ComposedAffineNode.gpu_ops_with_format to use affine_resample_f32.wgsl"
-        done: false
-      - text: "GPU parity test — resize on GPU f32"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "All GPU parity tests pass"
-        done: false
-      - text: "Interactive adjustment chain runs on GPU (no CPU fallback)"
-        done: false
+- phase: FusedLutNode f32
+  tasks:
+  - text: Write lut1d_f32.wgsl — interpolating 1D LUT on f32 data
+    done: true
+  - text: Wire FusedLutNode.gpu_ops_with_format for F32Vec4
+    done: true
+  - text: GPU parity test — brightness chain on GPU f32
+    done: true
+- phase: FusedClutNode f32
+  tasks:
+  - text: Write lut3d_f32.wgsl — trilinear 3D CLUT on f32 data
+    done: true
+  - text: Wire FusedClutNode.gpu_ops_with_format for F32Vec4
+    done: true
+  - text: GPU parity test — hue_rotate chain on GPU f32
+    done: true
+- phase: ComposedAffineNode f32
+  tasks:
+  - text: Wire ComposedAffineNode.gpu_ops_with_format to use affine_resample_f32.wgsl
+    done: true
+  - text: GPU parity test — resize on GPU f32
+    done: true
+- phase: Verification
+  tasks:
+  - text: All GPU parity tests pass
+    done: true
+  - text: Interactive adjustment chain runs on GPU (no CPU fallback)
+    done: true
 extra: {}
