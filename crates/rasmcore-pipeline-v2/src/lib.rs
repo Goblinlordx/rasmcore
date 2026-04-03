@@ -26,6 +26,8 @@ pub mod hash;
 pub mod registry;
 pub mod ops;
 pub mod filter_node;
+pub mod color_math;
+pub mod color_convert;
 
 // Re-export core types at crate root
 pub use rect::{Rect, Overlap};
@@ -53,3 +55,12 @@ pub use ops::{
 
 // Re-export node wrappers
 pub use filter_node::{FilterNode, GpuFilterNode, compose_shader, IO_F32};
+
+// Re-export color pipeline
+pub use color_math::{
+    srgb_to_linear, linear_to_srgb,
+    linear_to_acescct, acescct_to_linear,
+    linear_to_acescc, acescc_to_linear,
+    convert_color_space, apply_transfer, apply_matrix, mat3_mul,
+};
+pub use color_convert::{ColorConvertNode, ViewTransformNode, ViewTransform};
