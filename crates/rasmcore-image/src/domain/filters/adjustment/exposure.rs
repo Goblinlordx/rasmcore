@@ -63,3 +63,43 @@ pub fn exposure(
         config.gamma_correction,
     )
 }
+
+impl crate::domain::filter_traits::GpuFilter for ExposureParams {
+    fn gpu_ops(&self, _width: u32, _height: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        None
+    }
+
+    fn gpu_ops_with_format(
+        &self,
+        width: u32,
+        height: u32,
+        buffer_format: rasmcore_pipeline::gpu::BufferFormat,
+    ) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        if buffer_format != rasmcore_pipeline::gpu::BufferFormat::F32Vec4 {
+            return None;
+        }
+        use rasmcore_pipeline::gpu::GpuOp;
+        use std::sync::LazyLock;
+        static SHADER: LazyLock<String> = LazyLock::new(|| {
+            include_str!("../../../shaders/exposure_f32.wgsl").to_string()
+        });
+        let inv_gamma = 1.0 / self.gamma_correction.max(0.001);
+        let mut params = Vec::with_capacity(32);
+        params.extend_from_slice(&width.to_le_bytes());
+        params.extend_from_slice(&height.to_le_bytes());
+        params.extend_from_slice(&self.ev.to_le_bytes());
+        params.extend_from_slice(&self.offset.to_le_bytes());
+        params.extend_from_slice(&inv_gamma.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes()); // pad
+        params.extend_from_slice(&0u32.to_le_bytes()); // pad
+        params.extend_from_slice(&0u32.to_le_bytes()); // pad
+        Some(vec![GpuOp::Compute {
+            shader: SHADER.clone(),
+            entry_point: "main",
+            workgroup_size: [16, 16, 1],
+            params,
+            extra_buffers: vec![],
+            buffer_format: rasmcore_pipeline::BufferFormat::F32Vec4,
+        }])
+    }
+}
