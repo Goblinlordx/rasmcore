@@ -104,13 +104,13 @@ impl Graph {
                     Rect::new(0, 0, info.width, info.height)
                 }
             };
-            if let Some(shader) = node.gpu_shader(gpu_input_rect.width, gpu_input_rect.height) {
+            if let Some(shaders) = node.gpu_shaders(gpu_input_rect.width, gpu_input_rect.height) {
                 let upstream_ids = node.upstream_ids();
                 if let Some(&upstream_id) = upstream_ids.first() {
                     let executor = executor.clone();
                     let input = self.request_region(upstream_id, gpu_input_rect)?;
                     match executor.execute(
-                        &[shader],
+                        &shaders,
                         &input,
                         gpu_input_rect.width,
                         gpu_input_rect.height,

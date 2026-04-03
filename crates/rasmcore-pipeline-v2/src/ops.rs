@@ -59,6 +59,17 @@ pub trait GpuFilter {
             extra_buffers: self.extra_buffers(),
         }
     }
+
+    /// Build multiple GPU shaders for multi-pass filters.
+    ///
+    /// Multi-pass filters (histogram→LUT→apply, separable blur H+V, etc.)
+    /// return multiple shaders that execute sequentially via ping-pong buffers.
+    /// The executor chains them: output of shader[i] = input of shader[i+1].
+    ///
+    /// Default: wraps the single `gpu_shader()` result.
+    fn gpu_shaders(&self, width: u32, height: u32) -> Vec<GpuShader> {
+        vec![self.gpu_shader(width, height)]
+    }
 }
 
 /// Image decoder — converts encoded bytes to f32 pixel data.

@@ -112,6 +112,19 @@ pub trait Node {
         None
     }
 
+    /// GPU compute shaders for multi-pass filters.
+    ///
+    /// Multi-pass filters (histogram→LUT→apply, separable blur H+V,
+    /// retinex multi-scale, etc.) return multiple shaders that execute
+    /// sequentially via ping-pong buffers. Output of shader[i] feeds
+    /// into shader[i+1].
+    ///
+    /// Default: wraps the single `gpu_shader()` result.
+    /// Override for multi-pass operations.
+    fn gpu_shaders(&self, width: u32, height: u32) -> Option<Vec<GpuShader>> {
+        self.gpu_shader(width, height).map(|s| vec![s])
+    }
+
     /// IDs of upstream nodes this node depends on.
     fn upstream_ids(&self) -> Vec<u32>;
 

@@ -30,6 +30,7 @@ pub mod color_math;
 pub mod color_convert;
 pub mod fusion;
 pub mod staged;
+pub mod gpu_shaders;
 pub mod noise;
 pub mod filters;
 
