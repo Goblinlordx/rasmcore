@@ -3,81 +3,67 @@ title: GPU pipeline benchmark suite — identity, correctness, perf
 type: feature
 status: pending
 created: '2026-04-04'
-updated: '2026-04-04'
+updated: '2026-04-03'
 spec:
-  summary: |
-    Benchmark harness validating GPU pipeline correctness (identity roundtrip,
+  summary: 'Benchmark harness validating GPU pipeline correctness (identity roundtrip,
+
     transform verification) and measuring performance at 400px and 4K
+
     resolutions with single-op and multi-op pipelines.
-  context: |
-    The V2 pipeline has GPU support for 37+ filters via direct shaders and
+
+    '
+  context: 'The V2 pipeline has GPU support for 37+ filters via direct shaders and
+
     39+ filters via LUT/CLUT fusion. No benchmark exists to verify that
+
     GPU execution produces correct results or to measure throughput.
-  codebase_analysis: |
-    Existing benchmark infrastructure:
-    - crates/rasmcore-image/benches/ — criterion benchmarks exist but are
-      CPU-only filter benchmarks (blur, sharpen, etc.)
-    - crates/rasmcore-cli/src/gpu_executor.rs — WgpuExecutor implements
-      GpuExecutor trait, available for native benchmarks
-    - The pipeline graph walker has GPU dispatch built in
 
-    Benchmark needs:
-    - Native benchmark binary (uses WgpuExecutor directly)
-    - Test images: synthetic gradient (400px, 4K) generated in code
-    - Identity test: apply filter with identity params, verify output = input
-    - Difference test: apply filter with non-identity params odd number of
-      times, verify output != input
-    - Multi-op pipeline: chain 5-10 ops, measure end-to-end throughput
+    '
+  codebase_analysis: "Existing benchmark infrastructure:\n- crates/rasmcore-image/benches/ — criterion benchmarks exist but\
+    \ are\n  CPU-only filter benchmarks (blur, sharpen, etc.)\n- crates/rasmcore-cli/src/gpu_executor.rs — WgpuExecutor implements\n\
+    \  GpuExecutor trait, available for native benchmarks\n- The pipeline graph walker has GPU dispatch built in\n\nBenchmark\
+    \ needs:\n- Native benchmark binary (uses WgpuExecutor directly)\n- Test images: synthetic gradient (400px, 4K) generated\
+    \ in code\n- Identity test: apply filter with identity params, verify output = input\n- Difference test: apply filter\
+    \ with non-identity params odd number of\n  times, verify output != input\n- Multi-op pipeline: chain 5-10 ops, measure\
+    \ end-to-end throughput\n"
   acceptance_criteria:
-    - Identity roundtrip test passes (GPU filter output matches input within f32 tolerance)
-    - Odd-count transform test verifies output differs from input
-    - Single-op benchmark at 400px resolution (measures per-filter GPU overhead)
-    - Single-op benchmark at 4K resolution (measures throughput at scale)
-    - Multi-op pipeline benchmark (5+ chained filters) at both resolutions
-    - Results printed as table with op/ms and pixels/sec metrics
-  out_of_scope: |
-    WASM benchmark (needs browser harness). CPU vs GPU comparison
-    (that's a separate analysis). Automated regression detection.
-  technical_notes: |
-    Benchmark structure (criterion or custom harness):
+  - Identity roundtrip test passes (GPU filter output matches input within f32 tolerance)
+  - Odd-count transform test verifies output differs from input
+  - Single-op benchmark at 400px resolution (measures per-filter GPU overhead)
+  - Single-op benchmark at 4K resolution (measures throughput at scale)
+  - Multi-op pipeline benchmark (5+ chained filters) at both resolutions
+  - Results printed as table with op/ms and pixels/sec metrics
+  out_of_scope: 'WASM benchmark (needs browser harness). CPU vs GPU comparison
 
-    1. Identity tests (correctness):
-       - blur(radius=0) -> output == input
-       - brightness(amount=0) -> output == input
-       - invert applied twice -> output == input
+    (that''s a separate analysis). Automated regression detection.
 
-    2. Difference tests (correctness):
-       - brightness(0.2) applied 1x -> output != input
-       - invert applied 1x -> output != input
-       - blur(3.0) applied 1x -> output != input
-
-    3. Performance (throughput):
-       - Generate 400x400 and 3840x2160 synthetic RGBA images
-       - Single ops: blur, sharpen, brightness, hue_rotate, invert
-       - Multi-op chain: read -> brightness -> contrast -> blur ->
-         sharpen -> hue_rotate -> write
-       - Measure: total ms, pixels/sec, GPU dispatch overhead
-
-    Use criterion for statistical rigor (warmup, iterations, confidence).
+    '
+  technical_notes: "Benchmark structure (criterion or custom harness):\n\n1. Identity tests (correctness):\n   - blur(radius=0)\
+    \ -> output == input\n   - brightness(amount=0) -> output == input\n   - invert applied twice -> output == input\n\n2.\
+    \ Difference tests (correctness):\n   - brightness(0.2) applied 1x -> output != input\n   - invert applied 1x -> output\
+    \ != input\n   - blur(3.0) applied 1x -> output != input\n\n3. Performance (throughput):\n   - Generate 400x400 and 3840x2160\
+    \ synthetic RGBA images\n   - Single ops: blur, sharpen, brightness, hue_rotate, invert\n   - Multi-op chain: read ->\
+    \ brightness -> contrast -> blur ->\n     sharpen -> hue_rotate -> write\n   - Measure: total ms, pixels/sec, GPU dispatch\
+    \ overhead\n\nUse criterion for statistical rigor (warmup, iterations, confidence).\n"
 plan:
-  - phase: Test infrastructure
-    tasks:
-      - text: Create benchmark binary with GPU executor setup (WgpuExecutor)
-        done: false
-      - text: Generate synthetic test images (400px gradient, 4K gradient)
-        done: false
-  - phase: Correctness benchmarks
-    tasks:
-      - text: Identity roundtrip tests (blur 0, brightness 0, double-invert)
-        done: false
-      - text: Difference tests (brightness 0.2, invert 1x, blur 3.0)
-        done: false
-  - phase: Performance benchmarks
-    tasks:
-      - text: Single-op benchmarks at 400px and 4K (blur, sharpen, brightness, hue_rotate)
-        done: false
-      - text: Multi-op pipeline benchmark at 400px and 4K (5+ chained filters)
-        done: false
-      - text: Results table output with pixels/sec metrics
-        done: false
+- phase: Test infrastructure
+  tasks:
+  - text: Create benchmark binary with GPU executor setup (WgpuExecutor)
+    done: true
+  - text: Generate synthetic test images (400px gradient, 4K gradient)
+    done: true
+- phase: Correctness benchmarks
+  tasks:
+  - text: Identity roundtrip tests (blur 0, brightness 0, double-invert)
+    done: true
+  - text: Difference tests (brightness 0.2, invert 1x, blur 3.0)
+    done: true
+- phase: Performance benchmarks
+  tasks:
+  - text: Single-op benchmarks at 400px and 4K (blur, sharpen, brightness, hue_rotate)
+    done: true
+  - text: Multi-op pipeline benchmark at 400px and 4K (5+ chained filters)
+    done: true
+  - text: Results table output with pixels/sec metrics
+    done: true
 extra: {}
