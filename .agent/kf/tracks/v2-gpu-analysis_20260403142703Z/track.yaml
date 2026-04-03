@@ -1,0 +1,143 @@
+id: v2-gpu-analysis_20260403142703Z
+title: V2 GPU — multi-pass analysis filters (histogram, CLAHE, NLM, retinex, frequency)
+type: feature
+status: pending
+created: '2026-04-03'
+updated: '2026-04-03'
+spec:
+  summary: |
+    Add GPU implementations for all analysis-dependent and multi-pass
+    filters. These require GPU parallel reduction, multi-dispatch chains,
+    or workgroup-level computation. The most complex GPU work.
+  context: |
+    These filters need multiple GPU passes or global image analysis:
+    - Histogram-based: compute histogram → derive LUT → apply
+    - Frequency: decompose → process bands → reconstruct
+    - Non-local: search neighborhoods across large regions
+    - Multi-scale: pyramids or iterative refinement
+
+    All are implementable on GPU but require careful multi-pass design.
+    The V2 graph executor supports chained dispatches via Vec<GpuShader>.
+  codebase_analysis: |
+    Enhancement filters needing multi-pass GPU (14):
+    - AutoLevel — histogram → min/max → stretch LUT → apply (3 passes)
+    - Equalize — histogram → CDF → equalization LUT → apply (3 passes)
+    - Normalize — find min/max → stretch (2 passes)
+    - Clahe — tiled histograms → tiled equalization (many passes)
+    - ShadowHighlight — luminance blur + per-pixel curve (2+ passes)
+    - Dehaze — dark channel min filter → atmosphere estimate → apply (3 passes)
+    - NlmDenoise — non-local means search (massively parallel but compute-heavy)
+    - FrequencyLow, FrequencyHigh — gaussian decomposition (separable blur)
+    - Clarity — local contrast enhancement (blur + blend)
+    - PyramidDetailRemap — Laplacian pyramid (multi-scale, many passes)
+    - RetinexSsr, RetinexMsr, RetinexMsrcr — multi-scale gaussian + log (multi-pass)
+
+    Color filters needing special GPU handling (3):
+    - KmeansQuantize — GPU k-means clustering (iterative)
+    - DitherFloydSteinberg — sequential error diffusion (use ordered dither on GPU)
+    - LabSharpen — Lab conversion + sharpen + convert back (3 passes)
+
+    GPU histogram pattern (parallel reduction):
+      Pass 1: Each workgroup computes local histogram in shared memory
+      Pass 2: Reduce workgroup histograms to global histogram
+      Pass 3: Compute CDF/LUT from global histogram
+      Pass 4: Apply LUT per pixel
+  acceptance_criteria:
+    - GpuFilter for AutoLevel, Equalize, Normalize (histogram-based, multi-pass)
+    - GpuFilter for Clahe (tiled histogram equalization)
+    - GpuFilter for ShadowHighlight (luminance blur + curve)
+    - GpuFilter for Dehaze (dark channel + atmosphere)
+    - GpuFilter for NlmDenoise (non-local means search)
+    - GpuFilter for FrequencyLow, FrequencyHigh (separable decomposition)
+    - GpuFilter for Clarity (local contrast)
+    - GpuFilter for PyramidDetailRemap (Laplacian pyramid)
+    - GpuFilter for RetinexSsr, RetinexMsr, RetinexMsrcr
+    - GpuFilter for KmeansQuantize (GPU k-means or palette lookup)
+    - GpuFilter for DitherFloydSteinberg (ordered dither approximation on GPU)
+    - GpuFilter for LabSharpen (Lab convert + sharpen + convert back)
+    - Multi-pass filters return Vec<GpuShader> for chained execution
+    - All GPU outputs match CPU within reasonable tolerance (some analysis ops may have minor differences due to reduction order)
+    - CPU Filter::compute remains as fallback
+  out_of_scope: |
+    Per-pixel (Track 1). Spatial (Track 2). Distortion (Track 3).
+    Full GPU FFT implementation (use separable gaussian instead for frequency filters).
+  technical_notes: |
+    GPU histogram parallel reduction:
+      // Workgroup-local histogram (256 bins per workgroup)
+      var<workgroup> local_hist: array<atomic<u32>, 256>;
+
+      @compute @workgroup_size(256, 1, 1)
+      fn histogram_pass(@builtin(global_invocation_id) gid: vec3<u32>,
+                        @builtin(local_invocation_id) lid: vec3<u32>) {
+          // Initialize
+          atomicStore(&local_hist[lid.x], 0u);
+          workgroupBarrier();
+          // Accumulate
+          let luma = dot(load_pixel(gid.x).rgb, vec3(0.2126, 0.7152, 0.0722));
+          let bin = u32(clamp(luma * 255.0, 0.0, 255.0));
+          atomicAdd(&local_hist[bin], 1u);
+          workgroupBarrier();
+          // Write to global histogram buffer
+          atomicAdd(&global_hist[lid.x], atomicLoad(&local_hist[lid.x]));
+      }
+
+    NLM Denoise GPU:
+      Each output pixel independently searches its search window,
+      computes patch distances, and accumulates weighted average.
+      This is O(search_radius^2 * patch_radius^2) per pixel but
+      each pixel is independent — perfect for GPU parallelism.
+      May need multiple dispatches for very large search windows.
+
+    Multi-pass chaining:
+      GpuFilter trait allows returning multiple GpuShader instances.
+      The executor chains them via ping-pong buffers.
+      Analysis results (histograms, statistics) stored in extra_buffers
+      between passes.
+plan:
+  - phase: Histogram-based GPU filters
+    tasks:
+      - text: GPU histogram parallel reduction shader (shared memory atomics)
+        done: false
+      - text: GPU CDF computation from histogram
+        done: false
+      - text: GpuFilter for AutoLevel (histogram → stretch LUT → apply)
+        done: false
+      - text: GpuFilter for Equalize (histogram → CDF → equalization)
+        done: false
+      - text: GpuFilter for Normalize (min/max → stretch)
+        done: false
+      - text: GpuFilter for Clahe (tiled histogram equalization)
+        done: false
+  - phase: Multi-scale and frequency GPU filters
+    tasks:
+      - text: GpuFilter for ShadowHighlight (luminance blur + curve apply)
+        done: false
+      - text: GpuFilter for FrequencyLow, FrequencyHigh (separable gaussian decomposition)
+        done: false
+      - text: GpuFilter for Clarity (local contrast via separable blur + blend)
+        done: false
+      - text: GpuFilter for PyramidDetailRemap (Laplacian pyramid multi-pass)
+        done: false
+      - text: GpuFilter for RetinexSsr, RetinexMsr, RetinexMsrcr (multi-scale log domain)
+        done: false
+  - phase: Compute-heavy GPU filters
+    tasks:
+      - text: GpuFilter for NlmDenoise (non-local means parallel search)
+        done: false
+      - text: GpuFilter for Dehaze (dark channel + atmosphere estimation)
+        done: false
+      - text: GpuFilter for KmeansQuantize (GPU clustering or palette lookup)
+        done: false
+      - text: GpuFilter for DitherFloydSteinberg (ordered dither approximation)
+        done: false
+      - text: GpuFilter for LabSharpen (Lab convert + sharpen + convert back)
+        done: false
+  - phase: Verification
+    tasks:
+      - text: All multi-pass GPU outputs match CPU within tolerance
+        done: false
+      - text: GPU histogram accuracy matches CPU histogram
+        done: false
+      - text: Multi-dispatch chains execute correctly via ping-pong
+        done: false
+extra: {}

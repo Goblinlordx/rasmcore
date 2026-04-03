@@ -1,0 +1,115 @@
+id: v2-gpu-spatial_20260403142701Z
+title: V2 GPU — spatial/neighborhood filters (blur, sharpen, bilateral, morphology)
+type: feature
+status: pending
+created: '2026-04-03'
+updated: '2026-04-03'
+spec:
+  summary: |
+    Add GpuFilter WGSL shaders for all spatial/neighborhood filters.
+    Port V1 shaders to io_f32 format. All use workgroup-local memory
+    or direct neighbor sampling.
+  context: |
+    Neighborhood filters read multiple input pixels per output pixel.
+    GPU implementation uses either workgroup shared memory (for large
+    kernels) or direct global memory reads (for small kernels).
+
+    V1 already had WGSL shaders for most spatial filters. These need
+    porting to V2 io_f32 format (load_pixel/store_pixel pattern).
+  codebase_analysis: |
+    Spatial filters needing GPU (9 in spatial.rs):
+    - GaussianBlur — separable H+V (V1 had this as gaussian_blur.wgsl)
+    - BoxBlur — running sum H+V
+    - Sharpen — unsharp mask (blur + subtract)
+    - Median — sorting network or histogram (V1 had median.wgsl)
+    - Convolve — general NxN kernel
+    - Bilateral — spatial + color distance weighting (V1 had bilateral.wgsl)
+    - MotionBlur — directional line sampling (V1 had motion_blur.wgsl)
+    - HighPass — blur + subtract + offset
+    - DisplacementMap — bilinear sample at displaced coords
+
+    Additional spatial ops from other modules:
+    - Emboss (effect.rs) — fixed 3x3 kernel
+    - Charcoal (effect.rs) — edge detection + threshold
+    - OilPaint (effect.rs) — neighborhood mode filter
+    - Halftone (effect.rs) — dithered dot pattern
+    - Pixelate (effect.rs) — block average
+    - LabSharpen (color.rs) — sharpen in Lab luminance channel
+
+    V1 shaders to port (existing in crates/rasmcore-image/src/shaders/):
+    - gaussian_blur.wgsl (H+V separable)
+    - bilateral.wgsl
+    - median.wgsl
+    - motion_blur.wgsl
+    - high_pass.wgsl
+    - sharpen.wgsl
+    - All need: array<u32> → array<vec4<f32>>, remove pack/unpack
+  acceptance_criteria:
+    - GpuFilter for GaussianBlur (separable H+V, 2 dispatches)
+    - GpuFilter for BoxBlur (separable H+V)
+    - GpuFilter for Sharpen (blur dispatch + unsharp dispatch)
+    - GpuFilter for Median (sorting network or histogram shader)
+    - GpuFilter for Convolve (general kernel via uniform buffer)
+    - GpuFilter for Bilateral (spatial + color weighting)
+    - GpuFilter for MotionBlur (directional sampling)
+    - GpuFilter for HighPass (blur + subtract)
+    - GpuFilter for DisplacementMap (extra buffer for field)
+    - GpuFilter for Emboss, Charcoal, OilPaint, Halftone, Pixelate
+    - GpuFilter for LabSharpen
+    - Multi-dispatch ops return Vec<GpuShader> for chained execution
+    - All GPU outputs match CPU within f32 tolerance
+  out_of_scope: |
+    Per-pixel filters (Track 1). Distortion (Track 3). Analysis (Track 4).
+  technical_notes: |
+    Separable blur GPU pattern (2 dispatches):
+      Dispatch 1: horizontal blur (read row neighbors, write to output)
+      Dispatch 2: vertical blur (read column neighbors, write to output)
+      Pipeline chains them via ping-pong buffers automatically.
+
+    fn gpu_shader returns Vec<GpuShader> for multi-dispatch:
+      impl GpuFilter for GaussianBlur {
+          fn shader_body(&self) -> &str { ... }  // single dispatch
+      }
+    For multi-dispatch, the FilterNode/GpuFilterNode needs to handle
+    returning multiple shaders. The graph executor chains them.
+
+    Median filter GPU approaches:
+    1. Sorting network (3x3 or 5x5 — fixed comparator network)
+    2. Histogram-based (for larger radii — shared memory histogram)
+
+    DisplacementMap GPU: displacement field passed as extra_buffer.
+    Shader reads map_x/map_y from extra buffer, bilinear samples input.
+plan:
+  - phase: Port V1 spatial shaders to io_f32
+    tasks:
+      - text: GpuFilter for GaussianBlur (port V1 gaussian_blur.wgsl to f32)
+        done: false
+      - text: GpuFilter for BoxBlur (separable running sum)
+        done: false
+      - text: GpuFilter for Sharpen (port V1 sharpen.wgsl + unsharp pass)
+        done: false
+      - text: GpuFilter for Bilateral (port V1 bilateral.wgsl to f32)
+        done: false
+      - text: GpuFilter for MotionBlur (port V1 motion_blur.wgsl to f32)
+        done: false
+      - text: GpuFilter for HighPass (blur + subtract shader)
+        done: false
+  - phase: New spatial GPU shaders
+    tasks:
+      - text: GpuFilter for Median (sorting network for small radii)
+        done: false
+      - text: GpuFilter for Convolve (general kernel via extra buffer)
+        done: false
+      - text: GpuFilter for DisplacementMap (displacement field as extra buffer)
+        done: false
+      - text: GpuFilter for Emboss, Charcoal, OilPaint, Halftone, Pixelate
+        done: false
+      - text: GpuFilter for LabSharpen (L-channel sharpen in Lab space)
+        done: false
+  - phase: Verification
+    tasks:
+      - text: All spatial GPU outputs match CPU within f32 tolerance
+        done: false
+      - text: Multi-dispatch filters (blur H+V) chain correctly via ping-pong
+        done: false
+extra: {}

@@ -1,0 +1,8 @@
+title: V2 GPU — per-pixel filters (noise, vignette, solarize, etc.)
+status: pending
+type: feature
+approved: false
+created: '2026-04-03'
+updated: '2026-04-03'
+deps:
+- v2-filter-api_20260403053502Z
