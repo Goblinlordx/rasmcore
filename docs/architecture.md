@@ -4,142 +4,180 @@
 
 rasmcore is a modular image and media processing engine built in pure Rust, compiled to WebAssembly Component Model modules. It is designed from the ground up for the WASM ecosystem — not a port of an existing C/C++ library.
 
-This document describes the key architectural decisions and how they differ from existing solutions.
+This document describes the key architectural decisions and the V2 pipeline design.
+
+---
+
+## V2 Pipeline — f32-Native Processing
+
+rasmcore V2 uses a **pull-based, demand-driven pipeline** where all pixel data flows as `Rgba32f` (4x f32 per pixel). This eliminates the format dispatch complexity of V1.
+
+```
+pipeline.read(data)           // Source node — decode + promote to Rgba32f
+  → pipeline.resize(960, 540) // Transform node — f32 in, f32 out
+  → pipeline.blur(2.0)        // Filter node — f32 in, f32 out
+  → pipeline.writeJpeg(cfg)   // Sink — demote to Rgba8, encode
+```
+
+### Promote / Demote Pattern
+
+1. **Ingest**: Decoded pixels (any format) are immediately promoted to `Rgba32f`
+2. **Processing**: All nodes receive and return `Rgba32f` — no format branching
+3. **Output**: At the encode boundary, pixels are demoted to the target format (Rgba8, Rgb16, etc.)
+
+This means filter implementations never handle format dispatch. They always see f32 values in [0.0, 1.0].
+
+### GPU-Primary Dispatch
+
+The V2 pipeline tries **GPU first, CPU fallback**:
+
+1. Check if the filter implements `GpuFilter`
+2. If yes, dispatch to WebGPU compute shader (WGSL)
+3. If no GPU, or if GPU unavailable, fall back to `CpuFilter::compute()`
+
+GPU buffers are always `F32Vec4` (vec4<f32> per pixel) — no u32 packing.
 
 ---
 
 ## Demand-Driven Tile Pipeline
 
-rasmcore uses a **pull-based, demand-driven pipeline** inspired by libvips. Operations are not executed immediately — they form a directed acyclic graph (DAG) of nodes. Execution is triggered by a `write()` call at the end of the chain, which pulls pixel data backward through the graph.
+Each node requests **dynamically-sized rectangular regions** from its upstream. A blur node with radius 5 requests its upstream region expanded by 5 pixels on each side. A resize node maps output coordinates back to source coordinates.
+
+### Spatial Cache
+
+A pipeline-level spatial cache ensures overlapping pixel regions are computed once and reused. When adjacent output tiles need overlapping upstream data, the cache serves it from memory.
+
+### Layer Cache with Quantization
+
+The `LayerCache` persists results across pipeline lifetimes using content hashes (blake3). It supports opt-in quantization for memory-constrained environments:
+
+| Quality | Bytes/pixel | Memory (4000x3000, 10 layers) |
+|---------|------------|-------------------------------|
+| Full (f32) | 16 | ~1.9 GB |
+| Q16 (u16) | 8 | ~960 MB |
+| Q8 (u8) | 4 | ~480 MB |
+
+Quantization is transparent: `store()` quantizes, `get()` promotes back to f32.
+
+---
+
+## ACES Color Pipeline
+
+rasmcore V2 includes Academy Color Encoding System (ACES) support:
+
+- **Color space tracking**: Per-node color space metadata (ACEScg, ACEScc, sRGB, etc.)
+- **Auto-conversion**: The graph inserts color space conversion nodes automatically
+- **RRT + ODT**: Reference Rendering Transform and Output Device Transforms
+- **Compliance audit**: Nodes can be tagged with compliance level (Compliant, Log, NonCompliant, Unknown)
+
+The ACES pipeline operates in linear light (ACEScg) for processing, with IDTs (Input Device Transforms) at ingest and RRT+ODT at output.
+
+---
+
+## Filter Architecture
+
+### Registration and Codegen
+
+Filters are defined using `#[derive(Filter)]` and implement the `CpuFilter` trait. The codegen pipeline (invoked by `build.rs`) parses filter source files and generates:
+
+- Pipeline node wrappers
+- WIT interface declarations
+- CLI dispatch tables
+- Parameter manifest (JSON)
+- SDK methods
+
+### Trait Hierarchy
+
+| Trait | Purpose | Pipeline Effect |
+|-------|---------|-----------------|
+| `CpuFilter` | CPU compute (required) | Base execution path |
+| `GpuFilter` | GPU compute shader | GPU-primary dispatch |
+| `PointOp` | Per-channel 1D LUT | LUT fusion (consecutive ops merged) |
+| `ColorOp` | 3D color LUT | CLUT fusion |
+| `AnalyticOp` | Expression tree IR | Kernel fusion + WGSL codegen |
+
+### Selective Adjustments
+
+The mask system enables Lightroom-style selective editing:
 
 ```
-pipeline.read(data)           // Source node — parses headers, no pixel decode
-  → pipeline.resize(960, 540) // Transform node — records parameters
-  → pipeline.blur(2.0)        // Filter node — records parameters
-  → pipeline.writeJpeg(cfg)   // Sink — drives execution, pulls tiles backward
+source → fork ─┬─→ [adjustment stack] ──┬─→ masked_blend → output
+                │                        │
+                └─→ [passthrough] ───────┘
+                          ↑
+                    mask generator
 ```
 
-Each node requests **dynamically-sized rectangular regions** from its upstream. A blur node with radius 5 requests its upstream region expanded by 5 pixels on each side. A resize node maps output coordinates back to source coordinates at the appropriate scale. There is no fixed tile grid — the write sink's output format determines the initial chunk geometry, and each upstream node expands the request by its kernel's overlap requirements.
-
-### Spatial Cache with Reference-Counted Borrowing
-
-A pipeline-level **spatial cache** ensures that overlapping pixel regions are computed once and reused. When adjacent output chunks both need overlapping upstream data, the cache serves the overlapping portion from memory instead of recomputing it.
-
-The cache uses reference counting: nodes acquire regions (incrementing the count) and release them when done (decrementing). When the count reaches zero, the region is eligible for reclamation but stays cached for potential reuse. A memory budget controls eviction.
-
-For operations that need only a sliding window of data (blur, sharpen, convolution), only 2-3 upstream regions are ever live simultaneously — regardless of image size.
-
-### Sub-Region Reuse
-
-When a node requests a region that partially overlaps an already-cached region, the cache computes only the **missing sub-regions** and assembles the result from cached + newly computed pixels. This eliminates redundant computation at region boundaries without requiring fixed tile alignment.
+Mask generators (gradient, radial, luminance range, color range, brush path) produce grayscale masks. The `masked_blend` compositor applies: `output = adjusted * mask + original * (1 - mask)`.
 
 ---
 
 ## How rasmcore Differs from libvips
 
-libvips pioneered the demand-driven pipeline model in C. rasmcore takes the same conceptual approach but differs in several ways:
+libvips pioneered the demand-driven pipeline model in C. rasmcore takes the same conceptual approach but differs:
 
-**Designed for WASM, not ported to it.** libvips is a C library compiled to WASM via Emscripten (as wasm-vips). This brings the entire C runtime, threading model, and memory allocator into the WASM binary (~15 MB). rasmcore is pure Rust targeting the WASM Component Model directly, producing small, composable modules.
-
-**Component Model native.** rasmcore uses WIT (WebAssembly Interface Types) to define its API. This means any language with a Component Model binding — Rust, TypeScript, Python, Go, C# — gets a typed SDK automatically generated from the same interface definition. libvips and ImageMagick are C libraries with hand-written bindings per language.
-
-**No SharedArrayBuffer requirement.** wasm-vips requires SharedArrayBuffer and Cross-Origin headers (COOP/COEP) in browsers for its threading model. rasmcore works with standard WASM — no special headers, no browser restrictions.
-
-**Spatial cache vs line cache.** libvips uses a fixed-height line cache per operation. rasmcore uses a spatial cache with dynamically-sized regions and sub-region reuse, which handles both sequential (scanline) and random (tiled, rotated) access patterns with a single mechanism.
-
-**Portable parallelism.** rasmcore's architecture separates the pipeline orchestrator from compute kernels. The orchestrator (graph + cache + dispatch) is pure Rust that compiles identically to both native and WASM. Today, the host can drive parallelism by dispatching stateless compute kernels to multiple WASM instances with a shared native cache. When wasi-threads stabilizes, the same orchestrator code moves inside the component with zero changes.
-
----
+- **Designed for WASM**, not ported to it (pure Rust, no Emscripten)
+- **Component Model native** — WIT-defined typed APIs, auto-generated SDKs for any language
+- **No SharedArrayBuffer** — works with standard WASM, no special browser headers
+- **Spatial cache** vs line cache — handles both sequential and random access patterns
+- **f32-native** — no format dispatch overhead, GPU-first processing
 
 ## How rasmcore Differs from ImageMagick
 
-ImageMagick is a comprehensive, decades-old image processing suite written in C. Its architecture reflects a different era and set of constraints.
-
-**Stateless components vs monolithic binary.** ImageMagick is a single large binary (~15 MB in its WASM form, magick-wasm). rasmcore is composed of small, independently versioned WASM components that can be mixed, matched, and composed using standard Component Model tooling.
-
-**Typed interfaces vs string commands.** ImageMagick's API is command-oriented (strings like `-resize 960x540!`). rasmcore uses WIT-defined typed interfaces with per-format configuration records. A JPEG encode config is a typed struct with `quality: u8`, not a string parameter.
-
-**Pure Rust vs C/C++ with FFI.** ImageMagick delegates to numerous C libraries (libjpeg, libpng, libtiff, etc.) via FFI. rasmcore uses pure Rust implementations, eliminating an entire class of memory safety vulnerabilities inherent to C parsers processing untrusted input.
-
-**Pipeline vs sequential execution.** ImageMagick processes operations sequentially, materializing the full image in memory between each step. rasmcore's demand-driven pipeline avoids intermediate materializations — pixels flow through the node graph from source to sink without full-image copies at each stage.
+- **Stateless components** vs monolithic binary
+- **Typed interfaces** via WIT vs string command parsing
+- **Pure Rust** vs C/C++ with FFI (no memory safety vulnerabilities from C parsers)
+- **Pipeline execution** vs sequential (no full-image materializations between steps)
+- **GPU acceleration** via WebGPU compute shaders
 
 ---
 
 ## Dual-Level API
 
-rasmcore exposes two API levels from the same component:
+**Level 1 — Pipeline resource.** A `pipeline` WIT resource that owns a node graph. The host builds a chain via method calls, execution happens inside the component on `write()`. Only the final encoded output crosses the WASM boundary.
 
-**Level 1 — Pipeline resource.** A `pipeline` WIT resource that owns a node graph internally. The host builds a chain of operations via method calls (`read`, `resize`, `blur`, `write`), and execution happens inside the component on `write()`. Only the final encoded output crosses the WASM boundary. This minimizes host-guest data transfer.
-
-**Level 2 — Stateless compute kernels.** Individual functions (`apply_blur`, `apply_resize`) that take pixels in and return pixels out. These are pure functions with no state. A host that wants to drive parallelism can dispatch these to multiple WASM instances, managing the graph and cache in native host memory.
-
-The same component exposes both levels. Simple consumers use Level 1. Performance-sensitive hosts use Level 2 with their own scheduling.
+**Level 2 — Stateless compute kernels.** Individual functions that take pixels in and return pixels out. A host can dispatch these to multiple WASM instances for parallelism.
 
 ---
 
 ## SIMD Strategy
 
-rasmcore uses SIMD acceleration on all platforms from a single codebase:
+rasmcore uses SIMD on all platforms from a single codebase:
 
 - **x86/x86_64:** SSE4.1, AVX2 (runtime detection)
 - **ARM/AArch64:** NEON (runtime detection)
 - **WASM:** SIMD128 (compile-time via `-C target-feature=+simd128`)
 
-A single `cargo component build` produces one `.wasm` file with SIMD128 instructions. Runtimes that support SIMD128 (wasmtime, V8, SpiderMonkey, JavaScriptCore — all major engines) execute the SIMD path. There are no separate builds for SIMD vs non-SIMD.
-
-For native builds, the same code auto-detects the CPU's SIMD capabilities at runtime and selects the optimal kernel. One source, one binary, optimal everywhere.
-
-Relaxed SIMD (fused multiply-add, relaxed swizzle) is available in wasmtime and modern browsers, providing additional acceleration for convolution and color-space conversion kernels.
-
----
-
-## Per-Format Codec Modules
-
-Each image format (JPEG, PNG, WebP, etc.) is its own Rust module with:
-
-- A precisely defined **typed configuration record** (not string parameters)
-- Standards-aligned behavior referencing the relevant specification (ITU-T T.81 for JPEG, ISO/IEC 15948 for PNG, etc.)
-- Both read (decode) and write (encode) capabilities
-- Independent testability at the domain boundary
-
-This modular structure means adding a new format is self-contained work that doesn't touch other formats. It also enables the sidecar pattern for patent-encumbered codecs — formats like HEVC can live in separate repositories and be composed at deployment time.
-
----
-
-## Read/Write Public API
-
-The public API uses `read` and `write` terminology instead of `decode` and `encode`. Users think in terms of "read a JPEG" and "write a PNG", not codec internals. The domain layer retains `decode`/`encode` since those are technically precise at the implementation level. The rename happens at the WIT interface boundary.
+One source, one binary, optimal everywhere.
 
 ---
 
 ## Hexagonal Architecture
 
-All rasmcore modules follow a hexagonal (ports/adapters) architecture:
-
-- **Domain logic** has zero WIT dependencies. It defines its own types, error enums, and function signatures. It is fully exercisable via native Rust unit tests without any WASM runtime.
-- **WIT adapters** are thin translation layers that convert between WIT-generated types and domain types. They contain no business logic.
-- **Domain-defined errors** are explicit enums per module. The adapter layer translates them to WIT error types at the boundary. Domain errors never leak through the interface untranslated.
-
-This separation means the domain logic can be tested with `cargo test` at native speed, while the WASM integration tests validate the full stack through an actual runtime.
+- **Domain logic** has zero WIT dependencies — fully testable with `cargo test`
+- **WIT adapters** are thin translation layers (no business logic)
+- **Domain errors** are explicit enums, translated to WIT errors at the boundary
 
 ---
 
-## Shared Pipeline Crate
+## Crate Structure
 
-The pipeline primitives (spatial cache, rectangle geometry, overlap types) live in a shared `rasmcore-pipeline` workspace crate. The image processing module depends on it. Future modules (video, data) will share the same pipeline infrastructure, enabling a consistent processing model across domains.
-
-This also enables component composition: a video component can import the image component's pipeline interface for per-frame operations, with the pipeline primitives shared at the Rust source level and the component interfaces composed at the WASM level.
+```
+rasmcore-pipeline/          — Shared pipeline primitives (cache, rect, layer cache)
+rasmcore-pipeline-v2/       — V2 pipeline (f32-native graph, GPU executor, ACES, fusion)
+rasmcore-image/             — Image processing domain (filters, codecs, pipeline nodes)
+rasmcore-macros/            — Proc macros (#[derive(Filter)], #[register_generator], etc.)
+rasmcore-codegen/           — Build-time codegen (WIT, adapters, dispatch, manifest)
+rasmcore-gpu-shaders/       — WGSL shader composition helpers
+rasmcore-ffi/               — C FFI bindings for native hosts
+rasmcore-codecs-v2/         — V2 unified codec system
+```
 
 ---
 
 ## Testing Strategy
 
-rasmcore uses a three-tier testing hierarchy:
-
-1. **Domain unit tests** — TDD at domain function boundaries. These are the primary test suite, run with `cargo test` at native speed.
-
-2. **Parity tests** — Compare rasmcore output against reference implementations (ImageMagick for image processing). These validate correctness across the full stack including the WASM adapter layer. Pixel-exact for lossless operations, PSNR/MAE thresholds for lossy.
-
-3. **Cross-language SDK tests** — Validate that generated SDKs (TypeScript via jco, Rust via wasmtime) produce correct results. These prove the Component Model interface works end-to-end.
-
-Performance benchmarks run at all three tiers: native domain functions, WASM component via wasmtime, and comparison against external tools.
+1. **Domain unit tests** — TDD at function boundaries (`cargo test`)
+2. **Parity tests** — Compare against reference implementations (ImageMagick, vips, OpenCV, numpy)
+3. **GPU parity tests** — Verify GPU output matches CPU within f32 tolerance
+4. **Cross-language SDK tests** — Validate TypeScript, Python, Go SDKs via Component Model

@@ -2,82 +2,110 @@
 
 ## Overview
 
-The V2 pipeline (`rasmcore-pipeline-v2`) is a ground-up rebuild that replaces the V1 pipeline with a clean, f32-native architecture. V1 continues to work but is deprecated — all new development should target V2.
+The V2 pipeline is a ground-up rebuild replacing V1 with a clean, f32-native architecture. V1 patterns are deprecated — all new development uses V2.
 
 ## What Changed
 
 | Aspect | V1 | V2 |
 |---|---|---|
 | **Pixel data** | `&[u8]` + PixelFormat (20 variants) | `&[f32]` — always RGBA, 4 channels |
-| **Format dispatch** | 1,621 PixelFormat references | Zero. None. |
-| **GPU buffers** | U32Packed + F32Vec4 | Always f32 |
+| **Format dispatch** | 1,621 PixelFormat references | Zero |
+| **GPU buffers** | U32Packed + F32Vec4 | Always F32Vec4 |
 | **GPU priority** | CPU primary, GPU optional | GPU primary, CPU fallback |
-| **Filter API** | `fn(Rect, UpstreamFn, ImageInfo) -> Vec<u8>` | `fn(&self, &[f32], w, h) -> Vec<f32>` |
-| **Color pipeline** | Decorative ColorSpace field | Enforced per-node, auto-conversion |
+| **Filter registration** | `#[register_filter]` + `#[derive(ConfigParams)]` | `#[derive(Filter)]` + `impl CpuFilter` |
+| **Config access** | `config.field` | `self.field` |
+| **Color pipeline** | Decorative ColorSpace field | ACES-aware, per-node tracking, auto-conversion |
 | **Operation fusion** | u8 LUT composition | Expression tree IR + WGSL codegen |
-| **Demand regulation** | Fixed 512 tile size | DemandStrategy + DemandRegulator nodes |
+| **Cache** | SpatialCache only | SpatialCache + LayerCache with Q16/Q8 quantization |
 
-## V2 Crate Structure
+## V2 Filter Pattern
 
-```
-rasmcore-pipeline-v2/src/
-├── lib.rs              — crate root
-├── node.rs             — Node trait, NodeInfo, InputRectEstimate
-├── graph.rs            — Graph engine, GPU-primary dispatch
-├── ops.rs              — Filter, GpuFilter, Encoder, Decoder, Transform, AnalyticOp
-├── registry.rs         — OperationRegistration, ParamDescriptor, ParamConstraint
-├── filter_node.rs      — FilterNode/GpuFilterNode wrappers, IO_F32
-├── color_space.rs      — ColorSpace enum
-├── color_math.rs       — Transfer functions, ACES matrices
-├── color_convert.rs    — ColorConvertNode, ViewTransformNode
-├── fusion.rs           — PointOpExpr, expression tree, WGSL codegen
-├── staged.rs           — AnalysisNode, ParamBinding, StagedPipeline
-├── demand.rs           — DemandStrategy, DemandHint
-├── cache.rs            — SpatialCache for f32 tiles
-├── gpu.rs              — GpuExecutor (f32-only)
-├── rect.rs             — Rectangle geometry
-├── hash.rs             — Content hashing
-└── filters/            — V2 filter implementations
-    ├── adjustment.rs   — brightness, contrast, gamma, etc.
-    ├── spatial.rs      — blur, sharpen, median, etc.
-    ├── color.rs        — hue, saturate, channel_mixer, etc.
-    ├── enhancement.rs  — denoise, dehaze, etc.
-    └── effect.rs       — noise, grain, pixelate, etc.
-```
-
-## Writing a V2 Filter
+### Before (V1)
 
 ```rust
-use rasmcore_pipeline_v2::{Filter, PipelineError};
-
-struct MyFilter {
-    strength: f32,
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct BrightnessParams {
+    #[param(min = -1.0, max = 1.0, default = 0.0)]
+    pub amount: f32,
 }
 
-impl Filter for MyFilter {
-    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
-        // input is f32 RGBA: [R0, G0, B0, A0, R1, G1, B1, A1, ...]
-        // Process in f32. No format dispatch. No clamping.
-        let mut out = input.to_vec();
-        for pixel in out.chunks_exact_mut(4) {
-            pixel[0] *= self.strength;
-            pixel[1] *= self.strength;
-            pixel[2] *= self.strength;
-            // Alpha unchanged
-        }
-        Ok(out)
+#[rasmcore_macros::register_filter(name = "brightness", category = "adjustment")]
+pub fn brightness(
+    request: Rect,
+    upstream: &mut UpstreamFn,
+    info: &ImageInfo,
+    config: &BrightnessParams,
+) -> Result<Vec<u8>, ImageError> {
+    let pixels = upstream(request)?;
+    // format dispatch: is_f32? is_16bit? process_via_8bit?
+    // ...
+}
+```
+
+### After (V2)
+
+```rust
+#[derive(rasmcore_macros::Filter, Clone)]
+#[filter(name = "brightness", category = "adjustment")]
+pub struct Brightness {
+    #[param(min = -1.0, max = 1.0, default = 0.0)]
+    pub amount: f32,
+}
+
+impl CpuFilter for Brightness {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_),
+        info: &ImageInfo,
+    ) -> Result<Vec<u8>, ImageError> {
+        let pixels = upstream(request)?;
+        // No format dispatch — process f32 directly
+        // self.amount instead of config.amount
     }
 }
 ```
 
+### Key Differences
+
+1. `#[derive(ConfigParams)]` + `#[register_filter]` → `#[derive(Filter)]` + `#[filter(...)]`
+2. Struct fields ARE params (no separate ConfigParams struct)
+3. `impl CpuFilter` replaces bare function
+4. `self.field` replaces `config.field`
+5. No format dispatch (`validate_format`, `is_16bit`, `process_via_8bit` removed)
+6. Optional traits: `GpuFilter`, `PointOp`, `ColorOp`, `AnalyticOp`
+
+## Migration Checklist
+
+For each filter:
+
+1. Change `#[derive(ConfigParams, Clone)]` to `#[derive(Filter, Clone)]`
+2. Add `#[filter(name = "...", category = "...")]` with attrs from old `#[register_filter]`
+3. Remove the `#[register_filter]` function
+4. Add `impl CpuFilter for StructName` with the function body
+5. Replace `config.field` with `self.field`
+6. Replace `upstream: &mut UpstreamFn` with `upstream: &mut (dyn FnMut(Rect) -> Result<Vec<u8>, ImageError> + '_)`
+7. Remove format dispatch calls (`validate_format`, `is_f32`, `process_via_8bit`, etc.)
+8. If `InputRectProvider` was implemented, move to `CpuFilter::input_rect()`
+
 ## V1 Deprecation
 
-The following V1 APIs are deprecated:
-- `PixelFormat` enum (in pipeline internals)
-- `process_via_8bit` / `process_via_standard`
-- `validate_format` / `is_16bit` / `is_float`
-- `BufferFormat::U32Packed`
-- `io_u32.wgsl` / `pixel_ops.wgsl` (u32 GPU fragments)
-- Q16 EWA internals
+The following V1 APIs are deprecated and will be removed:
 
-These will be removed in a future version once all consumers migrate to V2.
+- `#[register_filter]` macro (use `#[derive(Filter)]`)
+- `#[derive(ConfigParams)]` (struct fields are params now)
+- `PixelFormat` dispatch in filter logic
+- `process_via_8bit` / `process_via_standard`
+- `validate_format` / `is_16bit` / `is_float` in filter bodies
+- `BufferFormat::U32Packed` GPU buffers
+- `io_u32.wgsl` / `pixel_ops.wgsl` GPU fragments
+
+## What's NOT Migrated
+
+Generators, mappers, and compositors still use V1 registration macros:
+- `#[register_generator]` — no input image, returns `Vec<u8>`
+- `#[register_mapper]` — changes pixel format, returns `(Vec<u8>, ImageInfo)`
+- `#[register_compositor]` — combines two images
+
+These have different signatures that don't map to the `CpuFilter` trait.
+V2 equivalents may be added in the future.
