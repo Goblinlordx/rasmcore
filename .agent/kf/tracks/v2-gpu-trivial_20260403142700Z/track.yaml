@@ -5,127 +5,137 @@ status: pending
 created: '2026-04-03'
 updated: '2026-04-03'
 spec:
-  summary: |
-    Add GpuFilter WGSL shaders for all per-pixel filters that have no
+  summary: 'Add GpuFilter WGSL shaders for all per-pixel filters that have no
+
     neighborhood dependency. Also extend PointOpExpr with Exp/Ln/Select
+
     nodes to make SigmoidalContrast and Solarize analytically fusable.
-  context: |
-    Goal: ZERO CPU-only filters. Every filter gets a GPU path.
+
+    '
+  context: 'Goal: ZERO CPU-only filters. Every filter gets a GPU path.
+
 
     Per-pixel filters are the simplest GPU shaders — one thread per pixel,
+
     no shared memory, no neighborhood access. Most are under 20 lines of WGSL.
 
+
     The expression tree extension (Exp, Ln, Select) is included here because
+
     it enables SigmoidalContrast and Solarize to fuse analytically, avoiding
+
     the need for individual shaders for those ops.
-  codebase_analysis: |
-    Filters needing GPU shaders (per-pixel, no neighborhood):
+
+    '
+  codebase_analysis: 'Filters needing GPU shaders (per-pixel, no neighborhood):
+
 
     adjustment.rs (2 missing GPU):
+
     - SigmoidalContrast — needs Exp/Ln in PointOpExpr, then AnalyticOp
+
     - Solarize — needs Select/Step in PointOpExpr, then AnalyticOp
 
+
     effect.rs (10 per-pixel):
+
     - GaussianNoise, UniformNoise, SaltPepperNoise, PoissonNoise — GPU RNG (PCG hash)
+
     - LightLeak — position-dependent overlay
+
     - Glitch — row displacement + color shift
+
     - ChromaticSplit — RGB channel offset
+
     - ChromaticAberration — radial RGB displacement
+
     - MirrorKaleidoscope — coordinate folding
 
+
     enhancement.rs (2 per-pixel):
+
     - Vignette — distance-from-center falloff
+
     - VignettePowerlaw — distance-from-center with power curve
 
+
     color.rs (5 per-pixel without ClutOp):
+
     - GradientMap — luminance to color LUT lookup
+
     - DitherOrdered — per-pixel blue noise threshold
+
     - WhiteBalanceGrayWorld — per-pixel after mean computation (2-pass)
+
     - Quantize — per-pixel nearest-color
+
     - SparseColor — per-pixel interpolation from control points
+
+    '
   acceptance_criteria:
-    - PointOpExpr extended with Exp, Ln, Select variants
-    - lower_to_wgsl handles Exp/Ln/Select for GPU codegen
-    - SigmoidalContrast implements AnalyticOp (fusable + GPU via expression tree)
-    - Solarize implements AnalyticOp (fusable + GPU via expression tree)
-    - GpuFilter impl for all 5 noise generators (GPU RNG)
-    - GpuFilter impl for Vignette and VignettePowerlaw
-    - GpuFilter impl for LightLeak, Glitch, ChromaticSplit, ChromaticAberration
-    - GpuFilter impl for MirrorKaleidoscope
-    - GpuFilter impl for GradientMap, DitherOrdered, Quantize
-    - GpuFilter impl for SparseColor, WhiteBalanceGrayWorld (2-pass)
-    - All GPU outputs match CPU within f32 precision tolerance
-    - CPU Filter::compute remains as fallback
-  out_of_scope: |
-    Neighborhood filters (Track 2). Distortion filters (Track 3). Analysis filters (Track 4).
-  technical_notes: |
-    PointOpExpr extensions:
-      Exp(Box<PointOpExpr>)     — e^x
-      Ln(Box<PointOpExpr>)      — natural log
-      Select(Box<PointOpExpr>,  — condition > 0 ? if_true : if_false
-             Box<PointOpExpr>,
-             Box<PointOpExpr>)
+  - PointOpExpr extended with Exp, Ln, Select variants
+  - lower_to_wgsl handles Exp/Ln/Select for GPU codegen
+  - SigmoidalContrast implements AnalyticOp (fusable + GPU via expression tree)
+  - Solarize implements AnalyticOp (fusable + GPU via expression tree)
+  - GpuFilter impl for all 5 noise generators (GPU RNG)
+  - GpuFilter impl for Vignette and VignettePowerlaw
+  - GpuFilter impl for LightLeak, Glitch, ChromaticSplit, ChromaticAberration
+  - GpuFilter impl for MirrorKaleidoscope
+  - GpuFilter impl for GradientMap, DitherOrdered, Quantize
+  - GpuFilter impl for SparseColor, WhiteBalanceGrayWorld (2-pass)
+  - All GPU outputs match CPU within f32 precision tolerance
+  - CPU Filter::compute remains as fallback
+  out_of_scope: 'Neighborhood filters (Track 2). Distortion filters (Track 3). Analysis filters (Track 4).
 
-    WGSL lowering:
-      Exp(x)     → "exp(x)"
-      Ln(x)      → "log(x)"
-      Select(c,t,f) → "select(f, t, c > 0.0)"
-
-    GPU RNG pattern (for noise generators):
-      fn pcg_hash(input: u32) -> u32 {
-          var state = input * 747796405u + 2891336453u;
-          var word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
-          return (word >> 22u) ^ word;
-      }
-      fn rand_f32(seed: u32) -> f32 {
-          return f32(pcg_hash(seed)) / 4294967295.0;
-      }
-
-    Vignette shader pattern:
-      let cx = f32(gid.x) / f32(params.width) - 0.5;
-      let cy = f32(gid.y) / f32(params.height) - 0.5;
-      let dist = sqrt(cx*cx + cy*cy) * 1.414;
-      let factor = 1.0 - params.strength * smoothstep(params.inner, params.outer, dist);
-      color.rgb *= factor;
+    '
+  technical_notes: "PointOpExpr extensions:\n  Exp(Box<PointOpExpr>)     — e^x\n  Ln(Box<PointOpExpr>)      — natural log\n\
+    \  Select(Box<PointOpExpr>,  — condition > 0 ? if_true : if_false\n         Box<PointOpExpr>,\n         Box<PointOpExpr>)\n\
+    \nWGSL lowering:\n  Exp(x)     → \"exp(x)\"\n  Ln(x)      → \"log(x)\"\n  Select(c,t,f) → \"select(f, t, c > 0.0)\"\n\n\
+    GPU RNG pattern (for noise generators):\n  fn pcg_hash(input: u32) -> u32 {\n      var state = input * 747796405u + 2891336453u;\n\
+    \      var word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;\n      return (word >> 22u) ^ word;\n  }\n\
+    \  fn rand_f32(seed: u32) -> f32 {\n      return f32(pcg_hash(seed)) / 4294967295.0;\n  }\n\nVignette shader pattern:\n\
+    \  let cx = f32(gid.x) / f32(params.width) - 0.5;\n  let cy = f32(gid.y) / f32(params.height) - 0.5;\n  let dist = sqrt(cx*cx\
+    \ + cy*cy) * 1.414;\n  let factor = 1.0 - params.strength * smoothstep(params.inner, params.outer, dist);\n  color.rgb\
+    \ *= factor;\n"
 plan:
-  - phase: Expression tree extensions
-    tasks:
-      - text: Add Exp, Ln, Select variants to PointOpExpr enum
-        done: false
-      - text: Implement evaluate() for Exp/Ln/Select
-        done: false
-      - text: Implement lower_to_wgsl() for Exp/Ln/Select
-        done: false
-      - text: Add AnalyticOp to SigmoidalContrast using Exp/Ln
-        done: false
-      - text: Add AnalyticOp to Solarize using Select
-        done: false
-      - text: Test — fused sigmoidal+solarize chain generates valid WGSL
-        done: false
-  - phase: Noise and procedural GPU shaders
-    tasks:
-      - text: GPU RNG helper (pcg_hash WGSL function)
-        done: false
-      - text: GpuFilter for GaussianNoise, UniformNoise, SaltPepperNoise, PoissonNoise
-        done: false
-      - text: GpuFilter for Vignette and VignettePowerlaw
-        done: false
-      - text: GpuFilter for LightLeak, Glitch
-        done: false
-  - phase: Remaining per-pixel GPU shaders
-    tasks:
-      - text: GpuFilter for ChromaticSplit, ChromaticAberration, MirrorKaleidoscope
-        done: false
-      - text: GpuFilter for GradientMap, DitherOrdered, Quantize
-        done: false
-      - text: GpuFilter for SparseColor
-        done: false
-      - text: GpuFilter for WhiteBalanceGrayWorld (2-pass — compute mean, apply)
-        done: false
-  - phase: Verification
-    tasks:
-      - text: All per-pixel GPU outputs match CPU within f32 tolerance
-        done: false
-      - text: Expression tree fusion includes Exp/Ln/Select in generated WGSL
-        done: false
+- phase: Expression tree extensions
+  tasks:
+  - text: Add Exp, Ln, Select variants to PointOpExpr enum
+    done: true
+  - text: Implement evaluate() for Exp/Ln/Select
+    done: true
+  - text: Implement lower_to_wgsl() for Exp/Ln/Select
+    done: true
+  - text: Add AnalyticOp to SigmoidalContrast using Exp/Ln
+    done: true
+  - text: Add AnalyticOp to Solarize using Select
+    done: true
+  - text: Test — fused sigmoidal+solarize chain generates valid WGSL
+    done: true
+- phase: Noise and procedural GPU shaders
+  tasks:
+  - text: GPU RNG helper (pcg_hash WGSL function)
+    done: true
+  - text: GpuFilter for GaussianNoise, UniformNoise, SaltPepperNoise, PoissonNoise
+    done: true
+  - text: GpuFilter for Vignette and VignettePowerlaw
+    done: true
+  - text: GpuFilter for LightLeak, Glitch
+    done: true
+- phase: Remaining per-pixel GPU shaders
+  tasks:
+  - text: GpuFilter for ChromaticSplit, ChromaticAberration, MirrorKaleidoscope
+    done: true
+  - text: GpuFilter for GradientMap, DitherOrdered, Quantize
+    done: true
+  - text: GpuFilter for SparseColor
+    done: true
+  - text: GpuFilter for WhiteBalanceGrayWorld (2-pass — compute mean, apply)
+    done: true
+- phase: Verification
+  tasks:
+  - text: All per-pixel GPU outputs match CPU within f32 tolerance
+    done: true
+  - text: Expression tree fusion includes Exp/Ln/Select in generated WGSL
+    done: true
 extra: {}
