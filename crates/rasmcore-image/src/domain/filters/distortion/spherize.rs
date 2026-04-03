@@ -64,6 +64,10 @@ impl CpuFilter for SpherizeParams {
 
 impl GpuFilter for SpherizeParams {
     fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        self.gpu_ops_with_format(width, height, rasmcore_pipeline::gpu::BufferFormat::U32Packed)
+    }
+
+    fn gpu_ops_with_format(&self, width: u32, height: u32, buffer_format: rasmcore_pipeline::gpu::BufferFormat) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
         use rasmcore_pipeline::gpu::GpuOp;
         use std::sync::LazyLock;
         use rasmcore_gpu_shaders as shaders;
@@ -83,7 +87,7 @@ impl GpuFilter for SpherizeParams {
             workgroup_size: [16, 16, 1],
             params,
             extra_buffers: vec![],
-            buffer_format: rasmcore_pipeline::BufferFormat::U32Packed,
+            buffer_format: buffer_format,
         }])
     }
 }
