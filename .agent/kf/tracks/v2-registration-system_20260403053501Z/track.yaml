@@ -5,130 +5,163 @@ status: pending
 created: '2026-04-03'
 updated: '2026-04-03'
 spec:
-  summary: |
-    Single, uniform registration system for filters, codecs, transforms,
+  summary: 'Single, uniform registration system for filters, codecs, transforms,
+
     and color space conversions. Everything registers through the same
+
     trait-based mechanism at build time. Zero built-in exceptions.
-  context: |
-    V1 has three separate registration systems:
+
+    '
+  context: 'V1 has three separate registration systems:
+
     - #[register_filter] macro for 210 filters (via inventory crate)
+
     - StaticEncoderRegistration / StaticDecoderRegistration for codecs
+
     - Manual node creation for transforms (resize, crop, rotate)
 
+
     V2 unifies all of these into a single Registration trait. The
-    pipeline foundation knows nothing about what's registered — it
+
+    pipeline foundation knows nothing about what''s registered — it
+
     just sees trait objects. A blur filter, a JPEG encoder, and a
+
     resize transform all register the same way.
 
+
     This means the pipeline crate has zero hardcoded knowledge of
+
     any specific operation. You could ship a pipeline with zero
+
     filters and add them all via external crates.
-  codebase_analysis: |
-    V1 registration count:
+
+    '
+  codebase_analysis: 'V1 registration count:
+
     - 210 #[register_filter] instances
+
     - 13 codec formats (separate encoder/decoder registrations)
+
     - ~7 manual transform node types
+
     - Build-time codegen in rasmcore-codegen (5,638 LOC) parses these
 
+
     V1 codegen pipeline:
+
     1. build.rs reads source files
+
     2. rasmcore-codegen parses #[register_filter] attributes
+
     3. Generates pipeline node structs, WIT interface methods, config records
+
     4. Writes to OUT_DIR for include!()
 
+
     V2 simplification:
+
     - Unify filter/codec/transform into OperationRegistration
+
     - Derive macro generates the registration + Node impl
+
     - No separate codegen for WIT (WIT generated from registrations)
+
     - inventory crate collects registrations at link time (no build.rs AST parsing)
+
+    '
   acceptance_criteria:
-    - Single OperationRegistration trait for all operation types
-    - derive(Operation) macro generates registration + Node impl
-    - Filter, Codec, Transform are categories within the same system
-    - Build-time collection via inventory (no runtime registration)
-    - Operation metadata queryable (name, category, params, GPU capability)
-    - Parameter descriptors auto-generated from struct fields
-    - No hardcoded operation knowledge in pipeline crate
-    - Backward compat shim for gradual V1 filter migration
-    - CPU and GPU implementations registered through same trait
-  out_of_scope: |
-    WIT generation from registrations (Track 8).
+  - Single OperationRegistration trait for all operation types
+  - derive(Operation) macro generates registration + Node impl
+  - Filter, Codec, Transform are categories within the same system
+  - Build-time collection via inventory (no runtime registration)
+  - Operation metadata queryable (name, category, params, GPU capability)
+  - Parameter descriptors auto-generated from struct fields
+  - No hardcoded operation knowledge in pipeline crate
+  - Backward compat shim for gradual V1 filter migration
+  - CPU and GPU implementations registered through same trait
+  - Contextual param validation at graph build time — params validated against upstream NodeInfo (e.g., crop rect within source
+    dimensions)
+  - ParamConstraint supports static (min/max) and contextual (upstream.width, upstream.height) bounds
+  - Graph::connect() automatically validates params against upstream context, returns error on violation
+  out_of_scope: 'WIT generation from registrations (Track 8).
+
     Actual filter/codec migration (Tracks 6-7).
-  technical_notes: |
-    Unified registration:
 
-    #[derive(Operation)]
-    #[operation(
-        name = "blur",
-        category = "spatial",
-        kind = "filter",       // filter | encoder | decoder | transform
-        gpu = true,
-    )]
-    struct Blur {
-        #[param(min = 0.0, max = 100.0, default = 3.0)]
-        radius: f32,
-    }
-
-    impl Filter for Blur {
-        fn compute(&self, input: &[f32], w: u32, h: u32) -> Vec<f32> { ... }
-    }
-
-    impl GpuFilter for Blur {
-        fn shader_body(&self) -> &str { include_str!("blur.wgsl") }
-        fn params(&self, w: u32, h: u32) -> Vec<u8> { ... }
-    }
-
-    // Registration is automatic via derive — no manual inventory::submit!
-
-    The derive macro generates:
-    - OperationRegistration with metadata
-    - Node wrapper that implements pipeline_v2::Node
-    - Parameter descriptors for UI/WIT
-    - inventory::submit! for build-time collection
-
-    Query API:
-    fn registered_operations() -> Vec<&'static OperationRegistration>
-    fn find_operation(name: &str) -> Option<&'static OperationRegistration>
-    fn operations_by_category(cat: &str) -> Vec<&'static OperationRegistration>
+    '
+  technical_notes: "Unified registration:\n\n#[derive(Operation)]\n#[operation(\n    name = \"blur\",\n    category = \"spatial\"\
+    ,\n    kind = \"filter\",\n    gpu = true,\n)]\nstruct Blur {\n    #[param(min = 0.0, max = 100.0, default = 3.0, hint\
+    \ = \"log_slider\")]\n    radius: f32,\n}\n\nThe derive macro generates:\n- OperationRegistration with metadata\n- Node\
+    \ wrapper that implements pipeline_v2::Node\n- ParamDescriptor for UI/WIT/host SDK\n- ParamValidator for contextual validation\n\
+    - inventory::submit! for build-time collection\n\nTHREE-LEVEL PARAM VALIDATION:\n\n1. STATIC (at construction):\n   Checked\
+    \ by derive macro generated constructor.\n   Uses ParamDescriptor min/max/step constraints.\n   Example: blur.radius must\
+    \ be in [0.0, 100.0]\n\n   #[param(min = 0.0, max = 100.0)]\n   radius: f32,\n\n2. CONTEXTUAL (at graph build time):\n\
+    \   Checked when node is connected to upstream.\n   Uses ParamConstraint rules that reference upstream NodeInfo.\n   Example:\
+    \ crop rect must be within source dimensions.\n\n   #[param(max_w = \"upstream.width\", max_h = \"upstream.height\")]\n\
+    \   crop_rect: Rect,\n\n   The constraint evaluator receives upstream NodeInfo and checks:\n   - crop_rect.x + crop_rect.width\
+    \ <= upstream.width\n   - crop_rect.y + crop_rect.height <= upstream.height\n\n   Implementation:\n\n   enum ParamConstraint\
+    \ {\n       Static { min: f64, max: f64 },\n       ContextualRect { max_w: ContextRef, max_h: ContextRef },\n       ContextualScalar\
+    \ { max: ContextRef },\n       Custom(Box<dyn Fn(&ParamValue, &[NodeInfo]) -> Result<()>>),\n   }\n\n   enum ContextRef\
+    \ {\n       UpstreamWidth,   // upstream.info().width\n       UpstreamHeight,  // upstream.info().height\n       Literal(f64),\n\
+    \   }\n\n   Graph::connect() calls:\n     node.validate_params(&upstream_infos)?;\n\n3. DYNAMIC (at staged execution bind\
+    \ time):\n   Checked when analysis results are bound to params.\n   Same validators run, but with runtime-computed values.\n\
+    \   Example: smart_crop analyzer returns Rect -> validate against source dims.\n\nAll three levels use the SAME ParamConstraint\
+    \ rules. The difference\nis when they run and what context is available.\n\nQuery API:\nfn registered_operations() ->\
+    \ Vec<&OperationRegistration>\nfn find_operation(name: &str) -> Option<&OperationRegistration>\nfn operations_by_category(cat:\
+    \ &str) -> Vec<&OperationRegistration>\nfn param_descriptors(op: &str) -> Vec<ParamDescriptor>"
 plan:
-  - phase: Registration trait
-    tasks:
-      - text: Define OperationRegistration struct (name, category, kind, params, capabilities)
-        done: false
-      - text: Define OperationKind enum (Filter, Encoder, Decoder, Transform, ColorConversion)
-        done: false
-      - text: Define ParamDescriptor (name, type, min, max, default, hint)
-        done: false
-      - text: Query API (registered_operations, find_operation, by_category)
-        done: false
-  - phase: Derive macro
-    tasks:
-      - text: derive(Operation) macro — parse struct fields + attributes
-        done: false
-      - text: Generate OperationRegistration from #[operation(...)] attribute
-        done: false
-      - text: Generate ParamDescriptor from #[param(...)] on fields
-        done: false
-      - text: Generate inventory::submit! for build-time collection
-        done: false
-      - text: Generate Node wrapper (bridges Operation to pipeline_v2::Node)
-        done: false
-  - phase: Filter and GPU traits
-    tasks:
-      - text: Define Filter trait (fn compute(&self, input &[f32], w, h) -> Vec<f32>)
-        done: false
-      - text: Define GpuFilter trait (fn shader_body, fn params, fn workgroup_size)
-        done: false
-      - text: Define Encoder/Decoder traits (fn encode/decode with f32 input/output)
-        done: false
-      - text: Define Transform trait (fn output_dimensions, fn compute)
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Test — register a filter, query it, create Node, execute compute
-        done: false
-      - text: Test — register GPU filter, verify shader body and params
-        done: false
-      - text: Test — parameter descriptors match struct fields
-        done: false
+- phase: Registration trait
+  tasks:
+  - text: Define OperationRegistration struct (name, category, kind, params, capabilities)
+    done: false
+  - text: Define OperationKind enum (Filter, Encoder, Decoder, Transform, ColorConversion)
+    done: false
+  - text: Define ParamDescriptor (name, type, min, max, default, hint)
+    done: false
+  - text: Query API (registered_operations, find_operation, by_category)
+    done: false
+- phase: Derive macro
+  tasks:
+  - text: derive(Operation) macro — parse struct fields + attributes
+    done: false
+  - text: Generate OperationRegistration from
+    done: false
+  - text: Generate ParamDescriptor from
+    done: false
+  - text: Generate inventory::submit! for build-time collection
+    done: false
+  - text: Generate Node wrapper (bridges Operation to pipeline_v2::Node)
+    done: false
+- phase: Filter and GPU traits
+  tasks:
+  - text: Define Filter trait (fn compute(&self, input &[f32], w, h) -> Vec<f32>)
+    done: false
+  - text: Define GpuFilter trait (fn shader_body, fn params, fn workgroup_size)
+    done: false
+  - text: Define Encoder/Decoder traits (fn encode/decode with f32 input/output)
+    done: false
+  - text: Define Transform trait (fn output_dimensions, fn compute)
+    done: false
+- phase: Contextual param validation
+  tasks:
+  - text: Define ParamConstraint enum (Static, ContextualRect, ContextualScalar, Custom)
+    done: false
+  - text: Define ContextRef enum (UpstreamWidth, UpstreamHeight, Literal)
+    done: false
+  - text: 'Generate ParamConstraint from #[param(max_w = upstream.width)] attributes'
+    done: false
+  - text: Graph::connect validates params against upstream NodeInfo via constraints
+    done: false
+  - text: Test — crop rect outside source dimensions rejected at connect time
+    done: false
+  - text: Test — valid params pass validation silently
+    done: false
+- phase: Verification
+  tasks:
+  - text: Test — register a filter, query it, create Node, execute compute
+    done: false
+  - text: Test — register GPU filter, verify shader body and params
+    done: false
+  - text: Test — parameter descriptors match struct fields
+    done: false
 extra: {}
