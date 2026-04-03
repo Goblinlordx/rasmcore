@@ -1,8 +1,9 @@
 title: Display transform at output — Linear to sRGB at demote
-status: pending
+status: archived
 type: feature
 approved: false
 created: '2026-04-03'
 updated: '2026-04-03'
 deps:
 - linear-light-ingest_20260403034038Z
+archived_at: '2026-04-03'

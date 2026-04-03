@@ -1,9 +1,10 @@
 title: GPU shaders wave 3 — new f32 shaders for remaining per-pixel + simple spatial
   filters
-status: pending
+status: archived
 type: feature
 approved: false
 created: '2026-04-03'
 updated: '2026-04-03'
 deps:
 - gpu-shaders-wave2_20260403083500Z
+archived_at: '2026-04-03'

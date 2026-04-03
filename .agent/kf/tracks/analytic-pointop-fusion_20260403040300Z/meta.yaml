@@ -1,8 +1,9 @@
 title: Analytic point-op fusion — expression tree IR with kernel fusion
-status: pending
+status: archived
 type: feature
 approved: false
 created: '2026-04-03'
 updated: '2026-04-03'
 deps:
 - filter-migrate-remaining_20260402050834Z
+archived_at: '2026-04-03'

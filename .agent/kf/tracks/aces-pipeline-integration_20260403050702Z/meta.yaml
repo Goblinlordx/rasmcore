@@ -1,8 +1,9 @@
 title: ACES pipeline integration — IDTs, AMF, compliance
-status: pending
+status: archived
 type: feature
 approved: false
 created: '2026-04-03'
 updated: '2026-04-03'
 deps:
 - aces-output-transforms_20260403050701Z
+archived_at: '2026-04-03'

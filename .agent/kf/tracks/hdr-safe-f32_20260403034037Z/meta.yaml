@@ -1,8 +1,9 @@
 title: HDR-safe f32 — remove intermediate value clamping
-status: pending
+status: archived
 type: refactor
 approved: false
 created: '2026-04-03'
 updated: '2026-04-03'
 deps:
 - filter-migrate-remaining_20260402050834Z
+archived_at: '2026-04-03'

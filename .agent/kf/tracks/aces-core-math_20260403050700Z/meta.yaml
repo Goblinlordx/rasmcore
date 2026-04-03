@@ -1,8 +1,9 @@
 title: ACES core math — color spaces, transfer functions, adaptation
-status: pending
+status: archived
 type: feature
 approved: false
 created: '2026-04-03'
 updated: '2026-04-03'
 deps:
 - colorspace-aware-graph_20260403034040Z
+archived_at: '2026-04-03'
