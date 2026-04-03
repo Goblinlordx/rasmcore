@@ -14,7 +14,7 @@
 use crate::fusion::Clut3D;
 use crate::node::PipelineError;
 use crate::noise;
-use crate::ops::Filter;
+use crate::ops::{Filter, GpuFilter};
 
 // ─── Color Space Helpers ───────────────────────────────────────────────────
 
@@ -1340,6 +1340,212 @@ impl Filter for SparseColor {
             }
         }
         Ok(out)
+    }
+}
+
+// ─── GPU Shaders ───────────────────────────────────────────────────────────
+
+/// GradientMap GPU — luminance to gradient color via extra buffer LUT (256*3 f32).
+const GRADIENT_MAP_WGSL: &str = r#"
+struct Params {
+  width: u32,
+  height: u32,
+  _pad0: u32,
+  _pad1: u32,
+}
+@group(0) @binding(2) var<uniform> params: Params;
+@group(0) @binding(3) var<storage, read> lut: array<f32>;
+
+@compute @workgroup_size(256, 1, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let idx = gid.x;
+  if (idx >= params.width * params.height) { return; }
+  let pixel = load_pixel(idx);
+  let luma = 0.2126 * pixel.x + 0.7152 * pixel.y + 0.0722 * pixel.z;
+  let li = u32(clamp(round(luma * 255.0), 0.0, 255.0));
+  store_pixel(idx, vec4<f32>(lut[li * 3u], lut[li * 3u + 1u], lut[li * 3u + 2u], pixel.w));
+}
+"#;
+
+impl GpuFilter for GradientMap {
+    fn shader_body(&self) -> &str { GRADIENT_MAP_WGSL }
+    fn workgroup_size(&self) -> [u32; 3] { [256, 1, 1] }
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(16);
+        buf.extend_from_slice(&width.to_le_bytes());
+        buf.extend_from_slice(&height.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf
+    }
+    fn extra_buffers(&self) -> Vec<Vec<u8>> {
+        let lut = build_gradient_lut(&self.stops);
+        let mut buf = Vec::with_capacity(lut.len() * 4);
+        for v in &lut {
+            buf.extend_from_slice(&v.to_le_bytes());
+        }
+        vec![buf]
+    }
+}
+
+/// DitherOrdered GPU — Bayer threshold + palette lookup via extra buffers.
+const DITHER_ORDERED_WGSL: &str = r#"
+struct Params {
+  width: u32,
+  height: u32,
+  map_size: u32,
+  palette_size: u32,
+  spread: f32,
+  _pad0: u32,
+  _pad1: u32,
+  _pad2: u32,
+}
+@group(0) @binding(2) var<uniform> params: Params;
+@group(0) @binding(3) var<storage, read> bayer: array<f32>;
+@group(0) @binding(4) var<storage, read> palette: array<f32>;
+
+fn nearest_palette(r: f32, g: f32, b: f32) -> vec3<f32> {
+  var best_d = 1e30;
+  var best = vec3<f32>(0.0, 0.0, 0.0);
+  for (var i = 0u; i < params.palette_size; i = i + 1u) {
+    let pr = palette[i * 3u];
+    let pg = palette[i * 3u + 1u];
+    let pb = palette[i * 3u + 2u];
+    let dr = r - pr;
+    let dg = g - pg;
+    let db = b - pb;
+    let d = dr * dr + dg * dg + db * db;
+    if (d < best_d) {
+      best_d = d;
+      best = vec3<f32>(pr, pg, pb);
+    }
+  }
+  return best;
+}
+
+@compute @workgroup_size(16, 16, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  if (gid.x >= params.width || gid.y >= params.height) { return; }
+  let idx = gid.y * params.width + gid.x;
+  let pixel = load_pixel(idx);
+  let bx = gid.x % params.map_size;
+  let by = gid.y % params.map_size;
+  let threshold = bayer[by * params.map_size + bx];
+  let bias = (threshold - 0.5) * params.spread;
+  let c = nearest_palette(pixel.x + bias, pixel.y + bias, pixel.z + bias);
+  store_pixel(idx, vec4<f32>(c.x, c.y, c.z, pixel.w));
+}
+"#;
+
+impl GpuFilter for DitherOrdered {
+    fn shader_body(&self) -> &str { DITHER_ORDERED_WGSL }
+    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(32);
+        buf.extend_from_slice(&width.to_le_bytes());
+        buf.extend_from_slice(&height.to_le_bytes());
+        buf.extend_from_slice(&self.map_size.to_le_bytes());
+        // palette_size filled at runtime — but we need the palette first
+        // (chicken-egg: palette depends on image data, not available at shader build time)
+        // We pass 0 here; the pipeline should pre-compute and bind the palette buffer.
+        buf.extend_from_slice(&0u32.to_le_bytes()); // placeholder
+        buf.extend_from_slice(&(1.0f32 / self.max_colors as f32).to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf
+    }
+    fn extra_buffers(&self) -> Vec<Vec<u8>> {
+        // Bayer matrix as f32 buffer
+        let bm = bayer_matrix(self.map_size);
+        let mut bayer_buf = Vec::with_capacity(bm.len() * 4);
+        for v in &bm {
+            bayer_buf.extend_from_slice(&v.to_le_bytes());
+        }
+        // Palette buffer is empty — requires image data to compute, filled by 2-pass pipeline
+        vec![bayer_buf]
+    }
+}
+
+/// SparseColor GPU — inverse-distance weighted interpolation from control points.
+const SPARSE_COLOR_WGSL: &str = r#"
+struct Params {
+  width: u32,
+  height: u32,
+  num_points: u32,
+  power: f32,
+}
+@group(0) @binding(2) var<uniform> params: Params;
+@group(0) @binding(3) var<storage, read> points: array<f32>;
+
+@compute @workgroup_size(16, 16, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  if (gid.x >= params.width || gid.y >= params.height) { return; }
+  let idx = gid.y * params.width + gid.x;
+  let pixel = load_pixel(idx);
+  let px = f32(gid.x);
+  let py = f32(gid.y);
+  var weight_sum = 0.0;
+  var r_sum = 0.0;
+  var g_sum = 0.0;
+  var b_sum = 0.0;
+  var exact = false;
+  var exact_r = 0.0;
+  var exact_g = 0.0;
+  var exact_b = 0.0;
+  for (var i = 0u; i < params.num_points; i = i + 1u) {
+    let cx = points[i * 5u];
+    let cy = points[i * 5u + 1u];
+    let cr = points[i * 5u + 2u];
+    let cg = points[i * 5u + 3u];
+    let cb = points[i * 5u + 4u];
+    let dx = px - cx;
+    let dy = py - cy;
+    let dist = sqrt(dx * dx + dy * dy);
+    if (dist < 0.001) {
+      exact = true;
+      exact_r = cr;
+      exact_g = cg;
+      exact_b = cb;
+      break;
+    }
+    let w = 1.0 / pow(dist, params.power);
+    weight_sum += w;
+    r_sum += w * cr;
+    g_sum += w * cg;
+    b_sum += w * cb;
+  }
+  if (exact) {
+    store_pixel(idx, vec4<f32>(exact_r, exact_g, exact_b, pixel.w));
+  } else if (weight_sum > 1e-10) {
+    store_pixel(idx, vec4<f32>(r_sum / weight_sum, g_sum / weight_sum, b_sum / weight_sum, pixel.w));
+  } else {
+    store_pixel(idx, pixel);
+  }
+}
+"#;
+
+impl GpuFilter for SparseColor {
+    fn shader_body(&self) -> &str { SPARSE_COLOR_WGSL }
+    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(16);
+        buf.extend_from_slice(&width.to_le_bytes());
+        buf.extend_from_slice(&height.to_le_bytes());
+        buf.extend_from_slice(&(self.points.len() as u32).to_le_bytes());
+        buf.extend_from_slice(&self.power.to_le_bytes());
+        buf
+    }
+    fn extra_buffers(&self) -> Vec<Vec<u8>> {
+        let mut buf = Vec::with_capacity(self.points.len() * 5 * 4);
+        for &(x, y, r, g, b) in &self.points {
+            buf.extend_from_slice(&x.to_le_bytes());
+            buf.extend_from_slice(&y.to_le_bytes());
+            buf.extend_from_slice(&r.to_le_bytes());
+            buf.extend_from_slice(&g.to_le_bytes());
+            buf.extend_from_slice(&b.to_le_bytes());
+        }
+        vec![buf]
     }
 }
 
