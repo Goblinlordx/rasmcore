@@ -1274,3 +1274,88 @@ fn gpu_f32_parity_channel_mixer() {
     assert_gpu_parity("channel_mixer_f32 vs cpu_f32", &cpu_f32_result, &gpu_f32_as_u8, 1.0);
     eprintln!("  channel_mixer f32 GPU parity: PASS");
 }
+
+#[test]
+fn gpu_f32_gaussian_noise_deterministic() {
+    use rasmcore_pipeline::gpu::BufferFormat;
+    use rasmcore_image::domain::filter_traits::GpuFilter;
+    use rasmcore_image::domain::filters::GaussianNoiseParams;
+
+    let gpu = match try_gpu() {
+        Some(g) => g,
+        None => return,
+    };
+
+    let (w, h) = (64, 64);
+    let pixels_u8 = make_gradient_rgba(w, h);
+    let pixels_f32_norm: Vec<u8> = pixels_u8.iter()
+        .flat_map(|&b| (b as f32 / 255.0).to_le_bytes())
+        .collect();
+
+    let config = GaussianNoiseParams { amount: 50.0, mean: 0.0, sigma: 25.0, seed: 12345 };
+
+    let ops = config.gpu_ops_with_format(w, h, BufferFormat::F32Vec4)
+        .expect("gaussian_noise should support f32 GPU");
+
+    // Run twice — same seed should produce identical output
+    let out1 = gpu.execute_with_format(&ops, &pixels_f32_norm, w, h, BufferFormat::F32Vec4).unwrap();
+    let out2 = gpu.execute_with_format(&ops, &pixels_f32_norm, w, h, BufferFormat::F32Vec4).unwrap();
+    assert_eq!(out1, out2, "same seed must produce identical output");
+
+    // Output should differ from input (noise was applied)
+    assert_ne!(out1, pixels_f32_norm, "noise should change the image");
+
+    // Verify values are in valid range [0, 1]
+    for chunk in out1.chunks_exact(4) {
+        let v = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        assert!(v >= 0.0 && v <= 1.0, "pixel value {v} out of [0,1] range");
+    }
+
+    eprintln!("  gaussian_noise f32 GPU: deterministic + valid range: PASS");
+}
+
+#[test]
+fn gpu_f32_parity_vibrance() {
+    use rasmcore_pipeline::gpu::BufferFormat;
+    use rasmcore_image::domain::filter_traits::GpuFilter;
+    use rasmcore_image::domain::filters::VibranceParams;
+
+    let gpu = match try_gpu() {
+        Some(g) => g,
+        None => return,
+    };
+
+    let (w, h) = (64, 64);
+    let pixels_u8 = make_gradient_rgba(w, h);
+    let pixels_f32_norm: Vec<u8> = pixels_u8.iter()
+        .flat_map(|&b| (b as f32 / 255.0).to_le_bytes())
+        .collect();
+
+    let config = VibranceParams { amount: 50.0 };
+
+    // CPU f32 reference via ColorOp
+    let cpu_f32_result: Vec<u8> = pixels_u8.chunks_exact(4).flat_map(|px| {
+        let r = px[0] as f32 / 255.0;
+        let g = px[1] as f32 / 255.0;
+        let b = px[2] as f32 / 255.0;
+        let (or, og, ob) = rasmcore_image::domain::color_lut::ColorOp::Vibrance(50.0).apply(r, g, b);
+        [(or.clamp(0.0, 1.0) * 255.0 + 0.5) as u8,
+         (og.clamp(0.0, 1.0) * 255.0 + 0.5) as u8,
+         (ob.clamp(0.0, 1.0) * 255.0 + 0.5) as u8,
+         px[3]]
+    }).collect();
+
+    let ops = config.gpu_ops_with_format(w, h, BufferFormat::F32Vec4)
+        .expect("vibrance should support f32 GPU");
+    let gpu_f32_bytes = gpu.execute_with_format(&ops, &pixels_f32_norm, w, h, BufferFormat::F32Vec4).unwrap();
+    let gpu_f32_as_u8: Vec<u8> = gpu_f32_bytes.chunks_exact(4)
+        .map(|c| {
+            let v = f32::from_le_bytes([c[0], c[1], c[2], c[3]]);
+            (v * 255.0 + 0.5).clamp(0.0, 255.0) as u8
+        })
+        .collect();
+
+    // HSL roundtrip + f32 precision → allow small difference
+    assert_gpu_parity("vibrance_f32 vs cpu_f32", &cpu_f32_result, &gpu_f32_as_u8, 2.0);
+    eprintln!("  vibrance f32 GPU parity: PASS");
+}

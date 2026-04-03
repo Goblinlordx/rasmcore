@@ -60,6 +60,7 @@ pub fn gaussian_noise(
     if amount == 0.0 {
         return Ok(pixels.to_vec());
     }
+    // GPU impl is below — this CPU path continues for fallback
 
     let mean = config.mean as f64;
     let sigma = config.sigma as f64;
@@ -77,4 +78,48 @@ pub fn gaussian_noise(
         }
     }
     Ok(out)
+}
+
+impl crate::domain::filter_traits::GpuFilter for GaussianNoiseParams {
+    fn gpu_ops(&self, _width: u32, _height: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        None
+    }
+
+    fn gpu_ops_with_format(
+        &self,
+        width: u32,
+        height: u32,
+        buffer_format: rasmcore_pipeline::gpu::BufferFormat,
+    ) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        if buffer_format != rasmcore_pipeline::gpu::BufferFormat::F32Vec4 {
+            return None;
+        }
+        use rasmcore_pipeline::gpu::GpuOp;
+        use std::sync::LazyLock;
+        static SHADER: LazyLock<String> = LazyLock::new(|| {
+            include_str!("../../../shaders/gaussian_noise_f32.wgsl").to_string()
+        });
+        // Normalize params to [0,1] range matching the f32 pipeline
+        let amount_norm = self.amount / 100.0;
+        let mean_norm = self.mean / 255.0;
+        let sigma_norm = self.sigma / 255.0;
+        let seed32 = (self.seed & 0xFFFF_FFFF) as u32;
+        let mut params = Vec::with_capacity(32);
+        params.extend_from_slice(&width.to_le_bytes());
+        params.extend_from_slice(&height.to_le_bytes());
+        params.extend_from_slice(&amount_norm.to_le_bytes());
+        params.extend_from_slice(&mean_norm.to_le_bytes());
+        params.extend_from_slice(&sigma_norm.to_le_bytes());
+        params.extend_from_slice(&seed32.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes());
+        Some(vec![GpuOp::Compute {
+            shader: SHADER.clone(),
+            entry_point: "main",
+            workgroup_size: [16, 16, 1],
+            params,
+            extra_buffers: vec![],
+            buffer_format: rasmcore_pipeline::BufferFormat::F32Vec4,
+        }])
+    }
 }
