@@ -323,3 +323,25 @@ gpu-promote-node_20260403083503Z:
 # Remove dead GPU shaders — after fusion nodes have f32
 gpu-remove-dead-shaders_20260403083504Z:
   - gpu-fusion-f32_20260403083502Z
+
+# V2 pipeline tracks
+v2-pipeline-foundation_20260403053500Z: []
+v2-registration-system_20260403053501Z:
+  - v2-pipeline-foundation_20260403053500Z
+v2-filter-api_20260403053502Z:
+  - v2-registration-system_20260403053501Z
+v2-color-pipeline_20260403053503Z:
+  - v2-filter-api_20260403053502Z
+v2-fusion-optimizer_20260403053504Z:
+  - v2-filter-api_20260403053502Z
+v2-filter-migration_20260403053505Z:
+  - v2-filter-api_20260403053502Z
+v2-codec-migration_20260403053506Z:
+  - v2-pipeline-foundation_20260403053500Z
+v2-integration_20260403053507Z:
+  - v2-filter-migration_20260403053505Z
+  - v2-codec-migration_20260403053506Z
+  - v2-fusion-optimizer_20260403053504Z
+  - v2-color-pipeline_20260403053503Z
+v2-staged-execution_20260403063500Z:
+  - v2-pipeline-foundation_20260403053500Z
