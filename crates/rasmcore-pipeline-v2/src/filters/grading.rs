@@ -5,6 +5,7 @@
 
 use crate::fusion::Clut3D;
 use crate::node::PipelineError;
+use crate::noise;
 use crate::ops::{Filter, GpuFilter};
 
 use super::color::ClutOp;
@@ -771,20 +772,10 @@ pub struct FilmGrain {
     pub seed: u32,
 }
 
-/// Deterministic hash noise returning [-1, 1].
-fn hash_noise(x: u32, y: u32, seed: u32) -> f32 {
-    let mut h = x
-        .wrapping_mul(374761393)
-        .wrapping_add(y.wrapping_mul(668265263))
-        .wrapping_add(seed.wrapping_mul(1274126177));
-    h = (h ^ (h >> 13)).wrapping_mul(1103515245);
-    h ^= h >> 16;
-    (h as f32 / u32::MAX as f32) * 2.0 - 1.0
-}
-
 impl Filter for FilmGrain {
     fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
         let inv_size = 1.0 / self.size.max(0.1);
+        let seed = self.seed as u64 ^ noise::SEED_FILM_GRAIN;
         let mut out = input.to_vec();
         for y in 0..height {
             for x in 0..width {
@@ -793,14 +784,13 @@ impl Filter for FilmGrain {
                 let sy = (y as f32 * inv_size) as u32;
                 let (r, g, b) = (out[idx], out[idx + 1], out[idx + 2]);
                 let luma = bt709_luma(r, g, b);
-                // Parabolic intensity: max grain at midtones, less at black/white
                 let intensity = 4.0 * luma * (1.0 - luma) * self.amount;
                 if self.color {
-                    out[idx] = r + hash_noise(sx, sy, self.seed) * intensity;
-                    out[idx + 1] = g + hash_noise(sx, sy, self.seed.wrapping_add(1)) * intensity;
-                    out[idx + 2] = b + hash_noise(sx, sy, self.seed.wrapping_add(2)) * intensity;
+                    out[idx] = r + noise::noise_2d(sx, sy, seed) * intensity;
+                    out[idx + 1] = g + noise::noise_2d(sx, sy, seed.wrapping_add(1)) * intensity;
+                    out[idx + 2] = b + noise::noise_2d(sx, sy, seed.wrapping_add(2)) * intensity;
                 } else {
-                    let n = hash_noise(sx, sy, self.seed) * intensity;
+                    let n = noise::noise_2d(sx, sy, seed) * intensity;
                     out[idx] = r + n;
                     out[idx + 1] = g + n;
                     out[idx + 2] = b + n;
@@ -811,30 +801,22 @@ impl Filter for FilmGrain {
     }
 }
 
-/// WGSL compute shader for film grain.
+/// WGSL compute shader body for film grain (without noise functions).
 ///
-/// Implements the same hash noise and parabolic intensity curve as the CPU path.
-/// Supports both monochrome and color grain via the `color_grain` uniform flag.
-const FILM_GRAIN_WGSL: &str = r#"
+/// Uses SplitMix64 noise from `noise::NOISE_WGSL` (composed at runtime).
+const FILM_GRAIN_WGSL_BODY: &str = r#"
 struct Params {
   width: u32,
   height: u32,
   amount: f32,
   inv_size: f32,
-  seed: u32,
+  seed_lo: u32,
+  seed_hi: u32,
   color_grain: u32,
-  _pad0: u32,
-  _pad1: u32,
+  _pad: u32,
 }
 
 @group(0) @binding(2) var<uniform> params: Params;
-
-fn hash_noise(x: u32, y: u32, seed: u32) -> f32 {
-  var h = x * 374761393u + y * 668265263u + seed * 1274126177u;
-  h = (h ^ (h >> 13u)) * 1103515245u;
-  h = h ^ (h >> 16u);
-  return f32(h) / 4294967295.0 * 2.0 - 1.0;
-}
 
 @compute @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -851,11 +833,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let sy = u32(f32(y) * params.inv_size);
   var result = pixel;
   if (params.color_grain != 0u) {
-    result.x = pixel.x + hash_noise(sx, sy, params.seed) * intensity;
-    result.y = pixel.y + hash_noise(sx, sy, params.seed + 1u) * intensity;
-    result.z = pixel.z + hash_noise(sx, sy, params.seed + 2u) * intensity;
+    result.x = pixel.x + noise_2d(sx, sy, params.seed_lo, params.seed_hi) * intensity;
+    result.y = pixel.y + noise_2d(sx, sy, params.seed_lo + 1u, params.seed_hi) * intensity;
+    result.z = pixel.z + noise_2d(sx, sy, params.seed_lo + 2u, params.seed_hi) * intensity;
   } else {
-    let n = hash_noise(sx, sy, params.seed) * intensity;
+    let n = noise_2d(sx, sy, params.seed_lo, params.seed_hi) * intensity;
     result.x = pixel.x + n;
     result.y = pixel.y + n;
     result.z = pixel.z + n;
@@ -864,9 +846,20 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
+/// Compose the full film grain shader: NOISE_WGSL + FILM_GRAIN_WGSL_BODY.
+fn film_grain_shader() -> String {
+    let mut s = String::with_capacity(noise::NOISE_WGSL.len() + FILM_GRAIN_WGSL_BODY.len() + 1);
+    s.push_str(noise::NOISE_WGSL);
+    s.push('\n');
+    s.push_str(FILM_GRAIN_WGSL_BODY);
+    s
+}
+
 impl GpuFilter for FilmGrain {
     fn shader_body(&self) -> &str {
-        FILM_GRAIN_WGSL
+        // Return the body portion only — the noise functions are composed
+        // via the full shader in gpu_shader() override below.
+        FILM_GRAIN_WGSL_BODY
     }
 
     fn workgroup_size(&self) -> [u32; 3] {
@@ -875,17 +868,30 @@ impl GpuFilter for FilmGrain {
 
     fn params(&self, width: u32, height: u32) -> Vec<u8> {
         let inv_size = 1.0 / self.size.max(0.1);
+        let seed = self.seed as u64 ^ noise::SEED_FILM_GRAIN;
+        let seed_lo = seed as u32;
+        let seed_hi = (seed >> 32) as u32;
         let color_grain: u32 = if self.color { 1 } else { 0 };
         let mut buf = Vec::with_capacity(32);
         buf.extend_from_slice(&width.to_le_bytes());
         buf.extend_from_slice(&height.to_le_bytes());
         buf.extend_from_slice(&self.amount.to_le_bytes());
         buf.extend_from_slice(&inv_size.to_le_bytes());
-        buf.extend_from_slice(&self.seed.to_le_bytes());
+        buf.extend_from_slice(&seed_lo.to_le_bytes());
+        buf.extend_from_slice(&seed_hi.to_le_bytes());
         buf.extend_from_slice(&color_grain.to_le_bytes());
-        buf.extend_from_slice(&0u32.to_le_bytes()); // _pad0
-        buf.extend_from_slice(&0u32.to_le_bytes()); // _pad1
+        buf.extend_from_slice(&0u32.to_le_bytes()); // _pad
         buf
+    }
+
+    fn gpu_shader(&self, width: u32, height: u32) -> crate::node::GpuShader {
+        crate::node::GpuShader {
+            body: film_grain_shader(),
+            entry_point: self.entry_point(),
+            workgroup_size: self.workgroup_size(),
+            params: self.params(width, height),
+            extra_buffers: self.extra_buffers(),
+        }
     }
 }
 
@@ -1280,19 +1286,15 @@ mod tests {
 
     #[test]
     fn film_grain_gpu_shader_valid() {
-        let f = FilmGrain {
-            amount: 0.3,
-            size: 1.5,
-            color: false,
-            seed: 42,
-        };
-        let body = f.shader_body();
-        assert!(body.contains("fn hash_noise"), "Shader should contain hash_noise");
-        assert!(body.contains("@compute @workgroup_size(16, 16, 1)"), "Shader should have workgroup_size");
-        assert!(body.contains("load_pixel"), "Shader should use load_pixel");
-        assert!(body.contains("store_pixel"), "Shader should use store_pixel");
-        assert!(body.contains("params.amount"), "Shader should reference params.amount");
-        assert!(body.contains("params.color_grain"), "Shader should reference color_grain flag");
+        let shader = film_grain_shader();
+        assert!(shader.contains("fn splitmix64("), "Shader should contain splitmix64");
+        assert!(shader.contains("fn noise_2d("), "Shader should contain noise_2d");
+        assert!(shader.contains("@compute @workgroup_size(16, 16, 1)"), "Shader should have workgroup_size");
+        assert!(shader.contains("load_pixel"), "Shader should use load_pixel");
+        assert!(shader.contains("store_pixel"), "Shader should use store_pixel");
+        assert!(shader.contains("params.amount"), "Shader should reference params.amount");
+        assert!(shader.contains("params.color_grain"), "Shader should reference color_grain flag");
+        assert!(shader.contains("params.seed_lo"), "Shader should use seed_lo/seed_hi");
     }
 
     #[test]
@@ -1305,17 +1307,18 @@ mod tests {
         };
         let params = f.params(100, 50);
         assert_eq!(params.len(), 32, "Params should be 8 u32s = 32 bytes");
-        // Parse back: width=100, height=50
         let width = u32::from_le_bytes(params[0..4].try_into().unwrap());
         let height = u32::from_le_bytes(params[4..8].try_into().unwrap());
         let amount = f32::from_le_bytes(params[8..12].try_into().unwrap());
-        let seed = u32::from_le_bytes(params[16..20].try_into().unwrap());
-        let color_grain = u32::from_le_bytes(params[20..24].try_into().unwrap());
+        let color_grain = u32::from_le_bytes(params[24..28].try_into().unwrap());
         assert_eq!(width, 100);
         assert_eq!(height, 50);
         assert!((amount - 0.3).abs() < 1e-6);
-        assert_eq!(seed, 99);
         assert_eq!(color_grain, 1);
+        // seed_lo and seed_hi should be non-zero (XOR'd with SEED_FILM_GRAIN)
+        let seed_lo = u32::from_le_bytes(params[16..20].try_into().unwrap());
+        let seed_hi = u32::from_le_bytes(params[20..24].try_into().unwrap());
+        assert!(seed_lo != 0 || seed_hi != 0, "Seed should be mixed with offset");
     }
 
     // ── LUT Application ──

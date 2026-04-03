@@ -11,52 +11,11 @@
 
 use crate::filters::spatial::GaussianBlur;
 use crate::node::PipelineError;
+use crate::noise;
 use crate::ops::Filter;
 
-// ─── PRNG helpers ───────────────────────────────────────────────────────────
-
-/// Simple deterministic PRNG (SplitMix64). Good enough for noise filters.
-struct Rng(u64);
-
-impl Rng {
-    fn new(seed: u64) -> Self {
-        Self(seed)
-    }
-
-    #[inline]
-    fn next_u64(&mut self) -> u64 {
-        self.0 = self.0.wrapping_add(0x9E3779B97F4A7C15);
-        let mut z = self.0;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
-        z ^ (z >> 31)
-    }
-
-    /// Uniform f32 in [0, 1).
-    #[inline]
-    fn next_f32(&mut self) -> f32 {
-        (self.next_u64() >> 40) as f32 / (1u64 << 24) as f32
-    }
-
-    /// Gaussian via Box-Muller (pair generation, return one).
-    #[inline]
-    fn next_gaussian(&mut self) -> f32 {
-        let u1 = self.next_f32().max(1e-10);
-        let u2 = self.next_f32();
-        (-2.0 * u1.ln()).sqrt() * (std::f32::consts::TAU * u2).cos()
-    }
-}
-
-/// Deterministic hash noise in [-1.0, 1.0].
-#[inline]
-fn hash_noise(x: u32, seed: u32) -> f32 {
-    let mut h = x
-        .wrapping_mul(374761393)
-        .wrapping_add(seed.wrapping_mul(1274126177));
-    h = (h ^ (h >> 13)).wrapping_mul(1103515245);
-    h = h ^ (h >> 16);
-    (h as f32 / u32::MAX as f32) * 2.0 - 1.0
-}
+// PRNG and noise use the shared noise module (crate::noise).
+use noise::{Rng, SEED_GAUSSIAN_NOISE, SEED_UNIFORM_NOISE, SEED_SALT_PEPPER, SEED_POISSON_NOISE, SEED_GLITCH};
 
 /// Reflect-boundary coordinate clamping.
 #[inline]
@@ -98,7 +57,7 @@ impl Filter for GaussianNoise {
         let amount = self.amount / 100.0;
         let sigma = self.sigma / 255.0; // normalize to [0,1] range
         let mean = self.mean / 255.0;
-        let mut rng = Rng::new(self.seed);
+        let mut rng = Rng::with_offset(self.seed, SEED_GAUSSIAN_NOISE);
         let mut out = input.to_vec();
 
         for pixel in out.chunks_exact_mut(4) {
@@ -125,12 +84,12 @@ impl Filter for UniformNoise {
             return Ok(input.to_vec());
         }
         let range = self.range / 255.0;
-        let mut rng = Rng::new(self.seed);
+        let mut rng = Rng::with_offset(self.seed, SEED_UNIFORM_NOISE);
         let mut out = input.to_vec();
 
         for pixel in out.chunks_exact_mut(4) {
             for ch in &mut pixel[..3] {
-                let noise = (rng.next_f32() * 2.0 - 1.0) * range;
+                let noise = rng.next_f32_signed() * range;
                 *ch += noise;
             }
         }
@@ -148,7 +107,7 @@ pub struct SaltPepperNoise {
 impl Filter for SaltPepperNoise {
     fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
         let _ = (width, height);
-        let mut rng = Rng::new(self.seed);
+        let mut rng = Rng::with_offset(self.seed, SEED_SALT_PEPPER);
         let mut out = input.to_vec();
 
         for pixel in out.chunks_exact_mut(4) {
@@ -176,7 +135,7 @@ impl Filter for PoissonNoise {
         if self.scale <= 0.0 {
             return Ok(input.to_vec());
         }
-        let mut rng = Rng::new(self.seed);
+        let mut rng = Rng::with_offset(self.seed, SEED_POISSON_NOISE);
         let mut out = input.to_vec();
         let inv_scale = 1.0 / self.scale;
 
@@ -223,7 +182,7 @@ impl Filter for FilmGrain {
         }
         let w = width as usize;
         let h = height as usize;
-        let mut rng = Rng::new(self.seed);
+        let mut rng = Rng::with_offset(self.seed, noise::SEED_FILM_GRAIN);
 
         // Generate grain at reduced resolution then upsample
         let grain_w = (w as f32 / self.size.max(1.0)).ceil() as usize;
@@ -649,7 +608,7 @@ impl Filter for Glitch {
 
         for y in 0..h {
             let band = y / band_h;
-            let noise = hash_noise(band as u32, self.seed);
+            let noise = noise::noise_1d(band as u32, self.seed as u64 ^ SEED_GLITCH);
 
             if noise.abs() > 1.0 - self.intensity {
                 let shift = (noise * self.shift_amount) as i32;

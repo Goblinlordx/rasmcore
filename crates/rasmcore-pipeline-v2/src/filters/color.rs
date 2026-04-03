@@ -13,6 +13,7 @@
 
 use crate::fusion::Clut3D;
 use crate::node::PipelineError;
+use crate::noise;
 use crate::ops::Filter;
 
 // ─── Color Space Helpers ───────────────────────────────────────────────────
@@ -1096,13 +1097,12 @@ fn kmeans_palette(
     if pixel_count == 0 || k == 0 {
         return vec![(0.0, 0.0, 0.0)];
     }
-    // Initialize centroids via seeded selection
+    // Initialize centroids via seeded selection (SplitMix64)
     let mut centroids: Vec<[f32; 3]> = Vec::with_capacity(k);
-    let mut rng = seed;
-    for _ in 0..k {
-        rng = rng.wrapping_mul(1103515245).wrapping_add(12345);
-        let idx = (rng as usize % pixel_count) * 4;
-        centroids.push([pixels[idx], pixels[idx + 1], pixels[idx + 2]]);
+    let km_seed = seed as u64 ^ noise::SEED_KMEANS;
+    for i in 0..k {
+        let pi = noise::seeded_index(i as u32, km_seed, pixel_count as u32) as usize * 4;
+        centroids.push([pixels[pi], pixels[pi + 1], pixels[pi + 2]]);
     }
     // Subsample for speed
     let step = (pixel_count / 8192).max(1);
