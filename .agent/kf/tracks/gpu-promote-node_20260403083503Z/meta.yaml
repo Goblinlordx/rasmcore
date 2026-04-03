@@ -1,5 +1,5 @@
 title: GPU-side promote — upload u8/u16 and promote to f32 on GPU
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-03'

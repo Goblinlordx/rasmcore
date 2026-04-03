@@ -1,66 +1,70 @@
 id: gpu-promote-node_20260403083503Z
-title: "GPU-side promote — upload u8/u16 and promote to f32 on GPU"
+title: GPU-side promote — upload u8/u16 and promote to f32 on GPU
 type: feature
 status: pending
 created: '2026-04-03'
 updated: '2026-04-03'
 spec:
-  summary: |
-    Move the Rgba8→Rgba32f promotion from CPU to GPU. Upload the smaller
+  summary: 'Move the Rgba8→Rgba32f promotion from CPU to GPU. Upload the smaller
+
     u8 data (4 bytes/pixel) and promote to f32 (16 bytes/pixel) on GPU,
+
     reducing transfer cost by 4x for the initial upload.
-  context: |
-    Currently the PromoteToF32 node runs on CPU — it converts decoded u8
+
+    '
+  context: 'Currently the PromoteToF32 node runs on CPU — it converts decoded u8
+
     pixels to f32 before any GPU dispatch. This means the CPU→GPU upload
+
     transfers 16 bytes/pixel instead of 4 bytes/pixel.
 
+
     At 4K (3840x2160): uploading u8 = 33MB, uploading f32 = 132MB.
+
     The promote shader is trivial (v / 255.0 per channel) but the transfer
+
     savings are significant — especially on bandwidth-constrained devices.
 
-    The benchmark shows GPU transfer is the bottleneck (all per-pixel ops
-    take the same ~20ms at 4K regardless of compute complexity). Reducing
-    transfer by 4x directly improves latency.
-  acceptance_criteria:
-    - PromoteToF32 node has a GPU compute shader
-    - Upload path sends u8 data and promotes on GPU
-    - Transfer size reduced by 4x for the initial source upload
-    - Output identical to CPU promote (within f32 precision)
-    - Falls back to CPU promote when GPU unavailable
-  out_of_scope: |
-    GPU-side quantize at write (demote f32→u8 on GPU before readback).
-    Multi-format promote (u16, f16 — start with u8 only).
-  technical_notes: |
-    The shader is trivial:
-    @compute @workgroup_size(16, 16, 1)
-    fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-        let idx = gid.x + gid.y * params.width;
-        let packed = input_u8[idx];  // u32 RGBA8
-        let r = f32((packed >> 0u) & 0xFFu) / 255.0;
-        let g = f32((packed >> 8u) & 0xFFu) / 255.0;
-        let b = f32((packed >> 16u) & 0xFFu) / 255.0;
-        let a = f32((packed >> 24u) & 0xFFu) / 255.0;
-        output_f32[idx] = vec4<f32>(r, g, b, a);
-    }
 
-    The challenge is the mixed buffer formats — input is U32Packed,
-    output is F32Vec4. The executor needs to handle asymmetric buffer
-    formats for this node (input 4bpp, output 16bpp).
+    The benchmark shows GPU transfer is the bottleneck (all per-pixel ops
+
+    take the same ~20ms at 4K regardless of compute complexity). Reducing
+
+    transfer by 4x directly improves latency.
+
+    '
+  acceptance_criteria:
+  - PromoteToF32 node has a GPU compute shader
+  - Upload path sends u8 data and promotes on GPU
+  - Transfer size reduced by 4x for the initial source upload
+  - Output identical to CPU promote (within f32 precision)
+  - Falls back to CPU promote when GPU unavailable
+  out_of_scope: 'GPU-side quantize at write (demote f32→u8 on GPU before readback).
+
+    Multi-format promote (u16, f16 — start with u8 only).
+
+    '
+  technical_notes: "The shader is trivial:\n@compute @workgroup_size(16, 16, 1)\nfn main(@builtin(global_invocation_id) gid:\
+    \ vec3<u32>) {\n    let idx = gid.x + gid.y * params.width;\n    let packed = input_u8[idx];  // u32 RGBA8\n    let r\
+    \ = f32((packed >> 0u) & 0xFFu) / 255.0;\n    let g = f32((packed >> 8u) & 0xFFu) / 255.0;\n    let b = f32((packed >>\
+    \ 16u) & 0xFFu) / 255.0;\n    let a = f32((packed >> 24u) & 0xFFu) / 255.0;\n    output_f32[idx] = vec4<f32>(r, g, b,\
+    \ a);\n}\n\nThe challenge is the mixed buffer formats — input is U32Packed,\noutput is F32Vec4. The executor needs to\
+    \ handle asymmetric buffer\nformats for this node (input 4bpp, output 16bpp).\n"
 plan:
-  - phase: "Implementation"
-    tasks:
-      - text: "Write promote_f32.wgsl shader (u32 packed → vec4<f32>)"
-        done: false
-      - text: "Add GpuCapable impl to PromoteNode"
-        done: false
-      - text: "Handle asymmetric buffer formats in executor (input u32, output f32)"
-        done: false
-      - text: "Verify transfer reduction (upload u8 not f32)"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "GPU promote output matches CPU promote"
-        done: false
-      - text: "Benchmark transfer improvement"
-        done: false
+- phase: Implementation
+  tasks:
+  - text: Write promote_f32.wgsl shader (u32 packed → vec4<f32>)
+    done: true
+  - text: Add GpuCapable impl to PromoteNode
+    done: true
+  - text: Handle asymmetric buffer formats in executor (input u32, output f32)
+    done: true
+  - text: Verify transfer reduction (upload u8 not f32)
+    done: true
+- phase: Verification
+  tasks:
+  - text: GPU promote output matches CPU promote
+    done: true
+  - text: Benchmark transfer improvement
+    done: true
 extra: {}
