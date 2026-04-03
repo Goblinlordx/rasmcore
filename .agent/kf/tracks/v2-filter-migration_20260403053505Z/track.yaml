@@ -5,116 +5,117 @@ status: pending
 created: '2026-04-03'
 updated: '2026-04-03'
 spec:
-  summary: |
-    Port all 210 existing filters from V1 multi-format API to V2
+  summary: 'Port all 210 existing filters from V1 multi-format API to V2
+
     f32-only API. Each filter loses ~30% of its code (format dispatch
+
     boilerplate removed). GPU shaders simplified to io_f32 only.
-  context: |
-    V1: each filter has 3-5 code paths (u8, u16, f32, GPU u32, GPU f32).
+
+    '
+  context: 'V1: each filter has 3-5 code paths (u8, u16, f32, GPU u32, GPU f32).
+
     V2: each filter has 1 code path (f32) + optional GPU shader.
 
+
     This is the largest single track in the V2 rebuild but it is
+
     mechanical — each filter follows the same transformation pattern:
+
     1. Remove validate_format, is_16bit, is_float checks
+
     2. Remove process_via_8bit/standard branches
+
     3. Change input from &[u8] + PixelFormat to &[f32]
+
     4. Remove .clamp(0.0, 255.0) as u8 output casts
+
     5. Change output from Vec<u8> to Vec<f32>
+
     6. Simplify GPU shader to io_f32 only (remove io_u32 variants)
+
     7. Add AnalyticOp/AffineOp/ClutOp trait where applicable
 
+
     Can be parallelized across workers by filter category.
+
+    '
   acceptance_criteria:
-    - All 210 filters ported to V2 Filter trait (f32 only)
-    - Zero process_via_8bit/process_via_standard calls remain
-    - Zero is_16bit/is_float/validate_format calls in filter code
-    - Zero PixelFormat references in filter code
-    - All GPU shaders use io_f32 only (no io_u32, no pixel_ops u32)
-    - Point ops implement AnalyticOp with expr()
-    - Spatial transforms implement AffineOp with matrix()
-    - Color ops implement ClutOp with build_clut()
-    - All V1 parity tests pass against V2 filter output
-    - CPU and GPU implementations for all filters that had them in V1
-  out_of_scope: |
-    Adding GPU shaders to filters that didn't have them in V1.
+  - All 210 filters ported to V2 Filter trait (f32 only)
+  - Zero process_via_8bit/process_via_standard calls remain
+  - Zero is_16bit/is_float/validate_format calls in filter code
+  - Zero PixelFormat references in filter code
+  - All GPU shaders use io_f32 only (no io_u32, no pixel_ops u32)
+  - Point ops implement AnalyticOp with expr()
+  - Spatial transforms implement AffineOp with matrix()
+  - Color ops implement ClutOp with build_clut()
+  - All V1 parity tests pass against V2 filter output
+  - CPU and GPU implementations for all filters that had them in V1
+  out_of_scope: 'Adding GPU shaders to filters that didn''t have them in V1.
+
     New filters.
-  technical_notes: |
-    Migration pattern per filter:
 
-    V1:
-      fn blur(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo,
-              config: &BlurParams) -> Result<Vec<u8>, ImageError> {
-          validate_format(info.format)?;
-          if is_16bit(info.format) || is_float(info.format) {
-              return process_via_standard(&pixels, info, |p, i| blur(..));
-          }
-          // ... u8 processing with pixels[idx] as f32 ...
-          // ... output[idx] = result.clamp(0.0, 255.0) as u8 ...
-      }
-
-    V2:
-      impl Filter for BlurParams {
-          fn compute(&self, input: &[f32], w: u32, h: u32) -> Vec<f32> {
-              convolve_separable_f32(input, w, h, 4, &kernel, &kernel, 1.0)
-          }
-      }
-
-    Parallelization: split by category (8 workers can each take a category):
-    - spatial (22), color (22), enhancement (20), effect (18)
-    - color_grading (17), adjustment (11), distortion (11), rest (79)
+    '
+  technical_notes: "Migration pattern per filter:\n\nV1:\n  fn blur(request: Rect, upstream: &mut UpstreamFn, info: &ImageInfo,\n\
+    \          config: &BlurParams) -> Result<Vec<u8>, ImageError> {\n      validate_format(info.format)?;\n      if is_16bit(info.format)\
+    \ || is_float(info.format) {\n          return process_via_standard(&pixels, info, |p, i| blur(..));\n      }\n      //\
+    \ ... u8 processing with pixels[idx] as f32 ...\n      // ... output[idx] = result.clamp(0.0, 255.0) as u8 ...\n  }\n\n\
+    V2:\n  impl Filter for BlurParams {\n      fn compute(&self, input: &[f32], w: u32, h: u32) -> Vec<f32> {\n          convolve_separable_f32(input,\
+    \ w, h, 4, &kernel, &kernel, 1.0)\n      }\n  }\n\nParallelization: split by category (8 workers can each take a category):\n\
+    - spatial (22), color (22), enhancement (20), effect (18)\n- color_grading (17), adjustment (11), distortion (11), rest\
+    \ (79)\n"
 plan:
-  - phase: Spatial filters (22)
-    tasks:
-      - text: Port blur, sharpen, median, box_blur, average_blur to V2 f32 API
-        done: false
-      - text: Port convolve, high_pass, smart_sharpen, motion_blur to V2
-        done: false
-      - text: Port spin_blur, zoom_blur, kuwahara, bilateral to V2
-        done: false
-      - text: Port guided_filter, lens_blur, rank_filter, displacement_map to V2
-        done: false
-      - text: Port tilt_shift, bokeh_blur, gaussian_blur_cv to V2
-        done: false
-  - phase: Distortion + transform filters (15)
-    tasks:
-      - text: Port wave, swirl, barrel, spherize, ripple, polar, depolar to V2
-        done: false
-      - text: Port mesh_warp, liquify (push/pinch/expand/twirl/smooth) to V2
-        done: false
-      - text: Port resize, rotate, flip, crop to V2 (with AffineOp)
-        done: false
-  - phase: Point ops + adjustment (30)
-    tasks:
-      - text: Port brightness, contrast, gamma, levels, exposure, invert to V2 (with AnalyticOp)
-        done: false
-      - text: Port posterize, sigmoidal_contrast, curves, burn, dodge to V2
-        done: false
-      - text: Port color_balance, lift_gamma_gain, split_toning to V2
-        done: false
-  - phase: Color + enhancement + effect (75)
-    tasks:
-      - text: Port all color grading filters (17) to V2
-        done: false
-      - text: Port all enhancement filters (20) to V2
-        done: false
-      - text: Port all effect filters (18) to V2
-        done: false
-      - text: Port all color filters (22) to V2
-        done: false
-  - phase: Remaining categories (68)
-    tasks:
-      - text: Port morphology (10), threshold (6), edge (5), mask (11) to V2
-        done: false
-      - text: Port analyze (6), alpha (6), composite (6) to V2
-        done: false
-      - text: Port draw (9), evaluate (10), generator (7), tool (7) to V2
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Zero format dispatch calls remaining (grep audit)
-        done: false
-      - text: All V1 parity tests pass against V2 output (tolerance matching)
-        done: false
-      - text: All GPU shaders use io_f32 only
-        done: false
+- phase: Spatial filters (22)
+  tasks:
+  - text: Port blur, sharpen, median, box_blur, average_blur to V2 f32 API
+    done: false
+  - text: Port convolve, high_pass, smart_sharpen, motion_blur to V2
+    done: false
+  - text: Port spin_blur, zoom_blur, kuwahara, bilateral to V2
+    done: false
+  - text: Port guided_filter, lens_blur, rank_filter, displacement_map to V2
+    done: false
+  - text: Port tilt_shift, bokeh_blur, gaussian_blur_cv to V2
+    done: false
+- phase: Distortion + transform filters (15)
+  tasks:
+  - text: Port wave, swirl, barrel, spherize, ripple, polar, depolar to V2
+    done: false
+  - text: Port mesh_warp, liquify (push/pinch/expand/twirl/smooth) to V2
+    done: false
+  - text: Port resize, rotate, flip, crop to V2 (with AffineOp)
+    done: false
+- phase: Point ops + adjustment (30)
+  tasks:
+  - text: Port brightness, contrast, gamma, levels, exposure, invert to V2 (with AnalyticOp)
+    done: true
+  - text: Port posterize, sigmoidal_contrast, curves, burn, dodge to V2
+    done: false
+  - text: Port color_balance, lift_gamma_gain, split_toning to V2
+    done: false
+- phase: Color + enhancement + effect (75)
+  tasks:
+  - text: Port all color grading filters (17) to V2
+    done: false
+  - text: Port all enhancement filters (20) to V2
+    done: false
+  - text: Port all effect filters (18) to V2
+    done: false
+  - text: Port all color filters (22) to V2
+    done: false
+- phase: Remaining categories (68)
+  tasks:
+  - text: Port morphology (10), threshold (6), edge (5), mask (11) to V2
+    done: false
+  - text: Port analyze (6), alpha (6), composite (6) to V2
+    done: false
+  - text: Port draw (9), evaluate (10), generator (7), tool (7) to V2
+    done: false
+- phase: Verification
+  tasks:
+  - text: Zero format dispatch calls remaining (grep audit)
+    done: false
+  - text: All V1 parity tests pass against V2 output (tolerance matching)
+    done: false
+  - text: All GPU shaders use io_f32 only
+    done: false
 extra: {}
