@@ -124,6 +124,32 @@ pub fn constant_fold(expr: &PointOpExpr) -> PointOpExpr {
                 _ => PointOpExpr::Min(Box::new(a), Box::new(b)),
             }
         }
+        PointOpExpr::Exp(v) => {
+            let v = constant_fold(v);
+            if let PointOpExpr::Constant(c) = &v {
+                PointOpExpr::Constant(c.exp())
+            } else {
+                PointOpExpr::Exp(Box::new(v))
+            }
+        }
+        PointOpExpr::Ln(v) => {
+            let v = constant_fold(v);
+            if let PointOpExpr::Constant(c) = &v {
+                PointOpExpr::Constant(if *c > 0.0 { c.ln() } else { -30.0 })
+            } else {
+                PointOpExpr::Ln(Box::new(v))
+            }
+        }
+        PointOpExpr::Select(cond, t, f) => {
+            let cond = constant_fold(cond);
+            let t = constant_fold(t);
+            let f = constant_fold(f);
+            if let PointOpExpr::Constant(c) = &cond {
+                if *c > 0.0 { t } else { f }
+            } else {
+                PointOpExpr::Select(Box::new(cond), Box::new(t), Box::new(f))
+            }
+        }
     }
 }
 
@@ -144,7 +170,8 @@ pub fn is_constant(expr: &PointOpExpr) -> bool {
         | PointOpExpr::Pow(a, b)
         | PointOpExpr::Max(a, b)
         | PointOpExpr::Min(a, b) => is_constant(a) && is_constant(b),
-        PointOpExpr::Clamp(v, _, _) | PointOpExpr::Floor(v) => is_constant(v),
+        PointOpExpr::Clamp(v, _, _) | PointOpExpr::Floor(v) | PointOpExpr::Exp(v) | PointOpExpr::Ln(v) => is_constant(v),
+        PointOpExpr::Select(cond, t, f) => is_constant(cond) && is_constant(t) && is_constant(f),
     }
 }
 
@@ -191,6 +218,16 @@ pub fn lower_to_wgsl(expr: &PointOpExpr) -> String {
         PointOpExpr::Floor(v) => format!("floor({})", lower_to_wgsl(v)),
         PointOpExpr::Max(a, b) => format!("max({}, {})", lower_to_wgsl(a), lower_to_wgsl(b)),
         PointOpExpr::Min(a, b) => format!("min({}, {})", lower_to_wgsl(a), lower_to_wgsl(b)),
+        PointOpExpr::Exp(v) => format!("exp({})", lower_to_wgsl(v)),
+        PointOpExpr::Ln(v) => format!("log({})", lower_to_wgsl(v)),
+        PointOpExpr::Select(cond, t, f) => {
+            format!(
+                "select({}, {}, {} > 0.0)",
+                lower_to_wgsl(f),
+                lower_to_wgsl(t),
+                lower_to_wgsl(cond)
+            )
+        }
     }
 }
 

@@ -198,6 +198,12 @@ pub enum PointOpExpr {
     Max(Box<PointOpExpr>, Box<PointOpExpr>),
     /// Minimum: min(a, b).
     Min(Box<PointOpExpr>, Box<PointOpExpr>),
+    /// Exponential: e^x.
+    Exp(Box<PointOpExpr>),
+    /// Natural logarithm: ln(x).
+    Ln(Box<PointOpExpr>),
+    /// Conditional select: if condition > 0 then if_true else if_false.
+    Select(Box<PointOpExpr>, Box<PointOpExpr>, Box<PointOpExpr>),
 }
 
 impl PointOpExpr {
@@ -240,6 +246,13 @@ impl PointOpExpr {
                 Box::new(Self::compose(a, inner)),
                 Box::new(Self::compose(b, inner)),
             ),
+            PointOpExpr::Exp(v) => PointOpExpr::Exp(Box::new(Self::compose(v, inner))),
+            PointOpExpr::Ln(v) => PointOpExpr::Ln(Box::new(Self::compose(v, inner))),
+            PointOpExpr::Select(cond, t, f) => PointOpExpr::Select(
+                Box::new(Self::compose(cond, inner)),
+                Box::new(Self::compose(t, inner)),
+                Box::new(Self::compose(f, inner)),
+            ),
         }
     }
 
@@ -260,6 +273,18 @@ impl PointOpExpr {
             PointOpExpr::Floor(x) => x.evaluate(v).floor(),
             PointOpExpr::Max(a, b) => a.evaluate(v).max(b.evaluate(v)),
             PointOpExpr::Min(a, b) => a.evaluate(v).min(b.evaluate(v)),
+            PointOpExpr::Exp(x) => x.evaluate(v).exp(),
+            PointOpExpr::Ln(x) => {
+                let val = x.evaluate(v);
+                if val > 0.0 { val.ln() } else { -30.0 } // clamp to avoid -inf
+            }
+            PointOpExpr::Select(cond, t, f) => {
+                if cond.evaluate(v) > 0.0 {
+                    t.evaluate(v)
+                } else {
+                    f.evaluate(v)
+                }
+            }
         }
     }
 
@@ -378,5 +403,48 @@ mod tests {
         );
         // 0.5 ^ (1/2.2) ≈ 0.7297
         assert!((gamma.evaluate(0.5) - 0.7297).abs() < 0.001);
+    }
+
+    #[test]
+    fn exp_expr() {
+        let e = PointOpExpr::Exp(Box::new(PointOpExpr::Input));
+        assert!((e.evaluate(0.0) - 1.0).abs() < 1e-6); // e^0 = 1
+        assert!((e.evaluate(1.0) - std::f64::consts::E).abs() < 1e-6);
+    }
+
+    #[test]
+    fn ln_expr() {
+        let l = PointOpExpr::Ln(Box::new(PointOpExpr::Input));
+        assert!((l.evaluate(1.0) - 0.0).abs() < 1e-6); // ln(1) = 0
+        assert!((l.evaluate(std::f64::consts::E) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn select_expr() {
+        // if (v - 0.5) > 0 then (1 - v) else v
+        let sel = PointOpExpr::Select(
+            Box::new(PointOpExpr::Sub(
+                Box::new(PointOpExpr::Input),
+                Box::new(PointOpExpr::Constant(0.5)),
+            )),
+            Box::new(PointOpExpr::Sub(
+                Box::new(PointOpExpr::Constant(1.0)),
+                Box::new(PointOpExpr::Input),
+            )),
+            Box::new(PointOpExpr::Input),
+        );
+        // v=0.3: condition = -0.2 <= 0 → false branch → 0.3
+        assert!((sel.evaluate(0.3) - 0.3).abs() < 1e-6);
+        // v=0.7: condition = 0.2 > 0 → true branch → 1-0.7 = 0.3
+        assert!((sel.evaluate(0.7) - 0.3).abs() < 1e-6);
+    }
+
+    #[test]
+    fn exp_ln_roundtrip() {
+        let chain = PointOpExpr::Ln(Box::new(PointOpExpr::Exp(Box::new(PointOpExpr::Input))));
+        for i in 0..10 {
+            let v = i as f64 * 0.1;
+            assert!((chain.evaluate(v) - v).abs() < 1e-10, "roundtrip at {v}");
+        }
     }
 }
