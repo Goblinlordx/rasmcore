@@ -275,6 +275,70 @@ impl CpuFilter for MeshWarpParams {
     }
 }
 
+impl crate::domain::filter_traits::GpuFilter for MeshWarpParams {
+    fn gpu_ops(
+        &self,
+        width: u32,
+        height: u32,
+    ) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        self.gpu_ops_with_format(width, height, rasmcore_pipeline::gpu::BufferFormat::F32Vec4)
+    }
+
+    fn gpu_ops_with_format(
+        &self,
+        width: u32,
+        height: u32,
+        buffer_format: rasmcore_pipeline::gpu::BufferFormat,
+    ) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        use rasmcore_pipeline::gpu::{BufferFormat, GpuOp};
+
+        // Only support F32Vec4 — mesh warp uses custom bindings
+        if buffer_format != BufferFormat::F32Vec4 {
+            return None;
+        }
+
+        let w = width as f32;
+        let h = height as f32;
+        let cols = self.grid_cols;
+        let rows = self.grid_rows;
+        let expected = (cols * rows) as usize;
+
+        // Parse grid to pixel coordinates
+        let grid = if self.grid_json.trim().is_empty() {
+            identity_grid(cols, rows, w, h)
+        } else {
+            parse_grid(&self.grid_json, w, h, expected).ok()?
+        };
+
+        // Serialize grid as array of vec4<f32> (src_x, src_y, dst_x, dst_y)
+        let mut grid_buf = Vec::with_capacity(grid.len() * 16);
+        for cp in &grid {
+            grid_buf.extend_from_slice(&cp.src_x.to_le_bytes());
+            grid_buf.extend_from_slice(&cp.src_y.to_le_bytes());
+            grid_buf.extend_from_slice(&cp.dst_x.to_le_bytes());
+            grid_buf.extend_from_slice(&cp.dst_y.to_le_bytes());
+        }
+
+        let mut params = Vec::with_capacity(16);
+        params.extend_from_slice(&width.to_le_bytes());
+        params.extend_from_slice(&height.to_le_bytes());
+        params.extend_from_slice(&cols.to_le_bytes());
+        params.extend_from_slice(&rows.to_le_bytes());
+
+        static SHADER: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+            include_str!("../../../shaders/mesh_warp_f32.wgsl").to_string()
+        });
+
+        Some(vec![GpuOp::Compute {
+            shader: SHADER.clone(),
+            entry_point: "main",
+            workgroup_size: [16, 16, 1],
+            params,
+            extra_buffers: vec![grid_buf],
+            buffer_format: BufferFormat::F32Vec4,
+        }])
+    }
+}
 
 #[cfg(test)]
 mod tests {
