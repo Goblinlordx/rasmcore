@@ -5,225 +5,193 @@ status: pending
 created: '2026-04-03'
 updated: '2026-04-03'
 spec:
-  summary: |
-    Multi-stage pipeline execution where analysis nodes produce typed
+  summary: 'Multi-stage pipeline execution where analysis nodes produce typed
+
     parameters that feed into downstream pixel nodes. The pipeline
+
     validates bindings against node parameter schemas before execution.
-  context: |
-    Problem: some operations depend on data-computed parameters.
+
+    '
+  context: 'Problem: some operations depend on data-computed parameters.
+
     Smart crop: analyze image content → determine best crop rect → crop.
+
     Auto-exposure: analyze histogram → compute EV adjustment → apply.
+
     Face-aware liquify: detect face landmarks → parameterize warp.
 
+
     The crop rect is unknown until analysis runs. But a static graph
+
     needs all node parameters resolved before pixel execution begins
+
     (nodes must report correct info() dimensions for demand propagation).
 
+
     Solution: staged execution with typed parameter binding.
+
     Stage 1: run analysis subgraph → produces typed AnalysisResult
+
     Stage 2: bind results to downstream node params (validated against schema)
+
     Stage 3: run pixel graph with all parameters resolved
 
+
     The graph is immutable during pixel execution. Parameter resolution
+
     happens between stages. This preserves the clean demand-driven pull
+
     model.
 
+
     Key requirement: the binding system must be TYPE-SAFE. An analysis
+
     node declares what type of result it produces (Rect, f32, Vec<Point2D>,
+
     etc.). A downstream node declares what type each of its parameters
+
     expects. The pipeline validates that the binding types match before
+
     execution — no runtime type errors during pixel dispatch.
-  codebase_analysis: |
-    V2 pipeline foundation (rasmcore-pipeline-v2):
+
+    '
+  codebase_analysis: 'V2 pipeline foundation (rasmcore-pipeline-v2):
+
     - Node trait: fn compute(request, upstream) -> Vec<f32>
+
     - NodeInfo: width, height, color_space
+
     - Graph: add_node, request_region, request_tiled
+
     - Upstream trait: request(id, rect) + info(id)
 
+
     V2 registration system (future):
+
     - ParamDescriptor: name, type, min, max, default
+
     - OperationRegistration: metadata + param descriptors
+
     - Param schema is known at registration time
 
+
     Current V1 analysis patterns:
+
     - smart_crop.rs: computes crop rect, returns DecodedImage (pixel data)
+
     - harris_corners.rs: returns Vec<Point2D>
+
     - connected_components.rs: returns labeled image
+
     - histogram: returns channel histograms
+
     These all currently run as regular filters and return their results
+
     embedded in pixel data or as side-channel outputs. No formal
+
     analysis→param binding exists.
 
+
     Professional tool patterns:
+
     - Nuke: _validate pass resolves dimensions top-down before engine pass
+
     - Resolve: analysis nodes (face detect, scene detect) run in a pre-pass
+
     - After Effects: expressions can reference analysis results from other layers
+
+    '
   acceptance_criteria:
-    - AnalysisNode trait — produces typed AnalysisResult, not pixels
-    - AnalysisResult enum with typed variants (Rect, Scalar, PointCloud, Histogram, Custom)
-    - ParamBinding — maps analysis output to a specific param of a specific node
-    - Type validation — binding rejected if analysis output type != param expected type
-    - Schema validation — bound param values checked against param constraints (min/max/bounds)
-    - StagedPipeline — orchestrates analysis stage → bind → pixel stage
-    - Cached intermediate — pixel data computed during analysis is cached for the pixel stage
-    - Analysis nodes can also declare GPU shaders for acceleration
-    - Smart crop example — end-to-end: analyze → bind crop_rect → crop → encode
-    - Auto-exposure example — analyze histogram → bind ev_adjustment → apply exposure
-  out_of_scope: |
-    Iterative/convergent analysis (multiple analysis passes that refine each other).
+  - AnalysisNode trait — produces typed AnalysisResult, not pixels
+  - AnalysisResult enum with typed variants (Rect, Scalar, PointCloud, Histogram, Custom)
+  - ParamBinding — maps analysis output to a specific param of a specific node
+  - Type validation — binding rejected if analysis output type != param expected type
+  - Schema validation — bound param values checked against param constraints (min/max/bounds)
+  - StagedPipeline — orchestrates analysis stage → bind → pixel stage
+  - Cached intermediate — pixel data computed during analysis is cached for the pixel stage
+  - Analysis nodes can also declare GPU shaders for acceleration
+  - Smart crop example — end-to-end: analyze → bind crop_rect → crop → encode
+  - Auto-exposure example — analyze histogram → bind ev_adjustment → apply exposure
+  out_of_scope: 'Iterative/convergent analysis (multiple analysis passes that refine each other).
+
     Dynamic graph topology (adding/removing nodes between stages).
+
     Real-time analysis feedback (interactive preview during analysis).
-  technical_notes: |
-    DESIGN: Typed Parameter Binding
 
-    1. ANALYSIS RESULT — typed output from analysis nodes:
-
-       enum AnalysisResult {
-           Rect(Rect),                    // crop region, ROI
-           Scalar(f32),                   // exposure value, threshold
-           ScalarVec(Vec<f32>),           // histogram, per-channel values
-           Points(Vec<(f32, f32)>),       // landmarks, corners, keypoints
-           Matrix([f64; 6]),              // detected transform (homography)
-           Custom(String, Vec<u8>),       // extensible: type tag + serialized data
-       }
-
-    2. ANALYSIS NODE — trait for nodes that produce params, not pixels:
-
-       trait AnalysisNode: Node {
-           fn result_type(&self) -> AnalysisResultType;
-           fn analyze(&self, input: &[f32], w: u32, h: u32) -> AnalysisResult;
-       }
-
-       // AnalysisNode also implements Node so it can participate in the
-       // graph for input data. Its compute() returns analysis visualization
-       // (optional). Its analyze() returns the typed result.
-
-    3. PARAM BINDING — typed link from analysis output to node param:
-
-       struct ParamBinding {
-           /// Which analysis node produces the value
-           source_node: u32,
-           /// Which pixel node consumes the value
-           target_node: u32,
-           /// Which parameter on the target node
-           target_param: String,
-           /// Optional transform: map analysis result to param value
-           /// e.g., Rect → (x: u32, y: u32, w: u32, h: u32) decomposition
-           transform: Option<BindingTransform>,
-       }
-
-       enum BindingTransform {
-           /// Use the analysis result directly (type must match param)
-           Identity,
-           /// Extract a field from a composite result
-           Field(String),  // e.g., "x" from Rect
-           /// Apply a function (e.g., clamp, scale, offset)
-           Map(Box<dyn Fn(&AnalysisResult) -> ParamValue>),
-       }
-
-    4. VALIDATION — before execution:
-
-       fn validate_binding(binding: &ParamBinding, graph: &Graph) -> Result<()> {
-           let source = graph.analysis_node(binding.source_node)?;
-           let target_reg = graph.node_registration(binding.target_node)?;
-           let param_desc = target_reg.param(binding.target_param)?;
-
-           // Type check: analysis output type compatible with param type
-           check_type_compat(source.result_type(), param_desc.value_type)?;
-
-           // After analysis runs, also validate value constraints:
-           // param_desc.min <= value <= param_desc.max
-           // Rect within source dimensions
-           // etc.
-       }
-
-    5. STAGED PIPELINE — execution orchestration:
-
-       struct StagedPipeline {
-           graph: Graph,
-           bindings: Vec<ParamBinding>,
-       }
-
-       impl StagedPipeline {
-           fn execute(&mut self, sink_node: u32) -> Result<Vec<f32>> {
-               // Stage 1: validate all bindings (type check)
-               self.validate_bindings()?;
-
-               // Stage 2: run analysis nodes
-               let results = self.run_analysis()?;
-
-               // Stage 3: bind results to params (value validation)
-               self.apply_bindings(&results)?;
-
-               // Stage 4: run pixel graph (all params resolved)
-               self.graph.request_full(sink_node)
-           }
-       }
-
-    6. CACHING — analysis shares upstream data with pixel stage:
-
-       The analysis node pulls upstream pixel data via the normal
-       graph.request_region(). This data gets cached in the spatial cache.
-       When the pixel stage runs and requests the same upstream region,
-       it hits the cache — no redundant decode/compute.
-
-    7. SMART CROP EXAMPLE:
-
-       // Build graph
-       let source = graph.add_node(decode_node);
-       let analyzer = graph.add_analysis_node(SmartCropAnalyzer { ... });
-       let crop = graph.add_node(CropNode::deferred(source));  // params TBD
-       let encode = graph.add_node(encode_node);
-
-       // Bind analysis output → crop params
-       pipeline.bind(ParamBinding {
-           source_node: analyzer,
-           target_node: crop,
-           target_param: "crop_rect".into(),
-           transform: None,  // SmartCropAnalyzer returns Rect, CropNode expects Rect
-       });
-
-       // Execute: analyze → resolve crop_rect → run pixel pipeline
-       let output = pipeline.execute(encode)?;
+    '
+  technical_notes: "DESIGN: Typed Parameter Binding\n\n1. ANALYSIS RESULT — typed output from analysis nodes:\n\n   enum AnalysisResult\
+    \ {\n       Rect(Rect),                    // crop region, ROI\n       Scalar(f32),                   // exposure value,\
+    \ threshold\n       ScalarVec(Vec<f32>),           // histogram, per-channel values\n       Points(Vec<(f32, f32)>), \
+    \      // landmarks, corners, keypoints\n       Matrix([f64; 6]),              // detected transform (homography)\n  \
+    \     Custom(String, Vec<u8>),       // extensible: type tag + serialized data\n   }\n\n2. ANALYSIS NODE — trait for nodes\
+    \ that produce params, not pixels:\n\n   trait AnalysisNode: Node {\n       fn result_type(&self) -> AnalysisResultType;\n\
+    \       fn analyze(&self, input: &[f32], w: u32, h: u32) -> AnalysisResult;\n   }\n\n   // AnalysisNode also implements\
+    \ Node so it can participate in the\n   // graph for input data. Its compute() returns analysis visualization\n   // (optional).\
+    \ Its analyze() returns the typed result.\n\n3. PARAM BINDING — typed link from analysis output to node param:\n\n   struct\
+    \ ParamBinding {\n       /// Which analysis node produces the value\n       source_node: u32,\n       /// Which pixel\
+    \ node consumes the value\n       target_node: u32,\n       /// Which parameter on the target node\n       target_param:\
+    \ String,\n       /// Optional transform: map analysis result to param value\n       /// e.g., Rect → (x: u32, y: u32,\
+    \ w: u32, h: u32) decomposition\n       transform: Option<BindingTransform>,\n   }\n\n   enum BindingTransform {\n   \
+    \    /// Use the analysis result directly (type must match param)\n       Identity,\n       /// Extract a field from a\
+    \ composite result\n       Field(String),  // e.g., \"x\" from Rect\n       /// Apply a function (e.g., clamp, scale,\
+    \ offset)\n       Map(Box<dyn Fn(&AnalysisResult) -> ParamValue>),\n   }\n\n4. VALIDATION — before execution:\n\n   fn\
+    \ validate_binding(binding: &ParamBinding, graph: &Graph) -> Result<()> {\n       let source = graph.analysis_node(binding.source_node)?;\n\
+    \       let target_reg = graph.node_registration(binding.target_node)?;\n       let param_desc = target_reg.param(binding.target_param)?;\n\
+    \n       // Type check: analysis output type compatible with param type\n       check_type_compat(source.result_type(),\
+    \ param_desc.value_type)?;\n\n       // After analysis runs, also validate value constraints:\n       // param_desc.min\
+    \ <= value <= param_desc.max\n       // Rect within source dimensions\n       // etc.\n   }\n\n5. STAGED PIPELINE — execution\
+    \ orchestration:\n\n   struct StagedPipeline {\n       graph: Graph,\n       bindings: Vec<ParamBinding>,\n   }\n\n  \
+    \ impl StagedPipeline {\n       fn execute(&mut self, sink_node: u32) -> Result<Vec<f32>> {\n           // Stage 1: validate\
+    \ all bindings (type check)\n           self.validate_bindings()?;\n\n           // Stage 2: run analysis nodes\n    \
+    \       let results = self.run_analysis()?;\n\n           // Stage 3: bind results to params (value validation)\n    \
+    \       self.apply_bindings(&results)?;\n\n           // Stage 4: run pixel graph (all params resolved)\n           self.graph.request_full(sink_node)\n\
+    \       }\n   }\n\n6. CACHING — analysis shares upstream data with pixel stage:\n\n   The analysis node pulls upstream\
+    \ pixel data via the normal\n   graph.request_region(). This data gets cached in the spatial cache.\n   When the pixel\
+    \ stage runs and requests the same upstream region,\n   it hits the cache — no redundant decode/compute.\n\n7. SMART CROP\
+    \ EXAMPLE:\n\n   // Build graph\n   let source = graph.add_node(decode_node);\n   let analyzer = graph.add_analysis_node(SmartCropAnalyzer\
+    \ { ... });\n   let crop = graph.add_node(CropNode::deferred(source));  // params TBD\n   let encode = graph.add_node(encode_node);\n\
+    \n   // Bind analysis output → crop params\n   pipeline.bind(ParamBinding {\n       source_node: analyzer,\n       target_node:\
+    \ crop,\n       target_param: \"crop_rect\".into(),\n       transform: None,  // SmartCropAnalyzer returns Rect, CropNode\
+    \ expects Rect\n   });\n\n   // Execute: analyze → resolve crop_rect → run pixel pipeline\n   let output = pipeline.execute(encode)?;\n"
 plan:
-  - phase: Analysis infrastructure
-    tasks:
-      - text: Define AnalysisResult enum with typed variants
-        done: false
-      - text: Define AnalysisResultType for compile-time type checking
-        done: false
-      - text: Define AnalysisNode trait (extends Node with analyze + result_type)
-        done: false
-  - phase: Parameter binding
-    tasks:
-      - text: Define ParamBinding struct (source, target, param name, transform)
-        done: false
-      - text: Define BindingTransform (Identity, Field, Map)
-        done: false
-      - text: Type validation — check analysis result type vs param descriptor type
-        done: false
-      - text: Value validation — check bound values against param constraints (min/max/bounds)
-        done: false
-  - phase: Staged pipeline
-    tasks:
-      - text: StagedPipeline struct — graph + bindings + validation
-        done: false
-      - text: Stage 1 — run analysis nodes, collect AnalysisResults
-        done: false
-      - text: Stage 2 — apply bindings (mutate target node params with validated results)
-        done: false
-      - text: Stage 3 — run pixel graph with resolved params
-        done: false
-      - text: Cache sharing between analysis and pixel stages
-        done: false
-  - phase: Examples and verification
-    tasks:
-      - text: Smart crop example — analyze content → bind crop rect → crop
-        done: false
-      - text: Auto-exposure example — analyze histogram → bind EV → apply
-        done: false
-      - text: Type mismatch test — binding Scalar to a Rect param fails validation
-        done: false
-      - text: Value constraint test — crop rect outside image bounds fails validation
-        done: false
+- phase: Analysis infrastructure
+  tasks:
+  - text: Define AnalysisResult enum with typed variants
+    done: true
+  - text: Define AnalysisResultType for compile-time type checking
+    done: true
+  - text: Define AnalysisNode trait (extends Node with analyze + result_type)
+    done: true
+- phase: Parameter binding
+  tasks:
+  - text: Define ParamBinding struct (source, target, param name, transform)
+    done: true
+  - text: Define BindingTransform (Identity, Field, Map)
+    done: true
+  - text: Type validation — check analysis result type vs param descriptor type
+    done: true
+  - text: Value validation — check bound values against param constraints (min/max/bounds)
+    done: true
+- phase: Staged pipeline
+  tasks:
+  - text: StagedPipeline struct — graph + bindings + validation
+    done: true
+  - text: Stage 1 — run analysis nodes, collect AnalysisResults
+    done: true
+  - text: Stage 2 — apply bindings (mutate target node params with validated results)
+    done: true
+  - text: Stage 3 — run pixel graph with resolved params
+    done: true
+  - text: Cache sharing between analysis and pixel stages
+    done: true
+- phase: Examples and verification
+  tasks:
+  - text: Smart crop example — analyze content → bind crop rect → crop
+    done: true
+  - text: Auto-exposure example — analyze histogram → bind EV → apply
+    done: true
+  - text: Type mismatch test — binding Scalar to a Rect param fails validation
+    done: true
+  - text: Value constraint test — crop rect outside image bounds fails validation
+    done: true
 extra: {}
