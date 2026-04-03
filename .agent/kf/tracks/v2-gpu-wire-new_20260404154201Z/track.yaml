@@ -3,94 +3,100 @@ title: Wire GpuFilter to remaining filters — effects + color (9 filters)
 type: feature
 status: pending
 created: '2026-04-04'
-updated: '2026-04-04'
+updated: '2026-04-03'
 spec:
-  summary: |
-    Write new WGSL shaders and implement GpuFilter for the remaining 9
+  summary: 'Write new WGSL shaders and implement GpuFilter for the remaining 9
+
     CPU-only filters in effect and color categories. These need new
+
     shader code (no existing constants).
-  context: |
-    After Track 1 (21 filters wired), these 9 remain. Each needs a
+
+    '
+  context: 'After Track 1 (21 filters wired), these 9 remain. Each needs a
+
     new WGSL compute shader written from scratch, plus the GpuFilter
+
     impl on the struct. These are a mix of neighborhood ops, procedural
+
     generators, and analysis-dependent ops.
 
+
     GPU-primary target: after this track, ZERO CPU-only filters remain.
-  codebase_analysis: |
-    Effect (6 CPU-only — need new shaders):
+
+    '
+  codebase_analysis: 'Effect (6 CPU-only — need new shaders):
+
     - FilmGrain — GPU RNG + per-pixel noise overlay
+
     - Pixelate — block average (workgroup shared or per-pixel block lookup)
+
     - Halftone — distance-to-dot-center threshold
+
     - OilPaint — neighborhood mode filter (like median but for color)
+
     - Emboss — fixed 3x3 convolution kernel
+
     - Charcoal — edge detection + threshold
 
+
     Color (3 CPU-only — need new shaders):
+
     - KmeansQuantize — GPU palette lookup (pre-compute palette on CPU, apply on GPU)
+
     - DitherFloydSteinberg — use ordered dither on GPU (sequential error diffusion not parallelizable)
+
     - LabSharpen — Lab conversion + sharpen + convert back (3 passes)
+
+    '
   acceptance_criteria:
-    - New WGSL shaders for all 9 filters
-    - impl GpuFilter for all 9 filter structs
-    - All GPU outputs match CPU within f32 tolerance
-    - FilmGrain uses GPU RNG (PCG hash)
-    - DitherFloydSteinberg uses ordered dither approximation on GPU
-    - KmeansQuantize uses pre-computed palette + GPU nearest-color lookup
-    - After this track ZERO filters are CPU-only
-    - Final audit grep confirms no Filter impl without GpuFilter/AnalyticOp/ClutOp
-  out_of_scope: |
-    Enhancement and spatial filters (Track 1).
-  technical_notes: |
-    Emboss WGSL (trivial — fixed 3x3 kernel):
-      const kernel = array<f32, 9>(-2,-1,0, -1,1,1, 0,1,2);
-      // Apply like convolve shader with hardcoded kernel
+  - New WGSL shaders for all 9 filters
+  - impl GpuFilter for all 9 filter structs
+  - All GPU outputs match CPU within f32 tolerance
+  - FilmGrain uses GPU RNG (PCG hash)
+  - DitherFloydSteinberg uses ordered dither approximation on GPU
+  - KmeansQuantize uses pre-computed palette + GPU nearest-color lookup
+  - After this track ZERO filters are CPU-only
+  - Final audit grep confirms no Filter impl without GpuFilter/AnalyticOp/ClutOp
+  out_of_scope: 'Enhancement and spatial filters (Track 1).
 
-    Pixelate WGSL:
-      let block_x = (gid.x / params.block_size) * params.block_size + params.block_size/2;
-      let block_y = (gid.y / params.block_size) * params.block_size + params.block_size/2;
-      output[idx] = load_pixel(block_x + block_y * params.width);
-
-    FilmGrain WGSL:
-      fn pcg_hash(v: u32) -> u32 { ... }
-      let noise = (rand_f32(seed) - 0.5) * params.strength;
-      color.rgb += noise;
-
-    KmeansQuantize: pre-compute palette on CPU (the clustering),
-    pass palette as extra_buffer, GPU does nearest-color lookup per pixel.
-
-    DitherFloydSteinberg: true Floyd-Steinberg requires sequential error
-    propagation (not parallelizable). Use ordered Bayer dither on GPU
-    instead — visually similar, fully parallel. The CPU path can keep
-    the exact Floyd-Steinberg for quality-critical use.
+    '
+  technical_notes: "Emboss WGSL (trivial — fixed 3x3 kernel):\n  const kernel = array<f32, 9>(-2,-1,0, -1,1,1, 0,1,2);\n \
+    \ // Apply like convolve shader with hardcoded kernel\n\nPixelate WGSL:\n  let block_x = (gid.x / params.block_size) *\
+    \ params.block_size + params.block_size/2;\n  let block_y = (gid.y / params.block_size) * params.block_size + params.block_size/2;\n\
+    \  output[idx] = load_pixel(block_x + block_y * params.width);\n\nFilmGrain WGSL:\n  fn pcg_hash(v: u32) -> u32 { ...\
+    \ }\n  let noise = (rand_f32(seed) - 0.5) * params.strength;\n  color.rgb += noise;\n\nKmeansQuantize: pre-compute palette\
+    \ on CPU (the clustering),\npass palette as extra_buffer, GPU does nearest-color lookup per pixel.\n\nDitherFloydSteinberg:\
+    \ true Floyd-Steinberg requires sequential error\npropagation (not parallelizable). Use ordered Bayer dither on GPU\n\
+    instead — visually similar, fully parallel. The CPU path can keep\nthe exact Floyd-Steinberg for quality-critical use.\n"
 plan:
-  - phase: Effect GPU shaders (6)
-    tasks:
-      - text: Write + wire Emboss WGSL shader (fixed 3x3 kernel)
-        done: false
-      - text: Write + wire Charcoal WGSL shader (edge detect + threshold)
-        done: false
-      - text: Write + wire FilmGrain WGSL shader (PCG hash RNG)
-        done: false
-      - text: Write + wire Pixelate WGSL shader (block lookup)
-        done: false
-      - text: Write + wire Halftone WGSL shader (dot distance threshold)
-        done: false
-      - text: Write + wire OilPaint WGSL shader (neighborhood mode)
-        done: false
-  - phase: Color GPU shaders (3)
-    tasks:
-      - text: Write + wire KmeansQuantize GPU (palette as extra buffer + nearest lookup)
-        done: false
-      - text: Write + wire DitherFloydSteinberg GPU (ordered dither approximation)
-        done: false
-      - text: Write + wire LabSharpen GPU (3-pass Lab convert + sharpen + convert back)
-        done: false
-  - phase: Final verification
-    tasks:
-      - text: All 9 GPU outputs match CPU within tolerance
-        done: false
-      - text: Final audit — grep confirms ZERO Filter impls without GPU path
-        done: false
-      - text: Run full V2 test suite (should be 250+ tests, all passing)
-        done: false
+- phase: Effect GPU shaders (6)
+  tasks:
+  - text: Write + wire Emboss WGSL shader (fixed 3x3 kernel)
+    done: true
+  - text: Write + wire Charcoal WGSL shader (edge detect + threshold)
+    done: true
+  - text: Write + wire FilmGrain WGSL shader (PCG hash RNG)
+    done: true
+  - text: Write + wire Pixelate WGSL shader (block lookup)
+    done: true
+  - text: Write + wire Halftone WGSL shader (dot distance threshold)
+    done: true
+  - text: Write + wire OilPaint WGSL shader (neighborhood mode)
+    done: true
+- phase: Color GPU shaders (3)
+  tasks:
+  - text: Write + wire KmeansQuantize GPU (palette as extra buffer + nearest lookup)
+    done: true
+  - text: Write + wire DitherFloydSteinberg GPU (ordered dither approximation)
+    done: true
+  - text: Write + wire LabSharpen GPU (3-pass Lab convert + sharpen + convert back)
+    done: true
+- phase: Final verification
+  tasks:
+  - text: All 9 GPU outputs match CPU within tolerance
+    done: true
+  - text: Final audit — grep confirms ZERO Filter impls without GPU path
+    done: true
+  - text: Run full V2 test suite (should be 250+ tests, all passing)
+    done: true
 extra: {}
