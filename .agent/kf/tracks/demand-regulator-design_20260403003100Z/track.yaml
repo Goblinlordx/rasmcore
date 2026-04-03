@@ -88,18 +88,21 @@ spec:
   out_of_scope: 'Implementation code. GPU-specific memory probing. Async/parallel tile
 
     prefetching (separate track). Scanline streaming mode (separate track).'
-  technical_notes: "Design questions to resolve:\n\n1. VISIBLE NODE vs TRANSPARENT MIDDLEWARE\n   - Visible node: user inserts\
-    \ DemandRegulator between processing and\n     sink. Explicit, discoverable, but adds graph complexity.\n   - Transparent\
-    \ middleware: pipeline.set_demand_strategy(node_id, ...)\n     wraps a node transparently. Clean API, but harder to debug.\n\
-    \   - Hybrid: a trait on the graph (set_tile_hint(node_id, hint)) that\n     request_region checks when propagating demand.\n\
-    \n2. TILE SIZE HINTS vs ADAPTIVE FEEDBACK\n   - Static hints: user says 'this node works best at 256x256 tiles'\n   -\
-    \ Adaptive: system measures throughput/VRAM and adjusts dynamically\n   - Both: hints set initial size, runtime feedback\
-    \ adjusts\n\n3. API SURFACE\n   - pipeline.set_tile_strategy(strategy) — global\n   - pipeline.set_node_tile_hint(node_id,\
-    \ hint) — per-node\n   - Node trait: fn preferred_tile_size(&self) -> Option<TileHint>\n   - DemandRegulatorNode inserted\
-    \ in graph\n\n4. WHAT THE REGULATOR CONTROLS\n   - Output tile size (how much the sink requests at once)\n   - Input tile\
-    \ size (how much a node requests from upstream)\n   - Prefetch count (request next tile while current processes)\n   -\
-    \ Memory budget (adapt tile size to stay within limit)\n\n5. COMPATIBILITY\n   - Must not break existing pipelines (zero-config\
-    \ default)\n   - Must work with both CPU and GPU paths\n   - Must preserve pixel-identical output regardless of tile size"
+  technical_notes: "Recommended direction (per user feedback):\n\nLAYERED APPROACH — pipeline strategy + regulator nodes\n\
+    \n1. PIPELINE-LEVEL STRATEGY (default behavior)\n   - pipeline.set_demand_strategy(strategy)\n   - Strategies: Fixed(512),\
+    \ AdaptiveVram { budget_mb: 64 }, etc.\n   - Sets the baseline tile size for the entire graph\n   - Zero-config default\
+    \ is current behavior (Fixed 512)\n   - Covers 90% of use cases without any node insertion\n\n2. DEMAND REGULATOR NODES\
+    \ (surgical overrides)\n   - Inserted between processing nodes where different behavior needed\n   - Overrides the pipeline\
+    \ strategy for its downstream subgraph\n   - Examples: force larger tiles for a blur chain, force smaller tiles\n    \
+    \ for a memory-constrained export branch, set a VRAM budget for a\n     GPU-heavy section\n   - Optional — simple pipelines\
+    \ never use them\n\n3. RESOLUTION ORDER (CSS-like cascade)\n   - Check: does this request pass through a DemandRegulator?\
+    \ → use it\n   - Else: use pipeline-level strategy\n   - Else: use default (Fixed 512)\n\n4. NODE HINTS (lowest priority,\
+    \ informational)\n   - Nodes can declare fn preferred_tile_size() -> Option<TileHint>\n   - The strategy/regulator can\
+    \ USE these hints to make better decisions\n   - e.g., a large-kernel blur hints 'I waste 30% of overlap at 512x512,\n\
+    \     prefer 1024x1024' — the adaptive strategy can honor this\n\nDesign questions remaining:\n- Does the regulator affect\
+    \ only its immediate downstream, or the\n  entire subgraph below it?\n- Can regulators be nested (inner overrides outer)?\n\
+    - Should the adaptive strategy probe GPU VRAM at startup or use a\n  declared budget?\n- How does this interact with the\
+    \ spatial cache (larger tiles = more\n  cache hits for overlap reuse)?"
 plan:
 - phase: Demand propagation analysis
   tasks:
