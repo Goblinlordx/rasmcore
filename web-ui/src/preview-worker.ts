@@ -93,10 +93,15 @@ function loadImage(bytes) {
       // Re-create pipeline with downscaled source for caching
       cachedPipe = new Pipeline();
       attachCache(cachedPipe);
+      // Set proxy scale so spatial params (hint=rc.pixels) auto-scale to preview resolution.
+      // Users set params at full-res values; the pipeline scales them transparently.
+      if (cachedPipe.setProxyScale) {
+        cachedPipe.setProxyScale(scale);
+      }
       cachedSourceNode = cachedPipe.read(previewBytes);
       const pInfo = cachedPipe.nodeInfo(cachedSourceNode);
       info = { width: pInfo.width, height: pInfo.height };
-      console.log(`[preview-worker] Resized ${origW}x${origH} → ${info.width}x${info.height}`);
+      console.log(`[preview-worker] Resized ${origW}x${origH} → ${info.width}x${info.height} (proxy scale: ${scale.toFixed(3)})`);
     } else {
       previewBytes = raw;
       cachedSourceNode = src;
