@@ -134,18 +134,18 @@ pub fn generate_nodes(filters: &[FilterReg]) -> String {
             );
             code.push_str("}\n\n");
 
-            // GpuCapable: generated only if impl GpuFilter detected in source
+            // GpuCapable: generated only if impl GpuFilter detected in source.
+            // No format gate — the GpuFilter impl decides whether it can handle
+            // the current buffer format by returning None from gpu_ops_with_format().
             if f.gpu {
                 code.push_str(&format!(
                     "impl rasmcore_pipeline::gpu::GpuCapable for {node_name} {{\n"
                 ));
                 code.push_str("    fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {\n");
-                code.push_str("        if self.source_info.format != crate::domain::types::PixelFormat::Rgba8 { return None; }\n");
                 code.push_str("        use crate::domain::filter_traits::GpuFilter;\n");
                 code.push_str("        self.config.gpu_ops(width, height)\n");
                 code.push_str("    }\n");
                 code.push_str("    fn gpu_ops_with_format(&self, width: u32, height: u32, buffer_format: rasmcore_pipeline::gpu::BufferFormat) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {\n");
-                code.push_str("        if self.source_info.format != crate::domain::types::PixelFormat::Rgba8 { return None; }\n");
                 code.push_str("        use crate::domain::filter_traits::GpuFilter;\n");
                 code.push_str(
                     "        self.config.gpu_ops_with_format(width, height, buffer_format)\n",
