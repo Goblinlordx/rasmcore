@@ -1,0 +1,138 @@
+id: demand-regulator-design_20260403003100Z
+title: 'Design: pipeline demand regulator — adaptive flow control for tiled execution'
+type: research
+status: pending
+created: '2026-04-03'
+updated: '2026-04-03'
+spec:
+  summary: Research and design a flexible demand/flow control mechanism. An optional middleware that controls how tile requests
+    propagate — dynamically adjusting chunk sizes based on VRAM pressure, memory budget, and throughput. Produces a design
+    document with API proposals, not implementation code.
+  context: 'The pipeline currently has two fixed-size tiling mechanisms:
+
+    - CPU sink tiles at 512x512 (TileConfig)
+
+    - GPU tiles at 4096x4096 when image exceeds max_full_image_pixels
+
+
+    Both are global knobs — every node gets the same tile size regardless
+
+    of its compute characteristics. There is no per-node negotiation,
+
+    no adaptive sizing, and no feedback from runtime conditions (VRAM
+
+    pressure, throughput, memory budget).
+
+
+    User request: an optional, injectable flow control mechanism that can
+
+    sit anywhere in the pipeline to control demand propagation. It should
+
+    be intuitive (simple API for common cases), flexible (per-node or
+
+    per-stage control), and non-invasive (doesn''t complicate simple
+
+    pipelines that don''t need it).'
+  codebase_analysis: 'Industry research findings:
+
+
+    VIPS: demand-driven pull via vips_region_prepare(). User selects sink
+
+    type (screen/disc/memory/strip) which controls granularity. No
+
+    explicit tile size — the sink pulls regions as needed. Minimal memory
+
+    because intermediates are freed after each region pass.
+
+
+    Nuke: scanline-based with optional tile buffering. Nodes can request
+
+    specific input tile sizes via Tile accessor. Row cache with LRU
+
+    eviction enforces memory limits. Hybrid: automatic scanlines with
+
+    user-tunable tile caching.
+
+
+    OIIO: explicit ROI per operation. User manually specifies region at
+
+    each stage. No automatic propagation — maximum control, minimum magic.
+
+
+    Halide: schedule-based compute_at/store_at. Algorithm separated from
+
+    schedule. Auto-scheduler explores optimal configurations. Most
+
+    powerful but most complex.
+
+
+    GPU TBDR: hardware-automatic tile cache. Developer controls via render
+
+    pass structure (subpasses keep data in tile cache). Tile size is
+
+    hardware-determined, not user-configurable.
+
+
+    Key insight: rasmcore''s pull-driven model is closest to VIPS. The
+
+    best enhancement would combine VIPS-style demand-driven pulling with
+
+    Halide-style per-node scheduling hints.'
+  acceptance_criteria:
+  - Design document produced in .agent/kf/tracks/{trackId}/design.md
+  - API proposal with code examples for common use cases
+  - Decision matrix for visible node vs middleware vs trait approaches
+  - Backward compatibility analysis — zero breakage for existing pipelines
+  - Memory model analysis — how tile size affects peak memory for representative workloads
+  - 'Comparison table: proposed design vs VIPS/Nuke/Halide/OIIO approaches'
+  out_of_scope: 'Implementation code. GPU-specific memory probing. Async/parallel tile
+
+    prefetching (separate track). Scanline streaming mode (separate track).'
+  technical_notes: "Design questions to resolve:\n\n1. VISIBLE NODE vs TRANSPARENT MIDDLEWARE\n   - Visible node: user inserts\
+    \ DemandRegulator between processing and\n     sink. Explicit, discoverable, but adds graph complexity.\n   - Transparent\
+    \ middleware: pipeline.set_demand_strategy(node_id, ...)\n     wraps a node transparently. Clean API, but harder to debug.\n\
+    \   - Hybrid: a trait on the graph (set_tile_hint(node_id, hint)) that\n     request_region checks when propagating demand.\n\
+    \n2. TILE SIZE HINTS vs ADAPTIVE FEEDBACK\n   - Static hints: user says 'this node works best at 256x256 tiles'\n   -\
+    \ Adaptive: system measures throughput/VRAM and adjusts dynamically\n   - Both: hints set initial size, runtime feedback\
+    \ adjusts\n\n3. API SURFACE\n   - pipeline.set_tile_strategy(strategy) — global\n   - pipeline.set_node_tile_hint(node_id,\
+    \ hint) — per-node\n   - Node trait: fn preferred_tile_size(&self) -> Option<TileHint>\n   - DemandRegulatorNode inserted\
+    \ in graph\n\n4. WHAT THE REGULATOR CONTROLS\n   - Output tile size (how much the sink requests at once)\n   - Input tile\
+    \ size (how much a node requests from upstream)\n   - Prefetch count (request next tile while current processes)\n   -\
+    \ Memory budget (adapt tile size to stay within limit)\n\n5. COMPATIBILITY\n   - Must not break existing pipelines (zero-config\
+    \ default)\n   - Must work with both CPU and GPU paths\n   - Must preserve pixel-identical output regardless of tile size"
+plan:
+- phase: Demand propagation analysis
+  tasks:
+  - text: 'Map current demand flow: sink → request_region → GPU/CPU dispatch → upstream. Identify all decision points where
+      tile size is fixed.'
+    done: false
+  - text: Profile memory usage for representative workloads (64MP f32, multi-pass blur chain) at different tile sizes. Establish
+      baseline.
+    done: false
+  - text: Identify which node types benefit from custom tile sizes (neighborhood ops want larger tiles to reduce overlap waste,
+      point ops are tile-agnostic).
+    done: false
+- phase: API design alternatives
+  tasks:
+  - text: 'Design Option A: TileHint trait on nodes — fn preferred_tile_size() -> Option<TileHint>. Graph walker checks hints
+      during demand propagation.'
+    done: false
+  - text: 'Design Option B: DemandRegulator node — explicit graph node that intercepts requests and re-chunks. User inserts
+      where needed.'
+    done: false
+  - text: 'Design Option C: Pipeline-level strategy — pipeline.set_demand_strategy(AdaptiveVram { budget_mb: 64 }). Global
+      with per-node overrides.'
+    done: false
+  - text: 'Write code examples for each option showing: simple case (no config), medium case (set tile hint on blur), advanced
+      case (adaptive VRAM budget).'
+    done: false
+- phase: Decision and specification
+  tasks:
+  - text: 'Build decision matrix comparing options across: API simplicity, flexibility, debuggability, backward compat, implementation
+      complexity.'
+    done: false
+  - text: Write design.md with chosen approach, full API surface, memory model, and migration path.
+    done: false
+  - text: Define implementation tracks that would follow this design (scope, dependencies, rough task count).
+    done: false
+extra: {}
