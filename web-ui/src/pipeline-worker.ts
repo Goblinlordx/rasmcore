@@ -144,16 +144,15 @@ function loadImage(bytes) {
     cachedSourceNode = cachedPipe.read(imageBytes);
     info = cachedPipe.nodeInfo(cachedSourceNode);
 
-    const pipe = cachedPipe;
-    const src = cachedSourceNode;
-
-    // Create thumbnail
+    // Create thumbnail using a separate pipeline (write() clears graph state)
     const scale = Math.min(THUMB_MAX / info.width, THUMB_MAX / info.height, 1);
     if (scale < 1) {
+      const thumbPipe = new Pipeline();
+      const thumbSrc = thumbPipe.read(imageBytes);
       const tw = Math.round(info.width * scale);
       const th = Math.round(info.height * scale);
-      const resized = pipe.resize(src, { width: tw, height: th, filter: 'bilinear' });
-      thumbBytes = pipe.write(resized, 'png', undefined, undefined);
+      const resized = thumbPipe.resize(thumbSrc, { width: tw, height: th, filter: 'bilinear' });
+      thumbBytes = thumbPipe.write(resized, 'png', undefined, undefined);
     } else {
       thumbBytes = imageBytes;
     }
@@ -176,10 +175,10 @@ function processChain(chain, mode) {
   const timings = [];
 
   try {
-    // Reuse cached pipeline for graph caching, or create fresh one
-    const pipe = cachedPipe || new Pipeline();
-    const node = cachedSourceNode || pipe.read(imageBytes);
-    let current = node;
+    // Fresh pipeline each call — write() clears graph state
+    const pipe = new Pipeline();
+    attachCache(pipe);
+    let current = pipe.read(imageBytes);
 
     for (const step of chain) {
       const t = performance.now();
@@ -198,8 +197,10 @@ function processChain(chain, mode) {
     const buf = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength);
 
     self.postMessage({ type: 'result', png: buf, timings, totalMs, mode }, [buf]);
-  } catch (e) {
-    self.postMessage({ type: 'error', message: e.message });
+  } catch (e: any) {
+    const detail = e?.payload ? JSON.stringify(e.payload, null, 2) : e?.message || String(e);
+    console.error('[pipeline-worker] Error:', detail, e);
+    self.postMessage({ type: 'error', message: detail });
   }
 }
 
@@ -225,8 +226,10 @@ function exportImage(chain, format, quality) {
 
     const buf = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength);
     self.postMessage({ type: 'exported', data: buf, mime, format }, [buf]);
-  } catch (e) {
-    self.postMessage({ type: 'error', message: e.message });
+  } catch (e: any) {
+    const detail = e?.payload ? JSON.stringify(e.payload, null, 2) : e?.message || String(e);
+    console.error('[pipeline-worker] Error:', detail, e);
+    self.postMessage({ type: 'error', message: detail });
   }
 }
 

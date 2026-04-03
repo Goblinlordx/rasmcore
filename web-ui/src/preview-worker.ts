@@ -16,6 +16,7 @@ let layerCache = null; // Shared cross-pipeline content-addressed cache
 let previewBytes = null; // Downscaled image bytes
 let cachedPipe = null;
 let cachedSourceNode = null;
+let savedProxyScale = 1.0;
 
 async function initSDK() {
   try {
@@ -95,6 +96,7 @@ function loadImage(bytes) {
       attachCache(cachedPipe);
       // Set proxy scale so spatial params (hint=rc.pixels) auto-scale to preview resolution.
       // Users set params at full-res values; the pipeline scales them transparently.
+      savedProxyScale = scale;
       if (cachedPipe.setProxyScale) {
         cachedPipe.setProxyScale(scale);
       }
@@ -128,8 +130,12 @@ function processChain(chain) {
 
   const t0 = performance.now();
   try {
-    const pipe = cachedPipe || new Pipeline();
-    let current = cachedSourceNode || pipe.read(previewBytes);
+    // Fresh pipeline each call — write() clears graph state
+    const pipe = new Pipeline();
+    if (pipe.setProxyScale && savedProxyScale < 1.0) {
+      pipe.setProxyScale(savedProxyScale);
+    }
+    let current = pipe.read(previewBytes);
 
     for (const step of chain) {
       current = applyStep(pipe, current, step);
