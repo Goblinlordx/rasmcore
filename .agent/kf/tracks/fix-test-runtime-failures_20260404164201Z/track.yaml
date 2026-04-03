@@ -3,63 +3,74 @@ title: Fix runtime test failures — parity and reference regressions
 type: bug
 status: pending
 created: '2026-04-04'
-updated: '2026-04-04'
-deps:
-  - fix-test-compilation_20260404164200Z
+updated: '2026-04-03'
 spec:
-  summary: |
-    20 runtime test failures across 3 test suites after V2 migration.
-    Investigate each failure, determine if it's a test-side issue
-    (API change) or an actual regression (wrong output), and fix.
-  context: |
-    These tests compile but produce wrong results or panic at runtime.
-    They need careful investigation — each failure could be:
-    1. Test code calling the wrong API (easy fix)
-    2. Test expectations outdated after intentional behavior change
-    3. Actual regression in filter output (needs real fix)
-  codebase_analysis: |
-    Failing suites:
-    - parity.rs: 16 failures — distortion filters (barrel, polar, ripple,
-      swirl, wave, spherize), grayscale, JPEG quality/determinism tests
-    - filter_reference_parity.rs: 2 failures — specific filters TBD
-    - photo_enhance_parity.rs: 2 failures — specific filters TBD
+  summary: '20 runtime test failures across 3 test suites after V2 migration.
 
-    160+ tests pass in 9 other suites, confirming core infrastructure works.
-    The failures are concentrated in distortion and codec parity.
+    Investigate each failure, determine if it''s a test-side issue
+
+    (API change) or an actual regression (wrong output), and fix.
+
+    '
+  context: 'These tests compile but produce wrong results or panic at runtime.
+
+    They need careful investigation — each failure could be:
+
+    1. Test code calling the wrong API (easy fix)
+
+    2. Test expectations outdated after intentional behavior change
+
+    3. Actual regression in filter output (needs real fix)
+
+    '
+  codebase_analysis: "Failing suites:\n- parity.rs: 16 failures — distortion filters (barrel, polar, ripple,\n  swirl, wave,\
+    \ spherize), grayscale, JPEG quality/determinism tests\n- filter_reference_parity.rs: 2 failures — specific filters TBD\n\
+    - photo_enhance_parity.rs: 2 failures — specific filters TBD\n\n160+ tests pass in 9 other suites, confirming core infrastructure\
+    \ works.\nThe failures are concentrated in distortion and codec parity.\n"
   acceptance_criteria:
-    - All 16 parity.rs failures fixed or documented as intentional changes
-    - All 2 filter_reference_parity.rs failures fixed
-    - All 2 photo_enhance_parity.rs failures fixed
-    - Zero test regressions in currently-passing suites
-  out_of_scope: |
-    Test compilation fixes (prerequisite track). New parity tests.
+  - All 16 parity.rs failures fixed or documented as intentional changes
+  - All 2 filter_reference_parity.rs failures fixed
+  - All 2 photo_enhance_parity.rs failures fixed
+  - Zero test regressions in currently-passing suites
+  out_of_scope: 'Test compilation fixes (prerequisite track). New parity tests.
+
     GPU parity validation.
-  technical_notes: |
-    Investigation approach per failure:
+
+    '
+  technical_notes: 'Investigation approach per failure:
+
     1. Run the failing test, capture actual vs expected output
+
     2. Check git blame — was the filter code changed in V2 migration?
+
     3. If test-side: update test to use V2 API
+
     4. If regression: bisect to find breaking commit, fix filter code
+
     5. If intentional change: update expected values with documented rationale
+
+    '
 plan:
-  - phase: Investigate and fix parity.rs
-    tasks:
-      - text: Fix distortion filter failures (barrel, polar, ripple, swirl, wave, spherize)
-        done: false
-      - text: Fix grayscale parity failure
-        done: false
-      - text: Fix JPEG quality/determinism failures
-        done: false
-  - phase: Investigate and fix reference parity
-    tasks:
-      - text: Fix 2 filter_reference_parity.rs failures
-        done: false
-      - text: Fix 2 photo_enhance_parity.rs failures
-        done: false
-  - phase: Verification
-    tasks:
-      - text: All 3 suites pass with 0 failures
-        done: false
-      - text: No regressions in currently-passing suites
-        done: false
+- phase: Investigate and fix parity.rs
+  tasks:
+  - text: Fix distortion filter failures (barrel, polar, ripple, swirl, wave, spherize)
+    done: true
+  - text: Fix grayscale parity failure
+    done: true
+  - text: Fix JPEG quality/determinism failures
+    done: true
+- phase: Investigate and fix reference parity
+  tasks:
+  - text: Fix 2 filter_reference_parity.rs failures
+    done: true
+  - text: Fix 2 photo_enhance_parity.rs failures
+    done: true
+- phase: Verification
+  tasks:
+  - text: All 3 suites pass with 0 failures
+    done: true
+  - text: No regressions in currently-passing suites
+    done: true
 extra: {}
+deps:
+- fix-test-compilation_20260404164200Z
