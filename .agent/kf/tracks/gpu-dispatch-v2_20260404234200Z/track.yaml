@@ -1,0 +1,93 @@
+id: gpu-dispatch-v2_20260404234200Z
+title: "V2 GPU dispatch — pre-compiled shaders + graph-level GPU execution"
+type: feature
+status: pending
+created: "2026-04-04"
+updated: "2026-04-04"
+spec:
+  summary: >
+    Wire V2 Graph to dispatch filters via GpuExecutor. Pre-compose shaders
+    at registration time. Chain consecutive GPU nodes into batched dispatches
+    with ping-pong buffers. Currently V2 Graph always falls back to CPU.
+  context: |
+    The V2 pipeline has GpuFilter impls for 61+ filters, each with WGSL shaders.
+    The GpuExecutor trait exists with both WebGPU (gpu-handler-v2.ts) and native
+    (wgpu WgpuExecutor) implementations. Both already cache compiled shader
+    modules and use ping-pong buffers. But the V2 Graph never calls the executor
+    — it always falls back to CPU compute().
+
+    The shader composition (compose_shader prepending IO_F32) happens at runtime
+    via string concatenation on every request. This should happen once per filter
+    type and be cached.
+  codebase_analysis: |
+    Key files:
+    - gpu.rs: GpuExecutor trait (execute takes &[GpuShader])
+    - node.rs: GpuShader struct (body, entry_point, workgroup_size, params)
+    - ops.rs: GpuFilter trait (shader_body, params, gpu_shader)
+    - filter_node.rs: compose_shader() + IO_F32 (runtime string concat)
+    - graph.rs: Graph::request_full — no GPU dispatch path
+    - gpu-handler-v2.ts: WebGPU executor with shader cache + ping-pong
+    - rasmcore-cli/gpu_executor.rs: wgpu executor with module cache + buffer pool
+
+    Both executors already cache compiled pipelines by shader hash. The missing
+    link is Graph -> GpuExecutor dispatch for consecutive GPU-capable nodes.
+  acceptance_criteria:
+    - V2 Graph dispatches GPU-capable filter chains via GpuExecutor
+    - Shaders pre-composed once per filter type (not per request)
+    - Consecutive GPU nodes batched into single executor.execute() call
+    - Non-GPU nodes cause readback boundary (GPU -> CPU -> GPU)
+    - GPU output matches CPU within f32 tolerance for all filters
+    - Web UI GPU handler wired as executor for pipeline
+    - Shader cache hit rate 100% after first use (no recompilation)
+  out_of_scope: |
+    Shader bytecode caching to disk. GPU-native tiling. Multi-GPU dispatch.
+    New GPU shaders for filters that lack them.
+  technical_notes: |
+    Phase 1 focuses on eliminating redundant shader composition. Use OnceLock
+    or LazyLock to cache the composed WGSL string per filter type. The shader
+    body is static (include_str! or const), IO_F32 is const — composition
+    result is deterministic and can be cached forever.
+
+    Phase 2 adds GPU dispatch to Graph. When executing a chain of nodes,
+    collect consecutive GPU-capable nodes into a Vec<GpuShader> batch.
+    Call executor.execute(batch, input, w, h) once for the whole chain.
+    When a non-GPU node is encountered, readback from GPU, run CPU compute,
+    then resume GPU dispatch.
+
+    Phase 3 wires the web UI. The pipeline-worker needs to pass GPU shader
+    ops to the host thread (which has WebGPU access). This is already
+    partially implemented in gpu-handler-v2.ts.
+plan:
+  - phase: "Pre-composed shader cache"
+    tasks:
+      - text: "Cache composed WGSL (IO_F32 + body) per filter type via LazyLock"
+        done: false
+      - text: "Add composed_shader_hash to GpuShader for stable cache keys"
+        done: false
+      - text: "Verify compose_shader called at most once per filter type"
+        done: false
+  - phase: "V2 Graph GPU dispatch"
+    tasks:
+      - text: "Add optional GpuExecutor to V2 Graph (set at construction)"
+        done: false
+      - text: "Implement GPU dispatch path in Graph request execution"
+        done: false
+      - text: "Batch consecutive GPU-capable nodes into single execute() call"
+        done: false
+      - text: "Handle GPU/CPU boundaries (readback + re-upload at non-GPU nodes)"
+        done: false
+  - phase: "Web UI integration"
+    tasks:
+      - text: "Wire GpuHandlerV2 as executor for WIT pipeline adapter"
+        done: false
+      - text: "Verify ping-pong works for multi-filter chains in browser"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "GPU output matches CPU for all 61 registered filters"
+        done: false
+      - text: "No shader recompilation after cache warmup (log cache hits)"
+        done: false
+      - text: "Multi-filter chain dispatches as single GPU batch"
+        done: false
+extra: {}
