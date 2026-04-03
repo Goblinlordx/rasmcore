@@ -1370,8 +1370,8 @@ impl NodeGraph {
         let bpp = bytes_per_pixel(info.format);
 
         // Try GPU dispatch if executor and GPU ops are available for this node.
-        // Clone Rc and extract ops before mutable self borrow for upstream fetch.
-        // Determine buffer format from pixel format: f32 formats use F32Vec4, all else U32Packed.
+        // Tiled GPU streaming: request only the needed input region (tile + overlap),
+        // dispatch at tile scale. VRAM usage is bounded by tile size, not image size.
         let buf_format = match info.format {
             PixelFormat::Rgba32f | PixelFormat::Rgb32f | PixelFormat::Gray32f => {
                 rasmcore_pipeline::BufferFormat::F32Vec4
@@ -1379,19 +1379,28 @@ impl NodeGraph {
             _ => rasmcore_pipeline::BufferFormat::U32Packed,
         };
         let gpu_dispatch = self.gpu_executor.clone().and_then(|executor| {
-            let ops = self.gpu_nodes.get(node_id as usize)?.as_ref()?.gpu_ops_with_format(info.width, info.height, buf_format)?;
+            // Compute the input rect needed for this output tile (includes overlap
+            // for neighborhood ops like blur/sharpen). Point ops return request unchanged.
+            let gpu_input_rect = self.nodes[node_id as usize]
+                .input_rect(request, info.width, info.height);
+            let ops = self.gpu_nodes.get(node_id as usize)?.as_ref()?
+                .gpu_ops_with_format(gpu_input_rect.width, gpu_input_rect.height, buf_format)?;
             let upstream_id = self.nodes[node_id as usize].upstream_id()?;
-            Some((executor, ops, upstream_id))
+            Some((executor, ops, upstream_id, gpu_input_rect))
         });
-        if let Some((executor, ops, upstream_id)) = gpu_dispatch {
-            let full_rect = Rect::new(0, 0, info.width, info.height);
-            let input = self.request_region(upstream_id, full_rect)?;
-            match executor.execute_with_format(&ops, &input, info.width, info.height, buf_format) {
+        if let Some((executor, ops, upstream_id, gpu_input_rect)) = gpu_dispatch {
+            let input = self.request_region(upstream_id, gpu_input_rect)?;
+            match executor.execute_with_format(
+                &ops, &input,
+                gpu_input_rect.width, gpu_input_rect.height,
+                buf_format,
+            ) {
                 Ok(gpu_pixels) => {
-                    let pixels = if request == full_rect {
+                    // Crop GPU output from expanded input rect to the requested tile
+                    let pixels = if gpu_input_rect == request {
                         gpu_pixels
                     } else {
-                        crop_region(&gpu_pixels, full_rect, request, bpp)
+                        crop_region(&gpu_pixels, gpu_input_rect, request, bpp)
                     };
                     self.accumulate_tile(node_id, request, &pixels, bpp);
                     return Ok(pixels);
