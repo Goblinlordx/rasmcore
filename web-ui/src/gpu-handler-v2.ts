@@ -1,0 +1,224 @@
+/**
+ * V2 WebGPU handler — f32-only, no format dispatch.
+ *
+ * All pixel data is Float32Array (vec4<f32> per pixel).
+ * No BufferFormat enum. No U32Packed. No pack/unpack.
+ * Always array<vec4<f32>> storage buffers.
+ *
+ * Shader bodies use load_pixel/store_pixel from io_f32 fragment
+ * (auto-composed by the pipeline).
+ */
+
+export interface GpuShader {
+  /** Complete WGSL source (io_f32 + body, already composed). */
+  source: string;
+  entryPoint: string;
+  workgroupX: number;
+  workgroupY: number;
+  workgroupZ: number;
+  params: Uint8Array;
+  extraBuffers: Uint8Array[];
+}
+
+export type GpuError =
+  | { tag: 'not-available'; val: string }
+  | { tag: 'shader-error'; val: string }
+  | { tag: 'execution-error'; val: string };
+
+export type GpuResult = { ok: Float32Array } | { err: GpuError };
+
+/** FNV-1a hash of shader source for cache keying. */
+function hashSource(source: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < source.length; i++) {
+    hash ^= source.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+/**
+ * V2 GPU handler — f32-only.
+ *
+ * All buffers are array<vec4<f32>>. No BufferFormat. No format dispatch.
+ * Bytes per pixel = 16 (4 channels * 4 bytes). Always.
+ */
+export class GpuHandlerV2 {
+  private device: GPUDevice | null = null;
+  private shaderCache: Map<string, GPUComputePipeline> = new Map();
+  private initPromise: Promise<void> | null = null;
+  private available = true;
+
+  static isAvailable(): boolean {
+    return typeof navigator !== 'undefined' && 'gpu' in navigator;
+  }
+
+  private async ensureDevice(): Promise<void> {
+    if (this.device) return;
+    if (!this.available) throw new Error('WebGPU not available');
+    if (this.initPromise) { await this.initPromise; return; }
+    this.initPromise = this.initDevice();
+    await this.initPromise;
+  }
+
+  private async initDevice(): Promise<void> {
+    if (!GpuHandlerV2.isAvailable()) {
+      this.available = false;
+      throw new Error('WebGPU not supported');
+    }
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) { this.available = false; throw new Error('No adapter'); }
+    this.device = await adapter.requestDevice({
+      requiredLimits: {
+        maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
+        maxBufferSize: adapter.limits.maxBufferSize,
+      },
+    });
+    this.device.lost.then(() => {
+      this.device = null;
+      this.shaderCache.clear();
+      this.initPromise = null;
+    });
+  }
+
+  /**
+   * Execute GPU shaders on f32 pixel data.
+   *
+   * Always vec4<f32>. Always 16 bytes per pixel. No format variants.
+   */
+  async execute(
+    ops: GpuShader[],
+    input: Float32Array,
+    width: number,
+    height: number,
+  ): Promise<GpuResult> {
+    if (ops.length === 0) return { ok: input };
+
+    try { await this.ensureDevice(); }
+    catch (e) { return { err: { tag: 'not-available', val: (e as Error).message } }; }
+
+    const device = this.device!;
+    const pixelCount = width * height;
+    const floatCount = pixelCount * 4;
+    const byteCount = floatCount * 4; // f32 = 4 bytes
+
+    if (input.length !== floatCount) {
+      return { err: { tag: 'execution-error',
+        val: `Input ${input.length} floats != expected ${floatCount} (${width}x${height}x4)` } };
+    }
+
+    try {
+      // Ping-pong f32 buffers
+      const bufA = device.createBuffer({
+        size: byteCount,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
+      });
+      const bufB = device.createBuffer({
+        size: byteCount,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
+      });
+
+      device.queue.writeBuffer(bufA, 0, input);
+      let readBuf = bufA;
+      let writeBuf = bufB;
+
+      for (let i = 0; i < ops.length; i++) {
+        const op = ops[i];
+        const hash = hashSource(op.source) + ':' + op.entryPoint;
+        let pipeline = this.shaderCache.get(hash);
+
+        if (!pipeline) {
+          const module = device.createShaderModule({ code: op.source });
+          const entries: GPUBindGroupLayoutEntry[] = [
+            { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+            { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+            { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+          ];
+          for (let j = 0; j < op.extraBuffers.length; j++) {
+            entries.push({ binding: 3 + j, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } });
+          }
+          const layout = device.createBindGroupLayout({ entries });
+          pipeline = device.createComputePipeline({
+            layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+            compute: { module, entryPoint: op.entryPoint },
+          });
+          this.shaderCache.set(hash, pipeline);
+        }
+
+        // Uniform buffer
+        const paramSize = Math.max(16, Math.ceil(op.params.byteLength / 16) * 16);
+        const paramBuf = device.createBuffer({
+          size: paramSize,
+          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+        device.queue.writeBuffer(paramBuf, 0, op.params);
+
+        // Extra buffers
+        const extras: GPUBuffer[] = op.extraBuffers.map(data => {
+          const buf = device.createBuffer({
+            size: Math.max(4, data.byteLength),
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+          });
+          device.queue.writeBuffer(buf, 0, data);
+          return buf;
+        });
+
+        // Bind group
+        const bgEntries: GPUBindGroupEntry[] = [
+          { binding: 0, resource: { buffer: readBuf } },
+          { binding: 1, resource: { buffer: writeBuf } },
+          { binding: 2, resource: { buffer: paramBuf } },
+        ];
+        extras.forEach((buf, j) => bgEntries.push({ binding: 3 + j, resource: { buffer: buf } }));
+
+        const bindGroup = device.createBindGroup({
+          layout: pipeline.getBindGroupLayout(0),
+          entries: bgEntries,
+        });
+
+        const encoder = device.createCommandEncoder();
+        const pass = encoder.beginComputePass();
+        pass.setPipeline(pipeline);
+        pass.setBindGroup(0, bindGroup);
+        pass.dispatchWorkgroups(
+          Math.ceil(width / op.workgroupX),
+          Math.ceil(height / op.workgroupY),
+          1,
+        );
+        pass.end();
+        device.queue.submit([encoder.finish()]);
+
+        paramBuf.destroy();
+        extras.forEach(b => b.destroy());
+        [readBuf, writeBuf] = [writeBuf, readBuf];
+      }
+
+      // Readback
+      const staging = device.createBuffer({
+        size: byteCount,
+        usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+      });
+      const copyEnc = device.createCommandEncoder();
+      copyEnc.copyBufferToBuffer(readBuf, 0, staging, 0, byteCount);
+      device.queue.submit([copyEnc.finish()]);
+
+      await staging.mapAsync(GPUMapMode.READ);
+      const output = new Float32Array(staging.getMappedRange().slice(0));
+      staging.unmap();
+
+      bufA.destroy();
+      bufB.destroy();
+      staging.destroy();
+
+      return { ok: output };
+    } catch (e) {
+      return { err: { tag: 'execution-error', val: (e as Error).message } };
+    }
+  }
+
+  destroy(): void {
+    this.shaderCache.clear();
+    if (this.device) { this.device.destroy(); this.device = null; }
+    this.initPromise = null;
+  }
+}

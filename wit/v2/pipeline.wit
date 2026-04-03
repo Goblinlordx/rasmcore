@@ -1,0 +1,132 @@
+/// V2 Pipeline Interface — f32-native, GPU-primary, zero built-in knowledge.
+///
+/// All pixel data is f32 RGBA (4 channels per pixel).
+/// No PixelFormat enum. No format dispatch. No u8/u16 code paths.
+///
+/// Operations are discovered via the registration system, not hardcoded methods.
+/// This interface provides: graph management, execution, and GPU dispatch.
+
+interface pipeline-v2 {
+    use rasmcore:core/types.{buffer};
+    use rasmcore:core/errors.{rasmcore-error};
+
+    /// Pixel data is always f32 RGBA — 4 floats per pixel, interleaved.
+    /// Buffer size: width * height * 4 * sizeof(f32) bytes.
+    type pixel-buffer = list<f32>;
+
+    /// Color space of pixel data at a given point in the graph.
+    enum color-space {
+        linear,
+        srgb,
+        aces-cg,
+        aces-cct,
+        aces-cc,
+        aces2065-1,
+        display-p3,
+        rec709,
+        rec2020,
+        unknown,
+    }
+
+    /// Node output metadata.
+    record node-info {
+        width: u32,
+        height: u32,
+        color-space: color-space,
+    }
+
+    /// Parameter type for operation configuration.
+    enum param-type {
+        f32-val,
+        f64-val,
+        u32-val,
+        i32-val,
+        bool-val,
+        string-val,
+        rect-val,
+    }
+
+    /// Parameter descriptor — schema for a single operation parameter.
+    record param-descriptor {
+        name: string,
+        value-type: param-type,
+        min: option<f64>,
+        max: option<f64>,
+        step: option<f64>,
+        default-val: option<f64>,
+        hint: option<string>,
+    }
+
+    /// Operation kind.
+    enum operation-kind {
+        filter,
+        encoder,
+        decoder,
+        transform,
+        color-conversion,
+    }
+
+    /// Registered operation metadata.
+    record operation-info {
+        name: string,
+        display-name: string,
+        category: string,
+        kind: operation-kind,
+        gpu-capable: bool,
+        params: list<param-descriptor>,
+    }
+
+    /// View transform for output display encoding.
+    enum view-transform {
+        srgb,
+        linear,
+        rec709,
+    }
+
+    /// Demand strategy for tile sizing.
+    variant demand-strategy {
+        fixed(u32),
+        adaptive-memory(u64),
+        adaptive-vram(tuple<u64, u32>),
+    }
+
+    /// Opaque handle to a node in the pipeline graph.
+    type node-id = u32;
+
+    /// The V2 pipeline resource.
+    resource image-pipeline-v2 {
+        constructor();
+
+        // ─── Discovery ───
+        /// List all registered operations.
+        list-operations: func() -> list<operation-info>;
+        /// Find an operation by name.
+        find-operation: func(name: string) -> option<operation-info>;
+
+        // ─── Graph Management ───
+        /// Add a source node (decode from bytes).
+        read: func(data: buffer) -> result<node-id, rasmcore-error>;
+        /// Get node output metadata.
+        node-info: func(node: node-id) -> result<node-info, rasmcore-error>;
+        /// Apply a named filter to a source node.
+        apply-filter: func(source: node-id, name: string, params: buffer) -> result<node-id, rasmcore-error>;
+        /// Apply a named transform.
+        apply-transform: func(source: node-id, name: string, params: buffer) -> result<node-id, rasmcore-error>;
+        /// Insert a color space conversion.
+        convert-color-space: func(source: node-id, target: color-space) -> result<node-id, rasmcore-error>;
+        /// Insert a view transform (for display output).
+        apply-view-transform: func(source: node-id, transform: view-transform) -> result<node-id, rasmcore-error>;
+
+        // ─── Configuration ───
+        /// Set the demand strategy (tile sizing).
+        set-demand-strategy: func(strategy: demand-strategy);
+        /// Set the GPU executor availability.
+        set-gpu-available: func(available: bool);
+
+        // ─── Execution ───
+        /// Execute the pipeline and encode output.
+        write: func(node: node-id, format: string, quality: option<u8>) -> result<buffer, rasmcore-error>;
+        /// Execute and return raw f32 pixel data (no encoding).
+        render: func(node: node-id) -> result<pixel-buffer, rasmcore-error>;
+    }
+}
