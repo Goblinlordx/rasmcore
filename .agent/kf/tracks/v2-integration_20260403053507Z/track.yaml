@@ -5,108 +5,104 @@ status: pending
 created: '2026-04-03'
 updated: '2026-04-03'
 spec:
-  summary: |
-    Generate WIT interface from V2 registrations, build WASM component,
+  summary: 'Generate WIT interface from V2 registrations, build WASM component,
+
     update host SDKs, and remove V1 pipeline code. The final track
+
     that makes V2 the production pipeline.
-  context: |
-    After Tracks 1-7, all V2 components exist alongside V1. This track:
+
+    '
+  context: 'After Tracks 1-7, all V2 components exist alongside V1. This track:
+
     1. Generates WIT from V2 operation registrations (replaces V1 codegen)
+
     2. Builds the WASM component against V2 pipeline
+
     3. Updates TypeScript/Rust host SDKs for V2 API
+
     4. Updates web-ui gpu-handler.ts for V2 (f32-only, simplified)
+
     5. Removes V1 pipeline code, format dispatch, u8-era infrastructure
+
     6. Final validation: all parity tests, all GPU tests, WASM build
 
+
     After this track, the codebase is clean V2 with zero V1 legacy.
+
+    '
   acceptance_criteria:
-    - WIT generated from V2 OperationRegistration (auto, not manual)
-    - WASM component builds and passes wasm-tools validate
-    - TypeScript host SDK updated for V2 API
-    - web-ui gpu-handler.ts simplified (f32 only, no BufferFormat dispatch)
-    - All V1 format dispatch code removed
-    - Zero references to process_via_8bit, is_16bit, PixelFormat in filter code
-    - All 2,593 existing tests pass (or equivalents in V2)
-    - GPU parity tests pass for all GPU-capable filters
-    - ACES validation test vectors pass (from ctlrender reference)
-    - V1 pipeline crate deprecated or removed
-    - Build time reduced (fewer codegen paths, no format dispatch)
-  out_of_scope: |
-    New features on V2 (separate tracks).
+  - WIT generated from V2 OperationRegistration (auto, not manual)
+  - WASM component builds and passes wasm-tools validate
+  - TypeScript host SDK updated for V2 API
+  - web-ui gpu-handler.ts simplified (f32 only, no BufferFormat dispatch)
+  - All V1 format dispatch code removed
+  - Zero references to process_via_8bit, is_16bit, PixelFormat in filter code
+  - All 2,593 existing tests pass (or equivalents in V2)
+  - GPU parity tests pass for all GPU-capable filters
+  - ACES validation test vectors pass (from ctlrender reference)
+  - V1 pipeline crate deprecated or removed
+  - Build time reduced (fewer codegen paths, no format dispatch)
+  out_of_scope: 'New features on V2 (separate tracks).
+
     Performance optimization beyond V1 parity.
-  technical_notes: |
-    WIT generation from V2 registrations:
 
-    V1: build.rs parses Rust source AST, generates WIT methods
-    V2: derive(Operation) macro emits WIT-compatible metadata
-        Build script collects metadata, generates pipeline.wit
-
-    The WIT surface should be organized:
-    - interface filters { ... }       // grouped by category
-    - interface transforms { ... }
-    - interface codecs { ... }
-    - resource image-pipeline { ... } // orchestration
-
-    Host SDK changes:
-    - TypeScript: all pixel data is Float32Array (no Uint8Array for pixels)
-    - Rust: wasmtime host binds f32 buffers
-    - gpu-handler.ts: remove BufferFormat, always f32
-
-    V1 removal checklist:
-    - rasmcore-pipeline V1 (keep as deprecated, remove when no consumers)
-    - PixelFormat enum (remove from pipeline, keep in codec boundary only)
-    - process_via_8bit, process_via_standard (delete)
-    - validate_format, is_16bit, is_float, is_f32 (delete)
-    - io_u32.wgsl, pixel_ops.wgsl (delete — io_f32 only)
-    - Q16 EWA internals (replace with f64 native)
-    - BufferFormat::U32Packed (delete)
+    '
+  technical_notes: "WIT generation from V2 registrations:\n\nV1: build.rs parses Rust source AST, generates WIT methods\n\
+    V2: derive(Operation) macro emits WIT-compatible metadata\n    Build script collects metadata, generates pipeline.wit\n\
+    \nThe WIT surface should be organized:\n- interface filters { ... }       // grouped by category\n- interface transforms\
+    \ { ... }\n- interface codecs { ... }\n- resource image-pipeline { ... } // orchestration\n\nHost SDK changes:\n- TypeScript:\
+    \ all pixel data is Float32Array (no Uint8Array for pixels)\n- Rust: wasmtime host binds f32 buffers\n- gpu-handler.ts:\
+    \ remove BufferFormat, always f32\n\nV1 removal checklist:\n- rasmcore-pipeline V1 (keep as deprecated, remove when no\
+    \ consumers)\n- PixelFormat enum (remove from pipeline, keep in codec boundary only)\n- process_via_8bit, process_via_standard\
+    \ (delete)\n- validate_format, is_16bit, is_float, is_f32 (delete)\n- io_u32.wgsl, pixel_ops.wgsl (delete — io_f32 only)\n\
+    - Q16 EWA internals (replace with f64 native)\n- BufferFormat::U32Packed (delete)\n"
 plan:
-  - phase: WIT generation
-    tasks:
-      - text: Collect V2 OperationRegistration metadata at build time
-        done: false
-      - text: Generate WIT interface from registrations (organized by category)
-        done: false
-      - text: Generate config records from ParamDescriptor
-        done: false
-  - phase: WASM build
-    tasks:
-      - text: Build WASM component against V2 pipeline
-        done: false
-      - text: Validate with wasm-tools validate
-        done: false
-      - text: Update adapter layer for V2 API
-        done: false
-  - phase: Host SDK updates
-    tasks:
-      - text: Update TypeScript host SDK (jco) for V2 (f32 buffers)
-        done: false
-      - text: Update web-ui gpu-handler.ts (f32 only, remove BufferFormat)
-        done: false
-      - text: Update Rust host SDK (wasmtime) for V2
-        done: false
-      - text: Update FFI layer (rasmcore-ffi) for V2
-        done: false
-  - phase: V1 removal
-    tasks:
-      - text: Remove process_via_8bit, process_via_standard, validate_format
-        done: false
-      - text: Remove io_u32.wgsl, pixel_ops.wgsl, sample_bilinear.wgsl (u32 variants)
-        done: false
-      - text: Remove BufferFormat::U32Packed and all U32Packed references
-        done: false
-      - text: Remove Q16 EWA internals (SampleFormat::U8/U16 paths)
-        done: false
-      - text: Remove PixelFormat from pipeline internals (keep at codec boundary only)
-        done: false
-  - phase: Final validation
-    tasks:
-      - text: All parity tests pass (codec, filter, GPU)
-        done: false
-      - text: ACES validation test vectors pass
-        done: false
-      - text: Build time benchmark (should improve due to less codegen)
-        done: false
-      - text: Memory usage benchmark (f32 vs V1 u8 baseline)
-        done: false
+- phase: WIT generation
+  tasks:
+  - text: Collect V2 OperationRegistration metadata at build time
+    done: true
+  - text: Generate WIT interface from registrations (organized by category)
+    done: true
+  - text: Generate config records from ParamDescriptor
+    done: true
+- phase: WASM build
+  tasks:
+  - text: Build WASM component against V2 pipeline
+    done: true
+  - text: Validate with wasm-tools validate
+    done: true
+  - text: Update adapter layer for V2 API
+    done: true
+- phase: Host SDK updates
+  tasks:
+  - text: Update TypeScript host SDK (jco) for V2 (f32 buffers)
+    done: true
+  - text: Update web-ui gpu-handler.ts (f32 only, remove BufferFormat)
+    done: true
+  - text: Update Rust host SDK (wasmtime) for V2
+    done: true
+  - text: Update FFI layer (rasmcore-ffi) for V2
+    done: true
+- phase: V1 removal
+  tasks:
+  - text: Remove process_via_8bit, process_via_standard, validate_format
+    done: true
+  - text: Remove io_u32.wgsl, pixel_ops.wgsl, sample_bilinear.wgsl (u32 variants)
+    done: true
+  - text: Remove BufferFormat::U32Packed and all U32Packed references
+    done: true
+  - text: Remove Q16 EWA internals (SampleFormat::U8/U16 paths)
+    done: true
+  - text: Remove PixelFormat from pipeline internals (keep at codec boundary only)
+    done: true
+- phase: Final validation
+  tasks:
+  - text: All parity tests pass (codec, filter, GPU)
+    done: true
+  - text: ACES validation test vectors pass
+    done: true
+  - text: Build time benchmark (should improve due to less codegen)
+    done: true
+  - text: Memory usage benchmark (f32 vs V1 u8 baseline)
+    done: true
 extra: {}
