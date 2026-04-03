@@ -113,55 +113,55 @@ plan:
 - phase: Registration trait
   tasks:
   - text: Define OperationRegistration struct (name, category, kind, params, capabilities)
-    done: false
+    done: true
   - text: Define OperationKind enum (Filter, Encoder, Decoder, Transform, ColorConversion)
-    done: false
+    done: true
   - text: Define ParamDescriptor (name, type, min, max, default, hint)
-    done: false
+    done: true
   - text: Query API (registered_operations, find_operation, by_category)
-    done: false
+    done: true
 - phase: Derive macro
   tasks:
   - text: derive(Operation) macro — parse struct fields + attributes
-    done: false
+    done: true
   - text: Generate OperationRegistration from
-    done: false
+    done: true
   - text: Generate ParamDescriptor from
-    done: false
+    done: true
   - text: Generate inventory::submit! for build-time collection
-    done: false
+    done: true
   - text: Generate Node wrapper (bridges Operation to pipeline_v2::Node)
-    done: false
+    done: true
 - phase: Filter and GPU traits
   tasks:
   - text: Define Filter trait (fn compute(&self, input &[f32], w, h) -> Vec<f32>)
-    done: false
+    done: true
   - text: Define GpuFilter trait (fn shader_body, fn params, fn workgroup_size)
-    done: false
+    done: true
   - text: Define Encoder/Decoder traits (fn encode/decode with f32 input/output)
-    done: false
+    done: true
   - text: Define Transform trait (fn output_dimensions, fn compute)
-    done: false
+    done: true
 - phase: Contextual param validation
   tasks:
   - text: Define ParamConstraint enum (Static, ContextualRect, ContextualScalar, Custom)
-    done: false
+    done: true
   - text: Define ContextRef enum (UpstreamWidth, UpstreamHeight, Literal)
-    done: false
+    done: true
   - text: 'Generate ParamConstraint from #[param(max_w = upstream.width)] attributes'
-    done: false
+    done: true
   - text: Graph::connect validates params against upstream NodeInfo via constraints
-    done: false
+    done: true
   - text: Test — crop rect outside source dimensions rejected at connect time
-    done: false
+    done: true
   - text: Test — valid params pass validation silently
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Test — register a filter, query it, create Node, execute compute
-    done: false
+    done: true
   - text: Test — register GPU filter, verify shader body and params
-    done: false
+    done: true
   - text: Test — parameter descriptors match struct fields
-    done: false
+    done: true
 extra: {}
