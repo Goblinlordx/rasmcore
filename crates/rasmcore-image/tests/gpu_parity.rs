@@ -1502,3 +1502,38 @@ fn gpu_f32_parity_colorize() {
     assert_gpu_parity("colorize_f32 vs cpu_f32", &cpu_f32_result, &gpu_f32_as_u8, 1.0);
     eprintln!("  colorize f32 GPU parity: PASS");
 }
+
+#[test]
+fn gpu_f32_film_grain_deterministic() {
+    use rasmcore_pipeline::gpu::BufferFormat;
+    use rasmcore_image::domain::filter_traits::GpuFilter;
+    use rasmcore_image::domain::filters::FilmGrainParams;
+
+    let gpu = match try_gpu() {
+        Some(g) => g,
+        None => return,
+    };
+
+    let (w, h) = (64, 64);
+    let pixels_u8 = make_gradient_rgba(w, h);
+    let pixels_f32_norm: Vec<u8> = pixels_u8.iter()
+        .flat_map(|&b| (b as f32 / 255.0).to_le_bytes())
+        .collect();
+
+    let config = FilmGrainParams { amount: 0.5, size: 2.0, seed: 42 };
+
+    let ops = config.gpu_ops_with_format(w, h, BufferFormat::F32Vec4)
+        .expect("film_grain should support f32 GPU");
+
+    let out1 = gpu.execute_with_format(&ops, &pixels_f32_norm, w, h, BufferFormat::F32Vec4).unwrap();
+    let out2 = gpu.execute_with_format(&ops, &pixels_f32_norm, w, h, BufferFormat::F32Vec4).unwrap();
+    assert_eq!(out1, out2, "same seed must produce identical output");
+    assert_ne!(out1, pixels_f32_norm, "film grain should change the image");
+
+    for chunk in out1.chunks_exact(4) {
+        let v = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        assert!(v >= 0.0 && v <= 1.0, "pixel value {v} out of [0,1] range");
+    }
+
+    eprintln!("  film_grain f32 GPU: deterministic + valid range: PASS");
+}
