@@ -1359,3 +1359,38 @@ fn gpu_f32_parity_vibrance() {
     assert_gpu_parity("vibrance_f32 vs cpu_f32", &cpu_f32_result, &gpu_f32_as_u8, 2.0);
     eprintln!("  vibrance f32 GPU parity: PASS");
 }
+
+#[test]
+fn gpu_f32_uniform_noise_deterministic() {
+    use rasmcore_pipeline::gpu::BufferFormat;
+    use rasmcore_image::domain::filter_traits::GpuFilter;
+    use rasmcore_image::domain::filters::UniformNoiseParams;
+
+    let gpu = match try_gpu() {
+        Some(g) => g,
+        None => return,
+    };
+
+    let (w, h) = (64, 64);
+    let pixels_u8 = make_gradient_rgba(w, h);
+    let pixels_f32_norm: Vec<u8> = pixels_u8.iter()
+        .flat_map(|&b| (b as f32 / 255.0).to_le_bytes())
+        .collect();
+
+    let config = UniformNoiseParams { range: 40.0, seed: 99999 };
+
+    let ops = config.gpu_ops_with_format(w, h, BufferFormat::F32Vec4)
+        .expect("uniform_noise should support f32 GPU");
+
+    let out1 = gpu.execute_with_format(&ops, &pixels_f32_norm, w, h, BufferFormat::F32Vec4).unwrap();
+    let out2 = gpu.execute_with_format(&ops, &pixels_f32_norm, w, h, BufferFormat::F32Vec4).unwrap();
+    assert_eq!(out1, out2, "same seed must produce identical output");
+    assert_ne!(out1, pixels_f32_norm, "noise should change the image");
+
+    for chunk in out1.chunks_exact(4) {
+        let v = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        assert!(v >= 0.0 && v <= 1.0, "pixel value {v} out of [0,1] range");
+    }
+
+    eprintln!("  uniform_noise f32 GPU: deterministic + valid range: PASS");
+}
