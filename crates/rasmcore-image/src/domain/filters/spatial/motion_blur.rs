@@ -96,16 +96,13 @@ impl CpuFilter for MotionBlurParams {
 
 impl GpuFilter for MotionBlurParams {
     fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
-        self.gpu_ops_with_format(width, height, rasmcore_pipeline::gpu::BufferFormat::U32Packed)
+        self.gpu_ops_with_format(width, height, rasmcore_pipeline::gpu::BufferFormat::F32Vec4)
     }
 
     fn gpu_ops_with_format(&self, width: u32, height: u32, buffer_format: rasmcore_pipeline::gpu::BufferFormat) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
         use rasmcore_pipeline::gpu::{BufferFormat, GpuOp};
         use std::sync::LazyLock;
         use rasmcore_gpu_shaders as shaders;
-
-        static MOTION_BLUR_U32: LazyLock<String> =
-            LazyLock::new(|| shaders::with_sampling(include_str!("../../../shaders/motion_blur.wgsl")));
         static MOTION_BLUR_F32: LazyLock<String> =
             LazyLock::new(|| shaders::with_sampling_f32(include_str!("../../../shaders/motion_blur_f32.wgsl")));
 
@@ -120,10 +117,7 @@ impl GpuFilter for MotionBlurParams {
         params.extend_from_slice(&self.length.to_le_bytes());
         params.extend_from_slice(&angle_rad.to_le_bytes());
 
-        let (shader, fmt) = match buffer_format {
-            BufferFormat::F32Vec4 => (MOTION_BLUR_F32.clone(), BufferFormat::F32Vec4),
-            _ => (MOTION_BLUR_U32.clone(), BufferFormat::U32Packed),
-        };
+        let shader = MOTION_BLUR_F32.clone();
 
         Some(vec![GpuOp::Compute {
             shader,
@@ -131,7 +125,7 @@ impl GpuFilter for MotionBlurParams {
             workgroup_size: [16, 16, 1],
             params,
             extra_buffers: vec![],
-            buffer_format: fmt,
+            buffer_format: BufferFormat::F32Vec4,
         }])
     }
 }

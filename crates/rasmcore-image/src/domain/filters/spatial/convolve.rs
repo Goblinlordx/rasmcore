@@ -29,7 +29,7 @@ impl ConvolveParams {
         use rasmcore_gpu_shaders as shaders;
 
         static CONVOLVE_U32: LazyLock<String> =
-            LazyLock::new(|| shaders::with_pixel_ops(include_str!("../../../shaders/convolve.wgsl")));
+            LazyLock::new(|| shaders::with_pixel_ops(include_str!("../../../shaders/convolve_f32.wgsl")));
         static CONVOLVE_F32: LazyLock<String> =
             LazyLock::new(|| shaders::with_pixel_ops_f32(include_str!("../../../shaders/convolve_f32.wgsl")));
 

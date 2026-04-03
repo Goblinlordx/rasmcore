@@ -74,7 +74,7 @@ impl CpuFilter for HighPassParams {
 
 impl GpuFilter for HighPassParams {
     fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
-        self.gpu_ops_with_format(width, height, rasmcore_pipeline::gpu::BufferFormat::U32Packed)
+        self.gpu_ops_with_format(width, height, rasmcore_pipeline::gpu::BufferFormat::F32Vec4)
     }
 
     fn gpu_ops_with_format(&self, width: u32, height: u32, buffer_format: rasmcore_pipeline::gpu::BufferFormat) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
@@ -83,11 +83,11 @@ impl GpuFilter for HighPassParams {
         use rasmcore_gpu_shaders as shaders;
 
         static GAUSSIAN_BLUR_U32: LazyLock<String> =
-            LazyLock::new(|| shaders::with_pixel_ops(include_str!("../../../shaders/gaussian_blur.wgsl")));
+            LazyLock::new(|| shaders::with_pixel_ops(include_str!("../../../shaders/gaussian_blur_f32.wgsl")));
         static GAUSSIAN_BLUR_F32: LazyLock<String> =
             LazyLock::new(|| shaders::with_pixel_ops_f32(include_str!("../../../shaders/gaussian_blur_f32.wgsl")));
         static HIGH_PASS_U32: LazyLock<String> =
-            LazyLock::new(|| shaders::with_pixel_ops(include_str!("../../../shaders/high_pass.wgsl")));
+            LazyLock::new(|| shaders::with_pixel_ops(include_str!("../../../shaders/high_pass_f32.wgsl")));
         static HIGH_PASS_F32: LazyLock<String> =
             LazyLock::new(|| shaders::with_pixel_ops_f32(include_str!("../../../shaders/high_pass_f32.wgsl")));
 
@@ -140,7 +140,7 @@ impl GpuFilter for HighPassParams {
                 workgroup_size: [256, 1, 1],
                 params: blur_params.clone(),
                 extra_buffers: vec![kernel_buf.clone()],
-                buffer_format: fmt,
+                buffer_format: BufferFormat::F32Vec4,
             },
             GpuOp::Compute {
                 shader: blur_shader,
@@ -148,7 +148,7 @@ impl GpuFilter for HighPassParams {
                 workgroup_size: [1, 256, 1],
                 params: blur_params,
                 extra_buffers: vec![kernel_buf],
-                buffer_format: fmt,
+                buffer_format: BufferFormat::F32Vec4,
             },
             GpuOp::Compute {
                 shader: hp_shader,
@@ -156,7 +156,7 @@ impl GpuFilter for HighPassParams {
                 workgroup_size: [16, 16, 1],
                 params: hp_params,
                 extra_buffers: vec![],
-                buffer_format: fmt,
+                buffer_format: BufferFormat::F32Vec4,
             },
         ])
     }

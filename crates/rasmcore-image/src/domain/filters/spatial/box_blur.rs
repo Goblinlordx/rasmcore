@@ -208,7 +208,7 @@ impl GpuFilter for BoxBlurParams {
         width: u32,
         height: u32,
     ) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
-        self.gpu_ops_with_format(width, height, rasmcore_pipeline::gpu::BufferFormat::U32Packed)
+        self.gpu_ops_with_format(width, height, rasmcore_pipeline::gpu::BufferFormat::F32Vec4)
     }
 
     fn gpu_ops_with_format(
@@ -222,7 +222,7 @@ impl GpuFilter for BoxBlurParams {
         use rasmcore_gpu_shaders as shaders;
 
         static BOX_BLUR_U32: LazyLock<String> =
-            LazyLock::new(|| shaders::with_pixel_ops(include_str!("../../../shaders/box_blur.wgsl")));
+            LazyLock::new(|| shaders::with_pixel_ops(include_str!("../../../shaders/box_blur_f32.wgsl")));
         static BOX_BLUR_F32: LazyLock<String> =
             LazyLock::new(|| shaders::with_pixel_ops_f32(include_str!("../../../shaders/box_blur_f32.wgsl")));
 

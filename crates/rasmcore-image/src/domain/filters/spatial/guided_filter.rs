@@ -48,7 +48,7 @@ impl CpuFilter for GuidedFilterParams {
 
 impl GpuFilter for GuidedFilterParams {
     fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
-        self.gpu_ops_with_format(width, height, rasmcore_pipeline::gpu::BufferFormat::U32Packed)
+        self.gpu_ops_with_format(width, height, rasmcore_pipeline::gpu::BufferFormat::F32Vec4)
     }
 
     fn gpu_ops_with_format(&self, width: u32, height: u32, buffer_format: rasmcore_pipeline::gpu::BufferFormat) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
@@ -57,7 +57,7 @@ impl GpuFilter for GuidedFilterParams {
         use rasmcore_gpu_shaders as shaders;
 
         static GUIDED_FILTER_U32: LazyLock<String> =
-            LazyLock::new(|| shaders::with_pixel_ops(include_str!("../../../shaders/guided_filter.wgsl")));
+            LazyLock::new(|| shaders::with_pixel_ops(include_str!("../../../shaders/guided_filter_f32.wgsl")));
         static GUIDED_FILTER_F32: LazyLock<String> =
             LazyLock::new(|| shaders::with_pixel_ops_f32(include_str!("../../../shaders/guided_filter_f32.wgsl")));
 
@@ -67,10 +67,7 @@ impl GpuFilter for GuidedFilterParams {
         params.extend_from_slice(&self.radius.to_le_bytes());
         params.extend_from_slice(&self.epsilon.to_le_bytes());
 
-        let (shader, fmt) = match buffer_format {
-            BufferFormat::F32Vec4 => (GUIDED_FILTER_F32.clone(), BufferFormat::F32Vec4),
-            _ => (GUIDED_FILTER_U32.clone(), BufferFormat::U32Packed),
-        };
+        let shader = GUIDED_FILTER_F32.clone();
 
         Some(vec![GpuOp::Compute {
             shader,
@@ -78,7 +75,7 @@ impl GpuFilter for GuidedFilterParams {
             workgroup_size: [16, 16, 1],
             params,
             extra_buffers: vec![],
-            buffer_format: fmt,
+            buffer_format: BufferFormat::F32Vec4,
         }])
     }
 }

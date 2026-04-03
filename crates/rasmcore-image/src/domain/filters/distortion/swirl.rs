@@ -75,16 +75,16 @@ impl CpuFilter for SwirlParams {
 
 impl GpuFilter for SwirlParams {
     fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
-        self.gpu_ops_with_format(width, height, rasmcore_pipeline::gpu::BufferFormat::U32Packed)
+        self.gpu_ops_with_format(width, height, rasmcore_pipeline::gpu::BufferFormat::F32Vec4)
     }
 
     fn gpu_ops_with_format(&self, width: u32, height: u32, buffer_format: rasmcore_pipeline::gpu::BufferFormat) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
-        use rasmcore_pipeline::gpu::GpuOp;
+        use rasmcore_pipeline::gpu::{BufferFormat, GpuOp};
         use std::sync::LazyLock;
-        use rasmcore_gpu_shaders as shaders;
 
-        static SWIRL: LazyLock<String> =
-            LazyLock::new(|| shaders::with_sampling(include_str!("../../../shaders/swirl.wgsl")));
+        static SWIRL_F32: LazyLock<String> =
+            LazyLock::new(|| shaders::with_sampling_f32(include_str!("../../../shaders/swirl_f32.wgsl")));
+        use rasmcore_gpu_shaders as shaders;
 
         let mut params = Vec::with_capacity(16);
         params.extend_from_slice(&width.to_le_bytes());
@@ -93,12 +93,12 @@ impl GpuFilter for SwirlParams {
         params.extend_from_slice(&self.radius.to_le_bytes());
 
         Some(vec![GpuOp::Compute {
-            shader: SWIRL.clone(),
+            shader: SWIRL_F32.clone(),
             entry_point: "main",
             workgroup_size: [16, 16, 1],
             params,
             extra_buffers: vec![],
-            buffer_format: buffer_format,
+            buffer_format: BufferFormat::F32Vec4,
         }])
     }
 }

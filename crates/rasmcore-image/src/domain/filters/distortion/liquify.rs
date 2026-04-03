@@ -96,7 +96,7 @@ impl CpuFilter for LiquifyPushParams {
 
 impl GpuFilter for LiquifyPushParams {
     fn gpu_ops(&self, w: u32, h: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
-        self.gpu_ops_with_format(w, h, rasmcore_pipeline::gpu::BufferFormat::U32Packed)
+        self.gpu_ops_with_format(w, h, rasmcore_pipeline::gpu::BufferFormat::F32Vec4)
     }
 
     fn gpu_ops_with_format(&self, w: u32, h: u32, buffer_format: rasmcore_pipeline::gpu::BufferFormat) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
@@ -104,7 +104,7 @@ impl GpuFilter for LiquifyPushParams {
         use std::sync::LazyLock;
         use rasmcore_gpu_shaders as shaders;
 
-        static PUSH_U32: LazyLock<String> = LazyLock::new(|| shaders::with_io(include_str!("../../../shaders/liquify_push.wgsl")));
+        static PUSH_U32: LazyLock<String> = LazyLock::new(|| shaders::with_io_f32(include_str!("../../../shaders/liquify_push.wgsl")));
         static PUSH_F32: LazyLock<String> = LazyLock::new(|| shaders::with_io_f32(include_str!("../../../shaders/liquify_push.wgsl")));
 
         let shader = match buffer_format {
@@ -209,7 +209,7 @@ impl CpuFilter for LiquifyPinchParams {
 
 impl GpuFilter for LiquifyPinchParams {
     fn gpu_ops(&self, w: u32, h: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
-        self.gpu_ops_with_format(w, h, rasmcore_pipeline::gpu::BufferFormat::U32Packed)
+        self.gpu_ops_with_format(w, h, rasmcore_pipeline::gpu::BufferFormat::F32Vec4)
     }
 
     fn gpu_ops_with_format(&self, w: u32, h: u32, buffer_format: rasmcore_pipeline::gpu::BufferFormat) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
@@ -217,7 +217,7 @@ impl GpuFilter for LiquifyPinchParams {
         use std::sync::LazyLock;
         use rasmcore_gpu_shaders as shaders;
 
-        static PINCH_U32: LazyLock<String> = LazyLock::new(|| shaders::with_io(include_str!("../../../shaders/liquify_pinch.wgsl")));
+        static PINCH_U32: LazyLock<String> = LazyLock::new(|| shaders::with_io_f32(include_str!("../../../shaders/liquify_pinch.wgsl")));
         static PINCH_F32: LazyLock<String> = LazyLock::new(|| shaders::with_io_f32(include_str!("../../../shaders/liquify_pinch.wgsl")));
 
         let shader = match buffer_format { BufferFormat::F32Vec4 => PINCH_F32.clone(), BufferFormat::U32Packed => PINCH_U32.clone() };
@@ -313,7 +313,7 @@ impl CpuFilter for LiquifyExpandParams {
 
 impl GpuFilter for LiquifyExpandParams {
     fn gpu_ops(&self, w: u32, h: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
-        self.gpu_ops_with_format(w, h, rasmcore_pipeline::gpu::BufferFormat::U32Packed)
+        self.gpu_ops_with_format(w, h, rasmcore_pipeline::gpu::BufferFormat::F32Vec4)
     }
 
     fn gpu_ops_with_format(&self, w: u32, h: u32, buffer_format: rasmcore_pipeline::gpu::BufferFormat) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
@@ -321,7 +321,7 @@ impl GpuFilter for LiquifyExpandParams {
         use std::sync::LazyLock;
         use rasmcore_gpu_shaders as shaders;
 
-        static EXPAND_U32: LazyLock<String> = LazyLock::new(|| shaders::with_io(include_str!("../../../shaders/liquify_expand.wgsl")));
+        static EXPAND_U32: LazyLock<String> = LazyLock::new(|| shaders::with_io_f32(include_str!("../../../shaders/liquify_expand.wgsl")));
         static EXPAND_F32: LazyLock<String> = LazyLock::new(|| shaders::with_io_f32(include_str!("../../../shaders/liquify_expand.wgsl")));
 
         let shader = match buffer_format { BufferFormat::F32Vec4 => EXPAND_F32.clone(), BufferFormat::U32Packed => EXPAND_U32.clone() };
@@ -422,7 +422,7 @@ impl CpuFilter for LiquifyTwirlParams {
 
 impl GpuFilter for LiquifyTwirlParams {
     fn gpu_ops(&self, w: u32, h: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
-        self.gpu_ops_with_format(w, h, rasmcore_pipeline::gpu::BufferFormat::U32Packed)
+        self.gpu_ops_with_format(w, h, rasmcore_pipeline::gpu::BufferFormat::F32Vec4)
     }
 
     fn gpu_ops_with_format(&self, w: u32, h: u32, buffer_format: rasmcore_pipeline::gpu::BufferFormat) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
@@ -430,7 +430,7 @@ impl GpuFilter for LiquifyTwirlParams {
         use std::sync::LazyLock;
         use rasmcore_gpu_shaders as shaders;
 
-        static TWIRL_U32: LazyLock<String> = LazyLock::new(|| shaders::with_io(include_str!("../../../shaders/liquify_twirl.wgsl")));
+        static TWIRL_U32: LazyLock<String> = LazyLock::new(|| shaders::with_io_f32(include_str!("../../../shaders/liquify_twirl.wgsl")));
         static TWIRL_F32: LazyLock<String> = LazyLock::new(|| shaders::with_io_f32(include_str!("../../../shaders/liquify_twirl.wgsl")));
 
         let shader = match buffer_format { BufferFormat::F32Vec4 => TWIRL_F32.clone(), BufferFormat::U32Packed => TWIRL_U32.clone() };

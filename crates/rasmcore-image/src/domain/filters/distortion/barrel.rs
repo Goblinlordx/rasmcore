@@ -90,7 +90,7 @@ impl CpuFilter for BarrelParams {
 
 impl GpuFilter for BarrelParams {
     fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
-        self.gpu_ops_with_format(width, height, rasmcore_pipeline::gpu::BufferFormat::U32Packed)
+        self.gpu_ops_with_format(width, height, rasmcore_pipeline::gpu::BufferFormat::F32Vec4)
     }
 
     fn gpu_ops_with_format(
@@ -102,9 +102,6 @@ impl GpuFilter for BarrelParams {
         use rasmcore_pipeline::gpu::{BufferFormat, GpuOp};
         use std::sync::LazyLock;
         use rasmcore_gpu_shaders as shaders;
-
-        static BARREL_U32: LazyLock<String> =
-            LazyLock::new(|| shaders::with_sampling(include_str!("../../../shaders/barrel.wgsl")));
         static BARREL_F32: LazyLock<String> =
             LazyLock::new(|| shaders::with_sampling_f32(include_str!("../../../shaders/barrel_f32.wgsl")));
 
@@ -114,10 +111,7 @@ impl GpuFilter for BarrelParams {
         params.extend_from_slice(&self.k1.to_le_bytes());
         params.extend_from_slice(&self.k2.to_le_bytes());
 
-        let (shader, fmt) = match buffer_format {
-            BufferFormat::F32Vec4 => (BARREL_F32.clone(), BufferFormat::F32Vec4),
-            _ => (BARREL_U32.clone(), BufferFormat::U32Packed),
-        };
+        let shader = BARREL_F32.clone();
 
         Some(vec![GpuOp::Compute {
             shader,
@@ -125,7 +119,7 @@ impl GpuFilter for BarrelParams {
             workgroup_size: [16, 16, 1],
             params,
             extra_buffers: vec![],
-            buffer_format: fmt,
+            buffer_format: BufferFormat::F32Vec4,
         }])
     }
 }

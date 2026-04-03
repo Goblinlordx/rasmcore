@@ -61,7 +61,7 @@ impl CpuFilter for WaveParams {
 
 impl GpuFilter for WaveParams {
     fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
-        self.gpu_ops_with_format(width, height, rasmcore_pipeline::gpu::BufferFormat::U32Packed)
+        self.gpu_ops_with_format(width, height, rasmcore_pipeline::gpu::BufferFormat::F32Vec4)
     }
 
     fn gpu_ops_with_format(
@@ -73,9 +73,6 @@ impl GpuFilter for WaveParams {
         use rasmcore_pipeline::gpu::{BufferFormat, GpuOp};
         use std::sync::LazyLock;
         use rasmcore_gpu_shaders as shaders;
-
-        static WAVE_U32: LazyLock<String> =
-            LazyLock::new(|| shaders::with_sampling(include_str!("../../../shaders/wave.wgsl")));
         static WAVE_F32: LazyLock<String> =
             LazyLock::new(|| shaders::with_sampling_f32(include_str!("../../../shaders/wave_f32.wgsl")));
 
@@ -89,10 +86,7 @@ impl GpuFilter for WaveParams {
         params.extend_from_slice(&0u32.to_le_bytes());
         params.extend_from_slice(&0u32.to_le_bytes());
 
-        let (shader, fmt) = match buffer_format {
-            BufferFormat::F32Vec4 => (WAVE_F32.clone(), BufferFormat::F32Vec4),
-            _ => (WAVE_U32.clone(), BufferFormat::U32Packed),
-        };
+        let shader = WAVE_F32.clone();
 
         Some(vec![GpuOp::Compute {
             shader,
@@ -100,7 +94,7 @@ impl GpuFilter for WaveParams {
             workgroup_size: [16, 16, 1],
             params,
             extra_buffers: vec![],
-            buffer_format: fmt,
+            buffer_format: BufferFormat::F32Vec4,
         }])
     }
 }

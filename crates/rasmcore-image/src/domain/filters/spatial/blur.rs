@@ -55,7 +55,7 @@ impl GpuFilter for BlurParams {
         width: u32,
         height: u32,
     ) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
-        self.gpu_ops_with_format(width, height, rasmcore_pipeline::gpu::BufferFormat::U32Packed)
+        self.gpu_ops_with_format(width, height, rasmcore_pipeline::gpu::BufferFormat::F32Vec4)
     }
 
     fn gpu_ops_with_format(
@@ -69,7 +69,7 @@ impl GpuFilter for BlurParams {
         use rasmcore_gpu_shaders as shaders;
 
         static GAUSSIAN_BLUR_U32: LazyLock<String> =
-            LazyLock::new(|| shaders::with_pixel_ops(include_str!("../../../shaders/gaussian_blur.wgsl")));
+            LazyLock::new(|| shaders::with_pixel_ops(include_str!("../../../shaders/gaussian_blur_f32.wgsl")));
         static GAUSSIAN_BLUR_F32: LazyLock<String> =
             LazyLock::new(|| shaders::with_pixel_ops_f32(include_str!("../../../shaders/gaussian_blur_f32.wgsl")));
 
