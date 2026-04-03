@@ -376,7 +376,7 @@ fn gpu_cpu_parity_gaussian_blur() {
     let ops = node
         .gpu_ops(w, h)
         .expect("blur should support GPU for RGBA8");
-    let gpu_output = gpu.execute(&ops, &pixels, w, h).unwrap();
+    let gpu_output = gpu.execute_with_format(&ops, &pixels, w, h, rasmcore_pipeline::gpu::BufferFormat::U32Packed).unwrap();
 
     // Tolerance accounts for edge-handling differences: CPU expands+crops
     // with border reflection, GPU clamps coordinates at image bounds.
@@ -427,7 +427,7 @@ fn gpu_cpu_parity_bilateral() {
     let ops = node
         .gpu_ops(w, h)
         .expect("bilateral should support GPU for RGBA8");
-    let gpu_rgba = gpu.execute(&ops, &rgba_pixels, w, h).unwrap();
+    let gpu_rgba = gpu.execute_with_format(&ops, &rgba_pixels, w, h, rasmcore_pipeline::gpu::BufferFormat::U32Packed).unwrap();
 
     // Compare RGB channels only (GPU adds alpha passthrough)
     let gpu_rgb = rgba8_to_rgb8(&gpu_rgba);
@@ -465,7 +465,7 @@ fn gpu_cpu_parity_spherize() {
     let ops = node
         .gpu_ops(w, h)
         .expect("spherize should support GPU for RGBA8");
-    let gpu_output = gpu.execute(&ops, &pixels, w, h).unwrap();
+    let gpu_output = gpu.execute_with_format(&ops, &pixels, w, h, rasmcore_pipeline::gpu::BufferFormat::U32Packed).unwrap();
 
     // Wider tolerance: different distortion formulas (powf vs asin) and
     // different sampling (EWA vs bilinear) produce visually similar but
@@ -532,7 +532,7 @@ fn gpu_cpu_parity_lut3d() {
         buffer_format: Default::default(),
     }];
 
-    let gpu_output = gpu.execute(&ops, &pixels, w, h).unwrap();
+    let gpu_output = gpu.execute_with_format(&ops, &pixels, w, h, rasmcore_pipeline::gpu::BufferFormat::U32Packed).unwrap();
 
     assert_gpu_parity("lut3d warm_grade grid=17", &cpu_output, &gpu_output, 1.0);
 }
