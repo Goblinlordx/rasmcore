@@ -1,0 +1,38 @@
+id: v2-filters-enhancement_20260403075919Z
+title: "V2 filters — enhancement (denoise, dehaze, retinex, etc.)"
+type: refactor
+status: pending
+created: 2026-04-03
+updated: 2026-04-03
+spec:
+  summary: |
+    20 enhancement filters to f32
+  context: |
+    Part of the V2 filter migration split. The parent track
+    (v2-filter-migration) established the pattern with 11 adjustment
+    filters. Each category track follows the same pattern:
+    1. Remove format dispatch (validate_format, is_16bit, process_via_8bit)
+    2. Change &[u8] to &[f32], Vec<u8> to Vec<f32>
+    3. Remove .clamp(0,255) as u8 output casts
+    4. Implement AnalyticOp/AffineOp/ClutOp where applicable
+    5. Simplify GPU shaders to io_f32 only
+  acceptance_criteria:
+    - All filters in category ported to V2 Filter trait (f32 only)
+    - Tests verify compute correctness
+    - GPU shaders use io_f32 only where applicable
+  out_of_scope: |
+    Filters outside this category. Adding new GPU shaders.
+plan:
+  - phase: Implementation
+    tasks:
+      - text: Port all filters in category to V2 f32-only API
+        done: false
+      - text: Add tests verifying compute correctness
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Zero format dispatch calls in ported filters
+        done: false
+      - text: All tests pass
+        done: false
+extra: {}
