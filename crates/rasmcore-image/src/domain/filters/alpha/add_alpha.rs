@@ -3,6 +3,16 @@
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
+/// Parameters for add_alpha (empty — alpha value passed directly).
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct AddAlphaParams {}
+
+impl rasmcore_pipeline::GpuCapable for AddAlphaParams {
+    fn gpu_ops(&self, _width: u32, _height: u32) -> Option<Vec<rasmcore_pipeline::GpuOp>> {
+        None // Format change (RGB8 -> RGBA8) not supported on GPU
+    }
+}
+
 /// Add alpha channel to RGB8, producing RGBA8 with given alpha value.
 #[rasmcore_macros::register_mapper(
     name = "add_alpha",

@@ -2,7 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
-use crate::domain::filter_traits::CpuFilter;
+use crate::domain::filter_traits::{CpuFilter, GpuFilter};
 
 /// Gaussian vignette effect — ImageMagick-compatible.
 ///
@@ -132,5 +132,15 @@ impl CpuFilter for VignetteParams {
 
     Ok(result)
 }
+}
+
+impl GpuFilter for VignetteParams {
+    fn gpu_ops(&self, _width: u32, _height: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        None // Gaussian vignette needs multi-pass GPU (blur mask); not yet supported
+    }
+
+    fn gpu_ops_with_format(&self, _width: u32, _height: u32, _buffer_format: rasmcore_pipeline::gpu::BufferFormat) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        None
+    }
 }
 

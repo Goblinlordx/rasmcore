@@ -3,6 +3,16 @@
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
 
+/// Parameters for remove_alpha (empty — no user controls).
+#[derive(rasmcore_macros::ConfigParams, Clone)]
+pub struct RemoveAlphaParams {}
+
+impl rasmcore_pipeline::GpuCapable for RemoveAlphaParams {
+    fn gpu_ops(&self, _width: u32, _height: u32) -> Option<Vec<rasmcore_pipeline::GpuOp>> {
+        None // Format change (RGBA8 -> RGB8) not supported on GPU
+    }
+}
+
 /// Remove alpha channel from RGBA8, producing RGB8.
 #[rasmcore_macros::register_mapper(
     name = "remove_alpha",

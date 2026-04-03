@@ -20,6 +20,12 @@ pub struct FlattenParams {
     pub bg_b: u8,
 }
 
+impl rasmcore_pipeline::GpuCapable for FlattenParams {
+    fn gpu_ops(&self, _width: u32, _height: u32) -> Option<Vec<rasmcore_pipeline::GpuOp>> {
+        None // Format change (RGBA8 -> RGB8) not supported on GPU
+    }
+}
+
 #[rasmcore_macros::register_mapper(
     name = "flatten",
     category = "alpha",

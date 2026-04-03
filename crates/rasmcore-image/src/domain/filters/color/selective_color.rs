@@ -2,7 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
-use crate::domain::filter_traits::CpuFilter;
+use crate::domain::filter_traits::{CpuFilter, GpuFilter};
 
 
 #[derive(rasmcore_macros::Filter, Clone)]
@@ -68,5 +68,15 @@ impl CpuFilter for SelectiveColorParams {
     }
     crate::domain::content_aware::selective_color(pixels, info, &params)
 }
+}
+
+impl GpuFilter for SelectiveColorParams {
+    fn gpu_ops(&self, _width: u32, _height: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        None // Complex HSL logic; uses process_via_standard on CPU
+    }
+
+    fn gpu_ops_with_format(&self, _width: u32, _height: u32, _buffer_format: rasmcore_pipeline::gpu::BufferFormat) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        None
+    }
 }
 

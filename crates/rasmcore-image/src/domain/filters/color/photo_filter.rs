@@ -2,7 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::domain::filters::common::*;
-use crate::domain::filter_traits::CpuFilter;
+use crate::domain::filter_traits::{CpuFilter, GpuFilter};
 
 /// Apply a photo filter (warming/cooling color overlay).
 ///
@@ -82,5 +82,43 @@ impl CpuFilter for PhotoFilterParams {
         (nr, ng, nb)
     })
 }
+}
+
+impl GpuFilter for PhotoFilterParams {
+    fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        self.gpu_ops_with_format(width, height, rasmcore_pipeline::gpu::BufferFormat::U32Packed)
+    }
+
+    fn gpu_ops_with_format(&self, width: u32, height: u32, buffer_format: rasmcore_pipeline::gpu::BufferFormat) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        use rasmcore_pipeline::gpu::{BufferFormat, GpuOp};
+        use std::sync::LazyLock;
+
+        static SHADER_F32: LazyLock<String> = LazyLock::new(|| {
+            rasmcore_gpu_shaders::with_pixel_ops_f32(include_str!(
+                "../../../shaders/photo_filter_f32.wgsl"
+            ))
+        });
+
+        if buffer_format != BufferFormat::F32Vec4 { return None; }
+
+        let mut params = Vec::with_capacity(32);
+        params.extend_from_slice(&width.to_le_bytes());
+        params.extend_from_slice(&height.to_le_bytes());
+        params.extend_from_slice(&(self.color_r.min(255) as f32 / 255.0).to_le_bytes());
+        params.extend_from_slice(&(self.color_g.min(255) as f32 / 255.0).to_le_bytes());
+        params.extend_from_slice(&(self.color_b.min(255) as f32 / 255.0).to_le_bytes());
+        params.extend_from_slice(&(self.density / 100.0).to_le_bytes());
+        params.extend_from_slice(&self.preserve_luminosity.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes()); // pad
+
+        Some(vec![GpuOp::Compute {
+            shader: SHADER_F32.clone(),
+            entry_point: "main",
+            workgroup_size: [16, 16, 1],
+            params,
+            extra_buffers: vec![],
+            buffer_format: BufferFormat::F32Vec4,
+        }])
+    }
 }
 
