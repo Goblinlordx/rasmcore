@@ -595,6 +595,7 @@ pub struct NodeGraph {
     // GPU acceleration — registered per-node at graph build time
     gpu_nodes: Vec<Option<Box<dyn rasmcore_pipeline::GpuCapable>>>,
     gpu_executor: Option<std::rc::Rc<dyn rasmcore_pipeline::GpuExecutor>>,
+    gpu_config: rasmcore_pipeline::GpuConfig,
     // ML inference — registered per-node at graph build time
     ml_nodes: Vec<Option<Box<dyn rasmcore_pipeline::MlCapable>>>,
     ml_executor: Option<std::rc::Rc<dyn rasmcore_pipeline::MlExecutor>>,
@@ -617,6 +618,7 @@ impl NodeGraph {
             description: GraphDescription::new(),
             gpu_nodes: Vec::new(),
             gpu_executor: None,
+            gpu_config: rasmcore_pipeline::GpuConfig::default(),
             ml_nodes: Vec::new(),
             ml_executor: None,
         }
@@ -845,6 +847,16 @@ impl NodeGraph {
     /// GPU ops will be dispatched to GPU with automatic CPU fallback.
     pub fn set_gpu_executor(&mut self, executor: std::rc::Rc<dyn rasmcore_pipeline::GpuExecutor>) {
         self.gpu_executor = Some(executor);
+    }
+
+    /// Set GPU dispatch configuration (tile size, max image pixels).
+    pub fn set_gpu_config(&mut self, config: rasmcore_pipeline::GpuConfig) {
+        self.gpu_config = config;
+    }
+
+    /// Get the current GPU configuration.
+    pub fn gpu_config(&self) -> &rasmcore_pipeline::GpuConfig {
+        &self.gpu_config
     }
 
     /// Check if a node has registered GPU capability.
