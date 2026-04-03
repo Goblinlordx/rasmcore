@@ -1,5 +1,5 @@
 title: V2 GPU dispatch — pre-compiled shaders + graph-level GPU execution
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-03'
