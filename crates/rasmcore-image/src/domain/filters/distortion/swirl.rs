@@ -11,7 +11,7 @@ use crate::domain::filter_traits::{CpuFilter, GpuFilter};
 /// - Factor = 1 - sqrt(distance²) / radius, then angle = degrees * factor²
 /// - Aspect ratio scaling for non-square images
 #[derive(rasmcore_macros::Filter, Clone)]
-#[filter(name = "swirl", gpu = "true", category = "distortion", reference = "vortex rotation distortion")]
+#[filter(name = "swirl", category = "distortion", reference = "vortex rotation distortion")]
 pub struct SwirlParams {
     /// Rotation angle in degrees
     #[param(min = -720.0, max = 720.0, step = 5.0, default = 90.0, hint = "rc.signed_slider")]

@@ -12,7 +12,7 @@ use crate::domain::filter_traits::{CpuFilter, GpuFilter};
 /// Equivalent to ImageMagick `-wave {amplitude}x{wavelength}`.
 
 #[derive(rasmcore_macros::Filter, Clone)]
-#[filter(name = "wave", gpu = "true", category = "distortion", reference = "sinusoidal wave displacement")]
+#[filter(name = "wave", category = "distortion", reference = "sinusoidal wave displacement")]
 pub struct WaveParams {
     /// Displacement amplitude in pixels
     #[param(min = 0.0, max = 100.0, step = 1.0, default = 10.0)]

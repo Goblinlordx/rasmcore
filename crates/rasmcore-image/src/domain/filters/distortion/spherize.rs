@@ -9,7 +9,7 @@ use crate::domain::filter_traits::{CpuFilter, GpuFilter};
 /// `amount > 0` = bulge (fisheye), `amount < 0` = pinch.
 /// `amount = 0` is identity.
 #[derive(rasmcore_macros::Filter, Clone)]
-#[filter(name = "spherize", gpu = "true", category = "distortion", reference = "spherical bulge distortion")]
+#[filter(name = "spherize", category = "distortion", reference = "spherical bulge distortion")]
 pub struct SpherizeParams {
     /// Bulge/pinch amount (-1 to 1, positive = bulge)
     #[param(min = -1.0, max = 1.0, step = 0.05, default = 0.5, hint = "rc.signed_slider")]

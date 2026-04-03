@@ -13,7 +13,7 @@ use crate::domain::filter_traits::{CpuFilter, GpuFilter};
 /// Uses IM pixel-center convention (+0.5) and f64 precision.
 /// Equivalent to ImageMagick `-distort DePolar "max_radius"`.
 #[derive(rasmcore_macros::Filter, Clone)]
-#[filter(name = "polar", gpu = "true", category = "distortion", group = "distort_polar", variant = "to_polar", reference = "Cartesian to polar coordinate transform")]
+#[filter(name = "polar", category = "distortion", group = "distort_polar", variant = "to_polar", reference = "Cartesian to polar coordinate transform")]
 pub struct PolarParams {}
 
 impl CpuFilter for PolarParams {

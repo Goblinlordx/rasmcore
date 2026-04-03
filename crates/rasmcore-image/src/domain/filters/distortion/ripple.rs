@@ -12,7 +12,7 @@ use crate::domain::filter_traits::{CpuFilter, GpuFilter};
 /// Equivalent to ImageMagick concentric wave effect.
 
 #[derive(rasmcore_macros::Filter, Clone)]
-#[filter(name = "ripple", gpu = "true", category = "distortion", reference = "concentric ripple displacement")]
+#[filter(name = "ripple", category = "distortion", reference = "concentric ripple displacement")]
 pub struct RippleParams {
     /// Displacement amplitude in pixels
     #[param(min = 0.0, max = 100.0, step = 1.0, default = 8.0)]

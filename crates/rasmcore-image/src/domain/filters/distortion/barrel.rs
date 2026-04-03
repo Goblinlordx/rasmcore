@@ -11,7 +11,7 @@ use crate::domain::filter_traits::{CpuFilter, GpuFilter};
 /// This is the inverse of the `undistort` correction filter.
 /// Matches ImageMagick `-distort Barrel` normalization: `rscale = 2/min(w,h)`.
 #[derive(rasmcore_macros::Filter, Clone)]
-#[filter(name = "barrel", gpu = "true", category = "distortion", reference = "Brown-Conrady radial distortion model")]
+#[filter(name = "barrel", category = "distortion", reference = "Brown-Conrady radial distortion model")]
 pub struct BarrelParams {
     /// Radial distortion coefficient (positive = barrel, negative = pincushion)
     #[param(min = -1.0, max = 1.0, step = 0.05, default = 0.3, hint = "rc.signed_slider")]

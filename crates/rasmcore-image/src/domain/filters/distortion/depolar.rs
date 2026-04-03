@@ -12,7 +12,7 @@ use crate::domain::filter_traits::{CpuFilter, GpuFilter};
 ///
 /// Equivalent to ImageMagick `-distort DePolar "max_radius"`.
 #[derive(rasmcore_macros::Filter, Clone)]
-#[filter(name = "depolar", gpu = "true", category = "distortion", group = "distort_polar", variant = "from_polar", reference = "polar to Cartesian coordinate transform")]
+#[filter(name = "depolar", category = "distortion", group = "distort_polar", variant = "from_polar", reference = "polar to Cartesian coordinate transform")]
 pub struct DepolarParams {}
 
 impl CpuFilter for DepolarParams {
