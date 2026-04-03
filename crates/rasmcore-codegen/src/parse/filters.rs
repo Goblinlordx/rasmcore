@@ -26,7 +26,18 @@ pub fn extract_filters(file: &syn::File) -> Vec<FilterReg> {
     for item in &file.items {
         match item {
             syn::Item::Fn(func) => {
-                if let Some(reg) = extract_filter_reg(func) {
+                if let Some(mut reg) = extract_filter_reg(func) {
+                    // Check for trait impls on the associated config struct
+                    // Convention: filter "brightness" → config struct "BrightnessParams"
+                    let expected_params = format!(
+                        "{}Params",
+                        crate::generate::helpers::to_pascal_case(&reg.name)
+                    );
+                    if let Some(impls) = trait_impls.get(&expected_params) {
+                        if impls.iter().any(|t| t == "GpuFilter") {
+                            reg.gpu = true;
+                        }
+                    }
                     filters.push(reg);
                 }
             }

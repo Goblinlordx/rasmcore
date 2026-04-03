@@ -673,3 +673,48 @@ fn gpu_f32_parity_affine_resample() {
 
     eprintln!("  f32 affine resample parity: PASS");
 }
+
+// ─── f32 Point Op Parity Tests ─────────────────────────────────────────────
+
+#[test]
+fn gpu_f32_parity_brightness() {
+    use rasmcore_pipeline::gpu::BufferFormat;
+    use rasmcore_image::domain::filter_traits::GpuFilter;
+    use rasmcore_image::domain::filters::BrightnessParams;
+    use rasmcore_image::domain::point_ops::LutPointOp;
+
+    let gpu = match try_gpu() {
+        Some(g) => g,
+        None => return,
+    };
+
+    let (w, h) = (64, 64);
+    let pixels_u8 = make_gradient_rgba(w, h);
+    // f32 pipeline uses [0,1] normalized values
+    let pixels_f32_norm: Vec<u8> = pixels_u8.iter()
+        .flat_map(|&b| (b as f32 / 255.0).to_le_bytes())
+        .collect();
+    let info = info_rgba8(w, h);
+
+    let config = BrightnessParams { amount: 0.2 };
+
+    // CPU reference
+    let cpu_lut = config.build_point_lut();
+    let cpu_result = rasmcore_image::domain::point_ops::apply_lut(&pixels_u8, &info, &cpu_lut).unwrap();
+
+    // GPU f32 (normalized [0,1])
+    let ops = config.gpu_ops_with_format(w, h, BufferFormat::F32Vec4)
+        .expect("brightness should support f32 GPU");
+    let gpu_f32_bytes = gpu.execute_with_format(&ops, &pixels_f32_norm, w, h, BufferFormat::F32Vec4).unwrap();
+
+    // Convert [0,1] f32 output back to u8
+    let gpu_f32_as_u8: Vec<u8> = gpu_f32_bytes.chunks_exact(4)
+        .map(|c| {
+            let v = f32::from_le_bytes([c[0], c[1], c[2], c[3]]);
+            (v * 255.0 + 0.5).clamp(0.0, 255.0) as u8
+        })
+        .collect();
+
+    assert_gpu_parity("brightness_f32 vs cpu", &cpu_result, &gpu_f32_as_u8, 1.5);
+    eprintln!("  brightness f32 GPU parity: PASS");
+}

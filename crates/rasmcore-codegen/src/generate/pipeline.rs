@@ -283,6 +283,24 @@ pub fn generate_nodes(filters: &[FilterReg]) -> String {
                 "    fn access_pattern(&self) -> AccessPattern { AccessPattern::LocalNeighborhood }\n",
             );
             code.push_str("}\n\n");
+
+            // GpuCapable for old-style filters with gpu=true and config_struct
+            if f.gpu && f.config_struct.is_some() {
+                code.push_str(&format!(
+                    "impl rasmcore_pipeline::gpu::GpuCapable for {node_name} {{\n"
+                ));
+                code.push_str("    fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {\n");
+                code.push_str("        use crate::domain::filter_traits::GpuFilter;\n");
+                code.push_str("        self.config.gpu_ops(width, height)\n");
+                code.push_str("    }\n");
+                code.push_str("    fn gpu_ops_with_format(&self, width: u32, height: u32, buffer_format: rasmcore_pipeline::gpu::BufferFormat) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {\n");
+                code.push_str("        use crate::domain::filter_traits::GpuFilter;\n");
+                code.push_str(
+                    "        self.config.gpu_ops_with_format(width, height, buffer_format)\n",
+                );
+                code.push_str("    }\n");
+                code.push_str("}\n\n");
+            }
         }
     }
 
