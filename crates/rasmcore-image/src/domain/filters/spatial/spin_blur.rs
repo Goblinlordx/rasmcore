@@ -114,12 +114,18 @@ impl CpuFilter for SpinBlurParams {
 
 impl GpuFilter for SpinBlurParams {
     fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
-        use rasmcore_pipeline::gpu::GpuOp;
+        self.gpu_ops_with_format(width, height, rasmcore_pipeline::gpu::BufferFormat::U32Packed)
+    }
+
+    fn gpu_ops_with_format(&self, width: u32, height: u32, buffer_format: rasmcore_pipeline::gpu::BufferFormat) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        use rasmcore_pipeline::gpu::{BufferFormat, GpuOp};
         use std::sync::LazyLock;
         use rasmcore_gpu_shaders as shaders;
 
-        static SPIN_BLUR: LazyLock<String> =
+        static SPIN_BLUR_U32: LazyLock<String> =
             LazyLock::new(|| shaders::with_sampling(include_str!("../../../shaders/spin_blur.wgsl")));
+        static SPIN_BLUR_F32: LazyLock<String> =
+            LazyLock::new(|| shaders::with_sampling_f32(include_str!("../../../shaders/spin_blur_f32.wgsl")));
 
         let samples = ((self.angle.abs() * 180.0 / std::f32::consts::PI).ceil() as u32).clamp(8, 128);
 
@@ -133,13 +139,18 @@ impl GpuFilter for SpinBlurParams {
         params.extend_from_slice(&0u32.to_le_bytes());
         params.extend_from_slice(&0u32.to_le_bytes());
 
+        let (shader, fmt) = match buffer_format {
+            BufferFormat::F32Vec4 => (SPIN_BLUR_F32.clone(), BufferFormat::F32Vec4),
+            _ => (SPIN_BLUR_U32.clone(), BufferFormat::U32Packed),
+        };
+
         Some(vec![GpuOp::Compute {
-            shader: SPIN_BLUR.clone(),
+            shader,
             entry_point: "main",
             workgroup_size: [16, 16, 1],
             params,
             extra_buffers: vec![],
-            buffer_format: rasmcore_pipeline::BufferFormat::U32Packed,
+            buffer_format: fmt,
         }])
     }
 }

@@ -95,17 +95,19 @@ impl CpuFilter for MedianParams {
 }
 
 impl GpuFilter for MedianParams {
-    fn gpu_ops(
-        &self,
-        width: u32,
-        height: u32,
-    ) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
-        use rasmcore_pipeline::gpu::GpuOp;
+    fn gpu_ops(&self, width: u32, height: u32) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        self.gpu_ops_with_format(width, height, rasmcore_pipeline::gpu::BufferFormat::U32Packed)
+    }
+
+    fn gpu_ops_with_format(&self, width: u32, height: u32, buffer_format: rasmcore_pipeline::gpu::BufferFormat) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+        use rasmcore_pipeline::gpu::{BufferFormat, GpuOp};
         use std::sync::LazyLock;
         use rasmcore_gpu_shaders as shaders;
 
-        static MEDIAN: LazyLock<String> =
+        static MEDIAN_U32: LazyLock<String> =
             LazyLock::new(|| shaders::with_pixel_ops(include_str!("../../../shaders/median.wgsl")));
+        static MEDIAN_F32: LazyLock<String> =
+            LazyLock::new(|| shaders::with_pixel_ops_f32(include_str!("../../../shaders/median_f32.wgsl")));
 
         if self.radius > 3 {
             return None;
@@ -117,13 +119,18 @@ impl GpuFilter for MedianParams {
         params.extend_from_slice(&self.radius.to_le_bytes());
         params.extend_from_slice(&0u32.to_le_bytes());
 
+        let (shader, fmt) = match buffer_format {
+            BufferFormat::F32Vec4 => (MEDIAN_F32.clone(), BufferFormat::F32Vec4),
+            _ => (MEDIAN_U32.clone(), BufferFormat::U32Packed),
+        };
+
         Some(vec![GpuOp::Compute {
-            shader: MEDIAN.clone(),
+            shader,
             entry_point: "main",
             workgroup_size: [16, 16, 1],
             params,
             extra_buffers: vec![],
-            buffer_format: rasmcore_pipeline::BufferFormat::U32Packed,
+            buffer_format: fmt,
         }])
     }
 }
