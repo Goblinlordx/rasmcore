@@ -1,5 +1,5 @@
 title: V2 filter API — f32-only compute with GPU composition
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-03'

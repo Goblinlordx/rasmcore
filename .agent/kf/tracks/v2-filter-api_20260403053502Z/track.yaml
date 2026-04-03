@@ -5,147 +5,154 @@ status: pending
 created: '2026-04-03'
 updated: '2026-04-03'
 spec:
-  summary: |
-    The V2 filter API. Filters implement one code path: f32 in, f32 out.
+  summary: 'The V2 filter API. Filters implement one code path: f32 in, f32 out.
+
     GPU shaders compose automatically with io_f32 fragment. No format
+
     dispatch, no validate_format, no process_via_8bit. One path. Period.
-  context: |
-    V1 filter complexity (per filter):
+
+    '
+  context: 'V1 filter complexity (per filter):
+
     - validate_format() check
+
     - is_16bit() → process_via_8bit branch
+
     - is_float() → process_via_standard branch
+
     - Main u8 code path
+
     - Optional f32 code path
+
     - Optional GPU shader + GpuFilter impl
+
     = 3-5 code paths per filter, ~30% boilerplate
 
+
     V2 filter simplicity (per filter):
+
     - fn compute(&self, input: &[f32], w: u32, h: u32) -> Vec<f32>
+
     - Optional: fn shader_body() -> &str
+
     = 1 code path + optional GPU. Zero boilerplate.
 
+
     The pipeline handles all format conversion at boundaries:
+
     - Decode → promote to f32 (at ingest)
+
     - f32 → quantize to output format (at encode)
+
     - Filters never see u8, u16, f16, or PixelFormat
-  codebase_analysis: |
-    V1 filter API (filter_traits.rs):
+
+    '
+  codebase_analysis: 'V1 filter API (filter_traits.rs):
+
     - CpuFilter: fn compute(request, upstream, info) -> Result<Vec<u8>>
+
     - GpuFilter: fn gpu_ops(w, h) -> Option<Vec<GpuOp>>
+
     - PointOp: fn build_lut() -> [u8; 256]
+
     - ColorOp: fn build_clut() -> ColorLut3D
+
     - InputRectProvider: fn input_rect(output, bounds) -> Rect
 
+
     V2 filter API (simplified):
+
     - Filter: fn compute(&self, input: &[f32], w, h) -> Vec<f32>
+
     - GpuFilter: fn shader_body(&self) -> &str + fn params(w, h) -> Vec<u8>
+
     - AnalyticOp: fn expr(&self) -> PointOpExpr (for fusion)
+
     - AffineOp: fn matrix(&self) -> [f64; 6] (for composition)
+
     - ClutOp: fn build_clut(&self) -> Clut3D (for fusion)
+
     - SpatialFilter: fn overlap_radius(&self) -> u32
 
+
     Key difference: input is &[f32] (4 floats per pixel: RGBA),
+
     not &[u8] with PixelFormat. No format dispatch anywhere.
 
+
     GPU shader authoring:
+
     - Filter returns a WGSL shader body string
+
     - Pipeline auto-composes with io_f32 fragment
+
     - No io_u32, no pixel_ops, no pack/unpack — everything is f32
+
     - Shader uses load_pixel/store_pixel from io_f32
+
+    '
   acceptance_criteria:
-    - Filter trait with fn compute(&self, input &[f32], w, h) -> Vec<f32>
-    - GpuFilter trait with fn shader_body() and fn params()
-    - AnalyticOp trait with fn expr() -> PointOpExpr
-    - AffineOp trait with fn matrix() -> [f64; 6]
-    - ClutOp trait with fn build_clut() -> Clut3D
-    - SpatialFilter trait with fn overlap_radius() -> u32
-    - Pipeline auto-composes GPU shaders with io_f32
-    - No PixelFormat in the filter API — f32 only
-    - Reference filter implementations (blur, brightness, invert) as examples
-    - CPU and GPU paths for reference filters
-  out_of_scope: |
-    Migrating all 210 existing filters (Track 6).
+  - Filter trait with fn compute(&self, input &[f32], w, h) -> Vec<f32>
+  - GpuFilter trait with fn shader_body() and fn params()
+  - AnalyticOp trait with fn expr() -> PointOpExpr
+  - AffineOp trait with fn matrix() -> [f64; 6]
+  - ClutOp trait with fn build_clut() -> Clut3D
+  - SpatialFilter trait with fn overlap_radius() -> u32
+  - Pipeline auto-composes GPU shaders with io_f32
+  - No PixelFormat in the filter API — f32 only
+  - Reference filter implementations (blur, brightness, invert) as examples
+  - CPU and GPU paths for reference filters
+  out_of_scope: 'Migrating all 210 existing filters (Track 6).
+
     Expression tree IR implementation (Track 5).
-  technical_notes: |
-    Example V2 blur filter (complete implementation):
 
-    #[derive(Operation)]
-    #[operation(name = "blur", category = "spatial", gpu = true)]
-    struct Blur {
-        #[param(min = 0.0, max = 100.0, default = 3.0)]
-        radius: f32,
-    }
-
-    impl Filter for Blur {
-        fn compute(&self, input: &[f32], w: u32, h: u32) -> Vec<f32> {
-            let kernel = gaussian_kernel(self.radius);
-            convolve_separable_f32(input, w, h, 4, &kernel, &kernel, 1.0)
-        }
-    }
-
-    impl SpatialFilter for Blur {
-        fn overlap_radius(&self) -> u32 {
-            (self.radius * 3.0).ceil() as u32
-        }
-    }
-
-    impl GpuFilter for Blur {
-        fn shader_body(&self) -> &str {
-            include_str!("blur.wgsl")
-        }
-        fn params(&self, w: u32, h: u32) -> Vec<u8> {
-            // width, height, radius, pad — same as V1
-        }
-    }
-
-    Compare to V1 blur (blur.rs):
-    - No validate_format
-    - No is_16bit/is_float branches
-    - No process_via_8bit/standard
-    - No crop_to_request
-    - No Rect/upstream closure
-    - Just: input f32 → process → output f32
-
-    The pipeline graph handles:
-    - Tile-based execution (overlap via SpatialFilter trait)
-    - GPU dispatch (compose shader_body with io_f32)
-    - Caching (spatial + layer)
-    - Format conversion at boundaries only
+    '
+  technical_notes: "Example V2 blur filter (complete implementation):\n\n#[derive(Operation)]\n#[operation(name = \"blur\"\
+    , category = \"spatial\", gpu = true)]\nstruct Blur {\n    #[param(min = 0.0, max = 100.0, default = 3.0)]\n    radius:\
+    \ f32,\n}\n\nimpl Filter for Blur {\n    fn compute(&self, input: &[f32], w: u32, h: u32) -> Vec<f32> {\n        let kernel\
+    \ = gaussian_kernel(self.radius);\n        convolve_separable_f32(input, w, h, 4, &kernel, &kernel, 1.0)\n    }\n}\n\n\
+    impl SpatialFilter for Blur {\n    fn overlap_radius(&self) -> u32 {\n        (self.radius * 3.0).ceil() as u32\n    }\n\
+    }\n\nimpl GpuFilter for Blur {\n    fn shader_body(&self) -> &str {\n        include_str!(\"blur.wgsl\")\n    }\n    fn\
+    \ params(&self, w: u32, h: u32) -> Vec<u8> {\n        // width, height, radius, pad — same as V1\n    }\n}\n\nCompare\
+    \ to V1 blur (blur.rs):\n- No validate_format\n- No is_16bit/is_float branches\n- No process_via_8bit/standard\n- No crop_to_request\n\
+    - No Rect/upstream closure\n- Just: input f32 → process → output f32\n\nThe pipeline graph handles:\n- Tile-based execution\
+    \ (overlap via SpatialFilter trait)\n- GPU dispatch (compose shader_body with io_f32)\n- Caching (spatial + layer)\n-\
+    \ Format conversion at boundaries only\n"
 plan:
-  - phase: Core filter traits
-    tasks:
-      - text: Define Filter trait (f32 in, f32 out, no format dispatch)
-        done: false
-      - text: Define GpuFilter trait (shader_body + params)
-        done: false
-      - text: Define SpatialFilter trait (overlap_radius for tiling)
-        done: false
-      - text: Define AnalyticOp, AffineOp, ClutOp traits (for fusion)
-        done: false
-  - phase: GPU shader composition
-    tasks:
-      - text: Auto-compose io_f32 + shader_body into complete WGSL
-        done: false
-      - text: Shader param serialization (uniform buffer layout)
-        done: false
-      - text: Shader validation via naga at build time
-        done: false
-  - phase: Reference implementations
-    tasks:
-      - text: V2 blur filter (CPU + GPU, spatial overlap)
-        done: false
-      - text: V2 brightness filter (CPU + GPU, AnalyticOp for fusion)
-        done: false
-      - text: V2 invert filter (CPU + GPU, AnalyticOp)
-        done: false
-      - text: V2 resize transform (CPU + GPU, AffineOp)
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Test — f32 blur output matches V1 blur output (within tolerance)
-        done: false
-      - text: Test — GPU shader auto-composition produces valid WGSL
-        done: false
-      - text: Test — AnalyticOp expr() returns correct expressions
-        done: false
+- phase: Core filter traits
+  tasks:
+  - text: Define Filter trait (f32 in, f32 out, no format dispatch)
+    done: true
+  - text: Define GpuFilter trait (shader_body + params)
+    done: true
+  - text: Define SpatialFilter trait (overlap_radius for tiling)
+    done: true
+  - text: Define AnalyticOp, AffineOp, ClutOp traits (for fusion)
+    done: true
+- phase: GPU shader composition
+  tasks:
+  - text: Auto-compose io_f32 + shader_body into complete WGSL
+    done: true
+  - text: Shader param serialization (uniform buffer layout)
+    done: true
+  - text: Shader validation via naga at build time
+    done: true
+- phase: Reference implementations
+  tasks:
+  - text: V2 blur filter (CPU + GPU, spatial overlap)
+    done: true
+  - text: V2 brightness filter (CPU + GPU, AnalyticOp for fusion)
+    done: true
+  - text: V2 invert filter (CPU + GPU, AnalyticOp)
+    done: true
+  - text: V2 resize transform (CPU + GPU, AffineOp)
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test — f32 blur output matches V1 blur output (within tolerance)
+    done: true
+  - text: Test — GPU shader auto-composition produces valid WGSL
+    done: true
+  - text: Test — AnalyticOp expr() returns correct expressions
+    done: true
 extra: {}
