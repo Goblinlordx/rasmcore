@@ -8,21 +8,21 @@ use crate::rect::Rect;
 /// View transform applied at the output boundary (before encode).
 ///
 /// Converts from the pipeline working space (Linear) to the display color space.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ViewTransform {
     /// sRGB gamma encoding (default for SDR monitors).
+    #[default]
     Srgb,
     /// No transform — pass through linear (for EXR/HDR output).
     Linear,
     /// Rec.709 (BT.1886 gamma 2.4).
     Rec709,
-    // Future: AcesRrtSrgb, AcesRrtRec709, AcesRrtP3, etc.
-}
-
-impl Default for ViewTransform {
-    fn default() -> Self {
-        ViewTransform::Srgb
-    }
+    /// ACES RRT + sRGB ODT — full ACES output transform for sRGB displays.
+    AcesRrtSrgb,
+    /// ACES RRT + Rec.709 ODT — full ACES output transform for broadcast.
+    AcesRrtRec709,
+    /// ACES RRT + P3-D65 ODT — full ACES output transform for cinema.
+    AcesRrtP3,
 }
 
 /// Lightweight color space conversion node.
@@ -103,9 +103,10 @@ pub struct ViewTransformNode {
 impl ViewTransformNode {
     pub fn new(upstream: u32, upstream_info: NodeInfo, transform: ViewTransform) -> Self {
         let out_cs = match transform {
-            ViewTransform::Srgb => ColorSpace::Srgb,
+            ViewTransform::Srgb | ViewTransform::AcesRrtSrgb => ColorSpace::Srgb,
             ViewTransform::Linear => ColorSpace::Linear,
-            ViewTransform::Rec709 => ColorSpace::Rec709,
+            ViewTransform::Rec709 | ViewTransform::AcesRrtRec709 => ColorSpace::Rec709,
+            ViewTransform::AcesRrtP3 => ColorSpace::DisplayP3,
         };
         Self {
             upstream,
@@ -136,9 +137,33 @@ impl Node for ViewTransformNode {
             }
             ViewTransform::Rec709 => {
                 // BT.1886: gamma 2.4 (simplified — full BT.1886 has black level adjustment)
-                for v in pixels.iter_mut() {
-                    *v = v.powf(1.0 / 2.4);
+                for chunk in pixels.chunks_exact_mut(4) {
+                    for c in &mut chunk[..3] {
+                        *c = c.clamp(0.0, 1.0).powf(1.0 / 2.4);
+                    }
                 }
+            }
+            ViewTransform::AcesRrtSrgb => {
+                // Input is Linear sRGB working space — convert to AP1 first, then RRT+ODT
+                crate::color_math::apply_matrix(&mut pixels, &crate::color_math::srgb_to_acescg_matrix());
+                crate::aces::apply_aces_output_transform(
+                    &mut pixels,
+                    crate::aces::aces_rrt_odt_srgb_pixel,
+                );
+            }
+            ViewTransform::AcesRrtRec709 => {
+                crate::color_math::apply_matrix(&mut pixels, &crate::color_math::srgb_to_acescg_matrix());
+                crate::aces::apply_aces_output_transform(
+                    &mut pixels,
+                    crate::aces::aces_rrt_odt_rec709_pixel,
+                );
+            }
+            ViewTransform::AcesRrtP3 => {
+                crate::color_math::apply_matrix(&mut pixels, &crate::color_math::srgb_to_acescg_matrix());
+                crate::aces::apply_aces_output_transform(
+                    &mut pixels,
+                    crate::aces::aces_rrt_odt_p3d65_pixel,
+                );
             }
         }
         Ok(pixels)

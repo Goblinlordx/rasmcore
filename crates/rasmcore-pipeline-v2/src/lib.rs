@@ -28,6 +28,7 @@ pub mod ops;
 pub mod filter_node;
 pub mod color_math;
 pub mod color_convert;
+pub mod aces;
 pub mod fusion;
 pub mod staged;
 pub mod gpu_shaders;
