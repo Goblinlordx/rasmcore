@@ -201,6 +201,39 @@ impl Graph {
         }
     }
 
+    /// Pre-compile all GPU shaders reachable from `node_id`.
+    ///
+    /// Walks the graph, collects all unique WGSL shader sources from GPU-capable
+    /// nodes, and passes them to the executor's `prepare()` method for compilation
+    /// and caching. Subsequent `request_full()` calls will hit O(1) cache lookups.
+    ///
+    /// No-op if no GPU executor is set.
+    pub fn prepare_gpu(&mut self, node_id: u32) -> Result<(), PipelineError> {
+        // Run fusion first to ensure FusedPointOpNodes exist
+        if !self.optimized {
+            crate::fusion::optimize(self);
+            self.optimized = true;
+        }
+
+        let executor = match &self.gpu_executor {
+            Some(e) => e.clone(),
+            None => return Ok(()),
+        };
+
+        let info = self.node_info(node_id)?;
+        let chain = self.collect_gpu_chain(node_id, info.width, info.height);
+
+        if let Some((_source_id, shaders)) = chain {
+            let sources: Vec<String> = shaders
+                .iter()
+                .map(|s| s.body.clone())
+                .collect();
+            executor.prepare(&sources);
+        }
+
+        Ok(())
+    }
+
     /// Inject externally-computed GPU result into the cache.
     ///
     /// After the host executes the GPU plan, call this to cache the result.

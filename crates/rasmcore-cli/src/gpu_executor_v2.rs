@@ -183,6 +183,13 @@ impl WgpuExecutorV2 {
 }
 
 impl GpuExecutor for WgpuExecutorV2 {
+    fn prepare(&self, shader_sources: &[String]) {
+        for source in shader_sources {
+            // get_shader() compiles and caches by content hash
+            let _ = self.get_shader(source);
+        }
+    }
+
     fn execute(
         &self,
         ops: &[GpuShader],

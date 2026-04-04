@@ -79,6 +79,13 @@ pub trait GpuExecutor {
         height: u32,
     ) -> Result<Vec<f32>, GpuError>;
 
+    /// Pre-compile shader sources without executing them.
+    ///
+    /// The executor should compile and cache each shader source so that
+    /// subsequent `execute()` calls hit O(1) cache lookups.
+    /// Default implementation is a no-op (execution will compile on first use).
+    fn prepare(&self, _shader_sources: &[String]) {}
+
     /// Maximum buffer size in bytes this GPU can handle.
     fn max_buffer_size(&self) -> usize {
         256 * 1024 * 1024
