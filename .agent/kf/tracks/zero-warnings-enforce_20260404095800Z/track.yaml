@@ -1,134 +1,137 @@
 id: zero-warnings-enforce_20260404095800Z
-title: "Zero-Warning Enforcement — Fix All Warnings and Deny at Workspace Level"
+title: Zero-Warning Enforcement — Fix All Warnings and Deny at Workspace Level
 type: chore
 status: pending
 created: 2026-04-04
-updated: 2026-04-04
+updated: '2026-04-04'
 spec:
-  summary: |
-    Fix all ~160 compiler and clippy warnings across the workspace, then upgrade
+  summary: 'Fix all ~160 compiler and clippy warnings across the workspace, then upgrade
+
     workspace-level lints from warn to deny so warnings become compile errors.
+
     Update the code style guide with enforcement rationale.
-  context: |
-    Previous zero-warnings tracks (zero-warnings-lint-gate, build-hygiene) were
+
+    '
+  context: 'Previous zero-warnings tracks (zero-warnings-lint-gate, build-hygiene) were
+
     completed and archived, but warnings crept back during V2 pipeline and GPU
+
     shader work. The validation script (validate.sh) runs clippy -D warnings as
+
     a CI gate, but developers can still build locally with warnings. The workspace
+
     Cargo.toml sets key lints to "warn" level, which means cargo build succeeds
+
     with warnings — only validate.sh catches them.
 
+
     The user wants both the fix AND structural prevention so warnings cannot
+
     accumulate again between CI runs.
-  codebase_analysis: |
-    Warning breakdown by crate and category:
 
-    rasmcore-pipeline-v2 (35 warnings):
-      - 31x deprecated GpuFilterNode struct/field usage — V2 uses FilterNode::new()
-        but macro-generated GPU filter wiring still constructs GpuFilterNode directly
-      - 14x unused variable `buffer_format` — GPU dispatch functions receive it but
-        V2 F32Vec4-only pipeline doesn't branch on format
-      - 1x unused variable `io_f32`, `q`, `w`, `h`, `fmt`
-      - 1x unreachable pattern, 1x unused mut
-      - 4x dead statics (BILATERAL_U32, GUIDED_FILTER_U32, MEDIAN_U32, SHARPEN_U32)
-        — leftover from removed U32-packed GPU shaders
-
-    rasmcore-image (24 warnings):
-      - 1x deprecated trait AnalyticOp usage
-
-    Clippy-only (additional ~100):
-      - 58x empty line after doc comment (doc formatting)
-      - 10x collapsible if statements
-      - 8x doc list item without indentation
-      - 6x very complex type (consider type alias)
-      - 5x redundant closure
-      - 4x manual slice copy (use copy_from_slice)
-      - 3x map_or simplification
-      - 2x boolean expression simplification
-      - 2x manual Iterator::find
-      - 2x casting to same type (f32 -> f32)
-      - 2x empty line after outer attribute
-      - 1x too many arguments (11/10)
-      - 1x manual !RangeInclusive::contains
-      - 1x struct update no effect
-      - 3x needless_range_loop (index loop on output/lut_1d/histogram)
-
-    Workspace lint config (Cargo.toml lines 66-77):
-      - unused_imports = "deny" (already strict)
-      - unused_variables, dead_code, unused_assignments, unused_mut = "warn"
-      - clippy: needless_range_loop, unnecessary_cast, redundant_closure,
-        collapsible_if = "warn"
-
-    Code style guide (.agent/kf/code_styleguides/rust.md lines 158-233):
-      - Documents zero-warning policy but enforcement is CI-only
-      - No mention of workspace-level deny as prevention mechanism
+    '
+  codebase_analysis: "Warning breakdown by crate and category:\n\nrasmcore-pipeline-v2 (35 warnings):\n  - 31x deprecated\
+    \ GpuFilterNode struct/field usage — V2 uses FilterNode::new()\n    but macro-generated GPU filter wiring still constructs\
+    \ GpuFilterNode directly\n  - 14x unused variable `buffer_format` — GPU dispatch functions receive it but\n    V2 F32Vec4-only\
+    \ pipeline doesn't branch on format\n  - 1x unused variable `io_f32`, `q`, `w`, `h`, `fmt`\n  - 1x unreachable pattern,\
+    \ 1x unused mut\n  - 4x dead statics (BILATERAL_U32, GUIDED_FILTER_U32, MEDIAN_U32, SHARPEN_U32)\n    — leftover from\
+    \ removed U32-packed GPU shaders\n\nrasmcore-image (24 warnings):\n  - 1x deprecated trait AnalyticOp usage\n\nClippy-only\
+    \ (additional ~100):\n  - 58x empty line after doc comment (doc formatting)\n  - 10x collapsible if statements\n  - 8x\
+    \ doc list item without indentation\n  - 6x very complex type (consider type alias)\n  - 5x redundant closure\n  - 4x\
+    \ manual slice copy (use copy_from_slice)\n  - 3x map_or simplification\n  - 2x boolean expression simplification\n  -\
+    \ 2x manual Iterator::find\n  - 2x casting to same type (f32 -> f32)\n  - 2x empty line after outer attribute\n  - 1x\
+    \ too many arguments (11/10)\n  - 1x manual !RangeInclusive::contains\n  - 1x struct update no effect\n  - 3x needless_range_loop\
+    \ (index loop on output/lut_1d/histogram)\n\nWorkspace lint config (Cargo.toml lines 66-77):\n  - unused_imports = \"\
+    deny\" (already strict)\n  - unused_variables, dead_code, unused_assignments, unused_mut = \"warn\"\n  - clippy: needless_range_loop,\
+    \ unnecessary_cast, redundant_closure,\n    collapsible_if = \"warn\"\n\nCode style guide (.agent/kf/code_styleguides/rust.md\
+    \ lines 158-233):\n  - Documents zero-warning policy but enforcement is CI-only\n  - No mention of workspace-level deny\
+    \ as prevention mechanism\n"
   acceptance_criteria:
-    - cargo check --workspace produces zero warnings
-    - cargo clippy --workspace produces zero warnings
-    - Workspace Cargo.toml [lints] section uses "deny" for all listed lints
-    - New clippy lints added to workspace deny list covering the fixed categories
-    - Code style guide updated with deny-at-workspace rationale
-    - cargo component build -p rasmcore-image --release succeeds (WASM target)
-    - No behavioral changes — only warning fixes and lint config
-  out_of_scope: |
-    - Adding new clippy lint categories not triggered by current code
+  - cargo check --workspace produces zero warnings
+  - cargo clippy --workspace produces zero warnings
+  - Workspace Cargo.toml [lints] section uses "deny" for all listed lints
+  - New clippy lints added to workspace deny list covering the fixed categories
+  - Code style guide updated with deny-at-workspace rationale
+  - cargo component build -p rasmcore-image --release succeeds (WASM target)
+  - No behavioral changes — only warning fixes and lint config
+  out_of_scope: '- Adding new clippy lint categories not triggered by current code
+
     - Refactoring deprecated GpuFilterNode API itself (separate track concern)
+
     - Pre-commit hooks or git hooks (CI gate in validate.sh is sufficient)
+
     - Fixing warnings in generated code (bindings.rs already has #[allow(warnings)])
-  technical_notes: |
-    Fix order matters — fix all warnings BEFORE flipping warn to deny, otherwise
+
+    '
+  technical_notes: 'Fix order matters — fix all warnings BEFORE flipping warn to deny, otherwise
+
     the build breaks mid-track.
 
+
     For deprecated GpuFilterNode: the macro-generated code in rasmcore-pipeline-v2
+
     constructs GpuFilterNode directly. The fix is to update the macro or generated
+
     code to use FilterNode::new() as the deprecation message indicates.
 
+
     For unused buffer_format: prefix with underscore (_buffer_format) since V2 is
+
     F32Vec4-only but the parameter may be needed when format branching returns.
 
+
     For dead U32 statics: remove entirely — the U32-packed GPU shaders were already
+
     removed in commit 9b0bd89d.
 
+
     For clippy doc formatting: mechanical — remove empty lines after doc comments,
+
     indent doc list items.
 
+
     Workspace lint upgrade: change "warn" to "deny" for all existing entries, add
+
     deny entries for: empty_doc_comment_with_whitespace (clippy), doc_list_item
+
     (clippy), manual_memcpy (clippy).
+
+    '
 plan:
-  - phase: "Fix rasmcore-pipeline-v2 warnings"
-    tasks:
-      - text: "Remove dead U32 statics (BILATERAL_U32, GUIDED_FILTER_U32, MEDIAN_U32, SHARPEN_U32)"
-        done: false
-      - text: "Fix deprecated GpuFilterNode usage — update macro/generated code to use FilterNode::new()"
-        done: false
-      - text: "Fix unused variables (buffer_format -> _buffer_format, io_f32, q, w, h, fmt)"
-        done: false
-      - text: "Fix unreachable pattern, unused mut, deprecated AnalyticOp trait usage"
-        done: false
-  - phase: "Fix clippy warnings across workspace"
-    tasks:
-      - text: "Fix 58x empty-line-after-doc-comment and 8x doc-list-item-indentation warnings"
-        done: false
-      - text: "Fix 10x collapsible-if, 5x redundant-closure, 4x manual-slice-copy warnings"
-        done: false
-      - text: "Fix remaining clippy warnings (complex types, boolean simplification, same-type casts, etc.)"
-        done: false
-  - phase: "Tighten workspace lint configuration"
-    tasks:
-      - text: "Upgrade workspace Cargo.toml [lints] from warn to deny for all existing entries"
-        done: false
-      - text: "Add deny entries for new clippy lint categories found during cleanup"
-        done: false
-      - text: "Update code style guide with deny-at-workspace rationale and exception policy"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Verify cargo check --workspace produces zero warnings"
-        done: false
-      - text: "Verify cargo clippy --workspace produces zero warnings"
-        done: false
-      - text: "Verify cargo component build -p rasmcore-image --release succeeds"
-        done: false
-      - text: "Run cargo test --workspace --lib to confirm no behavioral changes"
-        done: false
+- phase: Fix rasmcore-pipeline-v2 warnings
+  tasks:
+  - text: Remove dead U32 statics (BILATERAL_U32, GUIDED_FILTER_U32, MEDIAN_U32, SHARPEN_U32)
+    done: true
+  - text: Fix deprecated GpuFilterNode usage — update macro/generated code to use FilterNode::new()
+    done: true
+  - text: Fix unused variables (buffer_format -> _buffer_format, io_f32, q, w, h, fmt)
+    done: true
+  - text: Fix unreachable pattern, unused mut, deprecated AnalyticOp trait usage
+    done: true
+- phase: Fix clippy warnings across workspace
+  tasks:
+  - text: Fix 58x empty-line-after-doc-comment and 8x doc-list-item-indentation warnings
+    done: true
+  - text: Fix 10x collapsible-if, 5x redundant-closure, 4x manual-slice-copy warnings
+    done: true
+  - text: Fix remaining clippy warnings (complex types, boolean simplification, same-type casts, etc.)
+    done: true
+- phase: Tighten workspace lint configuration
+  tasks:
+  - text: Upgrade workspace Cargo.toml [lints] from warn to deny for all existing entries
+    done: true
+  - text: Add deny entries for new clippy lint categories found during cleanup
+    done: true
+  - text: Update code style guide with deny-at-workspace rationale and exception policy
+    done: true
+- phase: Verification
+  tasks:
+  - text: Verify cargo check --workspace produces zero warnings
+    done: true
+  - text: Verify cargo clippy --workspace produces zero warnings
+    done: true
+  - text: Verify cargo component build -p rasmcore-image --release succeeds
+    done: true
+  - text: Run cargo test --workspace --lib to confirm no behavioral changes
+    done: true
 extra: {}
