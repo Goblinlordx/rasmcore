@@ -170,6 +170,10 @@ impl Filter for BoxBlur {
 
         Ok(out)
     }
+
+    fn overlap_radius(&self) -> u32 {
+        self.radius
+    }
 }
 
 // ─── Sharpen (Unsharp Mask) ───────────────────────────────────────────────────

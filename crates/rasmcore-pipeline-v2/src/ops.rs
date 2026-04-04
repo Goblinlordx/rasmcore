@@ -9,47 +9,106 @@
 use crate::node::{GpuShader, NodeInfo, PipelineError};
 use crate::rect::Rect;
 
-/// Image filter — the core processing trait.
+/// Image filter — the unified processing trait.
 ///
 /// All pixel data is `&[f32]`: RGBA, 4 floats per pixel, interleaved.
 /// `input` has `width * height * 4` elements.
 ///
-/// Returns processed pixel data with the same dimensions.
+/// # Required
+/// - `compute()` — CPU implementation (always required as fallback)
+///
+/// # Optional capabilities
+/// Override associated constants and methods to opt in:
+///
+/// - **GPU acceleration**: set `GPU_SHADER_BODY` to `Some(include_str!("shader.wgsl"))`,
+///   override `gpu_params()` to serialize uniforms. The shader body is a static property
+///   of the filter type — collected at graph setup time, NOT dependent on instance config.
+///   The pipeline auto-composes it with io_f32 bindings (`load_pixel`/`store_pixel`).
+///
+/// - **Spatial overlap**: override `overlap_radius()` to return the number of extra
+///   pixels needed around each tile (e.g., blur kernel radius × 3).
+///
+/// - **Analytic fusion**: override `analytic_expression()` to return a `PointOpExpr`.
+///   Consecutive analytic filters get composed and constant-folded at graph setup.
+///   Example: brightness(+0.5) → brightness(-0.5) → identity (zero compute).
 pub trait Filter {
+    /// CPU implementation (required). Processes the full input buffer.
     fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError>;
-}
 
-/// GPU filter — provides a WGSL compute shader for GPU execution.
-///
-/// The pipeline auto-composes `shader_body()` with the io_f32 I/O fragment:
-/// - `load_pixel(idx: u32) -> vec4<f32>` reads from input
-/// - `store_pixel(idx: u32, color: vec4<f32>)` writes to output
-///
-/// The shader body should declare `@group(0) @binding(2) var<uniform> params: Params`
-/// and the entry point function. Input/output bindings are added by the pipeline.
-pub trait GpuFilter {
-    /// WGSL shader body (without input/output bindings).
-    fn shader_body(&self) -> &str;
+    // ─── GPU acceleration ─────────────────────────────────────────────────
+    // These methods describe static properties of the filter type.
+    // They should NOT depend on instance config (self). They are collected
+    // at graph setup time, pre-compiled, and cached.
+    //
+    // Implemented as methods (not associated constants) for trait object safety.
 
-    /// Entry point function name in the shader.
-    fn entry_point(&self) -> &'static str {
-        "main"
+    /// WGSL shader body (without io_f32 bindings).
+    /// Collected once at graph setup, pre-compiled, cached.
+    /// Override with `Some(include_str!("../shaders/my_filter.wgsl"))`.
+    fn gpu_shader_body(&self) -> Option<&'static str> { None }
+
+    /// GPU workgroup dispatch size.
+    fn gpu_workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+
+    /// GPU entry point name.
+    fn gpu_entry_point(&self) -> &'static str { "main" }
+
+    /// Serialize instance params to GPU uniform buffer (little-endian, 4-byte aligned).
+    /// Called at dispatch time — depends on instance config (width, height, filter params).
+    /// Return `None` to skip GPU dispatch for this invocation.
+    fn gpu_params(&self, _width: u32, _height: u32) -> Option<Vec<u8>> {
+        None
     }
 
-    /// Workgroup size (x, y, z).
-    fn workgroup_size(&self) -> [u32; 3] {
-        [16, 16, 1]
-    }
-
-    /// Serialized uniform parameters (little-endian, 4-byte aligned).
-    fn params(&self, width: u32, height: u32) -> Vec<u8>;
-
-    /// Optional extra storage buffers (kernel weights, LUT data, etc.).
-    fn extra_buffers(&self) -> Vec<Vec<u8>> {
+    /// Extra GPU storage buffers (kernel weights, LUT data, etc.).
+    fn gpu_extra_buffers(&self) -> Vec<Vec<u8>> {
         vec![]
     }
 
-    /// Build a complete GpuShader from this filter's configuration.
+    /// Multi-pass GPU shaders. Override for separable filters (blur H+V),
+    /// reduction ops (histogram), etc. Default: single pass from shader body.
+    fn gpu_shader_passes(&self, width: u32, height: u32) -> Option<Vec<GpuShader>> {
+        let body = self.gpu_shader_body()?;
+        let params = self.gpu_params(width, height)?;
+        Some(vec![GpuShader {
+            body: body.to_string(),
+            entry_point: self.gpu_entry_point(),
+            workgroup_size: self.gpu_workgroup_size(),
+            params,
+            extra_buffers: self.gpu_extra_buffers(),
+            reduction_buffers: vec![],
+        }])
+    }
+
+    // ─── Spatial overlap ─────────────────────────────────────────────────
+
+    /// Extra pixels needed around each tile for neighborhood operations.
+    /// Default 0 = point operation (no overlap needed).
+    fn overlap_radius(&self) -> u32 {
+        0
+    }
+
+    // ─── Analytic fusion ─────────────────────────────────────────────────
+
+    /// Algebraic expression for this filter (per-channel point ops only).
+    /// If provided, consecutive analytic filters are composed and constant-folded.
+    /// Default: None (not fusable).
+    fn analytic_expression(&self) -> Option<PointOpExpr> {
+        None
+    }
+}
+
+/// GPU filter trait — provides WGSL shader for GPU execution.
+///
+/// This trait is being migrated into `Filter` directly. New filters should
+/// override `Filter::gpu_shader_body()` + `Filter::gpu_params()` instead.
+/// Existing filters may still use this trait during migration.
+pub trait GpuFilter {
+    fn shader_body(&self) -> &str;
+    fn entry_point(&self) -> &'static str { "main" }
+    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn params(&self, width: u32, height: u32) -> Vec<u8>;
+    fn extra_buffers(&self) -> Vec<Vec<u8>> { vec![] }
     fn gpu_shader(&self, width: u32, height: u32) -> GpuShader {
         GpuShader {
             body: self.shader_body().to_string(),
@@ -60,14 +119,6 @@ pub trait GpuFilter {
             reduction_buffers: vec![],
         }
     }
-
-    /// Build multiple GPU shaders for multi-pass filters.
-    ///
-    /// Multi-pass filters (histogram→LUT→apply, separable blur H+V, etc.)
-    /// return multiple shaders that execute sequentially via ping-pong buffers.
-    /// The executor chains them: output of shader[i] = input of shader[i+1].
-    ///
-    /// Default: wraps the single `gpu_shader()` result.
     fn gpu_shaders(&self, width: u32, height: u32) -> Vec<GpuShader> {
         vec![self.gpu_shader(width, height)]
     }
@@ -161,12 +212,10 @@ pub trait Transform {
 ///
 /// Operations that implement this can be composed into a single expression
 /// tree by the fusion optimizer, avoiding intermediate buffers.
+/// Legacy trait — kept for backward compatibility.
+/// New filters should override `Filter::analytic_expression()` instead.
+#[deprecated(note = "Use Filter::analytic_expression() instead")]
 pub trait AnalyticOp {
-    /// Return the symbolic expression for this point operation.
-    ///
-    /// The expression is per-channel: `f(v) -> v'` where v is a single
-    /// channel value. The optimizer composes multiple expressions via
-    /// substitution: `f(g(v))`.
     fn expression(&self) -> PointOpExpr;
 }
 

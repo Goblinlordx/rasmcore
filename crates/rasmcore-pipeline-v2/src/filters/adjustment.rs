@@ -1,11 +1,11 @@
 //! Adjustment filters — point operations on f32 pixel data.
 //!
-//! All implement `Filter` (f32 compute) and `AnalyticOp` (expression tree
+//! All implement `Filter` (f32 compute) and `analytic_expression()` (expression tree
 //! for fusion optimizer). These are per-channel operations: f(v) applied
 //! independently to R, G, B. Alpha is preserved unchanged.
 
 use crate::node::PipelineError;
-use crate::ops::{AnalyticOp, Filter, PointOpExpr};
+use crate::ops::{Filter, PointOpExpr};
 
 /// Brightness adjustment — additive offset.
 ///
@@ -29,14 +29,12 @@ impl Filter for Brightness {
         }
         Ok(out)
     }
-}
 
-impl AnalyticOp for Brightness {
-    fn expression(&self) -> PointOpExpr {
-        PointOpExpr::Add(
+    fn analytic_expression(&self) -> Option<PointOpExpr> {
+        Some(PointOpExpr::Add(
             Box::new(PointOpExpr::Input),
             Box::new(PointOpExpr::Constant(self.amount)),
-        )
+        ))
     }
 }
 
@@ -62,12 +60,10 @@ impl Filter for Contrast {
         }
         Ok(out)
     }
-}
 
-impl AnalyticOp for Contrast {
-    fn expression(&self) -> PointOpExpr {
+    fn analytic_expression(&self) -> Option<PointOpExpr> {
         let factor = 1.0 + self.amount;
-        PointOpExpr::Add(
+        Some(PointOpExpr::Add(
             Box::new(PointOpExpr::Mul(
                 Box::new(PointOpExpr::Sub(
                     Box::new(PointOpExpr::Input),
@@ -76,7 +72,7 @@ impl AnalyticOp for Contrast {
                 Box::new(PointOpExpr::Constant(factor)),
             )),
             Box::new(PointOpExpr::Constant(0.5)),
-        )
+        ))
     }
 }
 
@@ -102,17 +98,15 @@ impl Filter for Gamma {
         }
         Ok(out)
     }
-}
 
-impl AnalyticOp for Gamma {
-    fn expression(&self) -> PointOpExpr {
-        PointOpExpr::Pow(
+    fn analytic_expression(&self) -> Option<PointOpExpr> {
+        Some(PointOpExpr::Pow(
             Box::new(PointOpExpr::Max(
                 Box::new(PointOpExpr::Input),
                 Box::new(PointOpExpr::Constant(0.0)),
             )),
             Box::new(PointOpExpr::Constant(1.0 / self.gamma)),
-        )
+        ))
     }
 }
 
@@ -145,12 +139,10 @@ impl Filter for Exposure {
         }
         Ok(out)
     }
-}
 
-impl AnalyticOp for Exposure {
-    fn expression(&self) -> PointOpExpr {
+    fn analytic_expression(&self) -> Option<PointOpExpr> {
         let multiplier = 2.0f32.powf(self.ev);
-        PointOpExpr::Pow(
+        Some(PointOpExpr::Pow(
             Box::new(PointOpExpr::Max(
                 Box::new(PointOpExpr::Mul(
                     Box::new(PointOpExpr::Add(
@@ -162,7 +154,7 @@ impl AnalyticOp for Exposure {
                 Box::new(PointOpExpr::Constant(0.0)),
             )),
             Box::new(PointOpExpr::Constant(1.0 / self.gamma_correction)),
-        )
+        ))
     }
 }
 
@@ -184,14 +176,12 @@ impl Filter for Invert {
         }
         Ok(out)
     }
-}
 
-impl AnalyticOp for Invert {
-    fn expression(&self) -> PointOpExpr {
-        PointOpExpr::Sub(
+    fn analytic_expression(&self) -> Option<PointOpExpr> {
+        Some(PointOpExpr::Sub(
             Box::new(PointOpExpr::Constant(1.0)),
             Box::new(PointOpExpr::Input),
-        )
+        ))
     }
 }
 
@@ -227,12 +217,10 @@ impl Filter for Levels {
         }
         Ok(out)
     }
-}
 
-impl AnalyticOp for Levels {
-    fn expression(&self) -> PointOpExpr {
+    fn analytic_expression(&self) -> Option<PointOpExpr> {
         let range = (self.white - self.black).max(1e-6);
-        PointOpExpr::Pow(
+        Some(PointOpExpr::Pow(
             Box::new(PointOpExpr::Max(
                 Box::new(PointOpExpr::Div(
                     Box::new(PointOpExpr::Sub(
@@ -244,7 +232,7 @@ impl AnalyticOp for Levels {
                 Box::new(PointOpExpr::Constant(0.0)),
             )),
             Box::new(PointOpExpr::Constant(1.0 / self.gamma)),
-        )
+        ))
     }
 }
 
@@ -271,13 +259,11 @@ impl Filter for Posterize {
         }
         Ok(out)
     }
-}
 
-impl AnalyticOp for Posterize {
-    fn expression(&self) -> PointOpExpr {
+    fn analytic_expression(&self) -> Option<PointOpExpr> {
         let n = self.levels as f32;
         let inv = 1.0 / (n - 1.0).max(1.0);
-        PointOpExpr::Mul(
+        Some(PointOpExpr::Mul(
             Box::new(PointOpExpr::Min(
                 Box::new(PointOpExpr::Floor(Box::new(PointOpExpr::Mul(
                     Box::new(PointOpExpr::Input),
@@ -286,7 +272,7 @@ impl AnalyticOp for Posterize {
                 Box::new(PointOpExpr::Constant(n - 1.0)),
             )),
             Box::new(PointOpExpr::Constant(inv)),
-        )
+        ))
     }
 }
 
@@ -321,14 +307,12 @@ impl Filter for SigmoidalContrast {
         }
         Ok(out)
     }
-}
 
-impl AnalyticOp for SigmoidalContrast {
-    fn expression(&self) -> PointOpExpr {
+    fn analytic_expression(&self) -> Option<PointOpExpr> {
         let a = self.strength;
         let b = self.midpoint;
         if a.abs() < 1e-6 {
-            return PointOpExpr::Input;
+            return Some(PointOpExpr::Input);
         }
         if self.sharpen {
             // sig(x) = 1/(1+exp(-a*(x-b)))
@@ -339,7 +323,7 @@ impl AnalyticOp for SigmoidalContrast {
             let sig_1 = 1.0 / (1.0 + (-a * (1.0 - b)).exp());
             let den = sig_1 - sig_0;
             if den.abs() < 1e-10 {
-                return PointOpExpr::Input;
+                return Some(PointOpExpr::Input);
             }
             // 1/(1+exp(-a*(v-b))) expressed as tree
             let neg_a_v_minus_b = PointOpExpr::Mul(
@@ -357,19 +341,19 @@ impl AnalyticOp for SigmoidalContrast {
                 )),
             );
             // (sigmoid - sig_0) / den
-            PointOpExpr::Div(
+            Some(PointOpExpr::Div(
                 Box::new(PointOpExpr::Sub(
                     Box::new(sigmoid),
                     Box::new(PointOpExpr::Constant(sig_0)),
                 )),
                 Box::new(PointOpExpr::Constant(den)),
-            )
+            ))
         } else {
             // Inverse sigmoidal
             let sig_mid = 1.0 / (1.0 + (-a * b).exp());
             let sig_range = 1.0 / (1.0 + (-a * (1.0 - b)).exp()) - sig_mid;
             if sig_range.abs() < 1e-10 {
-                return PointOpExpr::Input;
+                return Some(PointOpExpr::Input);
             }
             // t = sig_mid + v * sig_range
             // out = b - ln(1/t - 1) / a
@@ -388,13 +372,13 @@ impl AnalyticOp for SigmoidalContrast {
                 )),
                 Box::new(PointOpExpr::Constant(1.0)),
             );
-            PointOpExpr::Sub(
+            Some(PointOpExpr::Sub(
                 Box::new(PointOpExpr::Constant(b)),
                 Box::new(PointOpExpr::Div(
                     Box::new(PointOpExpr::Ln(Box::new(inv_t_minus_1))),
                     Box::new(PointOpExpr::Constant(a)),
                 )),
-            )
+            ))
         }
     }
 }
@@ -442,15 +426,13 @@ impl Filter for Dodge {
         }
         Ok(out)
     }
-}
 
-impl AnalyticOp for Dodge {
-    fn expression(&self) -> PointOpExpr {
+    fn analytic_expression(&self) -> Option<PointOpExpr> {
         let divisor = (1.0 - self.amount).max(1e-6);
-        PointOpExpr::Div(
+        Some(PointOpExpr::Div(
             Box::new(PointOpExpr::Input),
             Box::new(PointOpExpr::Constant(divisor)),
-        )
+        ))
     }
 }
 
@@ -476,12 +458,10 @@ impl Filter for Burn {
         }
         Ok(out)
     }
-}
 
-impl AnalyticOp for Burn {
-    fn expression(&self) -> PointOpExpr {
+    fn analytic_expression(&self) -> Option<PointOpExpr> {
         let amt = self.amount.max(1e-6);
-        PointOpExpr::Sub(
+        Some(PointOpExpr::Sub(
             Box::new(PointOpExpr::Constant(1.0)),
             Box::new(PointOpExpr::Div(
                 Box::new(PointOpExpr::Sub(
@@ -490,7 +470,7 @@ impl AnalyticOp for Burn {
                 )),
                 Box::new(PointOpExpr::Constant(amt)),
             )),
-        )
+        ))
     }
 }
 
@@ -518,12 +498,10 @@ impl Filter for Solarize {
         }
         Ok(out)
     }
-}
 
-impl AnalyticOp for Solarize {
-    fn expression(&self) -> PointOpExpr {
+    fn analytic_expression(&self) -> Option<PointOpExpr> {
         // if (v - threshold) > 0 then (1 - v) else v
-        PointOpExpr::Select(
+        Some(PointOpExpr::Select(
             Box::new(PointOpExpr::Sub(
                 Box::new(PointOpExpr::Input),
                 Box::new(PointOpExpr::Constant(self.threshold)),
@@ -533,7 +511,7 @@ impl AnalyticOp for Solarize {
                 Box::new(PointOpExpr::Input),
             )),
             Box::new(PointOpExpr::Input),
-        )
+        ))
     }
 }
 
@@ -578,7 +556,7 @@ mod tests {
     #[test]
     fn brightness_expression_matches_compute() {
         let b = Brightness { amount: 0.2 };
-        let expr = b.expression();
+        let expr = b.analytic_expression().unwrap();
         let input = test_pixels();
         let computed = b.compute(&input, 2, 2).unwrap();
         for i in (0..input.len()).step_by(4) {
@@ -598,7 +576,7 @@ mod tests {
     #[test]
     fn contrast_expression_matches_compute() {
         let c = Contrast { amount: 0.5 };
-        let expr = c.expression();
+        let expr = c.analytic_expression().unwrap();
         let input = test_pixels();
         let computed = c.compute(&input, 2, 2).unwrap();
         for i in (0..input.len()).step_by(4) {
@@ -616,7 +594,7 @@ mod tests {
     #[test]
     fn gamma_expression_matches_compute() {
         let g = Gamma { gamma: 2.2 };
-        let expr = g.expression();
+        let expr = g.analytic_expression().unwrap();
         let input = vec![0.5, 0.5, 0.5, 1.0];
         let computed = g.compute(&input, 1, 1).unwrap();
         let from_expr = expr.evaluate(0.5) as f32;
@@ -650,8 +628,8 @@ mod tests {
         // Compose brightness(+0.1) → contrast(1.5)
         let b = Brightness { amount: 0.1 };
         let c = Contrast { amount: 0.5 }; // factor = 1.5
-        let b_expr = b.expression();
-        let c_expr = c.expression();
+        let b_expr = b.analytic_expression().unwrap();
+        let c_expr = c.analytic_expression().unwrap();
         let fused = PointOpExpr::compose(&c_expr, &b_expr);
 
         // For v=0.5: brightness gives 0.6, contrast gives (0.6-0.5)*1.5+0.5 = 0.65
@@ -685,7 +663,7 @@ mod tests {
             midpoint: 0.5,
             sharpen: true,
         };
-        let expr = sc.expression();
+        let expr = sc.analytic_expression().unwrap();
         let input = vec![0.3, 0.5, 0.7, 1.0];
         let computed = sc.compute(&input, 1, 1).unwrap();
         for ch in 0..3 {
@@ -701,7 +679,7 @@ mod tests {
     #[test]
     fn solarize_expression_matches_compute() {
         let s = Solarize { threshold: 0.5 };
-        let expr = s.expression();
+        let expr = s.analytic_expression().unwrap();
         for v in [0.2, 0.5, 0.7, 0.0, 1.0] {
             let input = vec![v, v, v, 1.0];
             let computed = s.compute(&input, 1, 1).unwrap();
@@ -723,7 +701,7 @@ mod tests {
             sharpen: true,
         };
         let sol = Solarize { threshold: 0.5 };
-        let composed = PointOpExpr::compose(&sol.expression(), &sc.expression());
+        let composed = PointOpExpr::compose(&sol.analytic_expression().unwrap(), &sc.analytic_expression().unwrap());
         let wgsl = lower_to_wgsl(&composed);
         assert!(wgsl.contains("exp("), "Fused WGSL should contain exp()");
         assert!(wgsl.contains("select("), "Fused WGSL should contain select()");

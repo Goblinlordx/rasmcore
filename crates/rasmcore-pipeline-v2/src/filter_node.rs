@@ -47,70 +47,39 @@ pub fn compose_shader(body: &str) -> String {
 /// This is the standard way to connect a filter to the V2 graph.
 /// The pipeline calls `Node::compute()` which delegates to `Filter::compute()`.
 /// GPU dispatch checks `GpuFilter::shader_body()` and auto-composes with io_f32.
+/// Unified filter node — wraps any `Filter` into the pipeline graph.
+///
+/// Capabilities are detected at runtime from the filter:
+/// - `Filter::GPU_SHADER_BODY` → GPU dispatch
+/// - `Filter::overlap_radius()` → spatial tile expansion
+/// - `Filter::analytic_expression()` → fusion optimizer
+///
+/// One constructor. No variants. The node adapts to whatever the filter provides.
 pub struct FilterNode<F: Filter> {
-    /// The upstream node ID.
     upstream: u32,
-    /// Output info (same dimensions as upstream for filters, different for transforms).
     info: NodeInfo,
-    /// The filter implementation.
     filter: F,
-    /// Overlap radius for spatial filters (0 for point ops).
-    overlap_radius: u32,
-    /// Node capabilities.
-    capabilities: NodeCapabilities,
-    /// Analytic expression provider (auto-detected from AnalyticOp impl).
-    analytic_fn: Option<fn(&F) -> crate::ops::PointOpExpr>,
 }
 
 impl<F: Filter> FilterNode<F> {
-    /// Create a FilterNode wrapping a point operation (no overlap needed).
+    /// Create a FilterNode. Capabilities detected from the filter at runtime.
+    pub fn new(upstream: u32, info: NodeInfo, filter: F) -> Self {
+        Self { upstream, info, filter }
+    }
+
+    /// Backward compat — alias for `new()`.
     pub fn point_op(upstream: u32, info: NodeInfo, filter: F) -> Self {
-        Self {
-            upstream,
-            info,
-            filter,
-            overlap_radius: 0,
-            capabilities: NodeCapabilities::default(),
-            analytic_fn: None,
-        }
+        Self::new(upstream, info, filter)
     }
 
-    /// Create a FilterNode with spatial overlap (blur, sharpen, etc.).
-    pub fn spatial(upstream: u32, info: NodeInfo, filter: F, overlap_radius: u32) -> Self {
-        Self {
-            upstream,
-            info,
-            filter,
-            overlap_radius,
-            capabilities: NodeCapabilities { gpu: false, ..NodeCapabilities::default() },
-            analytic_fn: None,
-        }
-    }
-
-    /// Set capabilities (GPU, analytic, etc.).
-    pub fn with_capabilities(mut self, caps: NodeCapabilities) -> Self {
-        self.capabilities = caps;
-        self
+    /// Backward compat — overlap is now detected from `filter.overlap_radius()`.
+    pub fn spatial(upstream: u32, info: NodeInfo, filter: F, _overlap_radius: u32) -> Self {
+        Self::new(upstream, info, filter)
     }
 
     /// Get a reference to the underlying filter.
     pub fn filter(&self) -> &F {
         &self.filter
-    }
-}
-
-/// Auto-detect AnalyticOp: if the filter implements it, set the capability.
-impl<F: Filter + crate::ops::AnalyticOp> FilterNode<F> {
-    /// Create a FilterNode that auto-detects analytic capability.
-    pub fn analytic(upstream: u32, info: NodeInfo, filter: F) -> Self {
-        Self {
-            upstream,
-            info,
-            filter,
-            overlap_radius: 0,
-            capabilities: NodeCapabilities { analytic: true, ..Default::default() },
-            analytic_fn: Some(|f| f.expression()),
-        }
     }
 }
 
@@ -133,7 +102,6 @@ impl<F: Filter + 'static> Node for FilterNode<F> {
         let input = upstream.request(self.upstream, input_rect)?;
         let output = self.filter.compute(&input, input_rect.width, input_rect.height)?;
 
-        // If we requested more than needed (overlap), crop to the requested tile
         if input_rect == request {
             Ok(output)
         } else {
@@ -141,11 +109,21 @@ impl<F: Filter + 'static> Node for FilterNode<F> {
         }
     }
 
-    fn gpu_shader(&self, _width: u32, _height: u32) -> Option<GpuShader> {
-        // Check if the filter also implements GpuFilter via trait object
-        // This requires the filter to be passed as a trait object or checked at construction
-        // For now, GPU support is handled by GpuFilterNode below
-        None
+    fn gpu_shader(&self, width: u32, height: u32) -> Option<GpuShader> {
+        let body = self.filter.gpu_shader_body()?;
+        let params = self.filter.gpu_params(width, height)?;
+        Some(GpuShader {
+            body: compose_shader(body),
+            entry_point: self.filter.gpu_entry_point(),
+            workgroup_size: self.filter.gpu_workgroup_size(),
+            params,
+            extra_buffers: self.filter.gpu_extra_buffers(),
+            reduction_buffers: vec![],
+        })
+    }
+
+    fn gpu_shaders(&self, width: u32, height: u32) -> Option<Vec<GpuShader>> {
+        self.filter.gpu_shader_passes(width, height)
     }
 
     fn upstream_ids(&self) -> Vec<u32> {
@@ -153,18 +131,24 @@ impl<F: Filter + 'static> Node for FilterNode<F> {
     }
 
     fn capabilities(&self) -> NodeCapabilities {
-        self.capabilities
+        NodeCapabilities {
+            gpu: self.filter.gpu_shader_body().is_some(),
+            analytic: false, // detected via analytic_expression() at runtime
+            affine: false,
+            clut: false,
+        }
     }
 
     fn analytic_expression(&self) -> Option<crate::ops::PointOpExpr> {
-        self.analytic_fn.map(|f| f(&self.filter))
+        self.filter.analytic_expression()
     }
 
     fn tile_hint(&self) -> Option<TileHint> {
-        if self.overlap_radius > 0 {
+        let r = self.filter.overlap_radius();
+        if r > 0 {
             Some(TileHint {
-                min_efficient_tile: self.overlap_radius * 8, // heuristic
-                overlap_radius: self.overlap_radius,
+                min_efficient_tile: r * 8,
+                overlap_radius: r,
             })
         } else {
             None
@@ -172,20 +156,19 @@ impl<F: Filter + 'static> Node for FilterNode<F> {
     }
 
     fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> InputRectEstimate {
-        if self.overlap_radius > 0 {
-            InputRectEstimate::Exact(
-                output.expand_uniform(self.overlap_radius, bounds_w, bounds_h),
-            )
+        let r = self.filter.overlap_radius();
+        if r > 0 {
+            InputRectEstimate::Exact(output.expand_uniform(r, bounds_w, bounds_h))
         } else {
             InputRectEstimate::Exact(output.clamp(bounds_w, bounds_h))
         }
     }
 }
 
-/// Wraps a `Filter` + `GpuFilter` into a GPU-capable pipeline `Node`.
-///
-/// Like `FilterNode` but also provides GPU shaders. The shader body is
-/// auto-composed with io_f32 bindings.
+/// Legacy GPU filter node — use `FilterNode` instead.
+/// FilterNode now detects GPU capability from `Filter::GPU_SHADER_BODY`.
+#[deprecated(note = "Use FilterNode::new() — GPU detected from Filter::GPU_SHADER_BODY")]
+#[allow(deprecated)]
 pub struct GpuFilterNode<F: Filter + GpuFilter> {
     upstream: u32,
     info: NodeInfo,
@@ -367,7 +350,6 @@ mod tests {
 
     impl Filter for BoxBlur {
         fn compute(&self, input: &[f32], w: u32, h: u32) -> Result<Vec<f32>, PipelineError> {
-            // Simple box blur: average within radius
             let r = self.radius as i32;
             let w = w as usize;
             let h = h as usize;
@@ -394,6 +376,10 @@ mod tests {
                 }
             }
             Ok(output)
+        }
+
+        fn overlap_radius(&self) -> u32 {
+            self.radius
         }
     }
 
