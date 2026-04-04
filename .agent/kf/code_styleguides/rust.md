@@ -157,10 +157,23 @@ pub fn trellis_quantize_block(...) -> bool {
 
 ## Zero-Warning Policy
 
-**All crates must compile with zero warnings.** This is enforced by:
+**All crates must compile with zero warnings.** This is enforced at two levels:
 
-- `cargo clippy --workspace -- -D warnings` in `validate.sh`
-- `[workspace.lints]` in root `Cargo.toml` (see lint enforcement track)
+1. **Compile-time (hard gate):** `[workspace.lints]` in root `Cargo.toml` sets key lints
+   to `"deny"`, turning them into compile errors. This means `cargo build` itself fails
+   if these lints fire — developers cannot build locally with warnings.
+2. **CI validation:** `cargo clippy --workspace -- -D warnings` in `validate.sh` catches
+   any remaining warnings not covered by workspace deny rules.
+
+The workspace `Cargo.toml` denies these Rust lints: `unused_imports`, `unused_variables`,
+`dead_code`, `unused_assignments`, `unused_mut`, `unreachable_patterns`. And these clippy
+lints: `needless_range_loop`, `unnecessary_cast`, `redundant_closure`, `collapsible_if`,
+`manual_memcpy`, `redundant_closure_for_method_calls`, `bool_comparison`.
+
+**Why deny at the workspace level, not just CI?** Warnings that are only caught in CI
+accumulate between CI runs. Developers build locally, see warnings, and ignore them
+because the build succeeds. Deny-level lints make the feedback loop immediate — the
+code doesn't compile until the warning is fixed.
 
 When you encounter warnings:
 

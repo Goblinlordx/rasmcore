@@ -65,16 +65,20 @@ publish = false
 
 [workspace.lints.rust]
 unused_imports = "deny"
-unused_variables = "warn"
-dead_code = "warn"
-unused_assignments = "warn"
-unused_mut = "warn"
+unused_variables = "deny"
+dead_code = "deny"
+unused_assignments = "deny"
+unused_mut = "deny"
+unreachable_patterns = "deny"
 
 [workspace.lints.clippy]
-needless_range_loop = "warn"
-unnecessary_cast = "warn"
-redundant_closure = "warn"
-collapsible_if = "warn"
+needless_range_loop = "deny"
+unnecessary_cast = "deny"
+redundant_closure = "deny"
+collapsible_if = "deny"
+manual_memcpy = "deny"
+redundant_closure_for_method_calls = "deny"
+bool_comparison = "deny"
 
 [workspace.dependencies]
 image = { version = "0.25", default-features = false }
