@@ -276,8 +276,8 @@ function splitView(opName) {
 
   return `<div class="split-view" id="split-${opName}">
   <div class="split-container">
-    <img class="split-before" src="/assets/examples/reference.png" alt="Before">
-    <img class="split-after" src="/assets/examples/${afterFile}" alt="After" style="clip-path: inset(0 0 0 50%);">
+    <img class="split-before" src="/assets/examples/reference.png" alt="Before" draggable="false">
+    <img class="split-after" src="/assets/examples/${afterFile}" alt="After" draggable="false" style="clip-path: inset(0 0 0 50%);">
     <div class="split-divider" style="left: 50%;">
       <div class="split-handle"></div>
     </div>
@@ -659,6 +659,7 @@ pre code {
   display: block;
   max-width: 100%;
   height: auto;
+  pointer-events: none;
 }
 
 .split-after {
