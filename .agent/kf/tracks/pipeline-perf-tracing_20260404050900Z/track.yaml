@@ -1,0 +1,116 @@
+id: pipeline-perf-tracing_20260404050900Z
+title: V2 pipeline performance tracing and GPU dispatch fix
+type: feature
+status: pending
+created: '2026-04-04'
+updated: '2026-04-04'
+spec:
+  summary: Add structured performance tracing to V2 pipeline (fusion, shader compile, GPU dispatch, CPU fallback), fix missing
+    GPU executor wiring, and add native benchmark harness for first-run vs incremental timing.
+  context: '7 brightness up/down nodes take 731ms in the web UI. Analytic fusion works correctly (creates single FusedPointOpNode
+    with pre-compiled WGSL), but GPU executor is never initialized in the WASM adapter — everything falls back to unoptimized
+    CPU per-pixel evaluation. There is zero tracing infrastructure: no way to see what fusion did, whether GPU dispatched,
+    or where time is spent. Additionally, shader compilation is a host-specific operation: native has wgpu content-hash cache,
+    but browser WebGPU has no JS-side GPUComputePipeline cache. We need tracing to diagnose, native benchmarks to validate,
+    and the GPU plumbing fixed.'
+  codebase_analysis: 'Key findings:
+
+    - graph.rs request_full() calls optimize() every time with no guard
+
+    - fusion.rs optimize() correctly fuses analytic chains into FusedPointOpNode
+
+    - FusedPointOpNode stores WGSL shader source (cached) and expression tree
+
+    - FusedPointOpNode.compute() CPU fallback: lower_to_closure() clones expr tree, evaluates recursively per-pixel per-channel
+    — very slow
+
+    - rasmcore-v2-wasm/src/lib.rs PipelineResource::new() never calls set_gpu_executor()
+
+    - rasmcore-cli gpu_executor.rs has shader cache (content hash), browser has none
+
+    - Web workers create new Pipeline per processChain() call — no state survives
+
+    - No timing/tracing instrumentation anywhere in the pipeline'
+  acceptance_criteria:
+  - PipelineTrace struct captures fusion, shader compile, GPU dispatch, CPU fallback, and encode timings
+  - graph.set_tracing(true) enables trace collection without runtime cost when disabled
+  - Native benchmark binary times first-run vs incremental for N brightness nodes
+  - Native benchmark shows GPU vs CPU path timing breakdown
+  - WASM adapter can accept and wire a GPU executor
+  - Web workers expose trace data in result messages for browser devtools
+  - optimize() has an already-optimized guard to skip redundant fusion passes
+  out_of_scope: Implementing the browser WebGPU executor (separate track). Rewriting the fusion algorithm. Optimizing the
+    CPU fallback with SIMD/LUT (separate track if needed). Changing the web worker architecture.
+  technical_notes: 'Approach:
+
+    1. Add PipelineTrace struct that records timestamped events: fusion (nodes found, chains fused, identities eliminated),
+    shader generation, GPU dispatch, CPU fallback, encode
+
+    2. Trace is opt-in via graph.set_tracing(true), returned via graph.take_trace()
+
+    3. Add native benchmark binary (cargo run --bin bench-pipeline) that builds chains of N brightness nodes, times first
+    run vs incremental, with GPU executor enabled
+
+    4. Fix WASM adapter to accept GPU executor via set_gpu_available WIT method (already in the WIT interface but unimplemented)
+
+    5. The WIT interface already has set-gpu-available(bool) — this needs to actually wire up to graph.set_gpu_executor()
+    when a host-provided executor is available
+
+    6. Native bench should test: cold start, warm (cached shader), incremental (add/remove node), identity fusion (equal up/down
+    cancels)'
+plan:
+  - phase: Tracing Infrastructure
+    tasks:
+      - text: Add PipelineTrace struct with TraceEvent enum (FusionStart, FusionResult, ShaderCompile, GpuDispatch, CpuFallback, Encode, Custom)
+        done: false
+      - text: Each TraceEvent carries a name string, duration_us, and optional detail string
+        done: false
+      - text: Add graph.set_tracing(true) and graph.take_trace() -> Option<PipelineTrace>
+        done: false
+      - text: Instrument fusion.rs optimize() — emit FusionStart/FusionResult events with chain length, fused count, identities eliminated
+        done: false
+      - text: Instrument graph.rs request_region() — emit GpuDispatch or CpuFallback event per node execution with duration
+        done: false
+      - text: Instrument graph.rs collect_gpu_chain() — emit event showing shader count collected
+        done: false
+      - text: Add optimized flag to Graph — skip re-fusion when graph unchanged since last optimize()
+        done: false
+  - phase: Native Benchmark
+    tasks:
+      - text: Add bench-pipeline binary in rasmcore-pipeline-v2 (cargo run --bin bench-pipeline)
+        done: false
+      - text: Load test image, build chain of N brightness nodes (configurable via CLI arg)
+        done: false
+      - text: Time first execution with tracing enabled — show full breakdown
+        done: false
+      - text: Time second execution (same chain) — show cached vs fresh comparison
+        done: false
+      - text: Time incremental — add one more brightness node, re-execute, show delta
+        done: false
+      - text: Time identity case — equal up/down pairs, verify fusion eliminates to identity
+        done: false
+      - text: Test with and without GPU executor (wgpu) to compare GPU vs CPU path
+        done: false
+  - phase: WASM GPU Wiring
+    tasks:
+      - text: Wire set_gpu_available(true) in WASM adapter to store flag for future host GPU executor
+        done: false
+      - text: Add trace output to WASM write() and render() — return trace alongside result
+        done: false
+  - phase: Web Worker Trace Exposure
+    tasks:
+      - text: V2 pipeline worker sends trace data in result messages (trace array of {name, ms, detail})
+        done: false
+      - text: V2 preview worker sends trace summary in result messages
+        done: false
+      - text: Console.log formatted trace output for devtools debugging
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Run native benchmark on test image — verify tracing shows correct fusion and timing breakdown
+        done: false
+      - text: Verify optimize() guard prevents redundant fusion passes
+        done: false
+      - text: Build WASM component and verify trace data flows to web workers
+        done: false
+extra: {}
