@@ -1,126 +1,125 @@
 id: research-webgpu-display_20260404154202Z
-title: "Research: WebGPU direct display surface for HDR preview"
+title: 'Research: WebGPU direct display surface for HDR preview'
 type: research
 status: pending
 created: 2026-04-04
-updated: 2026-04-04
+updated: '2026-04-04'
 spec:
-  summary: |
-    Design the architecture for rendering GPU compute output directly to a
+  summary: 'Design the architecture for rendering GPU compute output directly to a
+
     WebGPU canvas surface (rgba16float + extended tone mapping), skipping the
+
     current f32 -> PNG encode -> 2D canvas round-trip. Produces a design doc,
+
     not code.
-  context: |
-    The current display pipeline is wasteful for GPU-accelerated previews:
-      GPU f32 compute -> mapAsync(READ) -> CPU copy -> PNG encode (WASM)
-      -> postMessage -> Blob -> Image -> 2D canvas
 
-    The f32 pixel data already exists in a GPU storage buffer after compute
-    shaders finish. For display purposes, a render pass could blit the compute
-    output buffer directly to the canvas texture — zero CPU round-trip.
+    '
+  context: "The current display pipeline is wasteful for GPU-accelerated previews:\n  GPU f32 compute -> mapAsync(READ) ->\
+    \ CPU copy -> PNG encode (WASM)\n  -> postMessage -> Blob -> Image -> 2D canvas\n\nThe f32 pixel data already exists in\
+    \ a GPU storage buffer after compute\nshaders finish. For display purposes, a render pass could blit the compute\noutput\
+    \ buffer directly to the canvas texture — zero CPU round-trip.\n\nWebGPU canvas with rgba16float format and GPUCanvasToneMapping\
+    \ mode\n'extended' enables true HDR display (luminance values > 1.0), which is\nthe only way to show HDR content on HDR-capable\
+    \ monitors in browsers.\n\nThis research must account for interaction with two existing pending tracks:\n- gpu-shader-cache\
+    \ (touches gpu-handler-v2.ts) — HIGH conflict\n- pipeline-perf-tracing (touches v2-preview-worker.ts) — HIGH conflict\n\
+    The design must be compatible with both or explicitly sequence after them.\n"
+  codebase_analysis: 'Current GPU handler: web-ui/src/gpu-handler-v2.ts
 
-    WebGPU canvas with rgba16float format and GPUCanvasToneMapping mode
-    'extended' enables true HDR display (luminance values > 1.0), which is
-    the only way to show HDR content on HDR-capable monitors in browsers.
-
-    This research must account for interaction with two existing pending tracks:
-    - gpu-shader-cache (touches gpu-handler-v2.ts) — HIGH conflict
-    - pipeline-perf-tracing (touches v2-preview-worker.ts) — HIGH conflict
-    The design must be compatible with both or explicitly sequence after them.
-  codebase_analysis: |
-    Current GPU handler: web-ui/src/gpu-handler-v2.ts
     - Pure compute pipeline: storage buffers only, no render passes
+
     - Ping-pong pattern: bufferA <-> bufferB for chained shaders
+
     - Output: mapAsync(READ) -> Float32Array -> returned to caller
+
     - No canvas reference or texture context
 
+
     Preview worker: web-ui/src/v2-preview-worker.ts
+
     - Receives Float32Array from GpuHandlerV2.execute()
+
     - Injects back into WASM pipeline via injectGpuResult()
-    - Then calls pipe.write('png') to get displayable bytes
+
+    - Then calls pipe.write(''png'') to get displayable bytes
+
     - Posts PNG bytes to main thread
 
+
     Canvas: web-ui/src/components/Canvas.tsx
+
     - Standard 2D canvas, never WebGPU context
+
     - Pan/zoom via CSS transforms in useCanvasTransform
 
+
     WIT GPU interface: wit/v2/pipeline.wit
+
     - render-gpu-plan() returns shaders + input pixels
+
     - inject-gpu-result() takes pixel buffer back
+
     - No concept of display output — pipeline only knows compute
 
+
     Key question: should the display render pass live in GpuHandlerV2
+
     (extending it from pure compute to compute+render), or in a separate
+
     DisplayRenderer class that takes the compute output buffer?
+
+    '
   acceptance_criteria:
-    - Design doc covering render pass architecture (compute buffer -> canvas texture)
-    - Specification of canvas configuration (format, alphaMode, toneMapping)
-    - Fallback strategy for non-WebGPU and non-HDR-capable browsers
-    - Interaction analysis with gpu-shader-cache and pipeline-perf-tracing
-    - Performance estimate vs current PNG round-trip path
-    - Decision on GpuHandlerV2 extension vs separate DisplayRenderer
-    - WGSL fullscreen-quad shader specification for the blit pass
-    - Pan/zoom strategy (CSS transform vs viewport uniform in shader)
-  out_of_scope: |
-    - Implementation code (this is a research/design track)
+  - Design doc covering render pass architecture (compute buffer -> canvas texture)
+  - Specification of canvas configuration (format, alphaMode, toneMapping)
+  - Fallback strategy for non-WebGPU and non-HDR-capable browsers
+  - Interaction analysis with gpu-shader-cache and pipeline-perf-tracing
+  - Performance estimate vs current PNG round-trip path
+  - Decision on GpuHandlerV2 extension vs separate DisplayRenderer
+  - WGSL fullscreen-quad shader specification for the blit pass
+  - Pan/zoom strategy (CSS transform vs viewport uniform in shader)
+  out_of_scope: '- Implementation code (this is a research/design track)
+
     - Changes to the WASM pipeline or WIT interfaces
+
     - AVIF or JXL encoding for HDR output files
+
     - Audio or video display concerns
-  technical_notes: |
-    Key design questions to answer:
 
-    1. Buffer ownership: After compute, who owns the GPU buffer? Currently
-       GpuHandlerV2 maps it to CPU and discards. For display, the buffer
-       must survive until the render pass reads it. Does the handler return
-       a GPUBuffer reference instead of Float32Array?
-
-    2. Canvas context lifecycle: A canvas can only have ONE context type.
-       Switching from 2D to WebGPU is permanent for that canvas element.
-       Options: (a) always use WebGPU canvas, (b) two canvas elements
-       (WebGPU for GPU results, 2D for non-GPU fallback), (c) detect
-       and choose at startup.
-
-    3. Render pass shader: Simple fullscreen quad that samples the storage
-       buffer (or copies to texture first) and writes to canvas texture.
-       Must handle f32->display tone mapping (clamp for SDR, extended for HDR).
-
-    4. Synchronization: Compute dispatch must finish before render pass
-       reads the buffer. GPUCommandEncoder ordering handles this if both
-       passes are in the same command buffer.
-
-    5. Pan/zoom: Currently CSS transform on the canvas element. With WebGPU
-       canvas this still works, but could also be done in the render shader
-       (viewport uniform) for sub-pixel precision.
-
-    6. Dual-canvas strategy: For the export path, pipeline still needs to
-       encode to PNG/AVIF. The display surface is display-only — the
-       encode path continues to use mapAsync -> WASM encoder.
-
-    7. HDR tone mapping modes:
-       - 'standard': clamp to [0,1] (SDR monitors)
-       - 'extended': allow > 1.0 (HDR monitors)
-       Browser detects display capability and applies appropriate mapping.
+    '
+  technical_notes: "Key design questions to answer:\n\n1. Buffer ownership: After compute, who owns the GPU buffer? Currently\n\
+    \   GpuHandlerV2 maps it to CPU and discards. For display, the buffer\n   must survive until the render pass reads it.\
+    \ Does the handler return\n   a GPUBuffer reference instead of Float32Array?\n\n2. Canvas context lifecycle: A canvas\
+    \ can only have ONE context type.\n   Switching from 2D to WebGPU is permanent for that canvas element.\n   Options: (a)\
+    \ always use WebGPU canvas, (b) two canvas elements\n   (WebGPU for GPU results, 2D for non-GPU fallback), (c) detect\n\
+    \   and choose at startup.\n\n3. Render pass shader: Simple fullscreen quad that samples the storage\n   buffer (or copies\
+    \ to texture first) and writes to canvas texture.\n   Must handle f32->display tone mapping (clamp for SDR, extended for\
+    \ HDR).\n\n4. Synchronization: Compute dispatch must finish before render pass\n   reads the buffer. GPUCommandEncoder\
+    \ ordering handles this if both\n   passes are in the same command buffer.\n\n5. Pan/zoom: Currently CSS transform on\
+    \ the canvas element. With WebGPU\n   canvas this still works, but could also be done in the render shader\n   (viewport\
+    \ uniform) for sub-pixel precision.\n\n6. Dual-canvas strategy: For the export path, pipeline still needs to\n   encode\
+    \ to PNG/AVIF. The display surface is display-only — the\n   encode path continues to use mapAsync -> WASM encoder.\n\n\
+    7. HDR tone mapping modes:\n   - 'standard': clamp to [0,1] (SDR monitors)\n   - 'extended': allow > 1.0 (HDR monitors)\n\
+    \   Browser detects display capability and applies appropriate mapping.\n"
 plan:
-  - phase: "Architecture Research"
-    tasks:
-      - text: "Document current GPU compute -> display data flow with latency breakdown"
-        done: false
-      - text: "Prototype minimal WebGPU canvas render pass (compute buffer -> screen) to validate feasibility"
-        done: false
-      - text: "Research GPUCanvasConfiguration toneMapping modes and browser support matrix"
-        done: false
-  - phase: "Design"
-    tasks:
-      - text: "Design buffer ownership model (compute output -> render input) with lifetime management"
-        done: false
-      - text: "Design fallback strategy — WebGPU canvas vs 2D canvas detection and switching"
-        done: false
-      - text: "Design interaction model with gpu-shader-cache (shared pipeline cache, render pass as consumer)"
-        done: false
-      - text: "Write fullscreen-quad WGSL shader spec for compute-buffer-to-canvas blit"
-        done: false
-  - phase: "Deliverable"
-    tasks:
-      - text: "Produce design doc at .agent/kf/tracks/research-webgpu-display_20260404154202Z/design.md"
-        done: false
+- phase: Architecture Research
+  tasks:
+  - text: Document current GPU compute -> display data flow with latency breakdown
+    done: true
+  - text: Prototype minimal WebGPU canvas render pass (compute buffer -> screen) to validate feasibility
+    done: true
+  - text: Research GPUCanvasConfiguration toneMapping modes and browser support matrix
+    done: true
+- phase: Design
+  tasks:
+  - text: Design buffer ownership model (compute output -> render input) with lifetime management
+    done: true
+  - text: Design fallback strategy — WebGPU canvas vs 2D canvas detection and switching
+    done: true
+  - text: Design interaction model with gpu-shader-cache (shared pipeline cache, render pass as consumer)
+    done: true
+  - text: Write fullscreen-quad WGSL shader spec for compute-buffer-to-canvas blit
+    done: true
+- phase: Deliverable
+  tasks:
+  - text: Produce design doc at .agent/kf/tracks/research-webgpu-display_20260404154202Z/design.md
+    done: true
 extra: {}
