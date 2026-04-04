@@ -89,9 +89,18 @@ impl PipelineResource {
         }
     }
 
-    pub fn read(&self, data: &[u8]) -> Result<u32, PipelineError> {
-        // Try V2 registry first, fall back to old codecs-v2 decode
-        let decoded = if let Some(result) = rasmcore_pipeline_v2::decode_via_registry(data) {
+    pub fn read(&self, data: &[u8], format_hint: Option<&str>) -> Result<u32, PipelineError> {
+        // Try V2 registry: hint-based first, then auto-detect, then old fallback
+        let decoded = if let Some(hint) = format_hint {
+            if let Some(result) = v2::decode_with_hint_via_registry(data, hint) {
+                let d = result?;
+                (d.pixels, d.width, d.height, d.color_space)
+            } else {
+                let d = rasmcore_codecs_v2::decode_with_hint(data, hint)
+                    .map_err(|e| PipelineError::ComputeError(format!("decode: {e}")))?;
+                (d.pixels, d.info.width, d.info.height, d.info.color_space)
+            }
+        } else if let Some(result) = v2::decode_via_registry(data) {
             let d = result?;
             (d.pixels, d.width, d.height, d.color_space)
         } else {
@@ -224,8 +233,9 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
         self.list_operations().into_iter().find(|op| op.name == name)
     }
 
-    fn read(&self, data: Vec<u8>) -> Result<u32, RasmcoreError> {
-        self.read(&data).map_err(to_wit_error)
+    fn read(&self, data: Vec<u8>, config: Option<wit::ReadConfig>) -> Result<u32, RasmcoreError> {
+        let hint = config.as_ref().and_then(|c| c.format_hint.as_deref());
+        PipelineResource::read(self, &data, hint).map_err(to_wit_error)
     }
 
     fn node_info(&self, node: u32) -> Result<wit::NodeInfo, RasmcoreError> {
