@@ -84,6 +84,10 @@ pub struct PipelineResource {
     graph: RefCell<Graph>,
     /// Shared layer cache (if set). Injected from outside, persists across pipelines.
     layer_cache: RefCell<Option<Rc<RefCell<LayerCache>>>>,
+    /// Proxy scale factor for spatial param auto-scaling.
+    /// Default 1.0 = full resolution. Values < 1.0 indicate proxy resolution;
+    /// spatial params (hint = rc.pixels) are multiplied by this factor.
+    proxy_scale: std::cell::Cell<f32>,
 }
 
 impl PipelineResource {
@@ -91,7 +95,14 @@ impl PipelineResource {
         Self {
             graph: RefCell::new(Graph::new(16 * 1024 * 1024)),
             layer_cache: RefCell::new(None),
+            proxy_scale: std::cell::Cell::new(1.0),
         }
+    }
+
+    /// Set the proxy scale factor for spatial param auto-scaling.
+    /// Spatial params (hint = rc.pixels) are multiplied by this factor.
+    pub fn set_proxy_scale(&self, scale: f32) {
+        self.proxy_scale.set(scale.max(0.01));
     }
 
     /// Set the shared layer cache for cross-pipeline result reuse.
@@ -148,11 +159,22 @@ impl PipelineResource {
     ) -> Result<u32, PipelineError> {
         let info = self.graph.borrow().node_info(source)?;
 
-        // Compute content hash: hash(upstream_hash || filter_name || params)
-        let upstream_hash = self.graph.borrow().content_hash(source);
-        let filter_hash = content_hash(&upstream_hash, name, &params.to_hash_bytes());
+        // Apply proxy scale to spatial params (hint = "rc.pixels")
+        let scale = self.proxy_scale.get();
+        let scaled_params = if (scale - 1.0).abs() > f32::EPSILON {
+            scale_spatial_params(name, params, scale)
+        } else {
+            params.clone()
+        };
 
-        let node = create_filter_node(name, source, info, params).ok_or_else(|| {
+        // Compute content hash from ORIGINAL params (not scaled) so that
+        // the same user params + same scale produce a consistent hash
+        let upstream_hash = self.graph.borrow().content_hash(source);
+        let mut hash_input = params.to_hash_bytes();
+        hash_input.extend_from_slice(&scale.to_le_bytes());
+        let filter_hash = content_hash(&upstream_hash, name, &hash_input);
+
+        let node = create_filter_node(name, source, info, &scaled_params).ok_or_else(|| {
             PipelineError::InvalidParams(format!("unknown filter: {name}"))
         })?;
 
@@ -392,6 +414,10 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
         self.set_layer_cache(cache_resource.inner.clone());
     }
 
+    fn set_proxy_scale(&self, scale: f32) {
+        self.set_proxy_scale(scale);
+    }
+
     fn write(
         &self,
         node: u32,
@@ -462,6 +488,24 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
 }
 
 // ─── Param deserialization ──────────────────────────────────────────────────
+
+/// Scale spatial params (hint = "rc.pixels") by the given proxy scale factor.
+///
+/// Returns a new ParamMap with pixel-hint float params multiplied by `scale`.
+/// Non-pixel params are passed through unchanged.
+fn scale_spatial_params(filter_name: &str, params: &ParamMap, scale: f32) -> ParamMap {
+    let mut scaled = params.clone();
+    if let Some(descriptors) = v2::param_descriptors(filter_name) {
+        for desc in descriptors {
+            if desc.hint == Some("rc.pixels") {
+                if let Some(val) = scaled.floats.get_mut(desc.name) {
+                    *val *= scale;
+                }
+            }
+        }
+    }
+    scaled
+}
 
 /// Deserialize a simple binary param buffer into a ParamMap.
 ///

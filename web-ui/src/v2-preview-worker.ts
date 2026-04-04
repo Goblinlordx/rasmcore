@@ -57,6 +57,9 @@ function buildConfig(params, paramValues) {
 
 // ─── Load ───────────────────────────────────────────────────────────────────
 
+let fullWidth = 0;
+let fullHeight = 0;
+
 function loadImage(bytes) {
   previewBytes = new Uint8Array(bytes);
   let info = { width: 0, height: 0 };
@@ -64,6 +67,8 @@ function loadImage(bytes) {
   try {
     const pipe = Pipeline.fromRaw(PipelineClass, previewBytes, undefined, layerCache);
     info = { width: pipe.info.width, height: pipe.info.height };
+    fullWidth = info.width;
+    fullHeight = info.height;
     console.log(`[v2-preview] Loaded: ${info.width}x${info.height}`);
   } catch (e: any) {
     const detail = e?.payload ? JSON.stringify(e.payload, null, 2) : e?.message || String(e);
@@ -71,6 +76,13 @@ function loadImage(bytes) {
   }
 
   self.postMessage({ type: 'loaded', info });
+}
+
+/** Compute proxy scale factor based on full image dimensions and PREVIEW_MAX */
+function computeProxyScale(): number {
+  const maxDim = Math.max(fullWidth, fullHeight);
+  if (maxDim <= PREVIEW_MAX) return 1.0;
+  return PREVIEW_MAX / maxDim;
 }
 
 // ─── Process ────────────────────────────────────────────────────────────────
@@ -83,7 +95,8 @@ async function processChain(chain) {
 
   const t0 = performance.now();
   try {
-    let pipe = Pipeline.fromRaw(PipelineClass, previewBytes, undefined, layerCache);
+    const proxyScale = computeProxyScale();
+    let pipe = Pipeline.fromRaw(PipelineClass, previewBytes, undefined, layerCache, proxyScale);
 
     for (const step of chain) {
       const method = snakeToCamel(step.name);

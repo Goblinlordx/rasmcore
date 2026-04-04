@@ -416,12 +416,15 @@ export class Pipeline {
   }
 
   /** Create a pipeline from a pre-loaded pipeline class (for web workers).
-   *  Optionally accepts a LayerCache for cross-pipeline result reuse. */
+   *  Optionally accepts a LayerCache and/or proxyScale for proxy editing. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  static fromRaw(PipelineClass: any, data: Uint8Array, config?: ReadConfig, layerCache?: any): Pipeline {
+  static fromRaw(PipelineClass: any, data: Uint8Array, config?: ReadConfig, layerCache?: any, proxyScale?: number): Pipeline {
     const pipe = new PipelineClass();
     if (layerCache && pipe.setLayerCache) {
       pipe.setLayerCache(layerCache);
+    }
+    if (proxyScale != null && proxyScale !== 1.0 && pipe.setProxyScale) {
+      pipe.setProxyScale(proxyScale);
     }
     const readConfig = config ? { formatHint: config.hint } : undefined;
     const node = pipe.read(data, readConfig);

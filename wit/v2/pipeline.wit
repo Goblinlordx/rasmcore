@@ -210,6 +210,10 @@ interface pipeline-v2 {
         set-gpu-available: func(available: bool);
         /// Set the layer cache for cross-pipeline result reuse.
         set-layer-cache: func(cache: borrow<layer-cache>);
+        /// Set the proxy scale factor for spatial param auto-scaling.
+        /// Spatial params (hint = rc.pixels) are multiplied by this factor.
+        /// Default 1.0 = full resolution. Use 0.5 for half-res proxy.
+        set-proxy-scale: func(scale: f32);
 
         // ─── Execution ───
         /// Execute the pipeline and encode output.
