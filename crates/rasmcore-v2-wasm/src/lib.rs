@@ -90,15 +90,22 @@ impl PipelineResource {
     }
 
     pub fn read(&self, data: &[u8]) -> Result<u32, PipelineError> {
-        let decoded = rasmcore_codecs_v2::decode(data)
-            .map_err(|e| PipelineError::ComputeError(format!("decode: {e}")))?;
+        // Try V2 registry first, fall back to old codecs-v2 decode
+        let decoded = if let Some(result) = rasmcore_pipeline_v2::decode_via_registry(data) {
+            let d = result?;
+            (d.pixels, d.width, d.height, d.color_space)
+        } else {
+            let d = rasmcore_codecs_v2::decode(data)
+                .map_err(|e| PipelineError::ComputeError(format!("decode: {e}")))?;
+            (d.pixels, d.info.width, d.info.height, d.info.color_space)
+        };
 
         let source = SourceNode {
-            pixels: decoded.pixels,
+            pixels: decoded.0,
             info: NodeInfo {
-                width: decoded.info.width,
-                height: decoded.info.height,
-                color_space: decoded.info.color_space,
+                width: decoded.1,
+                height: decoded.2,
+                color_space: decoded.3,
             },
         };
 
@@ -135,8 +142,17 @@ impl PipelineResource {
         let pixels = self.graph.borrow_mut().request_full(node_id)?;
         let info = self.graph.borrow().node_info(node_id)?;
 
-        rasmcore_codecs_v2::encode(&pixels, info.width, info.height, format, quality)
-            .map_err(|e| PipelineError::ComputeError(format!("encode: {e}")))
+        // Try V2 registry first, fall back to old codecs-v2 encode
+        let mut params = v2::ParamMap::new();
+        if let Some(q) = quality {
+            params.ints.insert("quality".into(), q as i64);
+        }
+        if let Some(result) = v2::encode_via_registry(format, &pixels, info.width, info.height, &params) {
+            result
+        } else {
+            rasmcore_codecs_v2::encode(&pixels, info.width, info.height, format, quality)
+                .map_err(|e| PipelineError::ComputeError(format!("encode: {e}")))
+        }
     }
 
     pub fn render(&self, node_id: u32) -> Result<Vec<f32>, PipelineError> {
