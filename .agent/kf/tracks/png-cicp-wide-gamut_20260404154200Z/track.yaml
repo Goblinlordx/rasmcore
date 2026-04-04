@@ -1,0 +1,120 @@
+id: png-cicp-wide-gamut_20260404154200Z
+title: "PNG cICP chunk for wide-gamut and HDR signaling"
+type: feature
+status: pending
+created: 2026-04-04
+updated: 2026-04-04
+spec:
+  summary: |
+    Add cICP (Codec Independent Code Points) and sRGB ancillary chunks to the
+    PNG encoder so browsers can correctly render wide-gamut and HDR PNG images
+    on capable displays. The encoder already receives ImageInfo.color_space but
+    ignores it — this track wires that metadata into the encoded output.
+  context: |
+    rasmcore processes images in f32 pipelines with full color space tracking
+    (sRGB, DisplayP3, BT.2020, ProPhotoRGB, etc.). The PNG encoder supports
+    16-bit output and ICC profile embedding but does not write cICP, sRGB, or
+    gAMA chunks. Without cICP, browsers treat all PNG output as sRGB regardless
+    of actual gamut — wide-gamut edits are silently clipped on display.
+
+    PNG Third Edition (2025) officially supports cICP for HDR signaling.
+    All major browsers (Chrome, Firefox, Safari) parse cICP in PNG as of 2026.
+    This is the simplest path to wide-gamut display without changing the
+    canvas rendering pipeline.
+  codebase_analysis: |
+    PNG encoder: crates/rasmcore-image/src/domain/encoder/png.rs
+    - encode() receives ImageInfo with color_space field (line 63)
+    - Currently ignores color_space entirely
+    - Already writes iCCP chunks (lines 197-243) and eXIf chunks (lines 319-360)
+    - Chunk insertion pattern: find IHDR end offset, construct chunk with CRC, insert
+    - 16-bit Rgb16/Rgba16 already supported with byte-order conversion
+
+    Color space types: crates/rasmcore-image/src/domain/types.rs (lines 64-73)
+    - ColorSpace enum: Srgb, LinearSrgb, DisplayP3, Bt709, Bt2020, ProPhotoRgb, AdobeRgb
+    - ImageInfo carries color_space through encode path
+
+    cICP chunk format (PNG Third Edition):
+    - 4 bytes payload: colour_primaries (u8), transfer_function (u8),
+      matrix_coefficients (u8), video_full_range_flag (u8)
+    - Must appear before PLTE and IDAT
+    - Cannot coexist with iCCP or sRGB chunks (mutually exclusive per spec)
+
+    Mapping ColorSpace -> cICP values (ITU-T H.273):
+    - Srgb: primaries=1, transfer=13, matrix=0, range=1
+    - DisplayP3: primaries=12, transfer=13, matrix=0, range=1
+    - Bt709: primaries=1, transfer=1, matrix=0, range=1
+    - Bt2020: primaries=9, transfer=14(HLG) or 16(PQ), matrix=0, range=1
+    - ProPhotoRgb: needs research for exact cICP code points
+    - AdobeRgb: needs research for exact cICP code points
+  acceptance_criteria:
+    - PNG encoder writes cICP chunk when color_space is not Srgb
+    - PNG encoder writes sRGB chunk when color_space is Srgb (standard practice)
+    - cICP and sRGB/iCCP chunks are mutually exclusive per PNG spec
+    - cICP chunk appears after IHDR, before PLTE/IDAT
+    - Display-P3 PNG renders correctly in Chrome/Safari on wide-gamut display
+    - BT.2020 PNG renders with correct primaries in supporting browsers
+    - 16-bit PNG + cICP combination works (wide-gamut + high bit depth)
+    - Existing iCCP embedding still works when explicitly requested
+    - Unit tests validate cICP chunk bytes for each ColorSpace variant
+    - Roundtrip test confirms cICP survives encode/decode cycle
+  out_of_scope: |
+    - gAMA chunk (gamma correction) — not needed with cICP
+    - HDR transfer functions (PQ/HLG) — requires f32-to-16bit tone mapping
+      decisions beyond just metadata; deferred to WebGPU display track
+    - ICC profile generation from ColorSpace — existing iCCP path handles
+      user-supplied profiles; cICP is the lightweight alternative
+    - Changes to the pipeline color space tracking itself
+  technical_notes: |
+    Implementation approach:
+    1. Add cICP chunk writer function following the existing iCCP/eXIf pattern
+       (find IHDR end offset, construct chunk with CRC, insert)
+    2. Add sRGB chunk writer (trivial: 1-byte payload for rendering intent)
+    3. In encode(), after writing IDAT, call chunk insertion based on
+       info.color_space — sRGB chunk for Srgb, cICP for everything else
+    4. When cICP is written, skip iCCP embedding (mutual exclusion rule)
+    5. Exact cICP code points need validation against ITU-T H.273 table
+
+    cICP chunk binary layout:
+      chunk_length: 4 (u32 big-endian)
+      chunk_type: b"cICP" (4 bytes)
+      colour_primaries: u8
+      transfer_function: u8
+      matrix_coefficients: u8 (always 0 for RGB)
+      video_full_range_flag: u8 (always 1 for images)
+      crc: u32 big-endian
+
+    sRGB chunk binary layout:
+      chunk_length: 1 (u32 big-endian)
+      chunk_type: b"sRGB" (4 bytes)
+      rendering_intent: u8 (0=perceptual, 1=relative, 2=saturation, 3=absolute)
+      crc: u32 big-endian
+plan:
+  - phase: "Foundation"
+    tasks:
+      - text: "Research exact cICP code points for each ColorSpace variant against ITU-T H.273"
+        done: false
+      - text: "Add color_space_to_cicp() mapping function in png.rs returning (primaries, transfer, matrix, range) tuple"
+        done: false
+  - phase: "Core Implementation"
+    tasks:
+      - text: "Implement write_cicp_chunk() following existing iCCP chunk insertion pattern"
+        done: false
+      - text: "Implement write_srgb_chunk() with configurable rendering intent"
+        done: false
+      - text: "Wire chunk insertion into encode() based on ImageInfo.color_space"
+        done: false
+      - text: "Add mutual exclusion logic — skip iCCP when cICP is written, skip sRGB when cICP is written"
+        done: false
+  - phase: "Testing"
+    tasks:
+      - text: "Unit tests for cICP chunk bytes for each ColorSpace variant"
+        done: false
+      - text: "Unit test for sRGB chunk with each rendering intent"
+        done: false
+      - text: "Roundtrip test — encode PNG with cICP, decode, verify color_space preserved"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Manual verification — encode Display-P3 PNG, open in Chrome on wide-gamut display, confirm colors match reference"
+        done: false
+extra: {}
