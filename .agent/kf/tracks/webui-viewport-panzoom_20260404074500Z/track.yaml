@@ -5,113 +5,96 @@ status: pending
 created: '2026-04-04'
 updated: '2026-04-04'
 spec:
-  summary: |
-    Make the image canvas fill all available viewport space, add mouse wheel
+  summary: 'Make the image canvas fill all available viewport space, add mouse wheel
+
     zoom and click-drag pan, and fix the broken split view mode.
-  context: |
-    Currently the canvas is centered in a flex container with max-width/max-height
+
+    '
+  context: 'Currently the canvas is centered in a flex container with max-width/max-height
+
     CSS constraints. It does not fill available space — there are gaps around the
+
     image. There is no pan or zoom. Split view mode (original vs processed) is
+
     broken and crashes the UI. The canvas area is the primary editing workspace
+
     and should behave like a professional image editor viewport.
-  codebase_analysis: |
-    Layout: App.tsx renders a three-part vertical layout (toolbar 40px, main flex,
-    status 28px). Main is horizontal flex: canvas-area (flex:1) + right panel (320px).
 
-    Canvas sizing: Canvas.tsx sets canvas DOM width/height to image intrinsic dims.
-    CSS max-width:100% and max-height:calc(100vh-140px) constrain display. Browser
-    scales down large images via CSS, not programmatically.
-
-    Current canvas styles (.canvas-area canvas):
-      max-width: 100%; max-height: calc(100vh - 140px);
-      border: 1px solid #222; border-radius: 4px;
-
-    No event listeners for mouse wheel, pan, or pinch on canvas.
-    No transform/translate state management.
-
-    Split view (Canvas.tsx): Uses viewMode state (current/original/split).
-    Split mode positions two canvases (preview + original) with clip-path
-    inset and a draggable divider. The split view is broken — likely because
-    canvas dimensions change when worker results arrive, causing the clip-path
-    and absolute positioning to become inconsistent.
-
-    Styling: Plain CSS in index.html style block. No Tailwind.
+    '
+  codebase_analysis: "Layout: App.tsx renders a three-part vertical layout (toolbar 40px, main flex,\nstatus 28px). Main is\
+    \ horizontal flex: canvas-area (flex:1) + right panel (320px).\n\nCanvas sizing: Canvas.tsx sets canvas DOM width/height\
+    \ to image intrinsic dims.\nCSS max-width:100% and max-height:calc(100vh-140px) constrain display. Browser\nscales down\
+    \ large images via CSS, not programmatically.\n\nCurrent canvas styles (.canvas-area canvas):\n  max-width: 100%; max-height:\
+    \ calc(100vh - 140px);\n  border: 1px solid #222; border-radius: 4px;\n\nNo event listeners for mouse wheel, pan, or pinch\
+    \ on canvas.\nNo transform/translate state management.\n\nSplit view (Canvas.tsx): Uses viewMode state (current/original/split).\n\
+    Split mode positions two canvases (preview + original) with clip-path\ninset and a draggable divider. The split view is\
+    \ broken — likely because\ncanvas dimensions change when worker results arrive, causing the clip-path\nand absolute positioning\
+    \ to become inconsistent.\n\nStyling: Plain CSS in index.html style block. No Tailwind.\n"
   acceptance_criteria:
-    - Canvas fills all available viewport space (no dead space around image)
-    - Image is displayed at fit-to-viewport zoom by default (letterboxed if aspect differs)
-    - Mouse wheel zooms in/out centered on cursor position
-    - Click-drag pans when zoomed in (cursor changes to grab/grabbing)
-    - Zoom level indicator shown (e.g. 50%, 100%, Fit)
-    - Double-click or keyboard shortcut resets to fit-to-viewport
-    - Split view works correctly — original vs processed side by side with draggable divider
-    - Pan/zoom state is preserved when switching between current/original/split views
-    - Works with images of any aspect ratio and size
-  out_of_scope: |
-    Preview overlay system (separate track). Touch/pinch gestures (future).
+  - Canvas fills all available viewport space (no dead space around image)
+  - Image is displayed at fit-to-viewport zoom by default (letterboxed if aspect differs)
+  - Mouse wheel zooms in/out centered on cursor position
+  - Click-drag pans when zoomed in (cursor changes to grab/grabbing)
+  - Zoom level indicator shown (e.g. 50%, 100%, Fit)
+  - Double-click or keyboard shortcut resets to fit-to-viewport
+  - Split view works correctly — original vs processed side by side with draggable divider
+  - Pan/zoom state is preserved when switching between current/original/split views
+  - Works with images of any aspect ratio and size
+  out_of_scope: 'Preview overlay system (separate track). Touch/pinch gestures (future).
+
     Pixel-level inspection tools. Ruler/guides.
-  technical_notes: |
-    Approach:
-    1. Replace CSS max-width/max-height constraint with a container-filling approach.
-       Canvas container measures its available space (ResizeObserver or useLayoutEffect).
-       Canvas CSS is set to fill the container. A CSS transform (scale + translate)
-       controls zoom and pan — the canvas DOM resolution stays at image size.
 
-    2. Pan/zoom state: { zoom: number, panX: number, panY: number }
-       - zoom = 1.0 means fit-to-viewport (default)
-       - Wheel event: deltaY controls zoom, centered on mouse position
-       - MouseDown + MouseMove: pan (only when zoomed > fit)
-       - Clamp zoom to reasonable range (0.1x to 32x)
-
-    3. CSS transform approach (not canvas re-render):
-       - Wrap canvas in a div with overflow:hidden
-       - Apply transform: scale(zoom) translate(panX, panY) to canvas
-       - No re-rendering of pixels — pure CSS transform
-       - transform-origin: 0 0 (top-left), compute offset for center-on-cursor zoom
-
-    4. Split view fix: Both canvases must share the same zoom/pan state and
-       container dimensions. Use the same transform approach. Clip-path for
-       split uses percentage of viewport, not pixel positions.
-
-    5. Fit-to-viewport calculation: min(containerW/imageW, containerH/imageH)
+    '
+  technical_notes: "Approach:\n1. Replace CSS max-width/max-height constraint with a container-filling approach.\n   Canvas\
+    \ container measures its available space (ResizeObserver or useLayoutEffect).\n   Canvas CSS is set to fill the container.\
+    \ A CSS transform (scale + translate)\n   controls zoom and pan — the canvas DOM resolution stays at image size.\n\n2.\
+    \ Pan/zoom state: { zoom: number, panX: number, panY: number }\n   - zoom = 1.0 means fit-to-viewport (default)\n   -\
+    \ Wheel event: deltaY controls zoom, centered on mouse position\n   - MouseDown + MouseMove: pan (only when zoomed > fit)\n\
+    \   - Clamp zoom to reasonable range (0.1x to 32x)\n\n3. CSS transform approach (not canvas re-render):\n   - Wrap canvas\
+    \ in a div with overflow:hidden\n   - Apply transform: scale(zoom) translate(panX, panY) to canvas\n   - No re-rendering\
+    \ of pixels — pure CSS transform\n   - transform-origin: 0 0 (top-left), compute offset for center-on-cursor zoom\n\n\
+    4. Split view fix: Both canvases must share the same zoom/pan state and\n   container dimensions. Use the same transform\
+    \ approach. Clip-path for\n   split uses percentage of viewport, not pixel positions.\n\n5. Fit-to-viewport calculation:\
+    \ min(containerW/imageW, containerH/imageH)\n"
 plan:
-  - phase: Viewport-Filling Layout
-    tasks:
-      - text: Add useContainerSize hook (ResizeObserver) to measure canvas container
-        done: false
-      - text: Remove CSS max-width/max-height constraints on canvas
-        done: false
-      - text: Canvas container fills flex:1 area, canvas centered with fit-to-viewport scale
-        done: false
-      - text: Compute fit-to-viewport zoom as min(containerW/imgW, containerH/imgH)
-        done: false
-  - phase: Pan/Zoom Interaction
-    tasks:
-      - text: Add useCanvasTransform hook managing zoom, panX, panY state
-        done: false
-      - text: Mouse wheel handler for zoom centered on cursor position
-        done: false
-      - text: Click-drag handler for pan (only when zoomed past fit)
-        done: false
-      - text: Apply zoom/pan via CSS transform on canvas wrapper div
-        done: false
-      - text: Add zoom level indicator to status bar or canvas overlay
-        done: false
-      - text: Double-click to reset to fit-to-viewport
-        done: false
-  - phase: Split View Fix
-    tasks:
-      - text: Diagnose and fix split view crash
-        done: false
-      - text: Both canvases share zoom/pan transform state
-        done: false
-      - text: Clip-path divider works correctly at any zoom level
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Test with small image (400x300), medium (2000x1500), and large (8000x6000)
-        done: false
-      - text: Test aspect ratios - landscape, portrait, square, panoramic
-        done: false
-      - text: Verify pan/zoom preserved when toggling current/original/split views
-        done: false
+- phase: Viewport-Filling Layout
+  tasks:
+  - text: Add useContainerSize hook (ResizeObserver) to measure canvas container
+    done: true
+  - text: Remove CSS max-width/max-height constraints on canvas
+    done: true
+  - text: Canvas container fills flex:1 area, canvas centered with fit-to-viewport scale
+    done: true
+  - text: Compute fit-to-viewport zoom as min(containerW/imgW, containerH/imgH)
+    done: true
+- phase: Pan/Zoom Interaction
+  tasks:
+  - text: Add useCanvasTransform hook managing zoom, panX, panY state
+    done: true
+  - text: Mouse wheel handler for zoom centered on cursor position
+    done: true
+  - text: Click-drag handler for pan (only when zoomed past fit)
+    done: true
+  - text: Apply zoom/pan via CSS transform on canvas wrapper div
+    done: true
+  - text: Add zoom level indicator to status bar or canvas overlay
+    done: true
+  - text: Double-click to reset to fit-to-viewport
+    done: true
+- phase: Split View Fix
+  tasks:
+  - text: Diagnose and fix split view crash
+    done: true
+  - text: Both canvases share zoom/pan transform state
+    done: true
+  - text: Clip-path divider works correctly at any zoom level
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test with small image (400x300), medium (2000x1500), and large (8000x6000)
+    done: true
+  - text: Test aspect ratios - landscape, portrait, square, panoramic
+    done: true
+  - text: Verify pan/zoom preserved when toggling current/original/split views
+    done: true
 extra: {}
