@@ -21,6 +21,29 @@ function snakeToCamel(s) {
   return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 }
 
+/** Serialize params to WIT binary format: [name_len, name_bytes, type_tag, value_bytes] */
+function buildParamBuf(params, paramValues) {
+  const buf = [];
+  if (!params) return new Uint8Array(0);
+  for (const p of params) {
+    const val = paramValues[p.name];
+    if (val === undefined || val === null) continue;
+    const name = p.name;
+    buf.push(name.length);
+    for (let i = 0; i < name.length; i++) buf.push(name.charCodeAt(i));
+    if (p.type === 'toggle' || typeof val === 'boolean') {
+      buf.push(2); // bool
+      buf.push(val ? 1 : 0);
+    } else {
+      buf.push(0); // f32
+      const ab = new ArrayBuffer(4);
+      new DataView(ab).setFloat32(0, Number(val), true);
+      buf.push(...new Uint8Array(ab));
+    }
+  }
+  return new Uint8Array(buf);
+}
+
 /** Create a fluent Pipeline with layerCache + proxyScale wired via raw WIT resource. */
 function createPipeline(bytes, proxyScale?: number) {
   const rawPipe = new PipelineClass();
@@ -138,6 +161,20 @@ async function processChain(chain) {
 
     for (const step of chain) {
       const method = snakeToCamel(step.name);
+      if (typeof pipe[method] !== 'function') {
+        // Fluent SDK missing method — fall back to raw applyFilter
+        const raw = pipe._pipe;
+        if (raw && typeof raw.applyFilter === 'function') {
+          const paramBuf = buildParamBuf(step.params, step.paramValues);
+          const node = raw.applyFilter(pipe._node, step.name, paramBuf);
+          pipe = Object.create(Pipeline.prototype);
+          pipe._pipe = raw;
+          pipe._node = node;
+        } else {
+          console.warn(`[v2-preview] Unknown filter: ${step.name} (${method})`);
+        }
+        continue;
+      }
       if (!step.params || step.params.length === 0) {
         pipe = pipe[method]();
       } else {
