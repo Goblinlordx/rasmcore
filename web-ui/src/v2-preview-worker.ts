@@ -81,6 +81,13 @@ async function processChain(chain) {
     return;
   }
 
+  // Empty chain — pass through original bytes without pipeline roundtrip.
+  if (!chain || chain.length === 0) {
+    const buf = previewBytes.buffer.slice(previewBytes.byteOffset, previewBytes.byteOffset + previewBytes.byteLength);
+    self.postMessage({ type: 'result', png: buf, totalMs: 0 }, [buf]);
+    return;
+  }
+
   const t0 = performance.now();
   try {
     let pipe = Pipeline.fromRaw(PipelineClass, previewBytes, undefined, layerCache);

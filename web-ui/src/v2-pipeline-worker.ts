@@ -87,6 +87,14 @@ async function processChain(chain, mode) {
     return;
   }
 
+  // Empty chain — pass through original image bytes without pipeline roundtrip.
+  // This avoids color shifts from decode→encode (ICC profile loss, gamma mismatch).
+  if (!chain || chain.length === 0) {
+    const buf = imageBytes.buffer.slice(imageBytes.byteOffset, imageBytes.byteOffset + imageBytes.byteLength);
+    self.postMessage({ type: 'result', png: buf, timings: [], totalMs: 0, mode }, [buf]);
+    return;
+  }
+
   const t0 = performance.now();
   const timings = [];
 
