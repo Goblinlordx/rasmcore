@@ -1,0 +1,118 @@
+id: webui-preview-overlay_20260404074501Z
+title: 'Web UI: live 1080p preview overlay during editing'
+type: feature
+status: pending
+created: '2026-04-04'
+updated: '2026-04-04'
+spec:
+  summary: |
+    During parameter editing, render a 1080p (or smaller, fit to ratio) preview
+    and display it as an overlay on the main canvas in real time. On apply,
+    materialize the full-res result.
+  context: |
+    Currently the preview worker downscales to 400px max and renders into a tiny
+    thumbnail canvas in the right panel effect stack. This is barely useful for
+    judging the effect. The full-res worker takes 731ms+ per update.
+
+    The user wants: while adjusting parameters, a 1080p preview renders in real
+    time and is displayed OVER the main canvas at full viewport size. The user
+    sees the effect at reasonable quality instantly. When they finish editing and
+    apply, the full-res pipeline runs once and the result materializes.
+
+    This is how professional editors work — Lightroom shows a proxy preview
+    during slider interaction and renders full-res on release/commit.
+  codebase_analysis: |
+    Current preview flow:
+    - usePreviewWorker sends chain to v2-preview-worker.ts
+    - Worker downscales to PREVIEW_MAX=400px, processes, returns PNG
+    - PNG drawn to previewCanvasRef in EffectStack sidebar (tiny thumbnail)
+    - 600ms debounce before preview triggers
+
+    Current full-res flow:
+    - useWorker sends chain to v2-pipeline-worker.ts
+    - Worker processes at full resolution, returns PNG
+    - PNG drawn to main previewCanvasRef (the viewport canvas)
+
+    Canvas layers available:
+    - previewCanvasRef (main display, full-res results)
+    - originalCanvasRef (original image backup)
+    - preview.previewCanvasRef (sidebar thumbnail)
+
+    For overlay: need a third canvas (or reuse preview canvas) positioned
+    absolutely over the main canvas, sized to fill viewport, showing the
+    1080p preview scaled up. When full-res completes, hide overlay and show
+    full-res result underneath.
+  acceptance_criteria:
+    - Preview renders at up to 1080p (fit to image aspect ratio, max dimension 1920px)
+    - Preview result displays as overlay on main canvas at viewport size during editing
+    - Preview updates in real time as user drags sliders (with appropriate debounce)
+    - Overlay has subtle indicator that it is preview quality (e.g. thin border or label)
+    - On apply/commit, full-res pipeline runs and overlay is replaced with full-res result
+    - Smooth transition from preview overlay to full-res (no flicker)
+    - If full-res is already cached/fast, skip overlay and show full-res directly
+  out_of_scope: |
+    Tiled rendering. GPU-accelerated preview. Progressive refinement.
+    Viewport pan/zoom (separate track).
+  technical_notes: |
+    Architecture:
+    1. Change PREVIEW_MAX from 400 to 1920 (or make it dynamic based on viewport)
+    2. Add an overlay canvas element positioned absolutely over the main canvas
+       - Same CSS dimensions as main canvas (fills viewport)
+       - Higher z-index, semi-transparent or with a label
+    3. Preview flow:
+       - On slider change: send chain to preview worker (debounced ~150ms)
+       - Preview worker processes at 1080p, returns PNG
+       - PNG drawn to overlay canvas, scaled to fill viewport
+       - Overlay becomes visible
+    4. Apply flow:
+       - User clicks Apply or stops editing (timeout)
+       - Full-res chain sent to main worker
+       - On full-res result: draw to main canvas, hide overlay
+    5. Transition: overlay opacity fades out as full-res appears, or instant swap
+
+    The preview worker already does the downscale+process+return pattern.
+    Main changes are: (a) increase preview resolution, (b) display on overlay
+    instead of sidebar thumbnail, (c) manage overlay visibility lifecycle.
+
+    Consider: if the preview worker takes >200ms at 1080p, the overlay may lag.
+    Benchmark at 1080p to determine if this is viable. If 1080p is too slow,
+    fall back to 720p (max 1280px). The preview resolution should be dynamic
+    based on pipeline complexity and timing feedback.
+plan:
+  - phase: Preview Resolution Upgrade
+    tasks:
+      - text: Change preview worker PREVIEW_MAX from 400 to 1920 (or viewport-adaptive)
+        done: false
+      - text: Benchmark preview at 1080p with 7-node chain to verify real-time viability
+        done: false
+      - text: If >200ms, add adaptive resolution (drop to 1280 or 960 based on timing)
+        done: false
+  - phase: Overlay Canvas
+    tasks:
+      - text: Add overlay canvas element positioned absolutely over main canvas
+        done: false
+      - text: Overlay canvas fills same viewport area as main canvas
+        done: false
+      - text: Draw preview result to overlay canvas scaled to viewport size
+        done: false
+      - text: Add subtle preview quality indicator (label or thin colored border)
+        done: false
+  - phase: Lifecycle Management
+    tasks:
+      - text: On slider change - show overlay with preview result, debounced 100-150ms
+        done: false
+      - text: On apply/commit - send full-res chain, hide overlay when result arrives
+        done: false
+      - text: Smooth transition - overlay fades or instant-swaps to full-res
+        done: false
+      - text: If full-res completes faster than preview threshold, skip overlay entirely
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test with slider rapid-fire (many changes in quick succession)
+        done: false
+      - text: Verify no flicker during preview-to-fullres transition
+        done: false
+      - text: Test with large images (8K) where full-res is slow
+        done: false
+extra: {}
