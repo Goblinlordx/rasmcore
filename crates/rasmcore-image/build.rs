@@ -559,7 +559,7 @@ fn main() {
                         // Empty config structs (e.g., DepolarParams {}) are legitimately zero-param.
                         if let Some(cs) = &f.config_struct {
                             let field_count =
-                                data.param_structs.get(cs.as_str()).map_or(0, |f| f.len());
+                                data.param_structs.get(cs.as_str()).map_or(0, std::vec::Vec::len);
                             assert!(
                                 field_count == 0,
                                 "Filter '{}' has config_struct '{}' with {} field(s) in param_structs, \

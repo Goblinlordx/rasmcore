@@ -669,9 +669,9 @@ fn encode_progressive_scan(
             .collect();
 
         let num_mcus = if is_gray {
-            all_coeffs.get(&1).map_or(0, |b| b.len())
+            all_coeffs.get(&1).map_or(0, std::vec::Vec::len)
         } else {
-            all_coeffs.get(&2).map_or(0, |b| b.len())
+            all_coeffs.get(&2).map_or(0, std::vec::Vec::len)
         };
 
         let mut block_offsets: std::collections::HashMap<u8, usize> =

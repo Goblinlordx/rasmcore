@@ -218,7 +218,7 @@ impl ScriptRegistry {
 
     /// List all registered script filter names.
     pub fn list(&self) -> Vec<&str> {
-        self.scripts.keys().map(|s| s.as_str()).collect()
+        self.scripts.keys().map(std::string::String::as_str).collect()
     }
 
     /// Get the Rhai engine (shared across all scripts).

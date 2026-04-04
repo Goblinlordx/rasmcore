@@ -284,7 +284,7 @@ pub(crate) fn is_3dl_lut(data: &[u8]) -> bool {
             continue;
         }
         // Must be all digits and whitespace
-        if line.chars().any(|c| c.is_alphabetic()) {
+        if line.chars().any(char::is_alphabetic) {
             return false;
         }
         let nums: Vec<u32> = line
@@ -929,7 +929,7 @@ pub(crate) fn decode_jxl(data: &[u8]) -> Result<DecodedImage, ImageError> {
     };
 
     // Extract ICC profile if present
-    let icc_profile = image.original_icc().map(|icc| icc.to_vec());
+    let icc_profile = image.original_icc().map(<[u8]>::to_vec);
 
     Ok(DecodedImage {
         pixels,

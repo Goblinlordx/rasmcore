@@ -88,7 +88,7 @@ impl Metadata {
 
     /// Iterate over all keys.
     pub fn keys(&self) -> impl Iterator<Item = &str> {
-        self.entries.keys().map(|k| k.as_str())
+        self.entries.keys().map(std::string::String::as_str)
     }
 
     /// Number of entries.
@@ -263,11 +263,11 @@ impl MetadataFilter {
             MetadataFilter::DropAll => Metadata::new(),
             MetadataFilter::KeepAll => metadata.clone(),
             MetadataFilter::Include(patterns) => {
-                let refs: Vec<&str> = patterns.iter().map(|s| s.as_str()).collect();
+                let refs: Vec<&str> = patterns.iter().map(std::string::String::as_str).collect();
                 metadata.include(&refs)
             }
             MetadataFilter::Exclude(patterns) => {
-                let refs: Vec<&str> = patterns.iter().map(|s| s.as_str()).collect();
+                let refs: Vec<&str> = patterns.iter().map(std::string::String::as_str).collect();
                 metadata.exclude(&refs)
             }
         }

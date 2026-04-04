@@ -944,7 +944,7 @@ impl NodeGraph {
 
     /// Check if a node has registered GPU capability.
     pub fn has_gpu(&self, node_id: u32) -> bool {
-        self.gpu_nodes.get(node_id as usize).is_some_and(|g| g.is_some())
+        self.gpu_nodes.get(node_id as usize).is_some_and(std::option::Option::is_some)
     }
 
     /// Register an ML-capable implementation for a node.
@@ -965,7 +965,7 @@ impl NodeGraph {
 
     /// Check if a node has registered ML capability.
     pub fn has_ml(&self, node_id: u32) -> bool {
-        self.ml_nodes.get(node_id as usize).is_some_and(|m| m.is_some())
+        self.ml_nodes.get(node_id as usize).is_some_and(std::option::Option::is_some)
     }
 
     /// Validate that all ML-registered nodes have an executor available.

@@ -179,7 +179,7 @@ pub fn format_info(format: &str) -> Option<FormatInfo> {
         .map(|r| FormatInfo {
             name: r.format.to_string(),
             mime_type: r.mime.to_string(),
-            extensions: r.extensions.iter().map(|s| s.to_string()).collect(),
+            extensions: r.extensions.iter().map(std::string::ToString::to_string).collect(),
         })
 }
 
@@ -189,7 +189,7 @@ pub fn all_format_info() -> Vec<FormatInfo> {
         .map(|r| FormatInfo {
             name: r.format.to_string(),
             mime_type: r.mime.to_string(),
-            extensions: r.extensions.iter().map(|s| s.to_string()).collect(),
+            extensions: r.extensions.iter().map(std::string::ToString::to_string).collect(),
         })
         .collect()
 }

@@ -1330,7 +1330,7 @@ pub fn derive_v2_encoder(input: TokenStream) -> TokenStream {
         display_name = codec_name.to_uppercase();
     }
 
-    let extensions: Vec<&str> = extensions_str.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    let extensions: Vec<&str> = extensions_str.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
     let ext_count = extensions.len();
     let ext_tokens: Vec<proc_macro2::TokenStream> = extensions.iter().map(|e| quote! { #e }).collect();
 
@@ -1468,7 +1468,7 @@ pub fn derive_v2_decoder(input: TokenStream) -> TokenStream {
         display_name = codec_name.to_uppercase();
     }
 
-    let extensions: Vec<&str> = extensions_str.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    let extensions: Vec<&str> = extensions_str.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
     let ext_count = extensions.len();
     let ext_tokens: Vec<proc_macro2::TokenStream> = extensions.iter().map(|e| quote! { #e }).collect();
 
