@@ -59,58 +59,60 @@ spec:
     6. Native bench should test: cold start, warm (cached shader), incremental (add/remove node), identity fusion (equal up/down
     cancels)'
 plan:
-  - phase: Tracing Infrastructure
-    tasks:
-      - text: Add PipelineTrace struct with TraceEvent enum (FusionStart, FusionResult, ShaderCompile, GpuDispatch, CpuFallback, Encode, Custom)
-        done: false
-      - text: Each TraceEvent carries a name string, duration_us, and optional detail string
-        done: false
-      - text: Add graph.set_tracing(true) and graph.take_trace() -> Option<PipelineTrace>
-        done: false
-      - text: Instrument fusion.rs optimize() — emit FusionStart/FusionResult events with chain length, fused count, identities eliminated
-        done: false
-      - text: Instrument graph.rs request_region() — emit GpuDispatch or CpuFallback event per node execution with duration
-        done: false
-      - text: Instrument graph.rs collect_gpu_chain() — emit event showing shader count collected
-        done: false
-      - text: Add optimized flag to Graph — skip re-fusion when graph unchanged since last optimize()
-        done: false
-  - phase: Native Benchmark
-    tasks:
-      - text: Add bench-pipeline binary in rasmcore-pipeline-v2 (cargo run --bin bench-pipeline)
-        done: false
-      - text: Load test image, build chain of N brightness nodes (configurable via CLI arg)
-        done: false
-      - text: Time first execution with tracing enabled — show full breakdown
-        done: false
-      - text: Time second execution (same chain) — show cached vs fresh comparison
-        done: false
-      - text: Time incremental — add one more brightness node, re-execute, show delta
-        done: false
-      - text: Time identity case — equal up/down pairs, verify fusion eliminates to identity
-        done: false
-      - text: Test with and without GPU executor (wgpu) to compare GPU vs CPU path
-        done: false
-  - phase: WASM GPU Wiring
-    tasks:
-      - text: Wire set_gpu_available(true) in WASM adapter to store flag for future host GPU executor
-        done: false
-      - text: Add trace output to WASM write() and render() — return trace alongside result
-        done: false
-  - phase: Web Worker Trace Exposure
-    tasks:
-      - text: V2 pipeline worker sends trace data in result messages (trace array of {name, ms, detail})
-        done: false
-      - text: V2 preview worker sends trace summary in result messages
-        done: false
-      - text: Console.log formatted trace output for devtools debugging
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Run native benchmark on test image — verify tracing shows correct fusion and timing breakdown
-        done: false
-      - text: Verify optimize() guard prevents redundant fusion passes
-        done: false
-      - text: Build WASM component and verify trace data flows to web workers
-        done: false
+- phase: Tracing Infrastructure
+  tasks:
+  - text: Add PipelineTrace struct with TraceEvent enum (FusionStart, FusionResult, ShaderCompile, GpuDispatch, CpuFallback,
+      Encode, Custom)
+    done: true
+  - text: Each TraceEvent carries a name string, duration_us, and optional detail string
+    done: true
+  - text: Add graph.set_tracing(true) and graph.take_trace() -> Option<PipelineTrace>
+    done: true
+  - text: Instrument fusion.rs optimize() — emit FusionStart/FusionResult events with chain length, fused count, identities
+      eliminated
+    done: true
+  - text: Instrument graph.rs request_region() — emit GpuDispatch or CpuFallback event per node execution with duration
+    done: true
+  - text: Instrument graph.rs collect_gpu_chain() — emit event showing shader count collected
+    done: true
+  - text: Add optimized flag to Graph — skip re-fusion when graph unchanged since last optimize()
+    done: true
+- phase: Native Benchmark
+  tasks:
+  - text: Add bench-pipeline binary in rasmcore-pipeline-v2 (cargo run --bin bench-pipeline)
+    done: true
+  - text: Load test image, build chain of N brightness nodes (configurable via CLI arg)
+    done: true
+  - text: Time first execution with tracing enabled — show full breakdown
+    done: true
+  - text: Time second execution (same chain) — show cached vs fresh comparison
+    done: true
+  - text: Time incremental — add one more brightness node, re-execute, show delta
+    done: true
+  - text: Time identity case — equal up/down pairs, verify fusion eliminates to identity
+    done: true
+  - text: Test with and without GPU executor (wgpu) to compare GPU vs CPU path
+    done: true
+- phase: WASM GPU Wiring
+  tasks:
+  - text: Wire set_gpu_available(true) in WASM adapter to store flag for future host GPU executor
+    done: true
+  - text: Add trace output to WASM write() and render() — return trace alongside result
+    done: true
+- phase: Web Worker Trace Exposure
+  tasks:
+  - text: V2 pipeline worker sends trace data in result messages (trace array of {name, ms, detail})
+    done: true
+  - text: V2 preview worker sends trace summary in result messages
+    done: true
+  - text: Console.log formatted trace output for devtools debugging
+    done: true
+- phase: Verification
+  tasks:
+  - text: Run native benchmark on test image — verify tracing shows correct fusion and timing breakdown
+    done: true
+  - text: Verify optimize() guard prevents redundant fusion passes
+    done: true
+  - text: Build WASM component and verify trace data flows to web workers
+    done: true
 extra: {}
