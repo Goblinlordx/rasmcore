@@ -1269,6 +1269,7 @@ pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
             capabilities: rasmcore_pipeline_v2::OperationCapabilities {
                 gpu: false, analytic: false, affine: false, clut: false,
             },
+            doc_path: #doc_path,
         };
         inventory::submit!(&#opreg_ident);
     };
