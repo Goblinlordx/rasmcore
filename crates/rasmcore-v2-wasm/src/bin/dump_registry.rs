@@ -1,4 +1,4 @@
-//! Dump V2 operation registry as JSON for SDK generation.
+//! Dump V2 operation registry as JSON for SDK generation and docs.
 #[allow(unused_imports)]
 use rasmcore_pipeline_v2::filters as _f;
 #[allow(unused_imports)]
@@ -23,6 +23,10 @@ fn opt_str(v: Option<&str>) -> String {
     v.map(|s| format!("\"{}\"", s)).unwrap_or("null".into())
 }
 
+fn json_escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n")
+}
+
 fn main() {
     let filters = v2::registry::registered_filter_registrations();
     let encoders = v2::registered_encoders();
@@ -31,20 +35,22 @@ fn main() {
     print!("{{\"filters\":[");
     for (i, f) in filters.iter().enumerate() {
         if i > 0 { print!(","); }
-        print!("{{\"name\":\"{}\",\"displayName\":\"{}\",\"category\":\"{}\",\"params\":[", 
-            f.name, f.display_name, f.category);
+        print!("{{\"name\":\"{}\",\"displayName\":\"{}\",\"category\":\"{}\",\"docPath\":\"{}\",\"params\":[",
+            f.name, f.display_name, f.category, json_escape(f.doc_path));
         for (j, p) in f.params.iter().enumerate() {
             if j > 0 { print!(","); }
-            print!("{{\"name\":\"{}\",\"type\":\"{}\",\"min\":{},\"max\":{},\"step\":{},\"default\":{},\"hint\":{}}}", 
+            print!("{{\"name\":\"{}\",\"type\":\"{}\",\"min\":{},\"max\":{},\"step\":{},\"default\":{},\"hint\":{},\"description\":\"{}\"}}",
                 p.name, param_type_str(p.value_type),
-                opt_f64(p.min), opt_f64(p.max), opt_f64(p.step), opt_f64(p.default), opt_str(p.hint));
+                opt_f64(p.min), opt_f64(p.max), opt_f64(p.step), opt_f64(p.default),
+                opt_str(p.hint), json_escape(p.description));
         }
         print!("]}}");
     }
     print!("],\"encoders\":[");
     for (i, e) in encoders.iter().enumerate() {
         if i > 0 { print!(","); }
-        print!("{{\"name\":\"{}\",\"displayName\":\"{}\",\"mime\":\"{}\",\"extensions\":[", e.name, e.display_name, e.mime);
+        print!("{{\"name\":\"{}\",\"displayName\":\"{}\",\"mime\":\"{}\",\"docPath\":\"{}\",\"extensions\":[",
+            e.name, e.display_name, e.mime, json_escape(e.doc_path));
         for (j, ext) in e.extensions.iter().enumerate() {
             if j > 0 { print!(","); }
             print!("\"{}\"", ext);
@@ -54,7 +60,8 @@ fn main() {
     print!("],\"decoders\":[");
     for (i, d) in decoders.iter().enumerate() {
         if i > 0 { print!(","); }
-        print!("{{\"name\":\"{}\",\"displayName\":\"{}\",\"extensions\":[", d.name, d.display_name);
+        print!("{{\"name\":\"{}\",\"displayName\":\"{}\",\"docPath\":\"{}\",\"extensions\":[",
+            d.name, d.display_name, json_escape(d.doc_path));
         for (j, ext) in d.extensions.iter().enumerate() {
             if j > 0 { print!(","); }
             print!("\"{}\"", ext);
