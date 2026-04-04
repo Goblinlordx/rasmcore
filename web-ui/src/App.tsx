@@ -189,6 +189,8 @@ export default function App() {
           previewCanvasRef={worker.previewCanvasRef}
           originalCanvasRef={worker.originalCanvasRef}
           hasImage={layers.length > 0}
+          imageWidth={worker.imageInfo?.width ?? 0}
+          imageHeight={worker.imageInfo?.height ?? 0}
           onAddLayer={handleAddLayer}
         />
         <RightPanel>

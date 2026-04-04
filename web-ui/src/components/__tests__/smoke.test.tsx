@@ -128,6 +128,8 @@ describe('Component smoke tests', () => {
         previewCanvasRef={ref1}
         originalCanvasRef={ref2}
         hasImage={false}
+        imageWidth={0}
+        imageHeight={0}
         onAddLayer={() => {}}
       />,
     );
@@ -142,6 +144,8 @@ describe('Component smoke tests', () => {
         previewCanvasRef={ref1}
         originalCanvasRef={ref2}
         hasImage={true}
+        imageWidth={800}
+        imageHeight={600}
         onAddLayer={() => {}}
       />,
     );
