@@ -13,6 +13,7 @@ use crate::demand::DemandStrategy;
 use crate::gpu::GpuExecutor;
 use crate::node::{Node, NodeInfo, PipelineError, Upstream};
 use crate::rect::Rect;
+use crate::trace::{PipelineTrace, TraceEventKind, TraceTimer};
 
 /// The V2 pipeline graph.
 ///
@@ -25,6 +26,11 @@ pub struct Graph {
     gpu_executor: Option<Rc<dyn GpuExecutor>>,
     demand_strategy: DemandStrategy,
     pub(crate) aces_strict: bool,
+    /// Whether fusion optimization has already run on this graph.
+    pub(crate) optimized: bool,
+    /// Opt-in tracing — collects timing events when enabled.
+    tracing: bool,
+    trace: PipelineTrace,
 }
 
 impl Graph {
@@ -36,6 +42,9 @@ impl Graph {
             gpu_executor: None,
             demand_strategy: DemandStrategy::default(),
             aces_strict: false,
+            optimized: false,
+            tracing: false,
+            trace: PipelineTrace::new(),
         }
     }
 
@@ -43,6 +52,7 @@ impl Graph {
     pub fn add_node(&mut self, node: Box<dyn Node>) -> u32 {
         let id = self.nodes.len() as u32;
         self.nodes.push(node);
+        self.optimized = false; // new node invalidates fusion
         id
     }
 
@@ -54,6 +64,24 @@ impl Graph {
     /// Set the demand strategy (tile sizing).
     pub fn set_demand_strategy(&mut self, strategy: DemandStrategy) {
         self.demand_strategy = strategy;
+    }
+
+    /// Enable or disable pipeline tracing.
+    pub fn set_tracing(&mut self, enabled: bool) {
+        self.tracing = enabled;
+        if !enabled {
+            self.trace = PipelineTrace::new();
+        }
+    }
+
+    /// Take the collected trace data, replacing it with an empty trace.
+    pub fn take_trace(&mut self) -> PipelineTrace {
+        std::mem::take(&mut self.trace)
+    }
+
+    /// Whether tracing is currently enabled.
+    pub fn is_tracing(&self) -> bool {
+        self.tracing
     }
 
     /// Get node info for a given node ID.
@@ -136,6 +164,13 @@ impl Graph {
         // 2. GPU-primary dispatch — batch consecutive GPU nodes
         if let Some(executor) = &self.gpu_executor {
             if let Some((source_id, gpu_chain)) = self.collect_gpu_chain(node_id, info.width, info.height) {
+                let timer = if self.tracing {
+                    Some(TraceTimer::new(TraceEventKind::GpuDispatch, format!("node_{node_id}"))
+                        .with_detail(format!("{} shaders, {}x{}", gpu_chain.len(), request.width, request.height)))
+                } else {
+                    None
+                };
+
                 // Get input from the source node (first non-GPU node in the chain)
                 let executor = executor.clone();
                 let input = self.request_region(source_id, request)?;
@@ -146,6 +181,9 @@ impl Graph {
                     request.height,
                 ) {
                     Ok(gpu_pixels) => {
+                        if let Some(t) = timer {
+                            self.trace.push(t.finish());
+                        }
                         self.cache.store(
                             node_id,
                             request,
@@ -162,6 +200,13 @@ impl Graph {
         }
 
         // 3. CPU fallback
+        let cpu_timer = if self.tracing {
+            Some(TraceTimer::new(TraceEventKind::CpuFallback, format!("node_{node_id}"))
+                .with_detail(format!("{}x{}", request.width, request.height)))
+        } else {
+            None
+        };
+
         // Use raw pointer to split the borrow (node.compute needs &mut self for upstream)
         let self_ptr: *mut Graph = self;
         let node_ptr: *const dyn Node = &**self
@@ -181,6 +226,10 @@ impl Graph {
             });
         }
 
+        if let Some(t) = cpu_timer {
+            self.trace.push(t.finish());
+        }
+
         // Cache
         self.cache
             .store(node_id, request, pixels.clone(), crate::hash::ZERO_HASH);
@@ -189,8 +238,22 @@ impl Graph {
 
     /// Request the full output of a node (convenience).
     pub fn request_full(&mut self, node_id: u32) -> Result<Vec<f32>, PipelineError> {
-        // Run fusion optimizer before execution (idempotent — safe to call multiple times)
-        crate::fusion::optimize(self);
+        // Run fusion optimizer before execution — skip if already optimized
+        if !self.optimized {
+            let timer = if self.tracing {
+                Some(TraceTimer::new(TraceEventKind::Fusion, "optimize")
+                    .with_detail(format!("{} nodes", self.nodes.len())))
+            } else {
+                None
+            };
+
+            crate::fusion::optimize(self);
+            self.optimized = true;
+
+            if let Some(t) = timer {
+                self.trace.push(t.finish());
+            }
+        }
         let info = self.node_info(node_id)?;
         self.request_region(node_id, Rect::new(0, 0, info.width, info.height))
     }
@@ -497,5 +560,93 @@ mod tests {
         let n = g.add_node(Box::new(BrokenNode));
         let result = g.request_full(n);
         assert!(matches!(result, Err(PipelineError::BufferMismatch { .. })));
+    }
+
+    #[test]
+    fn tracing_captures_cpu_fallback_events() {
+        let mut g = Graph::new(0);
+        g.set_tracing(true);
+
+        let src = g.add_node(Box::new(SolidColorNode {
+            width: 4,
+            height: 4,
+            color: [0.5, 0.3, 0.1, 1.0],
+        }));
+        let info = g.node_info(src).unwrap();
+        let scale = g.add_node(Box::new(ScaleNode {
+            upstream: src,
+            factor: 2.0,
+            info,
+        }));
+
+        let _pixels = g.request_full(scale).unwrap();
+        let trace = g.take_trace();
+
+        // Should have a fusion event
+        assert!(
+            trace.by_kind(crate::trace::TraceEventKind::Fusion).len() == 1,
+            "expected 1 fusion event, got {}",
+            trace.by_kind(crate::trace::TraceEventKind::Fusion).len()
+        );
+
+        // Should have CPU fallback events (no GPU executor set)
+        let cpu_events = trace.by_kind(crate::trace::TraceEventKind::CpuFallback);
+        assert!(
+            cpu_events.len() >= 1,
+            "expected at least 1 CPU fallback event, got {}",
+            cpu_events.len()
+        );
+    }
+
+    #[test]
+    fn optimize_guard_skips_redundant_fusion() {
+        let mut g = Graph::new(0);
+        g.set_tracing(true);
+
+        let src = g.add_node(Box::new(SolidColorNode {
+            width: 4,
+            height: 4,
+            color: [0.5, 0.3, 0.1, 1.0],
+        }));
+
+        // First request_full — should run fusion
+        let _p1 = g.request_full(src).unwrap();
+        let t1 = g.take_trace();
+        assert_eq!(t1.by_kind(crate::trace::TraceEventKind::Fusion).len(), 1);
+
+        // Second request_full — should skip fusion (optimized flag set)
+        g.clear_cache();
+        let _p2 = g.request_full(src).unwrap();
+        let t2 = g.take_trace();
+        assert_eq!(
+            t2.by_kind(crate::trace::TraceEventKind::Fusion).len(),
+            0,
+            "fusion should be skipped on second request_full"
+        );
+
+        // Adding a node resets the flag
+        let info = g.node_info(src).unwrap();
+        let _scale = g.add_node(Box::new(ScaleNode {
+            upstream: src,
+            factor: 2.0,
+            info,
+        }));
+        assert!(!g.optimized, "adding a node should reset optimized flag");
+    }
+
+    #[test]
+    fn tracing_disabled_collects_nothing() {
+        let mut g = Graph::new(0);
+        // tracing is disabled by default
+
+        let src = g.add_node(Box::new(SolidColorNode {
+            width: 4,
+            height: 4,
+            color: [0.5, 0.3, 0.1, 1.0],
+        }));
+
+        let _pixels = g.request_full(src).unwrap();
+        let trace = g.take_trace();
+        assert!(trace.events.is_empty(), "no events when tracing is disabled");
     }
 }

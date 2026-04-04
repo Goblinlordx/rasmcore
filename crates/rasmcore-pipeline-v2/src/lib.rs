@@ -35,6 +35,7 @@ pub mod color_math;
 pub mod color_convert;
 pub mod aces;
 pub mod fusion;
+pub mod trace;
 pub mod staged;
 pub mod gpu_shaders;
 pub mod aces_audit;
@@ -83,3 +84,4 @@ pub use color_math::{
     convert_color_space, apply_transfer, apply_matrix, mat3_mul,
 };
 pub use color_convert::{ColorConvertNode, ViewTransformNode, ViewTransform};
+pub use trace::{PipelineTrace, TraceEvent, TraceEventKind};
