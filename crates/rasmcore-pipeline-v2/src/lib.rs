@@ -26,6 +26,7 @@ pub mod graph;
 pub mod demand;
 pub mod cache;
 pub mod hash;
+pub mod layer_cache;
 pub mod registry;
 pub mod ops;
 #[macro_use]
@@ -51,7 +52,8 @@ pub use gpu::{GpuError, GpuExecutor};
 pub use graph::{Graph, GpuPlan};
 pub use demand::{DemandStrategy, DemandHint};
 pub use cache::SpatialCache;
-pub use hash::content_hash;
+pub use hash::{content_hash, source_hash};
+pub use layer_cache::{LayerCache, CacheQuality, CacheStats};
 
 // Re-export registration system
 pub use registry::{

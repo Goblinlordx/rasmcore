@@ -236,6 +236,43 @@ impl ParamMap {
     pub fn get_string(&self, key: &str) -> String {
         self.strings.get(key).cloned().unwrap_or_default()
     }
+
+    /// Deterministic byte serialization for content hashing.
+    ///
+    /// Keys are sorted alphabetically within each type group to ensure
+    /// the same params always produce the same bytes regardless of insertion order.
+    pub fn to_hash_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        // Floats (sorted by key)
+        let mut fkeys: Vec<_> = self.floats.keys().collect();
+        fkeys.sort();
+        for k in fkeys {
+            out.extend_from_slice(k.as_bytes());
+            out.extend_from_slice(&self.floats[k].to_le_bytes());
+        }
+        // Ints (sorted by key)
+        let mut ikeys: Vec<_> = self.ints.keys().collect();
+        ikeys.sort();
+        for k in ikeys {
+            out.extend_from_slice(k.as_bytes());
+            out.extend_from_slice(&self.ints[k].to_le_bytes());
+        }
+        // Bools (sorted by key)
+        let mut bkeys: Vec<_> = self.bools.keys().collect();
+        bkeys.sort();
+        for k in bkeys {
+            out.extend_from_slice(k.as_bytes());
+            out.push(if self.bools[k] { 1 } else { 0 });
+        }
+        // Strings (sorted by key)
+        let mut skeys: Vec<_> = self.strings.keys().collect();
+        skeys.sort();
+        for k in skeys {
+            out.extend_from_slice(k.as_bytes());
+            out.extend_from_slice(self.strings[k].as_bytes());
+        }
+        out
+    }
 }
 
 /// Factory function that constructs a filter from dynamic parameters.

@@ -18,3 +18,20 @@ pub fn content_hash(parent: &ContentHash, op_name: &str, params: &[u8]) -> Conte
     hasher.update(params);
     *hasher.finalize().as_bytes()
 }
+
+/// Compute a source hash from raw input data.
+///
+/// Hashes first 4KB + last 4KB + length for speed on large inputs.
+/// Two identical source byte sequences produce the same hash.
+pub fn source_hash(data: &[u8]) -> ContentHash {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"source");
+    hasher.update(&(data.len() as u64).to_le_bytes());
+    let prefix = &data[..data.len().min(4096)];
+    hasher.update(prefix);
+    if data.len() > 4096 {
+        let suffix_start = data.len().saturating_sub(4096);
+        hasher.update(&data[suffix_start..]);
+    }
+    *hasher.finalize().as_bytes()
+}
