@@ -1,0 +1,8 @@
+title: V2 SDK generation + web UI integration
+status: pending
+type: feature
+approved: false
+created: '2026-04-04'
+updated: '2026-04-04'
+deps:
+- v2-wasm-crate_20260404002500Z
