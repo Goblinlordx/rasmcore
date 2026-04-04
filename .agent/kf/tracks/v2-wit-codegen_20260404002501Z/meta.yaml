@@ -1,8 +1,11 @@
 title: V2 WIT codegen — auto-generate interface from filter registry
-status: pending
+status: archived
 type: feature
 approved: false
 created: '2026-04-04'
 updated: '2026-04-04'
 deps:
 - v2-wasm-crate_20260404002500Z
+archived_at: '2026-04-04'
+archive_reason: obsolete — V2 WIT is generic (apply-filter), no per-filter codegen
+  needed

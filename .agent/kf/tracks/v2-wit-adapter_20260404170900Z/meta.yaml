@@ -1,6 +1,8 @@
 title: Wire WIT adapter to V2 pipeline — fix web UI
-status: completed
+status: archived
 type: bug
 approved: false
 created: '2026-04-03'
-updated: '2026-04-03'
+updated: '2026-04-04'
+archived_at: '2026-04-04'
+archive_reason: completed — V1 resize fix merged
