@@ -87,6 +87,19 @@ function htmlPage(title, content, nav, breadcrumb = '') {
       ${content}
     </main>
   </div>
+  <script>
+  (function() {
+    var path = location.pathname;
+    var links = document.querySelectorAll('.sidebar a');
+    for (var i = 0; i < links.length; i++) {
+      if (links[i].getAttribute('href') === path) {
+        links[i].classList.add('active');
+        links[i].scrollIntoView({ block: 'center' });
+        break;
+      }
+    }
+  })();
+  </script>
 </body>
 </html>`;
 }
@@ -517,9 +530,15 @@ body {
   font-size: 0.85rem;
 }
 
-.sidebar li a:hover {
+.sidebar li a:hover, .sidebar li a.active {
   color: var(--link);
   background: rgba(88, 166, 255, 0.08);
+}
+
+.sidebar li a.active {
+  font-weight: 600;
+  border-left: 2px solid var(--link);
+  padding-left: calc(1.5rem - 2px);
 }
 
 .content {
