@@ -1,0 +1,8 @@
+title: Migrate docs site to Next.js SSG, move Node deps out of root
+status: pending
+type: refactor
+approved: false
+created: '2026-04-04'
+updated: '2026-04-04'
+deps:
+- docs-visual-examples_20260404102300Z
