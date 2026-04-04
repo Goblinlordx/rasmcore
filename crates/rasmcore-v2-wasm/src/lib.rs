@@ -189,14 +189,8 @@ impl PipelineResource {
         format: &str,
         quality: Option<u8>,
     ) -> Result<Vec<u8>, PipelineError> {
-        // Reset layer cache references for this run
-        self.graph.borrow().reset_layer_cache_references();
-
         let pixels = self.graph.borrow_mut().request_full(node_id)?;
         let info = self.graph.borrow().node_info(node_id)?;
-
-        // Clean up unreferenced layer cache entries
-        self.graph.borrow().cleanup_layer_cache();
 
         // Try V2 registry first, fall back to old codecs-v2 encode
         let mut params = v2::ParamMap::new();
@@ -212,14 +206,7 @@ impl PipelineResource {
     }
 
     pub fn render(&self, node_id: u32) -> Result<Vec<f32>, PipelineError> {
-        // Reset layer cache references for this run
-        self.graph.borrow().reset_layer_cache_references();
-
         let pixels = self.graph.borrow_mut().request_full(node_id)?;
-
-        // Clean up unreferenced layer cache entries
-        self.graph.borrow().cleanup_layer_cache();
-
         Ok(pixels)
     }
 
