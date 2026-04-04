@@ -9,7 +9,7 @@
 import { Pipeline } from '../sdk/v2/fluent/index';
 import { GpuHandlerV2, type GpuShader } from './gpu-handler-v2';
 
-const PREVIEW_MAX = 1920;
+const PREVIEW_MAX = 720;
 
 let PipelineClass = null;
 let LayerCacheClass = null;

@@ -114,20 +114,7 @@ export default function ChainNode({
               onChange={(v) => onParamChange(p.name, v)}
             />
           ))}
-          {previewCanvasRef && (
-            <div style={{ marginTop: 6, textAlign: 'center' }}>
-              <canvas
-                ref={previewCanvasRef}
-                style={{
-                  maxWidth: '100%',
-                  border: '1px solid #333',
-                  borderRadius: 3,
-                  display: 'block',
-                  margin: '0 auto',
-                }}
-              />
-            </div>
-          )}
+          {/* Preview renders directly on the main viewport canvas */}
           <div style={{ marginTop: 6, display: 'flex', gap: 6 }}>
             <button onClick={onApply}>Apply</button>
             <button className="secondary" style={{ background: '#333' }} onClick={onCancelEdit}>

@@ -59,18 +59,13 @@ export default function App() {
     preview.viewportCanvasRef.current = worker.previewCanvasRef.current;
   });
 
-  // After proxy render completes, trigger background full-res warm
+  // After proxy render completes — background warm disabled for now (perf)
   useEffect(() => {
     // eslint-disable-next-line react-hooks/immutability
     preview.onProxyCompleteRef.current = () => {
       setShowingProxy(true);
-      // Queue background full-res to warm the layer cache
-      if (activeLayer?.imageBytes) {
-        setWarming(true);
-        worker.sendMessage({ type: 'process', chain: serializeChainRef.current(), mode: 'warm' });
-      }
     };
-  }, [preview, worker, activeLayer]);
+  }, [preview]);
 
   // When background warm completes, mark viewport as full-res
   useEffect(() => {
