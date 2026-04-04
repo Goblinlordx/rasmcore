@@ -13,7 +13,7 @@ import EffectStack from './components/EffectStack';
 import StatusBar from './components/StatusBar';
 import CodeModal from './components/CodeModal';
 
-const PREVIEW_DEBOUNCE_MS = 150;
+const PREVIEW_DEBOUNCE_MS = 33; // ~30fps
 
 export default function App() {
   const { operations, groups, writeFormats, loading } = useAppContext();
