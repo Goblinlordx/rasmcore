@@ -1,5 +1,5 @@
 title: 'V2 workers: use fluent SDK instead of imperative applyFilter'
-status: pending
+status: completed
 type: chore
 approved: false
 created: '2026-04-04'

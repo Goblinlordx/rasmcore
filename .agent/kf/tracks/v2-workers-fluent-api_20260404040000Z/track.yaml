@@ -43,26 +43,26 @@ spec:
 
     5. Workers use pipe.write(format, quality) or typed write methods'
 plan:
-  - phase: SDK Generator Update
-    tasks:
-      - text: Add Pipeline.fromRaw(rawPipe, data) static factory to fluent SDK generator
-        done: false
-      - text: Regenerate fluent SDK with updated generator
-        done: false
-  - phase: Worker Migration
-    tasks:
-      - text: Update build-v2-webui.sh to copy fluent SDK to web-ui accessible path
-        done: false
-      - text: Rewrite v2-pipeline-worker.ts to use fluent Pipeline with dynamic dispatch
-        done: false
-      - text: Rewrite v2-preview-worker.ts with same fluent SDK pattern
-        done: false
-      - text: Remove all serializeParams() code from both workers
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Build V2 WASM + SDK + web UI end-to-end
-        done: false
-      - text: Verify no TypeScript errors in workers
-        done: false
+- phase: SDK Generator Update
+  tasks:
+  - text: Add Pipeline.fromRaw(rawPipe, data) static factory to fluent SDK generator
+    done: true
+  - text: Regenerate fluent SDK with updated generator
+    done: true
+- phase: Worker Migration
+  tasks:
+  - text: Update build-v2-webui.sh to copy fluent SDK to web-ui accessible path
+    done: true
+  - text: Rewrite v2-pipeline-worker.ts to use fluent Pipeline with dynamic dispatch
+    done: true
+  - text: Rewrite v2-preview-worker.ts with same fluent SDK pattern
+    done: true
+  - text: Remove all serializeParams() code from both workers
+    done: true
+- phase: Verification
+  tasks:
+  - text: Build V2 WASM + SDK + web UI end-to-end
+    done: false
+  - text: Verify no TypeScript errors in workers
+    done: false
 extra: {}
