@@ -231,6 +231,45 @@ export class GpuHandlerV2 {
     }
   }
 
+  /**
+   * Pre-compile shader sources into GPUComputePipelines.
+   * Warms the cache so subsequent execute()/executeAndDisplay() calls
+   * get O(1) pipeline lookups with no shader compilation stalls.
+   */
+  async prepare(shaders: GpuShader[]): Promise<void> {
+    if (shaders.length === 0) return;
+
+    try { await this.ensureDevice(); }
+    catch { return; }
+
+    const device = this.device!;
+    for (const op of shaders) {
+      const hash = hashSource(op.source) + ':' + op.entryPoint;
+      if (this.shaderCache.has(hash)) continue;
+
+      const module = device.createShaderModule({ code: op.source });
+      const entries: GPUBindGroupLayoutEntry[] = [
+        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+      ];
+      for (let j = 0; j < op.extraBuffers.length; j++) {
+        entries.push({ binding: 3 + j, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } });
+      }
+      const layout = device.createBindGroupLayout({ entries });
+      const pipeline = device.createComputePipeline({
+        layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+        compute: { module, entryPoint: op.entryPoint },
+      });
+      this.shaderCache.set(hash, pipeline);
+    }
+  }
+
+  /** Number of cached shader pipelines. */
+  get cacheSize(): number {
+    return this.shaderCache.size;
+  }
+
   // ─── Display Surface ────────────────────────────────────────────────────
 
   /**

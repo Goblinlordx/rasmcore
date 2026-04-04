@@ -221,6 +221,9 @@ async function processChain(chain) {
             extraBuffers: s.extraBuffers.map(b => new Uint8Array(b)),
           }));
 
+          // Pre-compile shaders (O(1) if already cached)
+          await gpuHandler.prepare(ops);
+
           if (displayMode && gpuHandler.hasDisplay) {
             // Direct display path — compute + blit, no CPU readback
             const err = await gpuHandler.executeAndDisplay(
