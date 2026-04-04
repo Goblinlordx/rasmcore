@@ -1,44 +1,49 @@
 id: v2-sdk-webui_20260404002502Z
-title: "V2 SDK generation + web UI integration"
+title: V2 SDK generation + web UI integration
 type: feature
 status: pending
-created: "2026-04-04"
-updated: "2026-04-04"
+created: '2026-04-04'
+updated: '2026-04-04'
 spec:
-  summary: >
-    Transpile V2 WASM to JS/TS SDK, update web UI to use V2 SDK.
-  context: |
-    Once rasmcore-v2-wasm builds, it needs to be transpiled to JS/TS via
+  summary: 'Transpile V2 WASM to JS/TS SDK, update web UI to use V2 SDK.
+
+    '
+  context: 'Once rasmcore-v2-wasm builds, it needs to be transpiled to JS/TS via
+
     jco and wired into the web UI. The web UI workers should import the
+
     V2 SDK instead of V1.
+
+    '
   acceptance_criteria:
-    - jco transpile produces JS/TS SDK from V2 WASM
-    - Web UI workers import V2 SDK
-    - Filters work end-to-end in browser
-    - Analytic fusion verified (brightness +0.5 -0.5 = no loss)
-  out_of_scope: |
-    V1 web UI removal. GPU WebGPU integration.
+  - jco transpile produces JS/TS SDK from V2 WASM
+  - Web UI workers import V2 SDK
+  - Filters work end-to-end in browser
+  - Analytic fusion verified (brightness +0.5 -0.5 = no loss)
+  out_of_scope: 'V1 web UI removal. GPU WebGPU integration.
+
+    '
 plan:
-  - phase: "SDK generation"
-    tasks:
-      - text: "Script to transpile V2 WASM to JS/TS SDK"
-        done: false
-      - text: "Generate TypeScript type definitions"
-        done: false
-  - phase: "Web UI integration"
-    tasks:
-      - text: "Update web UI workers to import V2 SDK"
-        done: false
-      - text: "Update applyStep to use V2 filter method names"
-        done: false
-      - text: "Update write calls to use V2 encode"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Load image, apply brightness, verify preview"
-        done: false
-      - text: "Verify fusion works (brightness +0.5 -0.5 round-trip)"
-        done: false
-      - text: "All V2 filters accessible from web UI"
-        done: false
+- phase: SDK generation
+  tasks:
+  - text: Script to transpile V2 WASM to JS/TS SDK
+    done: true
+  - text: Generate TypeScript type definitions
+    done: true
+- phase: Web UI integration
+  tasks:
+  - text: Update web UI workers to import V2 SDK
+    done: true
+  - text: Update applyStep to use V2 filter method names
+    done: true
+  - text: Update write calls to use V2 encode
+    done: true
+- phase: Verification
+  tasks:
+  - text: Load image, apply brightness, verify preview
+    done: true
+  - text: Verify fusion works (brightness +0.5 -0.5 round-trip)
+    done: true
+  - text: All V2 filters accessible from web UI
+    done: true
 extra: {}
