@@ -19,6 +19,13 @@ echo "=== Copying example images ==="
 mkdir -p "$PROJECT_ROOT/docs/site/public/assets/examples"
 cp /tmp/docs-examples/*.png "$PROJECT_ROOT/docs/site/public/assets/examples/" 2>/dev/null || true
 
+echo "=== Copying V2 WASM SDK for live playground ==="
+mkdir -p "$PROJECT_ROOT/docs/site/public/sdk/v2"
+cp "$PROJECT_ROOT/sdk/typescript/v2-generated/rasmcore-v2-image.js" "$PROJECT_ROOT/docs/site/public/sdk/v2/"
+cp "$PROJECT_ROOT/sdk/typescript/v2-generated/rasmcore-v2-image.d.ts" "$PROJECT_ROOT/docs/site/public/sdk/v2/" 2>/dev/null || true
+cp "$PROJECT_ROOT/sdk/typescript/v2-generated/"*.wasm "$PROJECT_ROOT/docs/site/public/sdk/v2/"
+cp -r "$PROJECT_ROOT/sdk/typescript/v2-generated/interfaces" "$PROJECT_ROOT/docs/site/public/sdk/v2/" 2>/dev/null || true
+
 echo "=== Building Next.js docs site ==="
 cd "$PROJECT_ROOT/docs/site"
 npm install --silent

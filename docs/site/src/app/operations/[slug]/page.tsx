@@ -1,8 +1,7 @@
 import { getRegistry, snakeToKebab, snakeToTitle } from '@/lib/registry';
 import { renderAdocFile } from '@/lib/asciidoc';
 import { ParamTable } from '@/components/ParamTable';
-import { CodeExample } from '@/components/CodeExample';
-import { SplitView } from '@/components/SplitView';
+import { Playground } from '@/components/Playground';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import Link from 'next/link';
@@ -24,7 +23,7 @@ export default async function OperationPage({ params }: { params: Promise<{ slug
   const name = op.displayName || snakeToTitle(op.name);
   const adocHtml = renderAdocFile(op.docPath);
 
-  // Check if example images exist
+  // Check if static example image exists (used as initial preview before WASM loads)
   const examplesDir = join(process.cwd(), 'public', 'assets', 'examples');
   const hasExample = existsSync(join(examplesDir, `${op.name}-after.png`));
 
@@ -35,18 +34,17 @@ export default async function OperationPage({ params }: { params: Promise<{ slug
       </div>
       <h1>{name}</h1>
 
-      {hasExample && (
-        <SplitView
-          beforeSrc="/assets/examples/reference.png"
-          afterSrc={`/assets/examples/${op.name}-after.png`}
-        />
-      )}
+      {/* Interactive playground — shows static image initially, loads WASM on interaction */}
+      <Playground
+        filterName={op.name}
+        params={op.params}
+        referenceImageUrl="/assets/examples/reference.png"
+        staticAfterUrl={hasExample ? `/assets/examples/${op.name}-after.png` : undefined}
+      />
 
       {adocHtml && (
         <div className="op-description" dangerouslySetInnerHTML={{ __html: adocHtml }} />
       )}
-
-      <CodeExample name={op.name} params={op.params} />
 
       <h2>Parameters</h2>
       <ParamTable params={op.params} />
