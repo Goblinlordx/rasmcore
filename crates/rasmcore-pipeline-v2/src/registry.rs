@@ -298,12 +298,20 @@ pub fn create_filter_node(
         .map(|r| (r.factory)(upstream_id, info, params))
 }
 
-/// List all registered filter factories.
+/// List all registered filter factories (names only).
 pub fn registered_filter_factories() -> Vec<&'static str> {
     inventory::iter::<&'static FilterFactoryRegistration>
         .into_iter()
         .copied()
         .map(|r| r.name)
+        .collect()
+}
+
+/// List all registered filter factory registrations (full metadata).
+pub fn registered_filter_registrations() -> Vec<&'static FilterFactoryRegistration> {
+    inventory::iter::<&'static FilterFactoryRegistration>
+        .into_iter()
+        .copied()
         .collect()
 }
 
