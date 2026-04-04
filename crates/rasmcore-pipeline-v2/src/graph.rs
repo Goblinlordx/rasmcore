@@ -56,7 +56,7 @@ pub struct Graph {
     pub(crate) optimized: bool,
     /// Opt-in tracing — collects timing events when enabled.
     tracing: bool,
-    trace: PipelineTrace,
+    pub(crate) trace: PipelineTrace,
 }
 
 impl Graph {

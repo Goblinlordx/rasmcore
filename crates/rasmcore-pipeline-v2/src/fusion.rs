@@ -12,6 +12,7 @@ use crate::graph::Graph;
 use crate::node::{GpuShader, Node, NodeCapabilities, NodeInfo, PipelineError, Upstream};
 use crate::ops::PointOpExpr;
 use crate::rect::Rect;
+use crate::trace::{TraceEventKind, TraceTimer};
 
 // ─── Expression Tree Optimizer ──────────────────────────────────────────────
 
@@ -607,9 +608,22 @@ impl Node for FusedClutNode {
 /// Detects chains of same-category fusable nodes and replaces them with
 /// single fused nodes. Runs in dependency order (bottom-up).
 pub fn optimize(graph: &mut Graph) {
+    let timer = if graph.is_tracing() {
+        Some(TraceTimer::new(TraceEventKind::Fusion, "optimize"))
+    } else {
+        None
+    };
+
+    let before = graph.node_count();
     fuse_analytical_chains(graph);
     fuse_affine_chains(graph);
     fuse_clut_chains(graph);
+    let after = graph.node_count();
+
+    if let Some(t) = timer {
+        let detail = format!("{before} nodes → {after} nodes ({} fused)", before - after);
+        graph.trace.push(t.with_detail(detail).finish());
+    }
 }
 
 /// Fuse chains of analytical (point op) nodes into single expression trees.
