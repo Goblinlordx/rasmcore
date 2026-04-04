@@ -50,9 +50,10 @@ export default function App() {
   /** Whether background warm is running */
   const [warming, setWarming] = useState(false);
 
-  // Stable ref to current serializeChain so callbacks always have the latest
+  // Stable refs so callbacks always have the latest
   const serializeChainRef = useRef(serializeChain);
   serializeChainRef.current = serializeChain;
+  const requestCompositeRef = useRef<(() => void) | null>(null);
 
   // Connect preview worker's viewport canvas to the main Canvas component
   useEffect(() => {
@@ -120,6 +121,11 @@ export default function App() {
       const copy2 = layer.imageBytes.buffer.slice(0) as ArrayBuffer;
       worker.sendMessage({ type: 'load', imageBytes: copy1 });
       preview.loadImage(copy2);
+
+      // Multi-layer: trigger composite after load settles
+      if (!isFirst) {
+        setTimeout(() => requestCompositeRef.current?.(), 100);
+      }
     },
     [addLayer, worker, preview],
   );
@@ -153,6 +159,7 @@ export default function App() {
       }));
     worker.sendMessage({ type: 'composite', layers: layerData });
   }, [layers, worker]);
+  requestCompositeRef.current = requestCompositeProcess;
 
   // Remove node AND re-process
   const handleRemoveNode = useCallback(
@@ -200,7 +207,7 @@ export default function App() {
         operations={operations}
         groups={groups}
         writeFormats={writeFormats}
-        onAddNode={addNode}
+        onAddNode={(op) => { addNode(op); setTimeout(() => schedulePreview(), 0); }}
         onDownload={handleDownload}
         onShowCode={() => setCodeModalOpen(true)}
         exportFormat={exportFormat}
