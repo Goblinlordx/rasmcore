@@ -72,17 +72,29 @@ function buildConfig(params, paramValues) {
 let fullWidth = 0;
 let fullHeight = 0;
 
-function loadImage(bytes) {
-  previewBytes = new Uint8Array(bytes);
+async function loadImage(bytes) {
+  const fullBytes = new Uint8Array(bytes);
   let info = { width: 0, height: 0 };
 
   try {
-    const pipe = createPipeline(previewBytes);
+    const pipe = createPipeline(fullBytes);
     info = { width: pipe.info.width, height: pipe.info.height };
     fullWidth = info.width;
     fullHeight = info.height;
-    console.log(`[v2-preview] Loaded: ${info.width}x${info.height}`);
+
+    // Downscale source image for fast preview
+    const scale = computeProxyScale();
+    if (scale < 1.0) {
+      previewBytes = await downscaleBytes(fullBytes, scale);
+      const pw = Math.round(fullWidth * scale);
+      const ph = Math.round(fullHeight * scale);
+      console.log(`[v2-preview] Loaded: ${fullWidth}x${fullHeight} → preview ${pw}x${ph}`);
+    } else {
+      previewBytes = fullBytes;
+      console.log(`[v2-preview] Loaded: ${fullWidth}x${fullHeight} (no downscale needed)`);
+    }
   } catch (e: any) {
+    previewBytes = fullBytes;
     const detail = e?.payload ? JSON.stringify(e.payload, null, 2) : e?.message || String(e);
     console.error('[v2-preview] Load failed:', detail);
   }
@@ -97,6 +109,20 @@ function computeProxyScale(): number {
   return PREVIEW_MAX / maxDim;
 }
 
+/** Downscale image bytes via OffscreenCanvas for preview. Returns PNG bytes at proxy resolution. */
+async function downscaleBytes(bytes: Uint8Array, scale: number): Promise<Uint8Array> {
+  const blob = new Blob([bytes]);
+  const bmp = await createImageBitmap(blob);
+  const w = Math.round(bmp.width * scale);
+  const h = Math.round(bmp.height * scale);
+  const oc = new OffscreenCanvas(w, h);
+  const ctx = oc.getContext('2d')!;
+  ctx.drawImage(bmp, 0, 0, w, h);
+  bmp.close();
+  const outBlob = await oc.convertToBlob({ type: 'image/png' });
+  return new Uint8Array(await outBlob.arrayBuffer());
+}
+
 // ─── Process ────────────────────────────────────────────────────────────────
 
 async function processChain(chain) {
@@ -107,8 +133,8 @@ async function processChain(chain) {
 
   const t0 = performance.now();
   try {
-    const proxyScale = computeProxyScale();
-    let pipe = createPipeline(previewBytes, proxyScale);
+    // previewBytes are already downscaled at load time — no proxyScale needed
+    let pipe = createPipeline(previewBytes);
 
     for (const step of chain) {
       const method = snakeToCamel(step.name);
