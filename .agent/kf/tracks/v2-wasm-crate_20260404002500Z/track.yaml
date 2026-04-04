@@ -1,59 +1,68 @@
 id: v2-wasm-crate_20260404002500Z
-title: "V2 WASM component crate — V2-only pipeline, zero V1"
+title: V2 WASM component crate — V2-only pipeline, zero V1
 type: feature
 status: pending
-created: "2026-04-04"
-updated: "2026-04-04"
+created: '2026-04-04'
+updated: '2026-04-04'
 spec:
-  summary: >
-    New crate rasmcore-v2-wasm that implements the WIT pipeline interface
-    using exclusively V2 Graph + create_filter_node() + codecs-v2. Zero V1.
-  context: |
-    The V2 pipeline exists (Graph, Filter, 88 filter structs, codecs-v2) but
+  summary: 'New crate rasmcore-v2-wasm that implements the WIT pipeline interface using exclusively V2 Graph + create_filter_node()
+    + codecs-v2. Zero V1.
+
+    '
+  context: 'The V2 pipeline exists (Graph, Filter, 88 filter structs, codecs-v2) but
+
     has no WASM component delivery path. The only WASM component (rasmcore-image)
+
     uses V1 exclusively. V2 needs its own WASM crate that builds independently.
+
+    '
   acceptance_criteria:
-    - New crate crates/rasmcore-v2-wasm/ with Cargo.toml
-    - Implements WIT pipeline interface (read, node_info, filters, write)
-    - Uses V2 Graph as pipeline state (not V1 NodeGraph)
-    - read() decodes via codecs-v2 to f32 source node
-    - Filters dispatch via create_filter_node() (V2 registry)
-    - write() encodes via codecs-v2 (f32 -> gamma -> quantize -> format)
-    - cargo component build produces valid WASM
-    - brightness +0.5 then -0.5 produces no information loss (f32 precision)
-    - Zero V1 code in execution path
-  out_of_scope: |
-    Auto-generated WIT (hand-written for now). Full 200+ filter coverage.
+  - New crate crates/rasmcore-v2-wasm/ with Cargo.toml
+  - Implements WIT pipeline interface (read, node_info, filters, write)
+  - Uses V2 Graph as pipeline state (not V1 NodeGraph)
+  - read() decodes via codecs-v2 to f32 source node
+  - Filters dispatch via create_filter_node() (V2 registry)
+  - write() encodes via codecs-v2 (f32 -> gamma -> quantize -> format)
+  - cargo component build produces valid WASM
+  - brightness +0.5 then -0.5 produces no information loss (f32 precision)
+  - Zero V1 code in execution path
+  out_of_scope: 'Auto-generated WIT (hand-written for now). Full 200+ filter coverage.
+
     GPU dispatch. Web UI integration.
-  technical_notes: |
-    Start with a minimal WIT interface: read, node_info, brightness, write.
+
+    '
+  technical_notes: 'Start with a minimal WIT interface: read, node_info, brightness, write.
+
     Prove the V2-only path works end-to-end. Then expand filter coverage.
+
     WIT can reuse existing wit/image/ declarations or create wit/v2/.
+
+    '
 plan:
-  - phase: "Crate scaffold"
-    tasks:
-      - text: "Create crates/rasmcore-v2-wasm/ with Cargo.toml (deps on pipeline-v2 + codecs-v2)"
-        done: false
-      - text: "Set up WIT interface (minimal - read, node_info, brightness, write)"
-        done: false
-      - text: "Create src/lib.rs with component export and bindings"
-        done: false
-  - phase: "Core adapter"
-    tasks:
-      - text: "Implement PipelineResource wrapping V2 Graph"
-        done: false
-      - text: "Implement read() via codecs-v2 decode -> V2 source node"
-        done: false
-      - text: "Implement write() via V2 graph.request_full -> codecs-v2 encode"
-        done: false
-      - text: "Implement brightness() via create_filter_node with ParamMap"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "cargo component build -p rasmcore-v2-wasm succeeds"
-        done: false
-      - text: "brightness +0.5 then -0.5 round-trip preserves f32 precision"
-        done: false
-      - text: "Grep confirms zero V1 NodeGraph or ImageNode usage in crate"
-        done: false
+- phase: Crate scaffold
+  tasks:
+  - text: Create crates/rasmcore-v2-wasm/ with Cargo.toml (deps on pipeline-v2 + codecs-v2)
+    done: true
+  - text: Set up WIT interface (minimal - read, node_info, brightness, write)
+    done: true
+  - text: Create src/lib.rs with component export and bindings
+    done: true
+- phase: Core adapter
+  tasks:
+  - text: Implement PipelineResource wrapping V2 Graph
+    done: true
+  - text: Implement read() via codecs-v2 decode -> V2 source node
+    done: true
+  - text: Implement write() via V2 graph.request_full -> codecs-v2 encode
+    done: true
+  - text: Implement brightness() via create_filter_node with ParamMap
+    done: true
+- phase: Verification
+  tasks:
+  - text: cargo component build -p rasmcore-v2-wasm succeeds
+    done: true
+  - text: brightness +0.5 then -0.5 round-trip preserves f32 precision
+    done: true
+  - text: Grep confirms zero V1 NodeGraph or ImageNode usage in crate
+    done: true
 extra: {}
