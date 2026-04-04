@@ -1,20 +1,65 @@
 # rasmcore project Makefile
 # Delegates to subdirectories — no Node.js deps at root.
 
-.PHONY: docs web-ui sdk build-all web-ui-build web-ui-serve web-ui-check
+.PHONY: docs docs-serve docs-dev docs-clean \
+        web-ui web-ui-build web-ui-serve web-ui-check \
+        sdk build-all
+
+# ─── Sentinel files for incremental builds ──────────────────────────────────
+
+DOCS_SITE         := docs/site
+DOCS_NODE_MODULES := $(DOCS_SITE)/node_modules/.package-lock.json
+DOCS_REGISTRY     := /tmp/v2_registry_docs.json
+DOCS_EXAMPLES     := /tmp/docs-examples/reference.png
+DOCS_SDK          := $(DOCS_SITE)/public/sdk/v2/rasmcore-v2-image.js
+DOCS_OUT          := docs/out/index.html
 
 # ─── Docs ────────────────────────────────────────────────────────────────────
 
-## Build documentation site (render examples + Next.js static export)
-docs:
-	cargo run --bin render_examples -p rasmcore-v2-wasm --release 2>/dev/null
-	cargo run --bin dump_registry -p rasmcore-v2-wasm 2>/dev/null > /tmp/v2_registry_docs.json
-	cp -r /tmp/docs-examples/* docs/site/public/assets/examples/ 2>/dev/null || true
-	cd docs/site && npm install --silent && npm run build
+## Install docs deps (only if node_modules is stale)
+$(DOCS_NODE_MODULES): $(DOCS_SITE)/package.json
+	cd $(DOCS_SITE) && npm install --silent
 
-## Start docs dev server
-docs-dev:
-	cd docs/site && npm install --silent && npm run dev
+## Dump registry JSON (only if binary changed)
+$(DOCS_REGISTRY): crates/rasmcore-pipeline-v2/src/registry.rs
+	cargo run --bin dump_registry -p rasmcore-v2-wasm 2>/dev/null > $@
+
+## Render example images (only if binary changed)
+$(DOCS_EXAMPLES): crates/rasmcore-v2-wasm/src/bin/render_examples.rs
+	cargo run --bin render_examples -p rasmcore-v2-wasm --release 2>/dev/null
+
+## Copy SDK for live playground
+$(DOCS_SDK): sdk/typescript/v2-generated/rasmcore-v2-image.js
+	mkdir -p $(DOCS_SITE)/public/sdk/v2
+	cp sdk/typescript/v2-generated/rasmcore-v2-image.js $(DOCS_SITE)/public/sdk/v2/
+	cp sdk/typescript/v2-generated/rasmcore-v2-image.d.ts $(DOCS_SITE)/public/sdk/v2/ 2>/dev/null || true
+	cp sdk/typescript/v2-generated/*.wasm $(DOCS_SITE)/public/sdk/v2/
+	cp -r sdk/typescript/v2-generated/interfaces $(DOCS_SITE)/public/sdk/v2/ 2>/dev/null || true
+
+## Copy example images to public
+.PHONY: docs-copy-examples
+docs-copy-examples: $(DOCS_EXAMPLES)
+	mkdir -p $(DOCS_SITE)/public/assets/examples
+	cp /tmp/docs-examples/*.png $(DOCS_SITE)/public/assets/examples/ 2>/dev/null || true
+
+## Build documentation site (incremental — only rebuilds what changed)
+docs: $(DOCS_NODE_MODULES) $(DOCS_REGISTRY) docs-copy-examples $(DOCS_SDK)
+	cd $(DOCS_SITE) && npm run build
+
+## Build and serve docs site
+docs-serve: docs
+	@echo ""
+	@echo "Serving docs at http://localhost:4000"
+	cd $(DOCS_SITE) && npx serve ../out -l 4000
+
+## Start docs dev server (hot reload, no static export)
+docs-dev: $(DOCS_NODE_MODULES) $(DOCS_REGISTRY) docs-copy-examples $(DOCS_SDK)
+	cd $(DOCS_SITE) && npm run dev
+
+## Clean docs build artifacts
+docs-clean:
+	rm -rf $(DOCS_SITE)/.next $(DOCS_SITE)/node_modules docs/out
+	rm -f $(DOCS_SITE)/next-env.d.ts
 
 # ─── Web UI ──────────────────────────────────────────────────────────────────
 
