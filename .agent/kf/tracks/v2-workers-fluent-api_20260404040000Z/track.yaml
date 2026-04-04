@@ -1,0 +1,68 @@
+id: v2-workers-fluent-api_20260404040000Z
+title: 'V2 workers: use fluent SDK instead of imperative applyFilter'
+type: chore
+status: pending
+created: '2026-04-04'
+updated: '2026-04-04'
+spec:
+  summary: 'Migrate V2 web workers from raw pipe.applyFilter(node, name, serializedParams) to fluent SDK methods like pipe.brightness({amount:
+    0.5}). Eliminates manual binary param serialization.'
+  context: 'The V2 fluent SDK already exists at sdk/typescript/v2-fluent/index.ts with 73 filter methods (e.g. .brightness(),
+    .gaussianBlur()), 12 typed write methods, and proper config interfaces. However, the V2 web workers (v2-pipeline-worker.ts
+    and v2-preview-worker.ts) still use the raw WASM API: pipe.applyFilter(node, name, serializedParams) with manual binary
+    param serialization. The V1 workers use pipe[name](node, config) with config objects — V2 should be at least as clean.'
+  codebase_analysis: 'Key files:
+
+    - sdk/typescript/v2-fluent/index.ts — generated Pipeline class wrapping ImagePipelineV2. Uses Pipeline.open() with require(),
+    needs factory that accepts pre-loaded raw pipeline.
+
+    - web-ui/src/v2-pipeline-worker.ts — full-res worker, uses applyFilter() + serializeParams()
+
+    - web-ui/src/v2-preview-worker.ts — preview worker, same pattern
+
+    - scripts/generate-v2-fluent-sdk.mjs — generates fluent SDK from registry metadata
+
+    - scripts/build-v2-webui.sh — build pipeline, needs to copy fluent SDK to web-ui/sdk/v2/'
+  acceptance_criteria:
+  - V2 workers use fluent SDK Pipeline class, not raw applyFilter()
+  - No manual binary param serialization in workers
+  - 'Filter calls look like pipe.brightness({amount: 0.5}) not pipe.applyFilter(node, ''brightness'', bytes)'
+  - Build script copies fluent SDK so workers can import it
+  - Web UI continues to work — no functional regression
+  out_of_scope: Changing the WIT interface itself. Adding new filters or encoders. Modifying the WASM build process.
+  technical_notes: 'Approach:
+
+    1. Update fluent SDK generator to add Pipeline.fromRaw(rawPipe, data) factory — accepts an already-loaded ImagePipelineV2
+    instance (workers import SDK themselves)
+
+    2. Update V2 workers to import Pipeline class and use pipe[step.name](config) dynamic dispatch — same pattern as V1 workers
+
+    3. Remove manual serializeParams() from workers — fluent SDK handles serialization
+
+    4. Update build script to copy fluent SDK to web-ui accessible path
+
+    5. Workers use pipe.write(format, quality) or typed write methods'
+plan:
+  - phase: SDK Generator Update
+    tasks:
+      - text: Add Pipeline.fromRaw(rawPipe, data) static factory to fluent SDK generator
+        done: false
+      - text: Regenerate fluent SDK with updated generator
+        done: false
+  - phase: Worker Migration
+    tasks:
+      - text: Update build-v2-webui.sh to copy fluent SDK to web-ui accessible path
+        done: false
+      - text: Rewrite v2-pipeline-worker.ts to use fluent Pipeline with dynamic dispatch
+        done: false
+      - text: Rewrite v2-preview-worker.ts with same fluent SDK pattern
+        done: false
+      - text: Remove all serializeParams() code from both workers
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Build V2 WASM + SDK + web UI end-to-end
+        done: false
+      - text: Verify no TypeScript errors in workers
+        done: false
+extra: {}
