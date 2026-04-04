@@ -13,6 +13,9 @@ echo "=== Installing docs dependencies ==="
 cd "$PROJECT_ROOT"
 npm install --no-save @asciidoctor/core 2>/dev/null || true
 
+echo "=== Rendering visual examples ==="
+cargo run --bin render_examples -p rasmcore-v2-wasm --release 2>/dev/null
+
 echo "=== Building docs site ==="
 node "$SCRIPT_DIR/build-docs.mjs"
 

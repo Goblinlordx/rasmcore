@@ -44,6 +44,10 @@ console.log(`Registry: ${filters.length} filters, ${encoders.length} encoders, $
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
+function snakeToCamel(s) {
+  return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+}
+
 function snakeToTitle(s) {
   return s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
@@ -212,6 +216,23 @@ const nav = buildNav(categories, manualSections);
 mkdirSync(join(outDir, 'operations'), { recursive: true });
 mkdirSync(join(outDir, 'codecs'), { recursive: true });
 mkdirSync(join(outDir, 'pages'), { recursive: true });
+mkdirSync(join(outDir, 'assets', 'examples'), { recursive: true });
+
+// ─── Copy rendered example images ──────────────────────────────────────────
+
+const examplesDir = '/tmp/docs-examples';
+const hasExamples = existsSync(examplesDir);
+if (hasExamples) {
+  const { copyFileSync } = await import('fs');
+  for (const file of readdirSync(examplesDir)) {
+    if (file.endsWith('.png')) {
+      copyFileSync(join(examplesDir, file), join(outDir, 'assets', 'examples', file));
+    }
+  }
+  console.log(`Copied example images from ${examplesDir}`);
+} else {
+  console.warn('No example images found — run render_examples first');
+}
 
 // ─── Generate index page ────────────────────────────────────────────────────
 
@@ -246,6 +267,79 @@ indexContent += '</div>';
 
 writeFileSync(join(outDir, 'index.html'), htmlPage('Operations', indexContent, nav));
 
+// ─── Split-view widget HTML ─────────────────────────────────────────────────
+
+function splitView(opName) {
+  const afterFile = `${opName}-after.png`;
+  const afterPath = join(outDir, 'assets', 'examples', afterFile);
+  if (!existsSync(afterPath)) return '';
+
+  return `<div class="split-view" id="split-${opName}">
+  <div class="split-container">
+    <img class="split-before" src="/assets/examples/reference.png" alt="Before">
+    <img class="split-after" src="/assets/examples/${afterFile}" alt="After" style="clip-path: inset(0 50% 0 0);">
+    <div class="split-divider" style="left: 50%;">
+      <div class="split-handle"></div>
+    </div>
+    <div class="split-labels">
+      <span class="split-label-before">Before</span>
+      <span class="split-label-after">After</span>
+    </div>
+  </div>
+</div>
+<script>
+(function() {
+  const container = document.querySelector('#split-${opName} .split-container');
+  const divider = container.querySelector('.split-divider');
+  const after = container.querySelector('.split-after');
+  let dragging = false;
+  function update(e) {
+    const rect = container.getBoundingClientRect();
+    const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const pct = (1 - x) * 100;
+    after.style.clipPath = 'inset(0 ' + pct + '% 0 0)';
+    divider.style.left = (x * 100) + '%';
+  }
+  divider.addEventListener('mousedown', () => dragging = true);
+  document.addEventListener('mousemove', (e) => { if (dragging) update(e); });
+  document.addEventListener('mouseup', () => dragging = false);
+  container.addEventListener('click', update);
+})();
+</script>`;
+}
+
+// ─── Auto-generated code example ────────────────────────────────────────────
+
+function codeExample(op) {
+  const method = snakeToCamel(op.name);
+  if (!op.params || op.params.length === 0) {
+    return `<h2>Usage</h2>
+<pre><code class="language-typescript">Pipeline.open(imageBytes)
+  .${method}()
+  .writePng();</code></pre>`;
+  }
+
+  const args = op.params.map(p => {
+    const camel = snakeToCamel(p.name);
+    // Use showcase values, not defaults (defaults are often 0/identity)
+    let val = p.default != null && Math.abs(p.default) > 1e-6 ? p.default : null;
+    if (val == null) {
+      if (p.min != null && p.max != null) val = p.min + (p.max - p.min) * 0.3;
+      else val = 0.5;
+    }
+    if (p.type === 'bool') return `  ${camel}: true`;
+    if (Number.isInteger(val) || p.type === 'u32' || p.type === 'i32') return `  ${camel}: ${Math.round(val)}`;
+    return `  ${camel}: ${Number(val.toFixed(2))}`;
+  }).join(',\n');
+
+  return `<h2>Usage</h2>
+<pre><code class="language-typescript">Pipeline.open(imageBytes)
+  .${method}({
+${args}
+  })
+  .writePng();</code></pre>`;
+}
+
 // ─── Generate per-operation pages ───────────────────────────────────────────
 
 for (const f of filters) {
@@ -254,11 +348,17 @@ for (const f of filters) {
 
   let content = '';
 
+  // Split-view before/after (if example exists)
+  content += splitView(f.name);
+
   // Render .adoc content if doc_path is set
   const adocContent = readAdocFile(f.docPath);
   if (adocContent) {
     content += `<div class="op-description">${renderAdoc(adocContent)}</div>\n`;
   }
+
+  // Auto-generated code example
+  content += codeExample(f);
 
   // Params table (always rendered from registry)
   content += '<h2>Parameters</h2>\n';
@@ -537,6 +637,93 @@ pre code {
 .admonitionblock .title {
   font-weight: 700;
   color: var(--heading);
+}
+
+/* Split-view before/after widget */
+.split-view {
+  margin: 1.5rem 0;
+}
+
+.split-container {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  cursor: col-resize;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.split-before, .split-after {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.split-after {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.split-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--link);
+  transform: translateX(-50%);
+  z-index: 2;
+  pointer-events: auto;
+}
+
+.split-handle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 28px;
+  height: 28px;
+  background: var(--link);
+  border-radius: 50%;
+  border: 2px solid var(--bg);
+}
+
+.split-handle::before, .split-handle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 6px;
+  height: 2px;
+  background: var(--bg);
+  transform: translateY(-50%);
+}
+
+.split-handle::before { left: 4px; }
+.split-handle::after { right: 4px; }
+
+.split-labels {
+  position: absolute;
+  bottom: 8px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 12px;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.split-label-before, .split-label-after {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 2px 8px;
+  border-radius: 3px;
 }
 `);
 
