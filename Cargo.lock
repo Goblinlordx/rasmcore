@@ -3104,6 +3104,7 @@ dependencies = [
  "blake3",
  "criterion",
  "inventory",
+ "rasmcore-macros",
  "serde",
 ]
 
