@@ -2858,6 +2858,7 @@ dependencies = [
  "png 0.17.16",
  "rasmcore-fits",
  "rasmcore-image",
+ "rasmcore-macros",
  "rasmcore-pipeline-v2",
 ]
 
