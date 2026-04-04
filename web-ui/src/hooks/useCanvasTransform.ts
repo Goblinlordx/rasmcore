@@ -80,6 +80,11 @@ export function useCanvasTransform(
   const isPanning = useRef(false);
   const lastMouse = useRef({ x: 0, y: 0 });
 
+  // Touch state for pinch-to-zoom
+  const lastTouchDist = useRef(0);
+  const lastTouchMid = useRef({ x: 0, y: 0 });
+  const touchCount = useRef(0);
+
   const resetToFit = useCallback(() => {
     setState({ zoom: 0, panX: 0, panY: 0 });
   }, []);
@@ -153,6 +158,107 @@ export function useCanvasTransform(
     resetToFit();
   }, [resetToFit]);
 
+  // ─── Touch handlers (pinch-to-zoom + single-finger pan) ──────────────
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    const touches = e.touches;
+    touchCount.current = touches.length;
+
+    if (touches.length === 2) {
+      // Pinch start — record initial distance and midpoint
+      e.preventDefault();
+      const dx = touches[1].clientX - touches[0].clientX;
+      const dy = touches[1].clientY - touches[0].clientY;
+      lastTouchDist.current = Math.hypot(dx, dy);
+      lastTouchMid.current = {
+        x: (touches[0].clientX + touches[1].clientX) / 2,
+        y: (touches[0].clientY + touches[1].clientY) / 2,
+      };
+    } else if (touches.length === 1) {
+      // Single finger pan start
+      isPanning.current = true;
+      lastMouse.current = { x: touches[0].clientX, y: touches[0].clientY };
+    }
+  }, []);
+
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent) => {
+      const touches = e.touches;
+
+      if (touches.length === 2 && lastTouchDist.current > 0) {
+        // Pinch zoom
+        e.preventDefault();
+        const dx = touches[1].clientX - touches[0].clientX;
+        const dy = touches[1].clientY - touches[0].clientY;
+        const dist = Math.hypot(dx, dy);
+        const midX = (touches[0].clientX + touches[1].clientX) / 2;
+        const midY = (touches[0].clientY + touches[1].clientY) / 2;
+        const scale = dist / lastTouchDist.current;
+
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        const cursorX = midX - rect.left;
+        const cursorY = midY - rect.top;
+
+        // Also track pan from midpoint movement
+        const panDx = midX - lastTouchMid.current.x;
+        const panDy = midY - lastTouchMid.current.y;
+
+        lastTouchDist.current = dist;
+        lastTouchMid.current = { x: midX, y: midY };
+
+        setState((prev) => {
+          const oldZoom = prev.zoom <= 0 ? fit : prev.zoom;
+          const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, oldZoom * scale));
+
+          // Zoom centered on pinch midpoint
+          const scaledW = imageW * oldZoom;
+          const scaledH = imageH * oldZoom;
+          const offsetX = (container.width - scaledW) / 2 + prev.panX * oldZoom;
+          const offsetY = (container.height - scaledH) / 2 + prev.panY * oldZoom;
+
+          const imgX = (cursorX - offsetX) / oldZoom;
+          const imgY = (cursorY - offsetY) / oldZoom;
+
+          const newScaledW = imageW * newZoom;
+          const newScaledH = imageH * newZoom;
+          const newBaseOffsetX = (container.width - newScaledW) / 2;
+          const newBaseOffsetY = (container.height - newScaledH) / 2;
+
+          const newPanX = (cursorX + panDx - newBaseOffsetX - imgX * newZoom) / newZoom;
+          const newPanY = (cursorY + panDy - newBaseOffsetY - imgY * newZoom) / newZoom;
+
+          return { zoom: newZoom, panX: newPanX, panY: newPanY };
+        });
+      } else if (touches.length === 1 && isPanning.current) {
+        // Single finger pan
+        const dx = touches[0].clientX - lastMouse.current.x;
+        const dy = touches[0].clientY - lastMouse.current.y;
+        lastMouse.current = { x: touches[0].clientX, y: touches[0].clientY };
+
+        setState((prev) => {
+          const z = prev.zoom <= 0 ? fit : prev.zoom;
+          return { ...prev, panX: prev.panX + dx / z, panY: prev.panY + dy / z };
+        });
+      }
+    },
+    [fit, container.width, container.height, imageW, imageH],
+  );
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    const remaining = e.touches.length;
+    if (remaining < 2) {
+      lastTouchDist.current = 0;
+    }
+    if (remaining === 0) {
+      isPanning.current = false;
+    } else if (remaining === 1) {
+      // Transition from pinch to single-finger pan
+      isPanning.current = true;
+      lastMouse.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+    touchCount.current = remaining;
+  }, []);
+
   return {
     state: { ...state, zoom: effectiveZoom },
     fitZoom: fit,
@@ -164,6 +270,9 @@ export function useCanvasTransform(
       onMouseUp: handleMouseUp,
       onMouseLeave: handleMouseUp,
       onDoubleClick: handleDoubleClick,
+      onTouchStart: handleTouchStart,
+      onTouchMove: handleTouchMove,
+      onTouchEnd: handleTouchEnd,
     },
   };
 }
