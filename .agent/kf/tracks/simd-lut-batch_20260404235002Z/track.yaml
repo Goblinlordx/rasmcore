@@ -1,0 +1,107 @@
+id: simd-lut-batch_20260404235002Z
+title: "Batch-vectorized F32Lut apply for fused point-op chains"
+type: chore
+status: pending
+created: 2026-04-04
+updated: 2026-04-04
+spec:
+  summary: |
+    Add F32Lut::apply_pixel() for [f32; 4] per-pixel application and
+    apply_batch() for processing 4 pixels at once. Wire into
+    FusedPointOpNode::compute() for ~4x throughput on the fused CPU path.
+  context: |
+    The cpu-render-audit track replaced recursive PointOpExpr::evaluate()
+    with F32Lut (4096-entry f32 LUT + linear interpolation). This gave a
+    large speedup per-call, but the compute() loop still applies the LUT
+    one channel at a time (3 scalar lookups per pixel).
+
+    The LUT lookup itself (index + lerp) is hard to vectorize because each
+    channel has a different table index. But we can process 4 PIXELS at once
+    by interleaving: gather 4 R values, 4 G values, 4 B values, apply LUT
+    to each batch of 4, scatter results back. This gives ~4x throughput
+    from instruction-level parallelism even without SIMD gather instructions.
+
+    Additionally, structuring the per-pixel apply as [f32; 4] array math
+    helps LLVM vectorize the index computation and interpolation arithmetic.
+  codebase_analysis: |
+    crates/rasmcore-pipeline-v2/src/fusion.rs:
+
+    F32Lut struct (lines ~196-245):
+    - table: Vec<f32> (4097 entries for [0.0, 1.0])
+    - inv_step: f32 (precomputed = 4096.0)
+    - apply(&self, v: f32) -> f32: scalar lookup + lerp
+
+    FusedPointOpNode::compute() (lines ~523-527):
+      for pixel in output.chunks_exact_mut(4) {
+          pixel[0] = lut.apply(pixel[0]);
+          pixel[1] = lut.apply(pixel[1]);
+          pixel[2] = lut.apply(pixel[2]);
+      }
+
+    This is the hottest CPU path — every fused point-op chain goes through
+    this loop. The LUT lookup is: t = v * 4096.0, idx = t as u32,
+    frac = t - idx, result = table[idx] + frac * (table[idx+1] - table[idx]).
+
+    The index computation (multiply + truncate) and lerp (subtract + multiply
+    + add) are all f32 arithmetic that can be vectorized across 4 channels
+    or 4 pixels.
+
+    HIGH CONFLICT: pipeline-perf-tracing track also modifies fusion.rs.
+    This track should merge after perf-tracing to preserve instrumentation.
+  acceptance_criteria:
+    - F32Lut::apply_pixel([f32; 4]) applies LUT to RGB, preserves alpha
+    - F32Lut::apply_batch() processes 4+ pixels per iteration
+    - FusedPointOpNode::compute() uses batch apply path
+    - Fused-chain benchmark shows measurable speedup vs per-channel apply
+    - Existing fusion tests pass unchanged
+    - WASM component build clean
+  out_of_scope: |
+    - Explicit SIMD gather intrinsics (auto-vec only)
+    - Clut3D SIMD (3D LUT requires different approach)
+    - Point-op filter SIMD (separate track)
+    - Spatial filter SIMD (separate track)
+  technical_notes: |
+    Two levels of batching:
+
+    1. Per-pixel: apply_pixel([f32; 4]) -> [f32; 4]
+       Processes one pixel (4 channels). The index computation for R, G, B
+       can be done in parallel:
+         let t = [v[0] * inv_step, v[1] * inv_step, v[2] * inv_step, 0.0];
+         let idx = [t[0] as u32, t[1] as u32, t[2] as u32, 0];
+         let frac = [t[0] - idx[0] as f32, ...];
+       This gives LLVM 3 independent multiply-truncate-lerp chains.
+
+    2. Multi-pixel: process 4 pixels (16 floats) per iteration
+       Unroll the outer loop to process chunks_exact_mut(16):
+         let p0 = &mut output[i..i+4];
+         let p1 = &mut output[i+4..i+8];
+         let p2 = &mut output[i+8..i+12];
+         let p3 = &mut output[i+12..i+16];
+       Apply LUT to all 12 RGB channels. This exposes 12 independent
+       lookup operations, maximizing ILP on superscalar CPUs.
+
+    The remainder (pixels % 4 != 0) falls back to per-pixel apply.
+plan:
+  - phase: "LUT Vectorization"
+    tasks:
+      - text: "Add F32Lut::apply_pixel(pixel: &mut [f32; 4]) using [f32; 4] index/lerp pattern"
+        done: false
+      - text: "Add F32Lut::apply_batch() processing 4 pixels (16 floats) per iteration"
+        done: false
+      - text: "Wire apply_batch into FusedPointOpNode::compute() with remainder handling"
+        done: false
+  - phase: "Benchmarking"
+    tasks:
+      - text: "Add benchmark comparing per-channel vs per-pixel vs batch LUT apply at 4K"
+        done: false
+      - text: "Verify batch path shows measurable speedup in fused_chain and fused_complex benchmarks"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Run full rasmcore-image lib test suite — verify zero regressions"
+        done: false
+      - text: "Verify LUT interpolation accuracy is unchanged (same <0.025% error)"
+        done: false
+      - text: "WASM component build clean"
+        done: false
+extra: {}

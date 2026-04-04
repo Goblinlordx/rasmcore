@@ -1,0 +1,6 @@
+title: SIMD auto-vectorizable [f32; 4] patterns for V2 point-op filters
+status: pending
+type: chore
+approved: false
+created: '2026-04-04'
+updated: '2026-04-04'

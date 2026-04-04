@@ -1,0 +1,105 @@
+id: simd-spatial-accum_20260404235001Z
+title: "SIMD f32x4 accumulation for V2 spatial filter inner loops"
+type: chore
+status: pending
+created: 2026-04-04
+updated: 2026-04-04
+spec:
+  summary: |
+    Replace scalar sum[c] += kw * input[idx+c] accumulation in gaussian blur,
+    box blur, convolve, motion blur, and bilateral with [f32; 4] array
+    patterns for auto-vectorization on all targets.
+  context: |
+    V2 spatial filters use a common inner-loop pattern for neighborhood
+    accumulation: iterate kernel taps, multiply-accumulate into sum[0..4].
+    Currently this is a scalar for c in 0..4 loop inside the kernel loop.
+    Restructuring to use [f32; 4] array multiply-accumulate gives LLVM a
+    clear f32x4 vectorization target — the 4-channel accumulation becomes
+    a single f32x4 FMA instruction per kernel tap.
+
+    The cpu-render-audit track already split gaussian blur into boundary
+    and interior paths. This track builds on that by vectorizing the
+    accumulation in both paths.
+  codebase_analysis: |
+    All in crates/rasmcore-pipeline-v2/src/filters/spatial.rs:
+
+    GaussianBlur — H pass boundary (lines 75-101), H pass interior (107-119),
+      V pass boundary (127-156), V pass interior (162-177)
+      Pattern: sum[c] += kw * input[idx + c] for c in 0..4
+      Already split into boundary/interior by cpu-render-audit track.
+
+    BoxBlur — H pass (212-227), V pass (231-246)
+      Pattern: sum[c] += input[idx + c] for c in 0..4
+
+    Convolve — generic 2D kernel (359-378)
+      Pattern: sum[c] += k * input[idx + c] for c in 0..4
+
+    MotionBlur — directional accumulation (478-495)
+      Pattern: sum[c] += input[idx + c] for c in 0..4
+
+    Bilateral — weighted accumulation (409-446)
+      Pattern: sum[c] += weight * input[idx + c] for c in 0..3
+
+    Target pattern for all:
+      let src: [f32; 4] = input[idx..idx+4].try_into().unwrap();
+      sum[0] += kw * src[0];
+      sum[1] += kw * src[1];
+      sum[2] += kw * src[2];
+      sum[3] += kw * src[3];
+    This compiles to f32x4 load + f32x4 fma on all targets.
+  acceptance_criteria:
+    - All spatial filter accumulation loops use [f32; 4] multiply-accumulate pattern
+    - Existing spatial filter tests pass unchanged
+    - GaussianBlur benchmark shows measurable speedup vs pre-SIMD baseline
+    - No explicit std::arch intrinsics (auto-vectorization only)
+    - WASM component build clean
+  out_of_scope: |
+    - Median filter (per-channel sort, not vectorizable)
+    - Point-op filters (separate track)
+    - Explicit SIMD intrinsics (auto-vec only)
+    - Tiled/cache-aware blur (future optimization)
+  technical_notes: |
+    The accumulation pattern is identical across all spatial filters.
+    Consider extracting a helper:
+
+      #[inline(always)]
+      fn accum4(sum: &mut [f32; 4], src: &[f32], weight: f32) {
+          sum[0] += weight * src[0];
+          sum[1] += weight * src[1];
+          sum[2] += weight * src[2];
+          sum[3] += weight * src[3];
+      }
+
+    This gives LLVM maximum visibility for vectorization and reduces
+    code duplication across 6+ filter implementations.
+
+    For bilateral filter, the weight changes per pixel (data-dependent),
+    but the accumulate-with-weight pattern is still f32x4-friendly.
+plan:
+  - phase: "Core Blur Filters"
+    tasks:
+      - text: "Add accum4 helper function for [f32; 4] multiply-accumulate"
+        done: false
+      - text: "Restructure GaussianBlur H+V interior loops to use accum4"
+        done: false
+      - text: "Restructure GaussianBlur H+V boundary loops to use accum4"
+        done: false
+      - text: "Restructure BoxBlur H+V loops to use accum4"
+        done: false
+  - phase: "Other Spatial Filters"
+    tasks:
+      - text: "Restructure Convolve generic 2D kernel loop to use accum4"
+        done: false
+      - text: "Restructure MotionBlur directional accumulation to use accum4"
+        done: false
+      - text: "Restructure Bilateral weighted accumulation to use accum4"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Run full rasmcore-image lib test suite — verify zero regressions"
+        done: false
+      - text: "Run pipeline-v2 benchmarks — GaussianBlur shows speedup"
+        done: false
+      - text: "WASM component build clean"
+        done: false
+extra: {}

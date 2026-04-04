@@ -68,6 +68,12 @@ pipeline-perf-tracing_20260404050900Z/research-webgpu-display_20260404154202Z:
   note: "Both modify v2-preview-worker.ts and GPU dispatch"
   added: "2026-04-04"
 
+# SIMD LUT batch conflicts with perf-tracing — both modify fusion.rs
+pipeline-perf-tracing_20260404050900Z/simd-lut-batch_20260404235002Z:
+  risk: high
+  note: "Both modify fusion.rs — perf-tracing adds instrumentation, LUT batch changes compute loop"
+  added: "2026-04-04"
+
 # WebGPU display surface implementation conflicts
 canvas-display-p3_20260404154201Z/webgpu-display-surface_20260404160855Z:
   risk: high
