@@ -1,118 +1,148 @@
 id: webui-preview-overlay_20260404074501Z
-title: 'Web UI: live 1080p preview overlay during editing'
+title: 'Web UI: proxy editing mode with background cache warming'
 type: feature
 status: pending
 created: '2026-04-04'
 updated: '2026-04-04'
 spec:
   summary: |
-    During parameter editing, render a 1080p (or smaller, fit to ratio) preview
-    and display it as an overlay on the main canvas in real time. On apply,
-    materialize the full-res result.
+    Three-tier rendering: interactive proxy (~1080p) for instant feedback,
+    background full-res worker silently warming the layer cache, near-instant
+    export when user hits download.
   context: |
-    Currently the preview worker downscales to 400px max and renders into a tiny
-    thumbnail canvas in the right panel effect stack. This is barely useful for
-    judging the effect. The full-res worker takes 731ms+ per update.
+    Currently the preview worker downscales to 400px and renders into a tiny
+    sidebar thumbnail. The full-res worker takes 731ms+ per update. The user
+    sees either a useless tiny preview or waits for full-res on every change.
 
-    The user wants: while adjusting parameters, a 1080p preview renders in real
-    time and is displayed OVER the main canvas at full viewport size. The user
-    sees the effect at reasonable quality instantly. When they finish editing and
-    apply, the full-res pipeline runs once and the result materializes.
+    Professional editors (Lightroom, Capture One, DaVinci) use proxy mode: all
+    interactive editing happens on a lower-res proxy, full-res is computed in
+    the background, and export is near-instant because the cache is warm.
 
-    This is how professional editors work — Lightroom shows a proxy preview
-    during slider interaction and renders full-res on release/commit.
+    The desired architecture:
+    1. Interactive proxy (~1080p) — displayed in the main viewport. All slider
+       drags, filter adds, reorders render at proxy resolution. Instant feedback.
+    2. Background full-res warm — a separate worker silently runs the same chain
+       at full resolution, populating the layer cache. User never waits for this.
+    3. Export/download — cache is already warm from step 2. Only the last changed
+       node needs to compute. Near-instant.
+
+    Preview should also trigger on ALL chain changes (add/remove/reorder nodes),
+    not just param changes. Currently preview only fires on param change with
+    600ms debounce, so adding a no-param filter like invert shows nothing.
   codebase_analysis: |
-    Current preview flow:
-    - usePreviewWorker sends chain to v2-preview-worker.ts
-    - Worker downscales to PREVIEW_MAX=400px, processes, returns PNG
-    - PNG drawn to previewCanvasRef in EffectStack sidebar (tiny thumbnail)
-    - 600ms debounce before preview triggers
+    Preview worker (v2-preview-worker.ts):
+    - PREVIEW_MAX=400 (too small for viewport display)
+    - Creates fresh Pipeline per processChain() call
+    - No cache between runs
+    - setProxyScale() exists in V1 preview worker but not wired in V2
 
-    Current full-res flow:
-    - useWorker sends chain to v2-pipeline-worker.ts
-    - Worker processes at full resolution, returns PNG
-    - PNG drawn to main previewCanvasRef (the viewport canvas)
+    Full-res worker (v2-pipeline-worker.ts):
+    - Processes at full resolution
+    - Creates fresh Pipeline per call
+    - No layer cache (V2 cache track pending)
+    - Result drawn to main viewport canvas
 
-    Canvas layers available:
-    - previewCanvasRef (main display, full-res results)
-    - originalCanvasRef (original image backup)
-    - preview.previewCanvasRef (sidebar thumbnail)
+    Hooks:
+    - usePreviewWorker: 600ms debounce, single-slot queue (latest wins)
+    - useWorker: queue-based, timeout after 15s
+    - Preview triggers only on processChain() which fires on param changes
+    - Chain structure changes (add/remove node) trigger full-res, not preview
 
-    For overlay: need a third canvas (or reuse preview canvas) positioned
-    absolutely over the main canvas, sized to fill viewport, showing the
-    1080p preview scaled up. When full-res completes, hide overlay and show
-    full-res result underneath.
+    V1 precedent: preview-worker.ts had setProxyScale(scale) which scaled
+    spatial params (blur radius, etc.) proportionally. V2 pipeline-v2 does NOT
+    have proxy scale support yet.
   acceptance_criteria:
-    - Preview renders at up to 1080p (fit to image aspect ratio, max dimension 1920px)
-    - Preview result displays as overlay on main canvas at viewport size during editing
-    - Preview updates in real time as user drags sliders (with appropriate debounce)
-    - Overlay has subtle indicator that it is preview quality (e.g. thin border or label)
-    - On apply/commit, full-res pipeline runs and overlay is replaced with full-res result
-    - Smooth transition from preview overlay to full-res (no flicker)
-    - If full-res is already cached/fast, skip overlay and show full-res directly
+    - Proxy mode renders at up to 1080p (max dimension 1920, fit to aspect ratio)
+    - Main viewport shows proxy result during all editing (slider drags, node changes)
+    - Preview triggers on ALL chain changes (params, add, remove, reorder)
+    - Preview debounce reduced to 100-150ms for responsive feel
+    - Background full-res worker runs silently after each proxy render completes
+    - Background results populate layer cache (when v2-layer-cache track is done)
+    - On export/download, only uncached nodes compute — near-instant if cache is warm
+    - Subtle viewport indicator when showing proxy vs full-res (e.g. status bar label)
+    - If proxy render takes >200ms, adaptively reduce resolution
   out_of_scope: |
-    Tiled rendering. GPU-accelerated preview. Progressive refinement.
-    Viewport pan/zoom (separate track).
+    Layer cache implementation (separate track v2-layer-cache).
+    GPU dispatch (separate track gpu-dispatch-wiring).
+    Viewport pan/zoom (separate track webui-viewport-panzoom).
+    Tiled rendering. Progressive refinement.
   technical_notes: |
-    Architecture:
-    1. Change PREVIEW_MAX from 400 to 1920 (or make it dynamic based on viewport)
-    2. Add an overlay canvas element positioned absolutely over the main canvas
-       - Same CSS dimensions as main canvas (fills viewport)
-       - Higher z-index, semi-transparent or with a label
-    3. Preview flow:
-       - On slider change: send chain to preview worker (debounced ~150ms)
-       - Preview worker processes at 1080p, returns PNG
-       - PNG drawn to overlay canvas, scaled to fill viewport
-       - Overlay becomes visible
-    4. Apply flow:
-       - User clicks Apply or stops editing (timeout)
-       - Full-res chain sent to main worker
-       - On full-res result: draw to main canvas, hide overlay
-    5. Transition: overlay opacity fades out as full-res appears, or instant swap
+    Architecture — three workers:
+    1. Proxy worker (upgraded preview worker):
+       - PREVIEW_MAX = 1920 (or viewport-adaptive)
+       - Renders to main viewport canvas (not sidebar thumbnail)
+       - Debounce 100-150ms, single-slot queue (latest params win)
+       - setProxyScale(scale) for spatial param scaling (blur radius etc.)
+    2. Background warm worker (new or reuse full-res worker):
+       - Triggered after proxy completes (or on idle timeout)
+       - Runs same chain at full resolution
+       - Result stored in layer cache but NOT displayed
+       - Lower priority than proxy — can be cancelled if user changes params
+    3. Export worker (full-res worker):
+       - On download click, runs final chain
+       - Hits layer cache for all nodes except most-recently-changed
+       - Returns encoded output (PNG, JPEG, etc.)
 
-    The preview worker already does the downscale+process+return pattern.
-    Main changes are: (a) increase preview resolution, (b) display on overlay
-    instead of sidebar thumbnail, (c) manage overlay visibility lifecycle.
+    Implementation phases:
+    Phase 1: Upgrade proxy to 1080p and display in viewport (no background warm)
+    Phase 2: Add background warm worker feeding layer cache
+    Phase 3: Wire export to use warm cache
 
-    Consider: if the preview worker takes >200ms at 1080p, the overlay may lag.
-    Benchmark at 1080p to determine if this is viable. If 1080p is too slow,
-    fall back to 720p (max 1280px). The preview resolution should be dynamic
-    based on pipeline complexity and timing feedback.
+    Proxy scale for spatial params: when the proxy is 0.5x the original,
+    a blur radius of 10px should become 5px on the proxy. The V2 pipeline
+    needs a setProxyScale(scale) method that scales params with hint=rc.pixels.
+    This already exists conceptually from V1 preview-worker.ts.
 plan:
-  - phase: Preview Resolution Upgrade
+  - phase: Proxy Viewport Display
     tasks:
-      - text: Change preview worker PREVIEW_MAX from 400 to 1920 (or viewport-adaptive)
+      - text: Increase PREVIEW_MAX from 400 to 1920 in v2-preview-worker.ts
         done: false
-      - text: Benchmark preview at 1080p with 7-node chain to verify real-time viability
+      - text: Preview worker renders to main viewport canvas (not sidebar thumbnail)
         done: false
-      - text: If >200ms, add adaptive resolution (drop to 1280 or 960 based on timing)
+      - text: Trigger preview on ALL chain changes (params, add, remove, reorder)
         done: false
-  - phase: Overlay Canvas
+      - text: Reduce debounce from 600ms to 100-150ms
+        done: false
+      - text: Add proxy quality indicator in status bar
+        done: false
+      - text: Benchmark proxy at 1080p — add adaptive resolution if >200ms
+        done: false
+  - phase: Proxy Scale for Spatial Params
     tasks:
-      - text: Add overlay canvas element positioned absolutely over main canvas
+      - text: Add setProxyScale(scale) to V2 pipeline (graph or pipeline resource)
         done: false
-      - text: Overlay canvas fills same viewport area as main canvas
+      - text: Filters with hint=rc.pixels auto-scale params by proxy factor
         done: false
-      - text: Draw preview result to overlay canvas scaled to viewport size
+      - text: Preview worker computes and sets proxy scale based on downscale ratio
         done: false
-      - text: Add subtle preview quality indicator (label or thin colored border)
-        done: false
-  - phase: Lifecycle Management
+  - phase: Background Cache Warming
     tasks:
-      - text: On slider change - show overlay with preview result, debounced 100-150ms
+      - text: Add background warm worker (separate Web Worker or reuse full-res with low priority)
         done: false
-      - text: On apply/commit - send full-res chain, hide overlay when result arrives
+      - text: After proxy render completes, queue full-res chain to warm worker
         done: false
-      - text: Smooth transition - overlay fades or instant-swaps to full-res
+      - text: Warm worker populates layer cache (requires v2-layer-cache track)
         done: false
-      - text: If full-res completes faster than preview threshold, skip overlay entirely
+      - text: Cancel warm worker if user changes params before it completes
+        done: false
+      - text: Do not display warm worker output (cache only)
+        done: false
+  - phase: Export Fast Path
+    tasks:
+      - text: Export path checks layer cache before computing each node
+        done: false
+      - text: Only uncached nodes compute on export — rest are cache hits
+        done: false
+      - text: Status indicator shows cache warm progress if export before warm completes
         done: false
   - phase: Verification
     tasks:
-      - text: Test with slider rapid-fire (many changes in quick succession)
+      - text: Test rapid slider interaction — proxy updates smoothly at 1080p
         done: false
-      - text: Verify no flicker during preview-to-fullres transition
+      - text: Test export after editing — verify near-instant from warm cache
         done: false
-      - text: Test with large images (8K) where full-res is slow
+      - text: Test export during active editing — verify graceful fallback
+        done: false
+      - text: Test with 8K image — proxy is fast, background warm takes longer but completes
         done: false
 extra: {}
