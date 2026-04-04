@@ -40,7 +40,8 @@ fn clamp_coord(v: i32, size: usize) -> usize {
 /// Auto-level — linear stretch from actual min to actual max.
 ///
 /// Finds per-channel min/max across all pixels and linearly maps to [0, 1].
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "auto_level", category = "enhancement")]
 pub struct AutoLevel;
 
 impl Filter for AutoLevel {
@@ -72,7 +73,8 @@ impl Filter for AutoLevel {
 /// Histogram equalization — maximizes contrast via CDF remapping.
 ///
 /// Quantizes to 256 bins for CDF computation, then remaps.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "equalize", category = "enhancement")]
 pub struct Equalize;
 
 impl Filter for Equalize {
@@ -112,19 +114,13 @@ impl Filter for Equalize {
 }
 
 /// Normalize — linear contrast stretch with 2% black / 1% white clipping.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "normalize", category = "enhancement")]
 pub struct Normalize {
+    #[param(min = 0.0, max = 0.5, default = 0.02)]
     pub black_clip: f32,
+    #[param(min = 0.0, max = 0.5, default = 0.01)]
     pub white_clip: f32,
-}
-
-impl Default for Normalize {
-    fn default() -> Self {
-        Self {
-            black_clip: 0.02,
-            white_clip: 0.01,
-        }
-    }
 }
 
 impl Filter for Normalize {
@@ -186,8 +182,10 @@ impl Filter for Normalize {
 /// Low-pass frequency layer — Gaussian blur.
 ///
 /// Extracts large-scale color/tone structure.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "frequency_low", category = "enhancement")]
 pub struct FrequencyLow {
+    #[param(min = 0.0, max = 100.0, default = 3.0)]
     pub sigma: f32,
 }
 
@@ -202,8 +200,10 @@ impl Filter for FrequencyLow {
 ///
 /// `output = (input - blur(input)) + 0.5`
 /// The 0.5 offset provides a neutral midpoint for compositing.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "frequency_high", category = "enhancement")]
 pub struct FrequencyHigh {
+    #[param(min = 0.0, max = 100.0, default = 3.0)]
     pub sigma: f32,
 }
 
@@ -232,9 +232,12 @@ impl Filter for FrequencyHigh {
 /// Large-radius unsharp mask weighted by midtone curve:
 /// `w(l) = 4 * l * (1 - l)` where l is normalized luminance.
 /// `output = input + amount * (input - blur) * w(luminance)`
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "clarity", category = "enhancement")]
 pub struct Clarity {
+    #[param(min = -1.0, max = 1.0, default = 0.0)]
     pub amount: f32,
+    #[param(min = 0.0, max = 100.0, default = 20.0)]
     pub radius: f32,
 }
 
@@ -268,10 +271,14 @@ impl Filter for Clarity {
 /// 2. Atmospheric light: brightest 0.1% of dark channel
 /// 3. Transmission: `t(x) = 1 - omega * dark(I/A)`
 /// 4. Recover: `J = (I - A) / max(t, t_min) + A`
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "dehaze", category = "enhancement")]
 pub struct Dehaze {
+    #[param(min = 1, max = 50, default = 7)]
     pub patch_radius: u32,
+    #[param(min = 0.0, max = 1.0, default = 0.95)]
     pub omega: f32,
+    #[param(min = 0.0, max = 1.0, default = 0.1)]
     pub t_min: f32,
 }
 
@@ -369,9 +376,12 @@ impl Filter for Dehaze {
 /// CLAHE — local adaptive histogram equalization on luminance.
 ///
 /// Operates on luminance channel with bilinear interpolation between tiles.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "clahe", category = "enhancement")]
 pub struct Clahe {
+    #[param(min = 1, max = 32, default = 8)]
     pub tile_grid: u32,
+    #[param(min = 0.0, max = 100.0, default = 2.0)]
     pub clip_limit: f32,
 }
 
@@ -492,10 +502,14 @@ impl Filter for Clahe {
 /// Non-Local Means denoising (Buades et al. 2005).
 ///
 /// Compares patches in search window, weights by similarity.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "nlm_denoise", category = "enhancement")]
 pub struct NlmDenoise {
+    #[param(min = 0.0, max = 1.0, default = 0.1)]
     pub h: f32,
+    #[param(min = 1, max = 10, default = 3)]
     pub patch_radius: u32,
+    #[param(min = 1, max = 30, default = 10)]
     pub search_radius: u32,
 }
 
@@ -571,9 +585,12 @@ impl Filter for NlmDenoise {
 ///
 /// `sigma < 1.0`: enhance fine detail (compress large gradients).
 /// `sigma > 1.0`: suppress fine detail (smoothing).
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "pyramid_detail_remap", category = "enhancement")]
 pub struct PyramidDetailRemap {
+    #[param(min = 0.0, max = 5.0, default = 0.5)]
     pub sigma: f32,
+    #[param(min = 0, max = 10, default = 0)]
     pub levels: u32,
 }
 
@@ -677,8 +694,10 @@ impl Filter for PyramidDetailRemap {
 ///
 /// `R(x,y) = log(I(x,y)) - log(G * I(x,y))`
 /// Enhances local contrast by removing illumination estimate.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "retinex_ssr", category = "enhancement")]
 pub struct RetinexSsr {
+    #[param(min = 0.0, max = 200.0, default = 80.0)]
     pub sigma: f32,
 }
 
@@ -719,10 +738,14 @@ impl Filter for RetinexSsr {
 /// Multi-Scale Retinex (Jobson et al. 1997).
 ///
 /// Averages SSR at three scales for better overall contrast.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "retinex_msr", category = "enhancement")]
 pub struct RetinexMsr {
+    #[param(min = 0.0, max = 200.0, default = 15.0)]
     pub sigma_small: f32,
+    #[param(min = 0.0, max = 200.0, default = 80.0)]
     pub sigma_medium: f32,
+    #[param(min = 0.0, max = 500.0, default = 250.0)]
     pub sigma_large: f32,
 }
 
@@ -773,12 +796,18 @@ impl Filter for RetinexMsr {
 /// Multi-Scale Retinex with Color Restoration (Jobson et al. 1997).
 ///
 /// MSR + chromaticity-based gain for color preservation.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "retinex_msrcr", category = "enhancement")]
 pub struct RetinexMsrcr {
+    #[param(min = 0.0, max = 200.0, default = 15.0)]
     pub sigma_small: f32,
+    #[param(min = 0.0, max = 200.0, default = 80.0)]
     pub sigma_medium: f32,
+    #[param(min = 0.0, max = 500.0, default = 250.0)]
     pub sigma_large: f32,
+    #[param(min = 0.0, max = 200.0, default = 125.0)]
     pub alpha: f32,
+    #[param(min = 0.0, max = 100.0, default = 46.0)]
     pub beta: f32,
 }
 
@@ -856,14 +885,22 @@ impl Filter for RetinexMsrcr {
 ///
 /// Independently lighten shadows and darken highlights via soft-light blending
 /// on the luminance channel with compress-gated weight masks.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "shadow_highlight", category = "enhancement")]
 pub struct ShadowHighlight {
+    #[param(min = -100.0, max = 100.0, default = 0.0)]
     pub shadows: f32,
+    #[param(min = -100.0, max = 100.0, default = 0.0)]
     pub highlights: f32,
+    #[param(min = -100.0, max = 100.0, default = 0.0)]
     pub whitepoint: f32,
+    #[param(min = 0.0, max = 200.0, default = 30.0)]
     pub radius: f32,
+    #[param(min = 0.0, max = 100.0, default = 50.0)]
     pub compress: f32,
+    #[param(min = 0.0, max = 100.0, default = 50.0)]
     pub shadows_ccorrect: f32,
+    #[param(min = 0.0, max = 100.0, default = 50.0)]
     pub highlights_ccorrect: f32,
 }
 
@@ -948,10 +985,14 @@ impl Filter for ShadowHighlight {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// Gaussian vignette — elliptical darkening with Gaussian blur transition.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "vignette", category = "enhancement")]
 pub struct Vignette {
+    #[param(min = 0.0, max = 100.0, default = 10.0)]
     pub sigma: f32,
+    #[param(min = 0, max = 1000, default = 0)]
     pub x_inset: u32,
+    #[param(min = 0, max = 1000, default = 0)]
     pub y_inset: u32,
 }
 
@@ -1008,9 +1049,12 @@ impl Filter for Vignette {
 /// Power-law vignette — simple radial falloff.
 ///
 /// `factor = 1.0 - strength * (dist / max_dist) ^ falloff`
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "vignette_powerlaw", category = "enhancement")]
 pub struct VignettePowerlaw {
+    #[param(min = 0.0, max = 1.0, default = 0.5)]
     pub strength: f32,
+    #[param(min = 0.5, max = 5.0, default = 2.0)]
     pub falloff: f32,
 }
 
@@ -1750,57 +1794,7 @@ gpu_filter_passes_only!(PyramidDetailRemap,
     }
 );
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Factory Registrations
-// ═══════════════════════════════════════════════════════════════════════════════
-
-use crate::filter_node::FilterNode;
-#[allow(unused_imports)]
-use crate::registry::{FilterFactoryRegistration, ParamMap};
-
-macro_rules! register_enhance_factory {
-    ($name:expr, $struct:ident { $($field:ident : $getter:ident),* $(,)? }) => {
-        inventory::submit! { &FilterFactoryRegistration { name: $name,
-                display_name: "", category: "", params: &[],
-            factory: |upstream, info, params| {
-                let f = $struct { $($field: params.$getter(stringify!($field))),* };
-                Box::new(FilterNode::point_op(upstream, info, f))
-            },
-        } }
-    };
-    ($name:expr, $struct:ident) => {
-        inventory::submit! { &FilterFactoryRegistration { name: $name,
-                display_name: "", category: "", params: &[],
-            factory: |upstream, info, _params| { Box::new(FilterNode::point_op(upstream, info, $struct)) },
-        } }
-    };
-}
-
-register_enhance_factory!("auto_level", AutoLevel);
-register_enhance_factory!("equalize", Equalize);
-register_enhance_factory!("normalize", Normalize { black_clip: get_f32, white_clip: get_f32 });
-register_enhance_factory!("frequency_low", FrequencyLow { sigma: get_f32 });
-register_enhance_factory!("frequency_high", FrequencyHigh { sigma: get_f32 });
-register_enhance_factory!("clarity", Clarity { amount: get_f32, radius: get_f32 });
-register_enhance_factory!("dehaze", Dehaze { patch_radius: get_u32, omega: get_f32, t_min: get_f32 });
-register_enhance_factory!("clahe", Clahe { tile_grid: get_u32, clip_limit: get_f32 });
-register_enhance_factory!("nlm_denoise", NlmDenoise { h: get_f32, patch_radius: get_u32, search_radius: get_u32 });
-register_enhance_factory!("pyramid_detail_remap", PyramidDetailRemap { sigma: get_f32, levels: get_u32 });
-register_enhance_factory!("retinex_ssr", RetinexSsr { sigma: get_f32 });
-inventory::submit! { &FilterFactoryRegistration { name: "shadow_highlight",
-        display_name: "", category: "", params: &[],
-    factory: |upstream, info, params| {
-        let f = ShadowHighlight {
-            shadows: params.get_f32("shadows"), highlights: params.get_f32("highlights"),
-            whitepoint: params.get_f32("whitepoint"), radius: params.get_f32("radius"),
-            compress: params.get_f32("compress"), shadows_ccorrect: params.get_f32("shadows_ccorrect"),
-            highlights_ccorrect: params.get_f32("highlights_ccorrect"),
-        };
-        Box::new(FilterNode::point_op(upstream, info, f))
-    },
-} }
-register_enhance_factory!("vignette", Vignette { sigma: get_f32, x_inset: get_u32, y_inset: get_u32 });
-register_enhance_factory!("vignette_powerlaw", VignettePowerlaw { strength: get_f32, falloff: get_f32 });
+// All enhancement filters are auto-registered via #[derive(V2Filter)] on their structs.
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Tests

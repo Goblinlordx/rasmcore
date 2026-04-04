@@ -43,8 +43,10 @@ impl AnalyticOp for Brightness {
 /// Contrast adjustment — multiplicative around midpoint.
 ///
 /// `output = (input - 0.5) * factor + 0.5`
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "contrast", category = "adjustment")]
 pub struct Contrast {
+    #[param(min = -1.0, max = 1.0, step = 0.02, default = 0.0)]
     pub amount: f32,
 }
 
@@ -81,8 +83,10 @@ impl AnalyticOp for Contrast {
 /// Gamma correction — power curve.
 ///
 /// `output = input ^ (1/gamma)` for gamma > 0.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "gamma", category = "adjustment")]
 pub struct Gamma {
+    #[param(min = 0.1, max = 10.0, step = 0.1, default = 1.0)]
     pub gamma: f32,
 }
 
@@ -115,10 +119,14 @@ impl AnalyticOp for Gamma {
 /// Exposure adjustment — EV stops with offset and gamma.
 ///
 /// `output = ((input + offset) * 2^ev) ^ (1/gamma)`
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "exposure", category = "adjustment")]
 pub struct Exposure {
+    #[param(min = -10.0, max = 10.0, step = 0.1, default = 0.0)]
     pub ev: f32,
+    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0)]
     pub offset: f32,
+    #[param(min = 0.1, max = 10.0, step = 0.1, default = 1.0)]
     pub gamma_correction: f32,
 }
 
@@ -161,7 +169,8 @@ impl AnalyticOp for Exposure {
 /// Invert — channel negation.
 ///
 /// `output = 1.0 - input`
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "invert", category = "adjustment")]
 pub struct Invert;
 
 impl Filter for Invert {
@@ -189,13 +198,17 @@ impl AnalyticOp for Invert {
 /// Levels — remap input range with gamma.
 ///
 /// `output = ((input - black) / (white - black)) ^ (1/gamma)`
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "levels", category = "adjustment")]
 pub struct Levels {
     /// Black point [0, 1]
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)]
     pub black: f32,
     /// White point [0, 1]
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)]
     pub white: f32,
     /// Gamma correction
+    #[param(min = 0.1, max = 10.0, step = 0.1, default = 1.0)]
     pub gamma: f32,
 }
 
@@ -238,8 +251,10 @@ impl AnalyticOp for Levels {
 /// Posterize — reduce to N discrete levels.
 ///
 /// `output = floor(input * levels) / (levels - 1)`
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "posterize", category = "adjustment")]
 pub struct Posterize {
+    #[param(min = 2, max = 256, step = 1, default = 4)]
     pub levels: u8,
 }
 
@@ -279,12 +294,16 @@ impl AnalyticOp for Posterize {
 ///
 /// Uses the sigmoidal transfer function for more natural contrast
 /// than linear multiplication.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "sigmoidal_contrast", category = "adjustment")]
 pub struct SigmoidalContrast {
+    #[param(min = 0.0, max = 20.0, step = 0.5, default = 3.0)]
     pub strength: f32,
     /// Midpoint [0, 1]
+    #[param(min = 0.0, max = 1.0, step = 0.05, default = 0.5)]
     pub midpoint: f32,
     /// true = increase contrast, false = decrease
+    #[param(default = true)]
     pub sharpen: bool,
 }
 
@@ -404,8 +423,10 @@ fn sigmoidal(v: f32, strength: f32, midpoint: f32, sharpen: bool) -> f32 {
 /// Dodge — brighten shadows.
 ///
 /// `output = input / (1 - amount)` (simplified dodge)
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "dodge", category = "adjustment")]
 pub struct Dodge {
+    #[param(min = 0.0, max = 1.0, step = 0.05, default = 0.5)]
     pub amount: f32,
 }
 
@@ -436,8 +457,10 @@ impl AnalyticOp for Dodge {
 /// Burn — darken highlights.
 ///
 /// `output = 1 - (1 - input) / amount`
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "burn", category = "adjustment")]
 pub struct Burn {
+    #[param(min = 0.0, max = 2.0, step = 0.05, default = 0.5)]
     pub amount: f32,
 }
 
@@ -474,8 +497,10 @@ impl AnalyticOp for Burn {
 /// Solarize — invert values above threshold.
 ///
 /// `output = if input > threshold { 1.0 - input } else { input }`
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "solarize", category = "adjustment")]
 pub struct Solarize {
+    #[param(min = 0.0, max = 1.0, step = 0.05, default = 0.5)]
     pub threshold: f32,
 }
 
@@ -512,80 +537,7 @@ impl AnalyticOp for Solarize {
     }
 }
 
-// ─── Factory Registrations ──────────────────────────────────────────────────
-
-use crate::filter_node::FilterNode;
-#[allow(unused_imports)]
-use crate::registry::{FilterFactoryRegistration, ParamMap};
-
-macro_rules! register_factory {
-    ($name:expr, $display:expr, $struct:ident { $($field:ident : $getter:ident),* $(,)? }) => {
-        inventory::submit! {
-            &FilterFactoryRegistration {
-                name: $name,
-                display_name: $display,
-                category: "adjustment",
-                params: &[],
-                factory: |upstream, info, params| {
-                    let f = $struct { $($field: params.$getter(stringify!($field))),* };
-                    Box::new(FilterNode::analytic(upstream, info, f))
-                },
-            }
-        }
-    };
-    ($name:expr, $display:expr, $struct:ident) => {
-        inventory::submit! {
-            &FilterFactoryRegistration {
-                name: $name,
-                display_name: $display,
-                category: "adjustment",
-                params: &[],
-                factory: |upstream, info, _params| {
-                    Box::new(FilterNode::point_op(upstream, info, $struct)
-                        .with_capabilities(crate::node::NodeCapabilities { analytic: true, ..Default::default() }))
-                },
-            }
-        }
-    };
-}
-
-// brightness: auto-registered via #[derive(V2Filter)] on the struct
-register_factory!("contrast", "Contrast", Contrast { amount: get_f32 });
-register_factory!("gamma", "Gamma", Gamma { gamma: get_f32 });
-register_factory!("exposure", "Exposure", Exposure { ev: get_f32, offset: get_f32, gamma_correction: get_f32 });
-register_factory!("invert", "Invert", Invert);
-register_factory!("levels", "Levels", Levels { black: get_f32, white: get_f32, gamma: get_f32 });
-inventory::submit! {
-    &FilterFactoryRegistration {
-        name: "posterize",
-        display_name: "Posterize",
-        category: "adjustment",
-        params: &[],
-        factory: |upstream, info, params| {
-            let f = Posterize { levels: params.get_u32("levels") as u8 };
-            Box::new(FilterNode::analytic(upstream, info, f))
-        },
-    }
-}
-inventory::submit! {
-    &FilterFactoryRegistration {
-        name: "sigmoidal_contrast",
-        display_name: "Sigmoidal Contrast",
-        category: "adjustment",
-        params: &[],
-        factory: |upstream, info, params| {
-            let f = SigmoidalContrast {
-                strength: params.get_f32("strength"),
-                midpoint: params.get_f32("midpoint"),
-                sharpen: params.get_bool("sharpen"),
-            };
-            Box::new(FilterNode::analytic(upstream, info, f))
-        },
-    }
-}
-register_factory!("dodge", "Dodge", Dodge { amount: get_f32 });
-register_factory!("burn", "Burn", Burn { amount: get_f32 });
-register_factory!("solarize", "Solarize", Solarize { threshold: get_f32 });
+// All adjustment filters are auto-registered via #[derive(V2Filter)] on their structs.
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 

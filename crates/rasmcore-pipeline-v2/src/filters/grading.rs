@@ -635,7 +635,8 @@ impl ClutOp for ApplyHaldLut {
 
 /// Reinhard global tone mapping: `out = v / (1 + v)`.
 /// Maps HDR [0, ∞) to [0, 1).
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "tonemap_reinhard", category = "grading")]
 pub struct TonemapReinhard;
 
 impl Filter for TonemapReinhard {
@@ -659,11 +660,14 @@ impl ClutOp for TonemapReinhard {
 }
 
 /// Drago logarithmic tone mapping.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "tonemap_drago", category = "grading")]
 pub struct TonemapDrago {
     /// Maximum luminance in scene (default 1.0 for SDR).
+    #[param(min = 0.0, max = 100.0, default = 1.0)]
     pub l_max: f32,
     /// Bias parameter (0.7-0.9, default 0.85).
+    #[param(min = 0.5, max = 1.0, default = 0.85)]
     pub bias: f32,
 }
 
@@ -706,26 +710,19 @@ impl ClutOp for TonemapDrago {
 /// Filmic/ACES tone mapping (Narkowicz 2015 approximation).
 ///
 /// Formula: `out = (x*(a*x+b)) / (x*(c*x+d) + e)`
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "tonemap_filmic", category = "grading")]
 pub struct TonemapFilmic {
+    #[param(min = 0.0, max = 10.0, default = 2.51)]
     pub a: f32,
+    #[param(min = 0.0, max = 1.0, default = 0.03)]
     pub b: f32,
+    #[param(min = 0.0, max = 10.0, default = 2.43)]
     pub c: f32,
+    #[param(min = 0.0, max = 2.0, default = 0.59)]
     pub d: f32,
+    #[param(min = 0.0, max = 1.0, default = 0.14)]
     pub e: f32,
-}
-
-impl Default for TonemapFilmic {
-    fn default() -> Self {
-        // Narkowicz 2015 ACES fit
-        Self {
-            a: 2.51,
-            b: 0.03,
-            c: 2.43,
-            d: 0.59,
-            e: 0.14,
-        }
-    }
 }
 
 impl Filter for TonemapFilmic {
@@ -760,15 +757,20 @@ impl ClutOp for TonemapFilmic {
 // ─── Film Grain ────────────────────────────────────────────────────────────
 
 /// Film grain simulation — position-dependent, NOT CLUT-compatible.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "film_grain_grading", category = "grading")]
 pub struct FilmGrain {
     /// Grain amount (0.0 = none, 1.0 = heavy).
+    #[param(min = 0.0, max = 1.0, default = 0.1)]
     pub amount: f32,
     /// Grain size in pixels (1.0 = fine, 4.0+ = coarse).
+    #[param(min = 0.1, max = 10.0, default = 1.0)]
     pub size: f32,
     /// Color grain (true) or monochrome (false).
+    #[param(default = false)]
     pub color: bool,
     /// Random seed for deterministic output.
+    #[param(min = 0, max = 100, default = 42)]
     pub seed: u32,
 }
 
@@ -969,35 +971,14 @@ pub fn parse_cube_lut(content: &str) -> Result<Clut3D, PipelineError> {
     })
 }
 
-// ─── Factory Registrations ──────────────────────────────────────────────────
+// All grading filters are auto-registered via #[derive(V2Filter)] on their structs.
+
+// ─── Manual Registrations (complex types not supported by V2Filter derive) ──
 
 use crate::filter_node::FilterNode;
 #[allow(unused_imports)]
 use crate::registry::{FilterFactoryRegistration, ParamMap};
 
-inventory::submit! { &FilterFactoryRegistration { name: "tonemap_reinhard",
-        display_name: "", category: "", params: &[],
-    factory: |upstream, info, _params| {
-        Box::new(FilterNode::point_op(upstream, info, TonemapReinhard))
-    },
-} }
-inventory::submit! { &FilterFactoryRegistration { name: "tonemap_drago",
-        display_name: "", category: "", params: &[],
-    factory: |upstream, info, params| {
-        Box::new(FilterNode::point_op(upstream, info, TonemapDrago {
-            l_max: params.get_f32("l_max"), bias: params.get_f32("bias"),
-        }))
-    },
-} }
-inventory::submit! { &FilterFactoryRegistration { name: "tonemap_filmic",
-        display_name: "", category: "", params: &[],
-    factory: |upstream, info, params| {
-        Box::new(FilterNode::point_op(upstream, info, TonemapFilmic {
-            a: params.get_f32("a"), b: params.get_f32("b"), c: params.get_f32("c"),
-            d: params.get_f32("d"), e: params.get_f32("e"),
-        }))
-    },
-} }
 inventory::submit! { &FilterFactoryRegistration { name: "asc_cdl",
         display_name: "", category: "", params: &[],
     factory: |upstream, info, params| {

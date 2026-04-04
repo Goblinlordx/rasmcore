@@ -40,11 +40,16 @@ fn luminance(r: f32, g: f32, b: f32) -> f32 {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// Gaussian noise — additive normally-distributed noise.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "gaussian_noise", category = "effect")]
 pub struct GaussianNoise {
+    #[param(min = 0.0, max = 100.0, default = 10.0)]
     pub amount: f32,
+    #[param(min = -255.0, max = 255.0, default = 0.0)]
     pub mean: f32,
+    #[param(min = 0.0, max = 255.0, default = 25.0)]
     pub sigma: f32,
+    #[param(default = 42)]
     pub seed: u64,
 }
 
@@ -71,9 +76,12 @@ impl Filter for GaussianNoise {
 }
 
 /// Uniform noise — additive uniformly-distributed noise.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "uniform_noise", category = "effect")]
 pub struct UniformNoise {
+    #[param(min = 0.0, max = 255.0, default = 25.0)]
     pub range: f32,
+    #[param(default = 42)]
     pub seed: u64,
 }
 
@@ -98,9 +106,12 @@ impl Filter for UniformNoise {
 }
 
 /// Salt-and-pepper noise — randomly replace pixels with black or white.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "salt_pepper_noise", category = "effect")]
 pub struct SaltPepperNoise {
+    #[param(min = 0.0, max = 1.0, default = 0.05)]
     pub density: f32,
+    #[param(default = 42)]
     pub seed: u64,
 }
 
@@ -123,9 +134,12 @@ impl Filter for SaltPepperNoise {
 }
 
 /// Poisson noise — signal-dependent noise (brighter regions get more).
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "poisson_noise", category = "effect")]
 pub struct PoissonNoise {
+    #[param(min = 0.1, max = 1000.0, default = 100.0)]
     pub scale: f32,
+    #[param(default = 42)]
     pub seed: u64,
 }
 
@@ -168,10 +182,14 @@ impl Filter for PoissonNoise {
 }
 
 /// Film grain — photographic grain overlay with noise texture.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "film_grain", category = "effect")]
 pub struct FilmGrain {
+    #[param(min = 0.0, max = 1.0, default = 0.1)]
     pub amount: f32,
+    #[param(min = 1.0, max = 10.0, default = 1.0)]
     pub size: f32,
+    #[param(default = 42)]
     pub seed: u64,
 }
 
@@ -219,8 +237,10 @@ impl Filter for FilmGrain {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// Pixelate — block-grid mosaic with mean color per cell.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "pixelate", category = "effect")]
 pub struct Pixelate {
+    #[param(min = 1, max = 100, default = 8)]
     pub block_size: u32,
 }
 
@@ -270,9 +290,12 @@ impl Filter for Pixelate {
 }
 
 /// Halftone — CMYK-style dot pattern via sine-wave screening.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "halftone", category = "effect")]
 pub struct Halftone {
+    #[param(min = 1.0, max = 50.0, default = 8.0)]
     pub dot_size: f32,
+    #[param(min = 0.0, max = 360.0, default = 0.0)]
     pub angle_offset: f32,
 }
 
@@ -332,8 +355,10 @@ impl Filter for Halftone {
 }
 
 /// Oil paint — neighborhood mode filter (most frequent intensity bin).
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "oil_paint", category = "effect")]
 pub struct OilPaint {
+    #[param(min = 1, max = 20, default = 4)]
     pub radius: u32,
 }
 
@@ -397,7 +422,8 @@ impl Filter for OilPaint {
 /// Emboss — 3D relief effect via directional convolution kernel.
 ///
 /// `output = convolve(input, emboss_kernel) + 0.5`
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "emboss", category = "effect")]
 pub struct Emboss;
 
 impl Filter for Emboss {
@@ -434,9 +460,12 @@ impl Filter for Emboss {
 }
 
 /// Charcoal — edge detection → blur → invert for pencil sketch effect.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "charcoal", category = "effect")]
 pub struct Charcoal {
+    #[param(min = 0.0, max = 20.0, default = 1.0)]
     pub radius: f32,
+    #[param(min = 0.0, max = 20.0, default = 1.0)]
     pub sigma: f32,
 }
 
@@ -496,13 +525,20 @@ impl Filter for Charcoal {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// Chromatic split — offset RGB channels independently.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "chromatic_split", category = "effect")]
 pub struct ChromaticSplit {
+    #[param(min = -100.0, max = 100.0, default = 0.0)]
     pub red_dx: f32,
+    #[param(min = -100.0, max = 100.0, default = 0.0)]
     pub red_dy: f32,
+    #[param(min = -100.0, max = 100.0, default = 0.0)]
     pub green_dx: f32,
+    #[param(min = -100.0, max = 100.0, default = 0.0)]
     pub green_dy: f32,
+    #[param(min = -100.0, max = 100.0, default = 0.0)]
     pub blue_dx: f32,
+    #[param(min = -100.0, max = 100.0, default = 0.0)]
     pub blue_dy: f32,
 }
 
@@ -541,8 +577,10 @@ impl Filter for ChromaticSplit {
 /// Chromatic aberration — radial R/B channel displacement.
 ///
 /// R channel shifts away from center, B channel shifts toward center.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "chromatic_aberration", category = "effect")]
 pub struct ChromaticAberration {
+    #[param(min = 0.0, max = 50.0, default = 5.0)]
     pub strength: f32,
 }
 
@@ -590,12 +628,18 @@ impl Filter for ChromaticAberration {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// Glitch — horizontal scanline displacement with RGB channel offset.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "glitch", category = "effect")]
 pub struct Glitch {
+    #[param(min = 0.0, max = 200.0, default = 20.0)]
     pub shift_amount: f32,
+    #[param(min = 0.0, max = 100.0, default = 10.0)]
     pub channel_offset: f32,
+    #[param(min = 0.0, max = 1.0, default = 0.5)]
     pub intensity: f32,
+    #[param(min = 1, max = 100, default = 8)]
     pub band_height: u32,
+    #[param(min = 0, max = 100, default = 42)]
     pub seed: u32,
 }
 
@@ -636,12 +680,18 @@ impl Filter for Glitch {
 }
 
 /// Light leak — procedural warm-toned radial gradient with screen blend.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "light_leak", category = "effect")]
 pub struct LightLeak {
+    #[param(min = 0.0, max = 1.0, default = 0.5)]
     pub intensity: f32,
+    #[param(min = 0.0, max = 1.0, default = 0.5)]
     pub position_x: f32,
+    #[param(min = 0.0, max = 1.0, default = 0.5)]
     pub position_y: f32,
+    #[param(min = 0.0, max = 2.0, default = 0.5)]
     pub radius: f32,
+    #[param(min = 0.0, max = 1.0, default = 0.8)]
     pub warmth: f32,
 }
 
@@ -683,10 +733,14 @@ impl Filter for LightLeak {
 }
 
 /// Mirror kaleidoscope — reflect/mirror segments around axis.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "mirror_kaleidoscope", category = "effect")]
 pub struct MirrorKaleidoscope {
+    #[param(min = 2, max = 32, default = 4)]
     pub segments: u32,
+    #[param(min = 0.0, max = 360.0, default = 0.0)]
     pub angle: f32,
+    #[param(min = 0, max = 2, default = 0)]
     pub mode: u32, // 0=horizontal, 1=vertical, 2=angular
 }
 
@@ -1306,70 +1360,7 @@ impl GpuFilter for MirrorKaleidoscope {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Factory Registrations
-// ═══════════════════════════════════════════════════════════════════════════════
-
-use crate::filter_node::FilterNode;
-#[allow(unused_imports)]
-use crate::registry::{FilterFactoryRegistration, ParamMap};
-
-macro_rules! register_effect_factory {
-    ($name:expr, $struct:ident { $($field:ident : $getter:ident),* $(,)? }) => {
-        inventory::submit! {
-            &FilterFactoryRegistration {
-                name: $name,
-                display_name: "", category: "", params: &[],
-                factory: |upstream, info, params| {
-                    let f = $struct { $($field: params.$getter(stringify!($field))),* };
-                    Box::new(FilterNode::point_op(upstream, info, f))
-                },
-            }
-        }
-    };
-    ($name:expr, $struct:ident) => {
-        inventory::submit! {
-            &FilterFactoryRegistration {
-                name: $name,
-                display_name: "", category: "", params: &[],
-                factory: |upstream, info, _params| {
-                    Box::new(FilterNode::point_op(upstream, info, $struct))
-                },
-            }
-        }
-    };
-}
-
-register_effect_factory!("gaussian_noise", GaussianNoise { amount: get_f32, mean: get_f32, sigma: get_f32, seed: get_u64 });
-register_effect_factory!("uniform_noise", UniformNoise { range: get_f32, seed: get_u64 });
-register_effect_factory!("salt_pepper_noise", SaltPepperNoise { density: get_f32, seed: get_u64 });
-register_effect_factory!("poisson_noise", PoissonNoise { scale: get_f32, seed: get_u64 });
-register_effect_factory!("film_grain", FilmGrain { amount: get_f32, size: get_f32, seed: get_u64 });
-register_effect_factory!("pixelate", Pixelate { block_size: get_u32 });
-register_effect_factory!("halftone", Halftone { dot_size: get_f32, angle_offset: get_f32 });
-register_effect_factory!("oil_paint", OilPaint { radius: get_u32 });
-register_effect_factory!("emboss", Emboss);
-register_effect_factory!("charcoal", Charcoal { radius: get_f32, sigma: get_f32 });
-register_effect_factory!("chromatic_split", ChromaticSplit { red_dx: get_f32, red_dy: get_f32, green_dx: get_f32, green_dy: get_f32, blue_dx: get_f32, blue_dy: get_f32 });
-register_effect_factory!("chromatic_aberration", ChromaticAberration { strength: get_f32 });
-inventory::submit! {
-    &FilterFactoryRegistration {
-        name: "glitch",
-        display_name: "", category: "", params: &[],
-        factory: |upstream, info, params| {
-            let f = Glitch {
-                shift_amount: params.get_f32("shift_amount"),
-                channel_offset: params.get_f32("channel_offset"),
-                intensity: params.get_f32("intensity"),
-                band_height: params.get_u32("band_height"),
-                seed: params.get_u32("seed"),
-            };
-            Box::new(FilterNode::point_op(upstream, info, f))
-        },
-    }
-}
-register_effect_factory!("light_leak", LightLeak { intensity: get_f32, position_x: get_f32, position_y: get_f32, radius: get_f32, warmth: get_f32 });
-register_effect_factory!("mirror_kaleidoscope", MirrorKaleidoscope { segments: get_u32, angle: get_f32, mode: get_u32 });
+// All effect filters are auto-registered via #[derive(V2Filter)] on their structs.
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // GPU shaders for remaining CPU-only filters (loaded from .wgsl files)

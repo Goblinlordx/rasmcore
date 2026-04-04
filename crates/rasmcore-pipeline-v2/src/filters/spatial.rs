@@ -48,8 +48,10 @@ fn gaussian_kernel_1d(radius: f32) -> Vec<f32> {
 // ─── Gaussian Blur ────────────────────────────────────────────────────────────
 
 /// Gaussian blur — separable convolution on f32 data.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "gaussian_blur", category = "spatial")]
 pub struct GaussianBlur {
+    #[param(min = 0.0, max = 100.0, default = 1.0)]
     pub radius: f32,
 }
 
@@ -110,8 +112,10 @@ impl GaussianBlur {
 // ─── Box Blur ─────────────────────────────────────────────────────────────────
 
 /// Box blur — running average within radius. O(1) per pixel.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "box_blur", category = "spatial")]
 pub struct BoxBlur {
+    #[param(min = 0, max = 100, default = 1)]
     pub radius: u32,
 }
 
@@ -173,9 +177,12 @@ impl Filter for BoxBlur {
 /// Unsharp mask sharpening — enhances edges by subtracting blurred from original.
 ///
 /// `output = input + amount * (input - blur(input, radius))`
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "sharpen", category = "spatial")]
 pub struct Sharpen {
+    #[param(min = 0.0, max = 100.0, default = 1.0)]
     pub radius: f32,
+    #[param(min = 0.0, max = 10.0, default = 1.0)]
     pub amount: f32,
 }
 
@@ -202,8 +209,10 @@ impl Filter for Sharpen {
 /// Median filter — replaces each pixel with median of its neighborhood.
 ///
 /// Effective for salt-and-pepper noise removal while preserving edges.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "median", category = "spatial")]
 pub struct Median {
+    #[param(min = 0, max = 50, default = 1)]
     pub radius: u32,
 }
 
@@ -296,10 +305,14 @@ impl Filter for Convolve {
 /// Bilateral filter — edge-preserving smoothing.
 ///
 /// Weights pixels by both spatial distance and color similarity.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "bilateral", category = "spatial")]
 pub struct Bilateral {
+    #[param(min = 1, max = 50, default = 5)]
     pub diameter: u32,
+    #[param(min = 0.0, max = 1.0, default = 0.1)]
     pub sigma_color: f32,
+    #[param(min = 0.0, max = 100.0, default = 10.0)]
     pub sigma_space: f32,
 }
 
@@ -358,9 +371,12 @@ impl Filter for Bilateral {
 // ─── Motion Blur ──────────────────────────────────────────────────────────────
 
 /// Motion blur — linear directional blur.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "motion_blur", category = "spatial")]
 pub struct MotionBlur {
+    #[param(min = 0.0, max = 360.0, default = 0.0)]
     pub angle: f32,  // degrees
+    #[param(min = 0.0, max = 200.0, default = 10.0)]
     pub length: f32, // pixels
 }
 
@@ -406,8 +422,10 @@ impl Filter for MotionBlur {
 /// High pass filter — subtracts blur from original, adding mid-gray offset.
 ///
 /// `output = (input - blur(input)) + 0.5`
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "high_pass", category = "spatial")]
 pub struct HighPass {
+    #[param(min = 0.0, max = 100.0, default = 3.0)]
     pub radius: f32,
 }
 
@@ -685,58 +703,7 @@ impl GpuFilter for DisplacementMap {
     }
 }
 
-// ─── Factory Registrations ──────────────────────────────────────────────────
-
-use crate::filter_node::FilterNode;
-#[allow(unused_imports)]
-use crate::registry::{FilterFactoryRegistration, ParamMap};
-
-inventory::submit! { &FilterFactoryRegistration { name: "gaussian_blur",
-        display_name: "", category: "", params: &[],
-    factory: |upstream, info, params| {
-        Box::new(FilterNode::point_op(upstream, info, GaussianBlur { radius: params.get_f32("radius") }))
-    },
-} }
-inventory::submit! { &FilterFactoryRegistration { name: "box_blur",
-        display_name: "", category: "", params: &[],
-    factory: |upstream, info, params| {
-        Box::new(FilterNode::point_op(upstream, info, BoxBlur { radius: params.get_u32("radius") }))
-    },
-} }
-inventory::submit! { &FilterFactoryRegistration { name: "sharpen",
-        display_name: "", category: "", params: &[],
-    factory: |upstream, info, params| {
-        Box::new(FilterNode::point_op(upstream, info, Sharpen { radius: params.get_f32("radius"), amount: params.get_f32("amount") }))
-    },
-} }
-inventory::submit! { &FilterFactoryRegistration { name: "median",
-        display_name: "", category: "", params: &[],
-    factory: |upstream, info, params| {
-        Box::new(FilterNode::point_op(upstream, info, Median { radius: params.get_u32("radius") }))
-    },
-} }
-inventory::submit! { &FilterFactoryRegistration { name: "bilateral",
-        display_name: "", category: "", params: &[],
-    factory: |upstream, info, params| {
-        Box::new(FilterNode::point_op(upstream, info, Bilateral {
-            diameter: params.get_u32("diameter"),
-            sigma_color: params.get_f32("sigma_color"),
-            sigma_space: params.get_f32("sigma_space"),
-        }))
-    },
-} }
-inventory::submit! { &FilterFactoryRegistration { name: "motion_blur",
-        display_name: "", category: "", params: &[],
-    factory: |upstream, info, params| {
-        Box::new(FilterNode::point_op(upstream, info, MotionBlur { angle: params.get_f32("angle"), length: params.get_f32("length") }))
-    },
-} }
-inventory::submit! { &FilterFactoryRegistration { name: "high_pass",
-        display_name: "", category: "", params: &[],
-    factory: |upstream, info, params| {
-        Box::new(FilterNode::point_op(upstream, info, HighPass { radius: params.get_f32("radius") }))
-    },
-} }
+// All spatial filters are auto-registered via #[derive(V2Filter)] on their structs.
 
 #[cfg(test)]
 mod tests {

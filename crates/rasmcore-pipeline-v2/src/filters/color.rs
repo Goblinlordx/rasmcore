@@ -180,9 +180,11 @@ pub trait ClutOp {
 // ─── CLUT-Compatible Filters ───────────────────────────────────────────────
 
 /// Hue rotation in HSL space.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "hue_rotate", category = "color")]
 pub struct HueRotate {
     /// Rotation in degrees (0-360).
+    #[param(min = 0.0, max = 360.0, default = 0.0)]
     pub degrees: f32,
 }
 
@@ -214,9 +216,11 @@ impl ClutOp for HueRotate {
 }
 
 /// Saturation adjustment in HSL space.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "saturate", category = "color")]
 pub struct Saturate {
     /// Factor: 0=grayscale, 1=unchanged, 2=double.
+    #[param(min = 0.0, max = 3.0, default = 1.0)]
     pub factor: f32,
 }
 
@@ -281,9 +285,11 @@ impl ClutOp for ChannelMixer {
 
 /// Vibrance — perceptually-weighted saturation boost.
 /// Boosts less-saturated colors more than already-saturated ones.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "vibrance", category = "color")]
 pub struct Vibrance {
     /// Amount: -100 to 100.
+    #[param(min = -100.0, max = 100.0, default = 0.0)]
     pub amount: f32,
 }
 
@@ -332,9 +338,11 @@ impl ClutOp for Vibrance {
 }
 
 /// Sepia tone — warm brownish tint via standard matrix blend.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "sepia", category = "color")]
 pub struct Sepia {
     /// Intensity: 0=none, 1=full sepia.
+    #[param(min = 0.0, max = 1.0, default = 1.0)]
     pub intensity: f32,
 }
 
@@ -370,13 +378,18 @@ impl ClutOp for Sepia {
 }
 
 /// Colorize — tint image with a target color using W3C luma blend.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "colorize", category = "color")]
 pub struct Colorize {
     /// Target color RGB [0,1].
+    #[param(min = 0.0, max = 1.0, default = 1.0)]
     pub target_r: f32,
+    #[param(min = 0.0, max = 1.0, default = 0.8)]
     pub target_g: f32,
+    #[param(min = 0.0, max = 1.0, default = 0.6)]
     pub target_b: f32,
     /// Blend amount: 0=none, 1=full.
+    #[param(min = 0.0, max = 1.0, default = 0.5)]
     pub amount: f32,
 }
 
@@ -410,13 +423,17 @@ impl ClutOp for Colorize {
 }
 
 /// Modulate — combined brightness/saturation/hue in HSL space.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "modulate", category = "color")]
 pub struct Modulate {
     /// Brightness factor (1.0=unchanged, 0=black, 2=double).
+    #[param(min = 0.0, max = 3.0, default = 1.0)]
     pub brightness: f32,
     /// Saturation factor (1.0=unchanged, 0=grayscale).
+    #[param(min = 0.0, max = 3.0, default = 1.0)]
     pub saturation: f32,
     /// Hue rotation in degrees.
+    #[param(min = 0.0, max = 360.0, default = 0.0)]
     pub hue: f32,
 }
 
@@ -458,15 +475,21 @@ impl ClutOp for Modulate {
 }
 
 /// Photo filter — color overlay with optional luminosity preservation.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "photo_filter", category = "color")]
 pub struct PhotoFilter {
     /// Filter color RGB [0,1].
+    #[param(min = 0.0, max = 1.0, default = 1.0)]
     pub color_r: f32,
+    #[param(min = 0.0, max = 1.0, default = 0.6)]
     pub color_g: f32,
+    #[param(min = 0.0, max = 1.0, default = 0.2)]
     pub color_b: f32,
     /// Density: 0=none, 1=full overlay.
+    #[param(min = 0.0, max = 1.0, default = 0.25)]
     pub density: f32,
     /// Preserve original luminosity.
+    #[param(default = false)]
     pub preserve_luminosity: bool,
 }
 
@@ -528,17 +551,23 @@ impl ClutOp for PhotoFilter {
 }
 
 /// Selective color — adjust pixels matching a hue range in HSL space.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "selective_color", category = "color")]
 pub struct SelectiveColor {
     /// Target hue center (0-360).
+    #[param(min = 0.0, max = 360.0, default = 0.0)]
     pub target_hue: f32,
     /// Hue range (1-180).
+    #[param(min = 1.0, max = 180.0, default = 30.0)]
     pub hue_range: f32,
     /// Hue shift (-180 to 180).
+    #[param(min = -180.0, max = 180.0, default = 0.0)]
     pub hue_shift: f32,
     /// Saturation factor.
+    #[param(min = 0.0, max = 3.0, default = 1.0)]
     pub saturation: f32,
     /// Lightness offset (-1 to 1).
+    #[param(min = -1.0, max = 1.0, default = 0.0)]
     pub lightness: f32,
 }
 
@@ -611,11 +640,14 @@ impl ClutOp for SelectiveColor {
 }
 
 /// White balance via color temperature (Kelvin).
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "white_balance_temperature", category = "color")]
 pub struct WhiteBalanceTemperature {
     /// Temperature in Kelvin (2000-12000). 6500 = daylight neutral.
+    #[param(min = 2000.0, max = 12000.0, default = 6500.0)]
     pub temperature: f32,
     /// Green-magenta tint (-1 to 1).
+    #[param(min = -1.0, max = 1.0, default = 0.0)]
     pub tint: f32,
 }
 
@@ -649,21 +681,31 @@ impl ClutOp for WhiteBalanceTemperature {
 }
 
 /// Replace color — select pixels by HSL ranges and shift them.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "replace_color", category = "color")]
 pub struct ReplaceColor {
     /// Center hue (0-360).
+    #[param(min = 0.0, max = 360.0, default = 0.0)]
     pub center_hue: f32,
     /// Hue range (1-180).
+    #[param(min = 1.0, max = 180.0, default = 30.0)]
     pub hue_range: f32,
     /// Saturation range [min, max].
+    #[param(min = 0.0, max = 1.0, default = 0.0)]
     pub sat_min: f32,
+    #[param(min = 0.0, max = 1.0, default = 1.0)]
     pub sat_max: f32,
     /// Lightness range [min, max].
+    #[param(min = 0.0, max = 1.0, default = 0.0)]
     pub lum_min: f32,
+    #[param(min = 0.0, max = 1.0, default = 1.0)]
     pub lum_max: f32,
     /// Shift amounts.
+    #[param(min = -180.0, max = 180.0, default = 0.0)]
     pub hue_shift: f32,
+    #[param(min = -1.0, max = 1.0, default = 0.0)]
     pub sat_shift: f32,
+    #[param(min = -1.0, max = 1.0, default = 0.0)]
     pub lum_shift: f32,
 }
 
@@ -716,11 +758,14 @@ impl ClutOp for ReplaceColor {
 }
 
 /// Lab adjust — shift a* and b* channels in CIE Lab space.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "lab_adjust", category = "color")]
 pub struct LabAdjust {
     /// Green-red shift (-128 to 127).
+    #[param(min = -128.0, max = 127.0, default = 0.0)]
     pub a_offset: f32,
     /// Blue-yellow shift (-128 to 127).
+    #[param(min = -128.0, max = 127.0, default = 0.0)]
     pub b_offset: f32,
 }
 
@@ -757,7 +802,8 @@ impl ClutOp for LabAdjust {
 
 /// White balance via gray world assumption (automatic).
 /// Computes per-channel means and normalizes so all channels have equal mean.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "white_balance_gray_world", category = "color")]
 pub struct WhiteBalanceGrayWorld;
 
 impl Filter for WhiteBalanceGrayWorld {
@@ -860,9 +906,11 @@ fn interpolate_gradient(stops: &[(f32, f32, f32, f32)], t: f32) -> (f32, f32, f3
 // ─── Quantization / Dithering Filters ──────────────────────────────────────
 
 /// Median-cut color quantization (no dithering).
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "quantize", category = "color")]
 pub struct Quantize {
     /// Max palette size (2-256).
+    #[param(min = 2, max = 256, default = 16)]
     pub max_colors: u32,
 }
 
@@ -881,13 +929,17 @@ impl Filter for Quantize {
 }
 
 /// K-means color quantization.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "kmeans_quantize", category = "color")]
 pub struct KmeansQuantize {
     /// Number of clusters (2-256).
+    #[param(min = 2, max = 256, default = 16)]
     pub k: u32,
     /// Maximum iterations.
+    #[param(min = 1, max = 100, default = 20)]
     pub max_iterations: u32,
     /// Random seed for deterministic initialization.
+    #[param(min = 0, max = 100, default = 42)]
     pub seed: u32,
 }
 
@@ -906,11 +958,14 @@ impl Filter for KmeansQuantize {
 }
 
 /// Ordered dithering with Bayer matrix.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "dither_ordered", category = "color")]
 pub struct DitherOrdered {
     /// Max palette size (2-256).
+    #[param(min = 2, max = 256, default = 16)]
     pub max_colors: u32,
     /// Bayer matrix size (2, 4, 8, or 16).
+    #[param(min = 2, max = 16, default = 4)]
     pub map_size: u32,
 }
 
@@ -940,9 +995,11 @@ impl Filter for DitherOrdered {
 }
 
 /// Floyd-Steinberg error diffusion dithering.
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "dither_floyd_steinberg", category = "color")]
 pub struct DitherFloydSteinberg {
     /// Max palette size (2-256).
+    #[param(min = 2, max = 256, default = 16)]
     pub max_colors: u32,
 }
 
@@ -1192,11 +1249,14 @@ fn bayer_matrix(size: u32) -> Vec<f32> {
 // ─── Spatial Color Filters ─────────────────────────────────────────────────
 
 /// Lab sharpen — unsharp mask on L channel only (preserves chrominance).
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "lab_sharpen", category = "color")]
 pub struct LabSharpen {
     /// Sharpening strength (0-10).
+    #[param(min = 0.0, max = 10.0, default = 1.0)]
     pub amount: f32,
     /// Blur radius for unsharp mask.
+    #[param(min = 0.0, max = 100.0, default = 2.0)]
     pub radius: f32,
 }
 
@@ -1739,88 +1799,7 @@ impl GpuFilter for LabSharpen {
     }
 }
 
-// ─── Factory Registrations ──────────────────────────────────────────────────
-
-use crate::filter_node::FilterNode;
-#[allow(unused_imports)]
-use crate::registry::{FilterFactoryRegistration, ParamMap};
-
-macro_rules! reg_color {
-    ($name:expr, $struct:ident { $($field:ident : $getter:ident),* $(,)? }) => {
-        inventory::submit! { &FilterFactoryRegistration { name: $name,
-                display_name: "", category: "", params: &[],
-            factory: |upstream, info, params| {
-                let f = $struct { $($field: params.$getter(stringify!($field))),* };
-                Box::new(FilterNode::point_op(upstream, info, f))
-            },
-        } }
-    };
-    ($name:expr, $struct:ident) => {
-        inventory::submit! { &FilterFactoryRegistration { name: $name,
-                display_name: "", category: "", params: &[],
-            factory: |upstream, info, _params| { Box::new(FilterNode::point_op(upstream, info, $struct)) },
-        } }
-    };
-}
-
-reg_color!("hue_rotate", HueRotate { degrees: get_f32 });
-reg_color!("saturate", Saturate { factor: get_f32 });
-reg_color!("vibrance", Vibrance { amount: get_f32 });
-reg_color!("sepia", Sepia { intensity: get_f32 });
-inventory::submit! { &FilterFactoryRegistration { name: "colorize",
-        display_name: "", category: "", params: &[],
-    factory: |upstream, info, params| {
-        Box::new(FilterNode::point_op(upstream, info, Colorize {
-            target_r: params.get_f32("target_r"), target_g: params.get_f32("target_g"),
-            target_b: params.get_f32("target_b"), amount: params.get_f32("amount"),
-        }))
-    },
-} }
-inventory::submit! { &FilterFactoryRegistration { name: "modulate",
-        display_name: "", category: "", params: &[],
-    factory: |upstream, info, params| {
-        Box::new(FilterNode::point_op(upstream, info, Modulate {
-            brightness: params.get_f32("brightness"), saturation: params.get_f32("saturation"),
-            hue: params.get_f32("hue"),
-        }))
-    },
-} }
-inventory::submit! { &FilterFactoryRegistration { name: "photo_filter",
-        display_name: "", category: "", params: &[],
-    factory: |upstream, info, params| {
-        Box::new(FilterNode::point_op(upstream, info, PhotoFilter {
-            color_r: params.get_f32("color_r"), color_g: params.get_f32("color_g"),
-            color_b: params.get_f32("color_b"), density: params.get_f32("density"),
-            preserve_luminosity: params.get_bool("preserve_luminosity"),
-        }))
-    },
-} }
-inventory::submit! { &FilterFactoryRegistration { name: "selective_color",
-        display_name: "", category: "", params: &[],
-    factory: |upstream, info, params| {
-        Box::new(FilterNode::point_op(upstream, info, SelectiveColor {
-            target_hue: params.get_f32("target_hue"), hue_range: params.get_f32("hue_range"),
-            hue_shift: params.get_f32("hue_shift"), saturation: params.get_f32("saturation"),
-            lightness: params.get_f32("lightness"),
-        }))
-    },
-} }
-reg_color!("white_balance_temperature", WhiteBalanceTemperature { temperature: get_f32, tint: get_f32 });
-reg_color!("lab_adjust", LabAdjust { a_offset: get_f32, b_offset: get_f32 });
-reg_color!("white_balance_gray_world", WhiteBalanceGrayWorld);
-reg_color!("quantize", Quantize { max_colors: get_u32 });
-reg_color!("dither_ordered", DitherOrdered { max_colors: get_u32, map_size: get_u32 });
-reg_color!("dither_floyd_steinberg", DitherFloydSteinberg { max_colors: get_u32 });
-reg_color!("lab_sharpen", LabSharpen { amount: get_f32, radius: get_f32 });
-inventory::submit! { &FilterFactoryRegistration { name: "kmeans_quantize",
-        display_name: "", category: "", params: &[],
-    factory: |upstream, info, params| {
-        Box::new(FilterNode::point_op(upstream, info, KmeansQuantize {
-            k: params.get_u32("k"), max_iterations: params.get_u32("max_iterations"),
-            seed: params.get_u32("seed"),
-        }))
-    },
-} }
+// All color filters are auto-registered via #[derive(V2Filter)] on their structs.
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
