@@ -44,13 +44,14 @@ docs-copy-examples: $(DOCS_EXAMPLES)
 
 ## Build documentation site (incremental — only rebuilds what changed)
 docs: $(DOCS_NODE_MODULES) $(DOCS_REGISTRY) docs-copy-examples $(DOCS_SDK)
+	@rm -rf docs/out  # clean stale output from old distDir config
 	cd $(DOCS_SITE) && npm run build
 
 ## Build and serve docs site
 docs-serve: docs
 	@echo ""
 	@echo "Serving docs at http://localhost:4000"
-	cd $(DOCS_SITE) && npx serve ../out -l 4000
+	cd $(DOCS_SITE) && npx serve out -l 4000
 
 ## Start docs dev server (hot reload, no static export)
 docs-dev: $(DOCS_NODE_MODULES) $(DOCS_REGISTRY) docs-copy-examples $(DOCS_SDK)
@@ -58,7 +59,7 @@ docs-dev: $(DOCS_NODE_MODULES) $(DOCS_REGISTRY) docs-copy-examples $(DOCS_SDK)
 
 ## Clean docs build artifacts
 docs-clean:
-	rm -rf $(DOCS_SITE)/.next $(DOCS_SITE)/node_modules docs/out
+	rm -rf $(DOCS_SITE)/.next $(DOCS_SITE)/out $(DOCS_SITE)/node_modules docs/out
 	rm -f $(DOCS_SITE)/next-env.d.ts
 
 # ─── Web UI ──────────────────────────────────────────────────────────────────

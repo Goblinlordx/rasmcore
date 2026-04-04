@@ -33,5 +33,5 @@ npm run build
 
 echo ""
 echo "=== Done ==="
-echo "Output: docs/out/"
-echo "Preview: cd docs/site && npx serve ../out"
+echo "Output: docs/site/out/"
+echo "Preview: cd docs/site && npx serve out"
