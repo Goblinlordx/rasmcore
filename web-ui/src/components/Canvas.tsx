@@ -137,58 +137,38 @@ export default function Canvas({
         className="canvas-viewport"
         {...(hasImage ? transform.handlers : {})}
       >
-        {/* Normal view: show one canvas at a time */}
-        {!showSplit && (
-          <>
-            <canvas
-              ref={previewCanvasRef}
-              id="preview-canvas"
-              style={{
-                ...canvasStyle,
-                display: hasImage && showPreview ? 'block' : 'none',
-              }}
-            />
-            <canvas
-              ref={originalCanvasRef}
-              id="original-canvas"
-              style={{
-                ...canvasStyle,
-                display: hasImage && showOriginal ? 'block' : 'none',
-              }}
-            />
-          </>
-        )}
+        {/* Both canvases always rendered (never unmount) — visibility controlled by CSS */}
+        <canvas
+          ref={previewCanvasRef}
+          id="preview-canvas"
+          style={{
+            ...canvasStyle,
+            display: hasImage && (showPreview || showSplit) ? 'block' : 'none',
+            clipPath: showSplit ? `inset(0 0 0 ${splitPos}%)` : undefined,
+          }}
+        />
+        <canvas
+          ref={originalCanvasRef}
+          id="original-canvas"
+          style={{
+            ...canvasStyle,
+            display: hasImage && (showOriginal || showSplit) ? 'block' : 'none',
+            clipPath: showSplit ? `inset(0 ${100 - splitPos}% 0 0)` : undefined,
+          }}
+        />
 
-        {/* Split view: both canvases with shared transform, clip-path divider */}
+        {/* Split view divider + labels */}
         {showSplit && hasImage && (
           <div
-            className="split-container"
             ref={splitContainerRef}
             style={{
               ...canvasStyle,
-              // Override: split container matches image dimensions, transform handles positioning
+              pointerEvents: 'none',
             }}
           >
-            <canvas
-              ref={previewCanvasRef}
-              id="preview-canvas"
-              className="split-canvas"
-              style={{ display: 'block', width: '100%', height: '100%' }}
-            />
-            <canvas
-              ref={originalCanvasRef}
-              id="original-canvas"
-              className="split-canvas split-before"
-              style={{
-                display: 'block',
-                width: '100%',
-                height: '100%',
-                clipPath: `inset(0 ${100 - splitPos}% 0 0)`,
-              }}
-            />
             <div
               className="split-divider"
-              style={{ left: `${splitPos}%` }}
+              style={{ left: `${splitPos}%`, pointerEvents: 'auto' }}
               onMouseDown={startDrag}
               onTouchStart={startDrag}
             >
