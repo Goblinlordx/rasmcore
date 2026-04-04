@@ -77,7 +77,7 @@ impl CpuFilter for RetinexSsrParams {
         // We process the retinex buffer as a flat array of n*3 f32 values,
         // computing ln(orig/surround) for each. The u8->f32 conversion and
         // max(1.0) are vectorized.
-        let one = f32x4_splat(1.0);
+        let _one = f32x4_splat(1.0);
         let total = n * 3;
         let simd_end = total & !3; // round down to multiple of 4
 
@@ -158,7 +158,6 @@ impl CpuFilter for RetinexSsrParams {
 
         let total = n * 3;
         let simd_end = total & !3;
-        let mut j = 0;
         let mut ri = 0; // retinex index
         // Process 4 retinex values at a time, write to result (skip alpha for RGBA)
         if channels == 3 {

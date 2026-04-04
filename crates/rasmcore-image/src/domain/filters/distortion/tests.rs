@@ -1170,7 +1170,7 @@ mod distortion_effect_tests {
         }
 
         // ── Wave ──
-        if let Some(im_data) = run_im(&["-wave", "5x20"]) {
+        if let Some(_im_data) = run_im(&["-wave", "5x20"]) {
             let amp = 5.0f32;
             let wl = 20.0f32;
             let dummy_j = crate::domain::ewa::JACOBIAN_IDENTITY;

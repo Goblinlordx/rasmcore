@@ -71,7 +71,7 @@ fn clone_stamp_exact_copy_with_full_mask() {
     let fg_info = rgb_info(w, h);
     let mask_info = gray_info(w, h);
 
-    let result = super::clone_stamp(&pixels, &fg_info, &mask, &mask_info, -2, -2).unwrap();
+    let _result = super::clone_stamp(&pixels, &fg_info, &mask, &mask_info, -2, -2).unwrap();
 
     // Pixel at (0,0) should now be blue (cloned from (2,2) via offset (-2,-2) → src=(0+(-2), 0+(-2))… wait,
     // offset means src_x = x + offset_x. To clone FROM (2,2) TO (0,0), we need offset = +2,+2.

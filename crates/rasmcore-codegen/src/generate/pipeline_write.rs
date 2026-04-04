@@ -257,8 +257,9 @@ pub fn generate_stateless_encoder_adapter(encoders: &[EncoderInfo]) -> String {
         } else {
             // Has config fields — extract quality if present, delegate to generic encode
             let quality_field = enc.fields.iter().find(|f| f.name == "quality");
+            let config_name = if quality_field.is_some() { "config" } else { "_config" };
             code.push_str(&format!(
-                "    fn {method_name}(pixels: Vec<u8>, info: types::ImageInfo, config: encoder::{config_pascal}) -> Result<Vec<u8>, RasmcoreError> {{\n"
+                "    fn {method_name}(pixels: Vec<u8>, info: types::ImageInfo, {config_name}: encoder::{config_pascal}) -> Result<Vec<u8>, RasmcoreError> {{\n"
             ));
             code.push_str("        let domain_info = to_domain_image_info(&info);\n");
             if let Some(qf) = quality_field {

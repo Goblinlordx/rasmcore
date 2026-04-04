@@ -405,7 +405,7 @@ mod tests {
             VP8Proba::record_stats(true, &mut proba.stats[0][1][0][0]);
         }
 
-        let defaults = cost_engine::reshape_probs();
+        let _defaults = cost_engine::reshape_probs();
         proba.finalize_token_probas();
 
         // The probability at this node should have changed (to reflect ~99% zeros)

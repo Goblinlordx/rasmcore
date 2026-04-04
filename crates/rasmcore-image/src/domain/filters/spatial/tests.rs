@@ -656,6 +656,7 @@ mod tests {
         );
     }
 
+    #[allow(dead_code)]
     fn make_rgba(w: u32, h: u32) -> (Vec<u8>, ImageInfo) {
         let pixels: Vec<u8> = (0..(w * h * 4)).map(|i| (i % 256) as u8).collect();
         let info = ImageInfo {

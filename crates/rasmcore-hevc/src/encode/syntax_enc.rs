@@ -565,8 +565,8 @@ mod tests {
     #[test]
     fn encode_decode_intra_mode_mpm() {
         let qp = 26;
-        let mut enc_ctx = syntax::init_syntax_contexts(qp);
-        let mut dec_ctx = syntax::init_syntax_contexts(qp);
+        let enc_ctx = syntax::init_syntax_contexts(qp);
+        let dec_ctx = syntax::init_syntax_contexts(qp);
 
         // Encode mpm_idx = 0, 1, 2
         for mpm_idx in 0..3u8 {

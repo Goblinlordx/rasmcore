@@ -159,7 +159,7 @@ impl CpuFilter for DehazeParams {
         let scale_255 = f32x4_splat(255.0);
         let half = f32x4_splat(0.5);
         let zero = f32x4_splat(0.0);
-        let t_min_v = f32x4_splat(t_min);
+        let _t_min_v = f32x4_splat(t_min);
 
         // Process one pixel at a time using f32x4 for RGB channels + padding
         // This vectorizes the 3-channel arithmetic (R, G, B, 0) in one SIMD op

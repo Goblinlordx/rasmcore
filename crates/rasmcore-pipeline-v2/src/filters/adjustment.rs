@@ -642,7 +642,7 @@ mod tests {
     #[test]
     fn dodge_burn_are_inverses_at_half() {
         let dodge = Dodge { amount: 0.5 };
-        let burn = Burn { amount: 0.5 };
+        let _burn = Burn { amount: 0.5 };
         let input = vec![0.5, 0.5, 0.5, 1.0];
         let dodged = dodge.compute(&input, 1, 1).unwrap();
         // dodge: 0.5 / (1-0.5) = 1.0

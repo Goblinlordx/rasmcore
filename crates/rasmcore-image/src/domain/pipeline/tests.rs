@@ -491,7 +491,7 @@ mod tests {
             16,
             ResizeFilter::Nearest,
         )));
-        let large = graph.add_node(Box::new(ResizeNode::new(
+        let _large = graph.add_node(Box::new(ResizeNode::new(
             src,
             src_info,
             48,

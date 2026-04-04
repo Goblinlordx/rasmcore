@@ -541,6 +541,7 @@ mod tests {
     }
 
     /// Write PPM and run vips smartcrop, return the crop position (x, y).
+    #[allow(dead_code)]
     fn vips_smartcrop(
         pixels: &[u8],
         w: u32,
@@ -615,6 +616,7 @@ mod tests {
     }
 
     /// Find where a crop appears in the original image by comparing top-left corner pixels.
+    #[allow(dead_code)]
     fn find_crop_position(
         original: &[u8],
         orig_w: u32,
