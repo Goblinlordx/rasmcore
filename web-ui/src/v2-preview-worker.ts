@@ -9,7 +9,7 @@
 import { Pipeline } from '../sdk/v2/fluent/index';
 import { GpuHandlerV2, type GpuShader } from './gpu-handler-v2';
 
-const PREVIEW_MAX = 400;
+const PREVIEW_MAX = 1920;
 
 let PipelineClass = null;
 let LayerCacheClass = null;
@@ -136,7 +136,7 @@ async function processChain(chain) {
     }
 
     const buf = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength);
-    self.postMessage({ type: 'result', png: buf, totalMs }, [buf]);
+    self.postMessage({ type: 'result', png: buf, totalMs, proxyMax: PREVIEW_MAX }, [buf]);
   } catch (e: any) {
     const detail = e?.payload ? JSON.stringify(e.payload, null, 2) : e?.message || String(e);
     console.error('[v2-preview] Process failed:', detail);

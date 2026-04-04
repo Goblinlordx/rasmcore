@@ -1,14 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+export interface PreviewState {
+  ready: boolean;
+  processing: boolean;
+  /** Last proxy render time in ms */
+  proxyMs: number | null;
+}
+
 export function usePreviewWorker() {
   const workerRef = useRef<Worker | null>(null);
   const readyRef = useRef(false);
   const processingRef = useRef(false);
-  const [ready, setReady] = useState(false);
+  const [state, setState] = useState<PreviewState>({
+    ready: false,
+    processing: false,
+    proxyMs: null,
+  });
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  /** External viewport canvas — proxy results draw here for main display */
+  const viewportCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const pendingLoadRef = useRef<ArrayBuffer | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const queuedChainRef = useRef<any[] | null>(null); // single-slot queue
+  /** Called after each proxy render completes (for background warm trigger) */
+  const onProxyCompleteRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const w = new Worker(new URL('../v2-preview-worker.ts', import.meta.url), { type: 'module' });
@@ -20,7 +35,7 @@ export function usePreviewWorker() {
 
       if (type === 'ready') {
         readyRef.current = true;
-        setReady(true);
+        setState((s) => ({ ...s, ready: true }));
         // Drain pending load if image was queued before SDK was ready
         if (pendingLoadRef.current && workerRef.current) {
           workerRef.current.postMessage({ type: 'load', imageBytes: pendingLoadRef.current }, [
@@ -33,29 +48,45 @@ export function usePreviewWorker() {
 
       if (type === 'loaded') {
         processingRef.current = false;
+        setState((s) => ({ ...s, processing: false }));
         return;
       }
 
       if (type === 'result') {
         processingRef.current = false;
+        setState((s) => ({ ...s, processing: false, proxyMs: e.data.totalMs }));
+
         const blob = new Blob([e.data.png], { type: 'image/png' });
         const url = URL.createObjectURL(blob);
         const img = new Image();
         img.onload = () => {
-          const canvas = previewCanvasRef.current;
-          if (canvas) {
-            canvas.width = img.width;
-            canvas.height = img.height;
-            canvas.getContext('2d')?.drawImage(img, 0, 0);
+          // Draw to sidebar preview canvas (editing thumbnail)
+          const sidebar = previewCanvasRef.current;
+          if (sidebar) {
+            sidebar.width = img.width;
+            sidebar.height = img.height;
+            sidebar.getContext('2d')?.drawImage(img, 0, 0);
+          }
+          // Draw to main viewport canvas (proxy display)
+          const viewport = viewportCanvasRef.current;
+          if (viewport) {
+            viewport.width = img.width;
+            viewport.height = img.height;
+            viewport.getContext('2d')?.drawImage(img, 0, 0);
           }
           URL.revokeObjectURL(url);
+
+          // Notify that proxy render completed (triggers background warm)
+          if (onProxyCompleteRef.current) onProxyCompleteRef.current();
         };
         img.src = url;
+
         // Drain single-slot queue
         if (queuedChainRef.current && workerRef.current) {
           const next = queuedChainRef.current;
           queuedChainRef.current = null;
           processingRef.current = true;
+          setState((s) => ({ ...s, processing: true }));
           workerRef.current.postMessage({ type: 'process', chain: next });
         }
         return;
@@ -63,12 +94,14 @@ export function usePreviewWorker() {
 
       if (type === 'error') {
         processingRef.current = false;
+        setState((s) => ({ ...s, processing: false }));
         console.warn('Preview worker error:', e.data.message);
         // Drain queue even on error
         if (queuedChainRef.current && workerRef.current) {
           const next = queuedChainRef.current;
           queuedChainRef.current = null;
           processingRef.current = true;
+          setState((s) => ({ ...s, processing: true }));
           workerRef.current.postMessage({ type: 'process', chain: next });
         }
       }
@@ -84,6 +117,7 @@ export function usePreviewWorker() {
       return;
     }
     processingRef.current = true;
+    setState((s) => ({ ...s, processing: true }));
     workerRef.current.postMessage({ type: 'load', imageBytes }, [imageBytes]);
   }, []);
 
@@ -97,10 +131,18 @@ export function usePreviewWorker() {
         return;
       }
       processingRef.current = true;
+      setState((s) => ({ ...s, processing: true }));
       workerRef.current.postMessage({ type: 'process', chain });
     },
     [],
   );
 
-  return { ready, previewCanvasRef, loadImage, processChain };
+  return {
+    ...state,
+    previewCanvasRef,
+    viewportCanvasRef,
+    onProxyCompleteRef,
+    loadImage,
+    processChain,
+  };
 }

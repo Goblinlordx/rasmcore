@@ -30,6 +30,8 @@ export function useWorker() {
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const originalCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const onLoadedRef = useRef<(() => void) | null>(null);
+  /** Called when a 'warm' mode render completes (cache populated) */
+  const onWarmCompleteRef = useRef<(() => void) | null>(null);
 
   const setProcessing = useCallback((active: boolean) => {
     processingRef.current = active;
@@ -69,6 +71,10 @@ export function useWorker() {
 
       if (type === 'result') {
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
+
+        const isWarm = e.data.mode === 'warm';
+
+        // Always draw to canvas — warm mode upgrades proxy to full-res silently
         const blob = new Blob([e.data.png], { type: 'image/png' });
         const url = URL.createObjectURL(blob);
         const img = new Image();
@@ -84,7 +90,7 @@ export function useWorker() {
         img.src = url;
 
         processingRef.current = false;
-        if (e.data.mode === 'full' && e.data.timings) {
+        if (e.data.timings) {
           setState((s) => ({
             ...s,
             processing: false,
@@ -94,6 +100,10 @@ export function useWorker() {
         } else {
           setState((s) => ({ ...s, processing: false, error: null }));
         }
+
+        // Notify warm completion
+        if (isWarm && onWarmCompleteRef.current) onWarmCompleteRef.current();
+
         // Drain queue
         if (queueRef.current) {
           const next = queueRef.current as { imageBytes?: ArrayBuffer };
@@ -170,5 +180,6 @@ export function useWorker() {
     previewCanvasRef,
     originalCanvasRef,
     onLoadedRef,
+    onWarmCompleteRef,
   };
 }

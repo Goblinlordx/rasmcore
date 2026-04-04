@@ -13,7 +13,7 @@ import EffectStack from './components/EffectStack';
 import StatusBar from './components/StatusBar';
 import CodeModal from './components/CodeModal';
 
-const PREVIEW_DEBOUNCE_MS = 600;
+const PREVIEW_DEBOUNCE_MS = 150;
 
 export default function App() {
   const { operations, groups, writeFormats, loading } = useAppContext();
@@ -45,22 +45,50 @@ export default function App() {
   const [exportFormat, setExportFormat] = useState('jpeg');
   const [exportQuality, setExportQuality] = useState(85);
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Whether the last viewport update came from proxy (true) or full-res (false) */
+  const [showingProxy, setShowingProxy] = useState(false);
+  /** Whether background warm is running */
+  const [warming, setWarming] = useState(false);
 
   // Stable ref to current serializeChain so callbacks always have the latest
   const serializeChainRef = useRef(serializeChain);
   serializeChainRef.current = serializeChain;
 
-  // Set up onLoaded callback to trigger initial render
+  // Connect preview worker's viewport canvas to the main Canvas component
+  useEffect(() => {
+    preview.viewportCanvasRef.current = worker.previewCanvasRef.current;
+  });
+
+  // After proxy render completes, trigger background full-res warm
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/immutability
+    preview.onProxyCompleteRef.current = () => {
+      setShowingProxy(true);
+      // Queue background full-res to warm the layer cache
+      if (activeLayer?.imageBytes) {
+        setWarming(true);
+        worker.sendMessage({ type: 'process', chain: serializeChainRef.current(), mode: 'warm' });
+      }
+    };
+  }, [preview, worker, activeLayer]);
+
+  // When background warm completes, mark viewport as full-res
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/immutability
+    worker.onWarmCompleteRef.current = () => {
+      setWarming(false);
+      setShowingProxy(false);
+    };
+  }, [worker]);
+
+  // Set up onLoaded callback to trigger initial render via proxy
   useEffect(() => {
     // eslint-disable-next-line react-hooks/immutability
     worker.onLoadedRef.current = () => {
-      worker.sendMessage({
-        type: 'process',
-        chain: serializeChainRef.current(),
-        mode: 'full',
-      });
+      // Trigger proxy render first (fast), then background warm follows via onProxyComplete
+      preview.processChain(serializeChainRef.current());
     };
-  }, [worker]);
+  }, [worker, preview]);
 
   const handleAddLayer = useCallback(
     async (file: File) => {
@@ -101,10 +129,11 @@ export default function App() {
     [addLayer, worker, preview],
   );
 
+  // Apply chain via proxy first (fast ~1080p), then background warm follows automatically
   const applyFullChain = useCallback(() => {
     if (!activeLayer?.imageBytes) return;
-    worker.sendMessage({ type: 'process', chain: serializeChainRef.current(), mode: 'full' });
-  }, [activeLayer, worker]);
+    preview.processChain(serializeChainRef.current());
+  }, [activeLayer, preview]);
 
   const requestCompositeProcess = useCallback(() => {
     if (layers.length === 0) return;
@@ -148,7 +177,7 @@ export default function App() {
     [moveNode, applyFullChain],
   );
 
-  // Debounced preview — sends chain to preview worker (fast, downscaled)
+  // Debounced preview — sends chain to preview worker (fast, ~1080p proxy)
   const schedulePreview = useCallback(() => {
     if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
     previewTimerRef.current = setTimeout(() => {
@@ -225,8 +254,11 @@ export default function App() {
       <StatusBar
         dims={worker.imageInfo}
         timings={worker.timings}
-        processing={worker.processing}
+        processing={worker.processing || preview.processing}
         error={worker.error}
+        showingProxy={showingProxy}
+        warming={warming}
+        proxyMs={preview.proxyMs}
       />
       <CodeModal
         open={codeModalOpen}
