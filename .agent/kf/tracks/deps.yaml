@@ -345,3 +345,6 @@ v2-integration_20260403053507Z:
   - v2-color-pipeline_20260403053503Z
 v2-staged-execution_20260403063500Z:
   - v2-pipeline-foundation_20260403053500Z
+
+# Zero-warning enforcement — no deps (standalone cleanup + policy)
+zero-warnings-enforce_20260404095800Z: []
