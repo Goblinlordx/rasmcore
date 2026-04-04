@@ -11,7 +11,7 @@ export function usePreviewWorker() {
   const queuedChainRef = useRef<any[] | null>(null); // single-slot queue
 
   useEffect(() => {
-    const w = new Worker(new URL('../preview-worker.ts', import.meta.url), { type: 'module' });
+    const w = new Worker(new URL('../v2-preview-worker.ts', import.meta.url), { type: 'module' });
     workerRef.current = w;
     w.postMessage({ type: 'init' });
 

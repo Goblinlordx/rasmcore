@@ -42,7 +42,7 @@ export function useWorker() {
   }, []);
 
   useEffect(() => {
-    const w = new Worker(new URL('../pipeline-worker.ts', import.meta.url), { type: 'module' });
+    const w = new Worker(new URL('../v2-pipeline-worker.ts', import.meta.url), { type: 'module' });
     workerRef.current = w;
     w.postMessage({ type: 'init' });
 

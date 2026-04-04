@@ -51,3 +51,4 @@ web-ui/dist/
 web-ui/sdk
 sdk/typescript/v2-generated/
 sdk/typescript/v2-fluent/
+web-ui/sdk/v2/
