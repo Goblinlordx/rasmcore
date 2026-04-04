@@ -7,17 +7,24 @@ description = "Graph-based image processing CLI for rasmcore"
 
 [features]
 default = ["gpu"]
-gpu = ["dep:wgpu", "dep:pollster"]
+gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
 
 [dependencies]
 rasmcore-image = { path = "../rasmcore-image" }
 rasmcore-pipeline = { path = "../rasmcore-pipeline" }
+rasmcore-pipeline-v2 = { path = "../rasmcore-pipeline-v2" }
 wgpu = { version = "24", optional = true }
 pollster = { version = "0.4", optional = true }
+bytemuck = { version = "1", features = ["derive"], optional = true }
 
 [[bin]]
 name = "rcim"
 path = "src/main.rs"
+
+[[bin]]
+name = "bench-pipeline"
+path = "src/bench_pipeline.rs"
+required-features = ["gpu"]
 
 [lints]
 workspace = true

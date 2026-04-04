@@ -17,6 +17,8 @@ use rasmcore_image::domain::pipeline::nodes::{sink, source};
 
 #[cfg(feature = "gpu")]
 mod gpu_executor;
+#[cfg(feature = "gpu")]
+mod gpu_executor_v2;
 
 // ─── CLI Command Types ─────────────────────────────────────────────────────
 
