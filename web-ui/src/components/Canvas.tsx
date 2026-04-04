@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefCallback } from 'react';
 import { useContainerSize } from '../hooks/useContainerSize';
 import { useCanvasTransform, computeTransformCSS, formatZoom } from '../hooks/useCanvasTransform';
 
@@ -32,6 +32,12 @@ export default function Canvas({
 
   // Pan/zoom state
   const transform = useCanvasTransform(containerSize, imageWidth, imageHeight);
+
+  // Combine containerRef (ResizeObserver) + gestureRef (Safari gestures) on same element
+  const viewportRef = useCallback((el: HTMLDivElement | null) => {
+    (containerRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+    transform.gestureRef(el);
+  }, [containerRef, transform.gestureRef]);
   const canvasStyle = hasImage
     ? computeTransformCSS(transform.state, containerSize, imageWidth, imageHeight)
     : undefined;
@@ -127,7 +133,7 @@ export default function Canvas({
 
       {/* Viewport container — fills available space, handles pan/zoom events */}
       <div
-        ref={containerRef}
+        ref={viewportRef}
         className="canvas-viewport"
         {...(hasImage ? transform.handlers : {})}
       >
