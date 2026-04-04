@@ -70,12 +70,14 @@ pub use registry::{
 };
 
 // Re-export operation traits
+#[allow(deprecated)]
 pub use ops::{
     Filter, GpuFilter, Decoder, Encoder, Transform,
     AnalyticOp, PointOpExpr, DecodedImage,
 };
 
 // Re-export node wrappers
+#[allow(deprecated)]
 pub use filter_node::{FilterNode, GpuFilterNode, compose_shader, IO_F32};
 
 // Re-export color pipeline

@@ -181,13 +181,11 @@ impl GpuFilter for BilateralParams {
         self.gpu_ops_with_format(width, height, rasmcore_pipeline::gpu::BufferFormat::F32Vec4)
     }
 
-    fn gpu_ops_with_format(&self, width: u32, height: u32, buffer_format: rasmcore_pipeline::gpu::BufferFormat) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
+    fn gpu_ops_with_format(&self, width: u32, height: u32, _buffer_format: rasmcore_pipeline::gpu::BufferFormat) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
         use rasmcore_pipeline::gpu::{BufferFormat, GpuOp};
         use std::sync::LazyLock;
         use rasmcore_gpu_shaders as shaders;
 
-        static BILATERAL_U32: LazyLock<String> =
-            LazyLock::new(|| shaders::with_pixel_ops(include_str!("../../../shaders/bilateral_f32.wgsl")));
         static BILATERAL_F32: LazyLock<String> =
             LazyLock::new(|| shaders::with_pixel_ops_f32(include_str!("../../../shaders/bilateral_f32.wgsl")));
 

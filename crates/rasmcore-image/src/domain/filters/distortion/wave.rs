@@ -68,7 +68,7 @@ impl GpuFilter for WaveParams {
         &self,
         width: u32,
         height: u32,
-        buffer_format: rasmcore_pipeline::gpu::BufferFormat,
+        _buffer_format: rasmcore_pipeline::gpu::BufferFormat,
     ) -> Option<Vec<rasmcore_pipeline::gpu::GpuOp>> {
         use rasmcore_pipeline::gpu::{BufferFormat, GpuOp};
         use std::sync::LazyLock;

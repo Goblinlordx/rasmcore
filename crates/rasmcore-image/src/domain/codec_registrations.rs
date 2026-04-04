@@ -14,7 +14,7 @@ inventory::submit! { &CodecRegistration {
     detect_fn: Some(|d| d.len() >= 4 && d[..4] == [0x89, 0x50, 0x4E, 0x47]),
     detection_priority: 10,
     decode_fn: Some(crate::domain::decoder::decode_native_png),
-    encode_fn: Some(|px, info, q| {
+    encode_fn: Some(|px, info, _q| {
         let config = crate::domain::encoder::png::PngEncodeConfig::default();
         crate::domain::encoder::png::encode(px, info, &config)
     }),

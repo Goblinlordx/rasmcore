@@ -1477,7 +1477,7 @@ impl NodeGraph {
             let gpu_node = self.gpu_nodes.get(node_id as usize)?.as_ref()?;
             let gpu_input_rect = self.nodes[node_id as usize]
                 .input_rect(request, info.width, info.height);
-            let mut ops = gpu_node
+            let ops = gpu_node
                 .gpu_ops_with_format(gpu_input_rect.width, gpu_input_rect.height, buf_format)?;
             let upstream_id = self.nodes[node_id as usize].upstream_id()?;
             // Check for asymmetric buffer format (e.g., PromoteNode: u8 input → f32 output)

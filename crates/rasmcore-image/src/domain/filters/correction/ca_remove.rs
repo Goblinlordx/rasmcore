@@ -84,7 +84,7 @@ pub fn ca_remove(
 
     // Shared radial shift logic
     #[inline]
-    fn shifted_coord(x: usize, y: usize, cx: f32, cy: f32, shift: f32, w: usize, h: usize) -> (f32, f32) {
+    fn shifted_coord(x: usize, y: usize, cx: f32, cy: f32, shift: f32, _w: usize, _h: usize) -> (f32, f32) {
         let dx = x as f32 - cx;
         let dy = y as f32 - cy;
         let r2 = dx * dx + dy * dy;

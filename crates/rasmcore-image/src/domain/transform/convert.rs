@@ -425,20 +425,6 @@ fn convert_pixels(
             }
             Ok(out)
         }
-        (PixelFormat::Rgba16f, PixelFormat::Rgba32f) => {
-            let mut out = Vec::with_capacity(pixel_count * 16);
-            for chunk in pixels.chunks_exact(8) {
-                let r = half::f16::from_le_bytes([chunk[0], chunk[1]]);
-                let g = half::f16::from_le_bytes([chunk[2], chunk[3]]);
-                let b = half::f16::from_le_bytes([chunk[4], chunk[5]]);
-                let a = half::f16::from_le_bytes([chunk[6], chunk[7]]);
-                out.extend_from_slice(&r.to_f32().to_le_bytes());
-                out.extend_from_slice(&g.to_f32().to_le_bytes());
-                out.extend_from_slice(&b.to_f32().to_le_bytes());
-                out.extend_from_slice(&a.to_f32().to_le_bytes());
-            }
-            Ok(out)
-        }
         (PixelFormat::Gray32f, PixelFormat::Rgba32f) => {
             let mut out = Vec::with_capacity(pixel_count * 16);
             for chunk in pixels.chunks_exact(4) {

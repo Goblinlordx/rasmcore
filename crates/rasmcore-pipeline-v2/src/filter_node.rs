@@ -177,6 +177,7 @@ pub struct GpuFilterNode<F: Filter + GpuFilter> {
     capabilities: NodeCapabilities,
 }
 
+#[allow(deprecated)]
 impl<F: Filter + GpuFilter> GpuFilterNode<F> {
     pub fn point_op(upstream: u32, info: NodeInfo, filter: F) -> Self {
         Self {
@@ -211,6 +212,7 @@ impl<F: Filter + GpuFilter> GpuFilterNode<F> {
     }
 }
 
+#[allow(deprecated)]
 impl<F: Filter + GpuFilter + 'static> Node for GpuFilterNode<F> {
     fn info(&self) -> NodeInfo {
         self.info.clone()

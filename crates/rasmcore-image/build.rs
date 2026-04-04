@@ -641,7 +641,6 @@ fn main() {
     let sample_bilinear_f32_frag =
         fs::read_to_string(gpu_shaders_dir.join("sample_bilinear_f32.wgsl")).unwrap_or_default();
     let io_u32 = fs::read_to_string(gpu_shaders_dir.join("io_u32.wgsl")).unwrap_or_default();
-    let io_f32 = fs::read_to_string(gpu_shaders_dir.join("io_f32.wgsl")).unwrap_or_default();
 
     let shaders_dir = Path::new(&manifest_dir).join("src/shaders");
     if shaders_dir.is_dir() {

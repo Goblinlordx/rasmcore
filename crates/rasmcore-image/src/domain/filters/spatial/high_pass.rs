@@ -127,7 +127,7 @@ impl GpuFilter for HighPassParams {
         hp_params.extend_from_slice(&0u32.to_le_bytes());
         hp_params.extend_from_slice(&0u32.to_le_bytes());
 
-        let (blur_shader, hp_shader, fmt) = match buffer_format {
+        let (blur_shader, hp_shader, _fmt) = match buffer_format {
             BufferFormat::F32Vec4 => (GAUSSIAN_BLUR_F32.clone(), HIGH_PASS_F32.clone(), BufferFormat::F32Vec4),
             _ => (GAUSSIAN_BLUR_U32.clone(), HIGH_PASS_U32.clone(), BufferFormat::U32Packed),
         };
