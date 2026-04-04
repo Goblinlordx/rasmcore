@@ -21,7 +21,7 @@ interface pipeline-v2 {
         aces-cg,
         aces-cct,
         aces-cc,
-        aces2065-1,
+        aces2065,
         display-p3,
         rec709,
         rec2020,

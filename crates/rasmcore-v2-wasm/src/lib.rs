@@ -216,7 +216,7 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
                 ColorSpace::AcesCg => wit::ColorSpace::AcesCg,
                 ColorSpace::AcesCct => wit::ColorSpace::AcesCct,
                 ColorSpace::AcesCc => wit::ColorSpace::AcesCc,
-                ColorSpace::Aces2065_1 => wit::ColorSpace::Aces20651,
+                ColorSpace::Aces2065_1 => wit::ColorSpace::Aces2065,
                 ColorSpace::DisplayP3 => wit::ColorSpace::DisplayP3,
                 ColorSpace::Rec709 => wit::ColorSpace::Rec709,
                 _ => wit::ColorSpace::Unknown,
