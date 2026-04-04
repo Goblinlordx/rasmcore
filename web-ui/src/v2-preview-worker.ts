@@ -12,6 +12,8 @@ import { GpuHandlerV2, type GpuShader } from './gpu-handler-v2';
 const PREVIEW_MAX = 400;
 
 let PipelineClass = null;
+let LayerCacheClass = null;
+let layerCache = null; // Shared cross-pipeline content-addressed cache
 let previewBytes = null;
 let gpuHandler: GpuHandlerV2 | null = null;
 
@@ -23,6 +25,13 @@ async function initSDK() {
   try {
     const sdk = await import('../sdk/v2/rasmcore-v2-image.js');
     PipelineClass = sdk.pipelineV2.ImagePipelineV2;
+    LayerCacheClass = sdk.pipelineV2.LayerCache;
+
+    // Create shared layer cache for cross-pipeline content-addressed caching
+    if (LayerCacheClass) {
+      layerCache = new LayerCacheClass(64); // 64 MB — preview images are small
+      console.log('[v2-preview] Layer cache created (64 MB)');
+    }
 
     if (GpuHandlerV2.isAvailable()) {
       gpuHandler = new GpuHandlerV2();
@@ -53,7 +62,7 @@ function loadImage(bytes) {
   let info = { width: 0, height: 0 };
 
   try {
-    const pipe = Pipeline.fromRaw(PipelineClass, previewBytes);
+    const pipe = Pipeline.fromRaw(PipelineClass, previewBytes, undefined, layerCache);
     info = { width: pipe.info.width, height: pipe.info.height };
     console.log(`[v2-preview] Loaded: ${info.width}x${info.height}`);
   } catch (e: any) {
@@ -74,7 +83,7 @@ async function processChain(chain) {
 
   const t0 = performance.now();
   try {
-    let pipe = Pipeline.fromRaw(PipelineClass, previewBytes);
+    let pipe = Pipeline.fromRaw(PipelineClass, previewBytes, undefined, layerCache);
 
     for (const step of chain) {
       const method = snakeToCamel(step.name);
@@ -118,7 +127,13 @@ async function processChain(chain) {
 
     const output = pipe.write('png');
     const totalMs = Math.round(performance.now() - t0);
-    console.log(`[v2-preview] ${totalMs}ms`);
+
+    if (layerCache) {
+      const s = layerCache.stats();
+      console.log(`[v2-preview] ${totalMs}ms | cache: ${s.hits} hits, ${s.misses} misses, ${s.entries} entries`);
+    } else {
+      console.log(`[v2-preview] ${totalMs}ms`);
+    }
 
     const buf = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength);
     self.postMessage({ type: 'result', png: buf, totalMs }, [buf]);
