@@ -277,7 +277,7 @@ function splitView(opName) {
   return `<div class="split-view" id="split-${opName}">
   <div class="split-container">
     <img class="split-before" src="/assets/examples/reference.png" alt="Before">
-    <img class="split-after" src="/assets/examples/${afterFile}" alt="After" style="clip-path: inset(0 50% 0 0);">
+    <img class="split-after" src="/assets/examples/${afterFile}" alt="After" style="clip-path: inset(0 0 0 50%);">
     <div class="split-divider" style="left: 50%;">
       <div class="split-handle"></div>
     </div>
@@ -296,12 +296,11 @@ function splitView(opName) {
   function update(e) {
     const rect = container.getBoundingClientRect();
     const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const pct = (1 - x) * 100;
-    after.style.clipPath = 'inset(0 ' + pct + '% 0 0)';
+    after.style.clipPath = 'inset(0 0 0 ' + (x * 100) + '%)';
     divider.style.left = (x * 100) + '%';
   }
-  divider.addEventListener('mousedown', () => dragging = true);
-  document.addEventListener('mousemove', (e) => { if (dragging) update(e); });
+  divider.addEventListener('mousedown', (e) => { e.preventDefault(); dragging = true; });
+  document.addEventListener('mousemove', (e) => { if (dragging) { e.preventDefault(); update(e); } });
   document.addEventListener('mouseup', () => dragging = false);
   container.addEventListener('click', update);
 })();
@@ -652,6 +651,8 @@ pre code {
   border-radius: 6px;
   overflow: hidden;
   border: 1px solid var(--border);
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .split-before, .split-after {
