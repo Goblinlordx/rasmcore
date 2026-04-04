@@ -80,6 +80,9 @@ export function useCanvasTransform(
   const isPanning = useRef(false);
   const lastMouse = useRef({ x: 0, y: 0 });
 
+  // Native event target — set via gestureRef callback, triggers effects
+  const [viewportEl, setViewportEl] = useState<HTMLElement | null>(null);
+
   // Touch state for pinch-to-zoom
   const lastTouchDist = useRef(0);
   const lastTouchMid = useRef({ x: 0, y: 0 });
@@ -89,30 +92,40 @@ export function useCanvasTransform(
     setState({ zoom: 0, panX: 0, panY: 0 });
   }, []);
 
-  const handleWheel = useCallback(
-    (e: React.WheelEvent) => {
+  // Wheel zoom — attached as native listener with { passive: false } to allow preventDefault.
+  // React synthetic onWheel is passive and cannot preventDefault.
+  const wheelHandlerRef = useRef(fit);
+  wheelHandlerRef.current = fit;
+
+  useEffect(() => {
+    const el = viewportEl;
+    if (!el) return;
+
+    const onWheel = (e: WheelEvent) => {
       e.preventDefault();
+      const currentFit = wheelHandlerRef.current;
+
+      // Capture event values before setState (event may be recycled)
+      const { deltaY, ctrlKey, clientX, clientY } = e;
+      const rect = el.getBoundingClientRect();
+      const cursorX = clientX - rect.left;
+      const cursorY = clientY - rect.top;
+
       setState((prev) => {
-        const oldZoom = prev.zoom <= 0 ? fit : prev.zoom;
+        const oldZoom = prev.zoom <= 0 ? currentFit : prev.zoom;
 
         let newZoom: number;
-        if (e.ctrlKey) {
+        if (ctrlKey) {
           // Trackpad pinch (Chrome/Firefox): ctrlKey + fine-grained deltaY
-          // deltaY is typically -1..1 for pinch; scale continuously
-          newZoom = oldZoom * Math.exp(-e.deltaY * 0.01);
+          newZoom = oldZoom * Math.exp(-deltaY * 0.01);
         } else {
           // Mouse wheel: discrete ticks
-          const direction = e.deltaY < 0 ? 1 : -1;
+          const direction = deltaY < 0 ? 1 : -1;
           newZoom = oldZoom * Math.pow(ZOOM_FACTOR, direction);
         }
         newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
 
         // Zoom centered on cursor position within the container
-        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-        const cursorX = e.clientX - rect.left;
-        const cursorY = e.clientY - rect.top;
-
-        // Current image-space point under cursor
         const scaledW = imageW * oldZoom;
         const scaledH = imageH * oldZoom;
         const offsetX = (container.width - scaledW) / 2 + prev.panX * oldZoom;
@@ -121,7 +134,6 @@ export function useCanvasTransform(
         const imgX = (cursorX - offsetX) / oldZoom;
         const imgY = (cursorY - offsetY) / oldZoom;
 
-        // New offset needed to keep the same image point under cursor
         const newScaledW = imageW * newZoom;
         const newScaledH = imageH * newZoom;
         const newBaseOffsetX = (container.width - newScaledW) / 2;
@@ -132,9 +144,11 @@ export function useCanvasTransform(
 
         return { zoom: newZoom, panX: newPanX, panY: newPanY };
       });
-    },
-    [fit, container.width, container.height, imageW, imageH],
-  );
+    };
+
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [viewportEl, container.width, container.height, imageW, imageH]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return; // left click only
@@ -272,10 +286,9 @@ export function useCanvasTransform(
   // ─── Safari GestureEvent support (trackpad pinch) ─────────────────────
 
   const gestureZoomBase = useRef(0);
-  const gestureElRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    const el = gestureElRef.current;
+    const el = viewportEl;
     if (!el || typeof (window as unknown as Record<string, unknown>).GestureEvent === 'undefined') return;
 
     const onGestureStart = (e: Event) => {
@@ -324,11 +337,11 @@ export function useCanvasTransform(
       el.removeEventListener('gesturechange', onGestureChange);
       el.removeEventListener('gestureend', onGestureEnd);
     };
-  }, [fit, state.zoom, container.width, container.height, imageW, imageH]);
+  }, [viewportEl, fit, state.zoom, container.width, container.height, imageW, imageH]);
 
-  /** Attach to the viewport element to enable Safari gesture events. */
+  /** Attach to the viewport element to enable native wheel + Safari gesture events. */
   const gestureRef = useCallback((el: HTMLElement | null) => {
-    gestureElRef.current = el;
+    setViewportEl(el);
   }, []);
 
   return {
@@ -337,7 +350,6 @@ export function useCanvasTransform(
     resetToFit,
     gestureRef,
     handlers: {
-      onWheel: handleWheel,
       onMouseDown: handleMouseDown,
       onMouseMove: handleMouseMove,
       onMouseUp: handleMouseUp,
