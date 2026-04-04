@@ -1205,6 +1205,7 @@ pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
     let param_count = param_descriptors.len();
     let params_ident = format_ident!("__V2_PARAMS_{}", filter_name.to_uppercase().replace('-', "_"));
     let reg_ident = format_ident!("__V2_REG_{}", filter_name.to_uppercase().replace('-', "_"));
+    let opreg_ident = format_ident!("__V2_OPREG_{}", filter_name.to_uppercase().replace('-', "_"));
 
     let factory_body = if fields.is_empty() {
         quote! { Box::new(rasmcore_pipeline_v2::FilterNode::point_op(upstream, info, #struct_name)) }
@@ -1240,6 +1241,20 @@ pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
             factory: |upstream, info, params| { #factory_body },
         };
         inventory::submit!(&#reg_ident);
+
+        #[doc(hidden)]
+        #[allow(non_upper_case_globals)]
+        static #opreg_ident: rasmcore_pipeline_v2::OperationRegistration = rasmcore_pipeline_v2::OperationRegistration {
+            name: #filter_name,
+            display_name: #display_name,
+            category: #filter_category,
+            kind: rasmcore_pipeline_v2::OperationKind::Filter,
+            params: &#params_ident,
+            capabilities: rasmcore_pipeline_v2::OperationCapabilities {
+                gpu: false, analytic: false, affine: false, clut: false,
+            },
+        };
+        inventory::submit!(&#opreg_ident);
     };
 
     TokenStream::from(expanded)

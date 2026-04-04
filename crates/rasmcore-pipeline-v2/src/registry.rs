@@ -637,6 +637,20 @@ mod tests {
     }
 
     #[test]
+    fn v2_filters_appear_in_registered_operations() {
+        let all = registered_operations();
+        let filters: Vec<_> = all.iter().filter(|o| o.kind == OperationKind::Filter).collect();
+        // V2Filter derive macro should register both FilterFactoryRegistration AND OperationRegistration
+        // "brightness" is a V2Filter — it must appear in registered_operations()
+        assert!(
+            filters.iter().any(|o| o.name == "brightness"),
+            "brightness filter not in registered_operations(); got {} filters: {:?}",
+            filters.len(),
+            filters.iter().map(|o| o.name).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn filter_factory_creates_brightness() {
         let factories = registered_filter_factories();
         assert!(factories.contains(&"brightness"), "brightness factory not registered");
