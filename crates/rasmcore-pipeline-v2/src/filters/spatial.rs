@@ -66,36 +66,112 @@ impl Filter for GaussianBlur {
         let kernel = gaussian_kernel_1d(self.radius);
         let r = kernel.len() / 2;
 
-        // Pass 1: horizontal
+        // Pass 1: horizontal — fast interior path skips clamp_coord for most pixels
         let mut tmp = vec![0.0f32; w * h * 4];
         for y in 0..h {
-            for x in 0..w {
+            let row_base = y * w * 4;
+
+            // Boundary pixels (left + right margins)
+            for x in 0..r.min(w) {
                 let mut sum = [0.0f32; 4];
                 for (kx, &kw) in kernel.iter().enumerate() {
                     let sx = clamp_coord(x as i32 + kx as i32 - r as i32, w);
-                    let idx = (y * w + sx) * 4;
-                    for c in 0..4 {
-                        sum[c] += kw * input[idx + c];
-                    }
+                    let idx = row_base + sx * 4;
+                    sum[0] += kw * input[idx];
+                    sum[1] += kw * input[idx + 1];
+                    sum[2] += kw * input[idx + 2];
+                    sum[3] += kw * input[idx + 3];
                 }
-                let out_idx = (y * w + x) * 4;
+                let out_idx = row_base + x * 4;
+                tmp[out_idx..out_idx + 4].copy_from_slice(&sum);
+            }
+            for x in (w.saturating_sub(r))..w {
+                if x < r { continue; } // already handled above
+                let mut sum = [0.0f32; 4];
+                for (kx, &kw) in kernel.iter().enumerate() {
+                    let sx = clamp_coord(x as i32 + kx as i32 - r as i32, w);
+                    let idx = row_base + sx * 4;
+                    sum[0] += kw * input[idx];
+                    sum[1] += kw * input[idx + 1];
+                    sum[2] += kw * input[idx + 2];
+                    sum[3] += kw * input[idx + 3];
+                }
+                let out_idx = row_base + x * 4;
+                tmp[out_idx..out_idx + 4].copy_from_slice(&sum);
+            }
+
+            // Interior pixels — no bounds check needed
+            let x_start = r.min(w);
+            let x_end = w.saturating_sub(r);
+            for x in x_start..x_end {
+                let mut sum = [0.0f32; 4];
+                // All source positions (x-r..x+r) are in bounds
+                let base = row_base + (x - r) * 4;
+                for (ki, &kw) in kernel.iter().enumerate() {
+                    let idx = base + ki * 4;
+                    sum[0] += kw * input[idx];
+                    sum[1] += kw * input[idx + 1];
+                    sum[2] += kw * input[idx + 2];
+                    sum[3] += kw * input[idx + 3];
+                }
+                let out_idx = row_base + x * 4;
                 tmp[out_idx..out_idx + 4].copy_from_slice(&sum);
             }
         }
 
-        // Pass 2: vertical
+        // Pass 2: vertical — fast interior path
         let mut out = vec![0.0f32; w * h * 4];
-        for y in 0..h {
+        let stride = w * 4;
+
+        // Boundary rows (top + bottom margins)
+        for y in 0..r.min(h) {
             for x in 0..w {
                 let mut sum = [0.0f32; 4];
                 for (ky, &kw) in kernel.iter().enumerate() {
                     let sy = clamp_coord(y as i32 + ky as i32 - r as i32, h);
-                    let idx = (sy * w + x) * 4;
-                    for c in 0..4 {
-                        sum[c] += kw * tmp[idx + c];
-                    }
+                    let idx = sy * stride + x * 4;
+                    sum[0] += kw * tmp[idx];
+                    sum[1] += kw * tmp[idx + 1];
+                    sum[2] += kw * tmp[idx + 2];
+                    sum[3] += kw * tmp[idx + 3];
                 }
-                let out_idx = (y * w + x) * 4;
+                let out_idx = y * stride + x * 4;
+                out[out_idx..out_idx + 4].copy_from_slice(&sum);
+            }
+        }
+        for y in (h.saturating_sub(r))..h {
+            if y < r { continue; }
+            for x in 0..w {
+                let mut sum = [0.0f32; 4];
+                for (ky, &kw) in kernel.iter().enumerate() {
+                    let sy = clamp_coord(y as i32 + ky as i32 - r as i32, h);
+                    let idx = sy * stride + x * 4;
+                    sum[0] += kw * tmp[idx];
+                    sum[1] += kw * tmp[idx + 1];
+                    sum[2] += kw * tmp[idx + 2];
+                    sum[3] += kw * tmp[idx + 3];
+                }
+                let out_idx = y * stride + x * 4;
+                out[out_idx..out_idx + 4].copy_from_slice(&sum);
+            }
+        }
+
+        // Interior rows — no bounds check needed
+        let y_start = r.min(h);
+        let y_end = h.saturating_sub(r);
+        for y in y_start..y_end {
+            for x in 0..w {
+                let mut sum = [0.0f32; 4];
+                let px_offset = x * 4;
+                let base_row = (y - r) * stride;
+                for (ki, &kw) in kernel.iter().enumerate() {
+                    let idx = base_row + ki * stride + px_offset;
+                    sum[0] += kw * tmp[idx];
+                    sum[1] += kw * tmp[idx + 1];
+                    sum[2] += kw * tmp[idx + 2];
+                    sum[3] += kw * tmp[idx + 3];
+                }
+                let out_idx = y * stride + x * 4;
                 out[out_idx..out_idx + 4].copy_from_slice(&sum);
             }
         }
