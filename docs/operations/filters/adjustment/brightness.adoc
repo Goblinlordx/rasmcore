@@ -1,0 +1,34 @@
+Additive brightness adjustment applied in linear light.
+
+Positive values brighten the image, negative values darken it. The offset is added directly to each RGB channel. Because the V2 pipeline operates in linear light (not gamma-encoded sRGB), a value of `+0.5` is perceptually about one stop brighter.
+
+NOTE: No clamping is applied during processing. Values outside [0, 1] are preserved and only clamped at the encode boundary (e.g., when writing to PNG). This enables HDR workflows and prevents banding in multi-step chains.
+
+== Usage
+
+[source,typescript]
+----
+const result = Pipeline.open(imageBytes)
+  .brightness({ amount: 0.3 })
+  .writePng();
+----
+
+== Analytic Fusion
+
+Brightness is an analytic point operation. When chained with other analytic ops (contrast, gamma, exposure), the pipeline fuses them into a single operation with zero intermediate buffers:
+
+[source,typescript]
+----
+// These three operations fuse into a single GPU kernel:
+Pipeline.open(imageBytes)
+  .brightness({ amount: 0.2 })
+  .contrast({ amount: 0.5 })
+  .gamma({ gamma: 1.1 })
+  .writePng();
+----
+
+== See Also
+
+* <<contrast.adoc#,Contrast>> — multiplicative contrast adjustment
+* <<exposure.adoc#,Exposure>> — EV-based exposure (multiplicative in linear light)
+* <<gamma.adoc#,Gamma>> — power-curve gamma correction

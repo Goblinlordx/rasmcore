@@ -11,8 +11,9 @@ use crate::ops::{Filter, PointOpExpr};
 ///
 /// `output = input + amount` (clamped to [0, 1] only at encode boundary).
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "brightness", category = "adjustment")]
+#[filter(name = "brightness", category = "adjustment", doc = "docs/operations/filters/adjustment/brightness.adoc")]
 pub struct Brightness {
+    /// Additive offset applied to each RGB channel.
     #[param(min = -1.0, max = 1.0, step = 0.02, default = 0.0)]
     pub amount: f32,
 }
@@ -42,8 +43,9 @@ impl Filter for Brightness {
 ///
 /// `output = (input - 0.5) * factor + 0.5`
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "contrast", category = "adjustment")]
+#[filter(name = "contrast", category = "adjustment", doc = "docs/operations/filters/adjustment/contrast.adoc")]
 pub struct Contrast {
+    /// Contrast multiplier. Positive increases contrast, negative decreases.
     #[param(min = -1.0, max = 1.0, step = 0.02, default = 0.0)]
     pub amount: f32,
 }

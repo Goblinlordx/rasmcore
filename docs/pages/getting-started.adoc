@@ -1,0 +1,53 @@
+= Getting Started
+:section: Guides
+:order: 1
+
+rasmcore is a professional-grade image processing pipeline that runs on WebAssembly. All processing happens in f32 linear light with GPU acceleration when available.
+
+== Installation
+
+[source,bash]
+----
+npm install @rasmcore/image
+----
+
+== Basic Usage
+
+[source,typescript]
+----
+import { Pipeline } from '@rasmcore/image';
+
+const result = Pipeline.open(imageBytes)
+  .brightness({ amount: 0.3 })
+  .contrast({ amount: 0.5 })
+  .gaussianBlur({ radius: 2.0 })
+  .writePng();
+----
+
+== Key Concepts
+
+=== f32 Linear Pipeline
+
+All pixel data is processed as 32-bit floating point in linear light. This ensures:
+
+* No banding from integer quantization
+* Correct blending and compositing
+* HDR-safe (values can exceed [0, 1])
+* Quantization only happens at the encode boundary
+
+=== Analytic Fusion
+
+Point operations (brightness, contrast, gamma, exposure) are automatically fused into a single expression. A chain of 10 point ops executes as one operation with zero intermediate buffers.
+
+=== GPU Acceleration
+
+When WebGPU is available, the pipeline dispatches compute shaders for GPU-capable operations. Fused analytic chains execute as a single GPU kernel.
+
+== Architecture
+
+[source]
+----
+Image File → Decode (sRGB→linear) → Filter Chain (f32 linear) → Encode (linear→sRGB) → Output
+----
+
+NOTE: The pipeline never clamps intermediate values. This preserves HDR headroom through the entire chain.

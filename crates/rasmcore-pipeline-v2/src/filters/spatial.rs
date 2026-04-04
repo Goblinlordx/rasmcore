@@ -49,8 +49,9 @@ fn gaussian_kernel_1d(radius: f32) -> Vec<f32> {
 
 /// Gaussian blur — separable convolution on f32 data.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "gaussian_blur", category = "spatial")]
+#[filter(name = "gaussian_blur", category = "spatial", doc = "docs/operations/filters/spatial/gaussian_blur.adoc")]
 pub struct GaussianBlur {
+    /// Blur radius in pixels. Larger values produce stronger blur.
     #[param(min = 0.0, max = 100.0, default = 1.0)]
     pub radius: f32,
 }

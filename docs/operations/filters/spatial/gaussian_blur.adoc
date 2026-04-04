@@ -1,0 +1,23 @@
+Gaussian blur — separable two-pass convolution with a 1D Gaussian kernel.
+
+The blur radius determines the kernel size: larger values produce stronger blur. The implementation uses horizontal then vertical passes for O(w*h*r) instead of O(w*h*r^2).
+
+== Usage
+
+[source,typescript]
+----
+Pipeline.open(imageBytes)
+  .gaussianBlur({ radius: 5.0 })
+  .writePng();
+----
+
+WARNING: Large radii (> 50) are computationally expensive on CPU. GPU dispatch handles large radii efficiently.
+
+== Spatial Filter
+
+Gaussian blur is a spatial filter with tile overlap equal to `ceil(radius * 3)`. When tiled execution is active, each tile is expanded by this overlap to avoid seam artifacts.
+
+== See Also
+
+* <<box_blur.adoc#,Box Blur>> — faster but lower quality (uniform kernel)
+* <<bilateral.adoc#,Bilateral>> — edge-preserving blur

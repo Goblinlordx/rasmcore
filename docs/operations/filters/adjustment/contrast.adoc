@@ -1,0 +1,23 @@
+Multiplicative contrast adjustment around the midpoint (0.5 in linear light).
+
+The formula is: `output = (input - 0.5) * (1 + amount) + 0.5`
+
+Positive values increase contrast (push values away from mid-gray), negative values decrease it (compress toward mid-gray).
+
+== Usage
+
+[source,typescript]
+----
+Pipeline.open(imageBytes)
+  .contrast({ amount: 0.4 })
+  .writePng();
+----
+
+== Analytic Fusion
+
+Contrast is an analytic point operation and participates in expression fusion with brightness, gamma, and other point ops.
+
+== See Also
+
+* <<brightness.adoc#,Brightness>> — additive brightness offset
+* <<sigmoidalContrast.adoc#,Sigmoidal Contrast>> — S-curve contrast (perceptually smoother)

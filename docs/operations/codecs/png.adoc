@@ -1,0 +1,22 @@
+PNG (Portable Network Graphics) — lossless image format with full alpha support.
+
+The rasmcore PNG encoder produces 8-bit sRGB output. Internal f32 linear pipeline values are converted to sRGB gamma and quantized to 8-bit per channel during encoding.
+
+== Encoding
+
+[source,typescript]
+----
+Pipeline.open(imageBytes)
+  .brightness({ amount: 0.2 })
+  .writePng();
+----
+
+Quality parameter is ignored for PNG (lossless format). Compression level is fixed at the `png` crate default.
+
+== Decoding
+
+PNG files are auto-detected by magic bytes (`\x89PNG`). The decoder reads 8-bit and 16-bit PNG files, converts to f32 linear RGBA for the pipeline.
+
+== Color Space
+
+Input sRGB pixels are linearized (sRGB EOTF applied) on decode. The pipeline operates entirely in linear light. On encode, the inverse sRGB transfer function is applied to produce standard sRGB output.
