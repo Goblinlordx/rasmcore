@@ -1,0 +1,5 @@
+package rasmcore:v2-image@0.1.0;
+
+world image-processor {
+    export pipeline;
+}

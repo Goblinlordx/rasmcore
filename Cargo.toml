@@ -48,6 +48,7 @@ members = [
     "crates/rasmcore-codec-fits",
     "crates/rasmcore-codecs-std",
     "crates/rasmcore-codecs-v2",
+    "crates/rasmcore-v2-wasm",
     "crates/rasmcore-all",
     "tests/wasm-integration",
     "tests/codec-parity",

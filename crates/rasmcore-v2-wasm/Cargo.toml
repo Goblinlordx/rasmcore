@@ -1,0 +1,23 @@
+[package]
+name = "rasmcore-v2-wasm"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+rasmcore-pipeline-v2 = { path = "../rasmcore-pipeline-v2" }
+rasmcore-codecs-v2 = { path = "../rasmcore-codecs-v2" }
+wit-bindgen-rt = "0.41.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[package.metadata.component]
+package = "rasmcore:v2-image"
+target.path = "../../wit/v2"
+
+[package.metadata.component.target.dependencies]
+"rasmcore:core" = { path = "../../wit/core" }
+
+[lints]
+workspace = true
