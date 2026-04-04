@@ -11,6 +11,24 @@ import { GpuHandlerV2, type GpuShader } from './gpu-handler-v2';
 
 const PREVIEW_MAX = 720;
 
+/** Detect display-p3 OffscreenCanvas support (worker-safe, no document). */
+let _workerP3: boolean | null = null;
+function workerSupportsP3(): boolean {
+  if (_workerP3 !== null) return _workerP3;
+  try {
+    const oc = new OffscreenCanvas(1, 1);
+    const ctx = oc.getContext('2d', { colorSpace: 'display-p3' });
+    _workerP3 = ctx !== null;
+  } catch {
+    _workerP3 = false;
+  }
+  return _workerP3;
+}
+
+function workerPreferredColorSpace(): PredefinedColorSpace {
+  return workerSupportsP3() ? 'display-p3' : 'srgb';
+}
+
 let PipelineClass = null;
 let LayerCacheClass = null;
 let layerCache = null; // Shared cross-pipeline content-addressed cache
@@ -139,7 +157,7 @@ async function downscaleBytes(bytes: Uint8Array, scale: number): Promise<Uint8Ar
   const w = Math.round(bmp.width * scale);
   const h = Math.round(bmp.height * scale);
   const oc = new OffscreenCanvas(w, h);
-  const ctx = oc.getContext('2d')!;
+  const ctx = oc.getContext('2d', { colorSpace: workerPreferredColorSpace() })!;
   ctx.drawImage(bmp, 0, 0, w, h);
   bmp.close();
   const outBlob = await oc.convertToBlob({ type: 'image/png' });

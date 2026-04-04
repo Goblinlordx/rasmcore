@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { getWideGamutContext } from '../utils/canvasColorSpace';
 
 export interface WorkerTimings {
   totalMs: number;
@@ -83,7 +84,7 @@ export function useWorker() {
           if (canvas) {
             canvas.width = img.width;
             canvas.height = img.height;
-            canvas.getContext('2d')?.drawImage(img, 0, 0);
+            getWideGamutContext(canvas)?.drawImage(img, 0, 0);
           }
           URL.revokeObjectURL(url);
         };

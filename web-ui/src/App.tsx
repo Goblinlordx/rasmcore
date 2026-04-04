@@ -5,6 +5,7 @@ import { usePreviewWorker } from './hooks/usePreviewWorker';
 import { useLayers } from './hooks/useLayers';
 import { useChain } from './hooks/useChain';
 import { generateCode } from './utils/codeGeneration';
+import { getWideGamutContext } from './utils/canvasColorSpace';
 import Toolbar from './components/Toolbar';
 import Canvas from './components/Canvas';
 import RightPanel from './components/RightPanel';
@@ -102,12 +103,12 @@ export default function App() {
             if (oc) {
               oc.width = img.width;
               oc.height = img.height;
-              oc.getContext('2d')?.drawImage(img, 0, 0);
+              getWideGamutContext(oc)?.drawImage(img, 0, 0);
             }
             if (pc) {
               pc.width = img.width;
               pc.height = img.height;
-              pc.getContext('2d')?.drawImage(img, 0, 0);
+              getWideGamutContext(pc)?.drawImage(img, 0, 0);
             }
             URL.revokeObjectURL(url);
           };
