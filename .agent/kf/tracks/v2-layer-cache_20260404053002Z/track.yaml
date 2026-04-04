@@ -5,99 +5,116 @@ status: pending
 created: '2026-04-04'
 updated: '2026-04-04'
 spec:
-  summary: |
-    Port V1 LayerCache architecture to V2: external cache created once, injected
+  summary: 'Port V1 LayerCache architecture to V2: external cache created once, injected
+
     via WIT, content-addressed blake3 hashing, optional quantization, reference-tracked
+
     eviction. Managed within the library but initialized/owned externally.
-  context: |
-    V1 has a full LayerCache (627 lines): content-addressed via blake3 hash chains,
+
+    '
+  context: 'V1 has a full LayerCache (627 lines): content-addressed via blake3 hash chains,
+
     cross-pipeline persistence, Q8/Q16/Full quantization, reference-tracked eviction.
+
     V2 has only SpatialCache (per-pipeline, keyed by node_id+rect, dies with Graph).
+
     When the user adjusts a single slider in a 5-filter chain, all 5 nodes recompute
+
     from scratch. With layer cache, only the changed node and its downstream recompute.
-  codebase_analysis: |
-    V1 LayerCache (crates/rasmcore-pipeline/src/layer_cache.rs):
+
+    '
+  codebase_analysis: 'V1 LayerCache (crates/rasmcore-pipeline/src/layer_cache.rs):
+
     - blake3 hash chain: source_hash = blake3(data), blur_hash = blake3(source_hash || "blur" || params)
+
     - CachedLayer stores pixels, width, height, bpp, referenced flag
+
     - Memory budget with auto-grow to max_budget (1GB default)
+
     - Quantization: Full (16 bytes/pixel), Q16 (8), Q8 (4) — transparent to consumers
+
     - API: new(budget), get(hash), store(hash, pixels), cleanup_unreferenced(), stats()
 
+
     V1 WIT interface (wit/image/pipeline.wit):
+
     - layer-cache resource with constructor(capacity), stats(), clear(), set-cache-quality()
+
     - Pipeline.set-layer-cache(borrow<layer-cache>) for injection
 
+
     V2 Graph (crates/rasmcore-pipeline-v2/src/graph.rs):
+
     - Uses SpatialCache for tile-level caching within a single pipeline instance
+
     - No content-addressed hashing, no cross-pipeline persistence
+
     - Nodes do not carry content hashes
 
-    4 existing pending tracks (pipeline-layer-cache, layer-cache-wit, demo-layer-cache,
-    webui-wire-layer-cache) were planned for V1 wiring. This track ports to V2.
-  acceptance_criteria:
-    - V2 LayerCache struct with content-addressed blake3 hash chains
-    - External creation and injection via WIT resource (constructor with capacity_mb)
-    - Cache persists across pipeline instances (created once, shared across runs)
-    - Optional quantization (Full/Q16/Q8) transparent to pipeline
-    - Reference-tracked eviction between runs
-    - stats() returns entries, hits, misses, size_bytes
-    - V2 Graph integrates cache in request_region() — check before compute, store after
-    - 5-filter chain with last param changed recomputes only 1 node (not all 5)
-  out_of_scope: |
-    GPU buffer caching (separate concern). CPU optimization. Shader caching.
-  technical_notes: |
-    Architecture mirrors V1:
-    1. V2 LayerCache struct in rasmcore-pipeline-v2 (can adapt V1 implementation)
-    2. Nodes carry content hashes: source_hash from input data, downstream hashes
-       composed from upstream_hash + op_name + serialized_params
-    3. Graph.request_region() checks layer cache before compute, stores result after
-    4. WIT resource: layer-cache { constructor(capacity), stats(), clear(), set-cache-quality() }
-    5. Pipeline.set-layer-cache(borrow<layer-cache>) in V2 WIT
-    6. Web workers create LayerCache once at init, inject into each Pipeline
 
-    For GPU path: layer cache stores CPU-side f32 pixels. GPU results are read back
-    and cached as f32. On cache hit, data is uploaded to GPU if next node is GPU.
-    This means layer cache helps even in GPU pipelines by avoiding re-upload of
-    unchanged upstream results.
+    4 existing pending tracks (pipeline-layer-cache, layer-cache-wit, demo-layer-cache,
+
+    webui-wire-layer-cache) were planned for V1 wiring. This track ports to V2.
+
+    '
+  acceptance_criteria:
+  - V2 LayerCache struct with content-addressed blake3 hash chains
+  - External creation and injection via WIT resource (constructor with capacity_mb)
+  - Cache persists across pipeline instances (created once, shared across runs)
+  - Optional quantization (Full/Q16/Q8) transparent to pipeline
+  - Reference-tracked eviction between runs
+  - stats() returns entries, hits, misses, size_bytes
+  - V2 Graph integrates cache in request_region() — check before compute, store after
+  - 5-filter chain with last param changed recomputes only 1 node (not all 5)
+  out_of_scope: 'GPU buffer caching (separate concern). CPU optimization. Shader caching.
+
+    '
+  technical_notes: "Architecture mirrors V1:\n1. V2 LayerCache struct in rasmcore-pipeline-v2 (can adapt V1 implementation)\n\
+    2. Nodes carry content hashes: source_hash from input data, downstream hashes\n   composed from upstream_hash + op_name\
+    \ + serialized_params\n3. Graph.request_region() checks layer cache before compute, stores result after\n4. WIT resource:\
+    \ layer-cache { constructor(capacity), stats(), clear(), set-cache-quality() }\n5. Pipeline.set-layer-cache(borrow<layer-cache>)\
+    \ in V2 WIT\n6. Web workers create LayerCache once at init, inject into each Pipeline\n\nFor GPU path: layer cache stores\
+    \ CPU-side f32 pixels. GPU results are read back\nand cached as f32. On cache hit, data is uploaded to GPU if next node\
+    \ is GPU.\nThis means layer cache helps even in GPU pipelines by avoiding re-upload of\nunchanged upstream results.\n"
 plan:
-  - phase: Core Implementation
-    tasks:
-      - text: Add V2 LayerCache struct (adapt from V1 layer_cache.rs)
-        done: false
-      - text: Implement blake3 content-hash chain for V2 nodes
-        done: false
-      - text: Add hash computation to Graph node creation (source hash, filter hash)
-        done: false
-      - text: Integrate cache check/store in Graph.request_region()
-        done: false
-      - text: Add reference tracking and cleanup_unreferenced()
-        done: false
-      - text: Add optional quantization (Full/Q16/Q8)
-        done: false
-  - phase: WIT and WASM Wiring
-    tasks:
-      - text: Add layer-cache resource to V2 WIT interface
-        done: false
-      - text: Add set-layer-cache method to image-pipeline-v2 resource
-        done: false
-      - text: Implement LayerCacheResource adapter in rasmcore-v2-wasm
-        done: false
-      - text: Wire cache injection in PipelineResource
-        done: false
-  - phase: Web Worker Integration
-    tasks:
-      - text: Create LayerCache in worker init (pipeline-worker and preview-worker)
-        done: false
-      - text: Inject cache into each Pipeline.fromRaw() call
-        done: false
-      - text: Log cache stats after each processChain()
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Test 5-filter chain — change last param, verify 4 cache hits
-        done: false
-      - text: Test identity pipeline — verify all hits on second run
-        done: false
-      - text: Benchmark with/without cache on slider interaction pattern
-        done: false
+- phase: Core Implementation
+  tasks:
+  - text: Add V2 LayerCache struct (adapt from V1 layer_cache.rs)
+    done: true
+  - text: Implement blake3 content-hash chain for V2 nodes
+    done: true
+  - text: Add hash computation to Graph node creation (source hash, filter hash)
+    done: true
+  - text: Integrate cache check/store in Graph.request_region()
+    done: true
+  - text: Add reference tracking and cleanup_unreferenced()
+    done: true
+  - text: Add optional quantization (Full/Q16/Q8)
+    done: true
+- phase: WIT and WASM Wiring
+  tasks:
+  - text: Add layer-cache resource to V2 WIT interface
+    done: true
+  - text: Add set-layer-cache method to image-pipeline-v2 resource
+    done: true
+  - text: Implement LayerCacheResource adapter in rasmcore-v2-wasm
+    done: true
+  - text: Wire cache injection in PipelineResource
+    done: true
+- phase: Web Worker Integration
+  tasks:
+  - text: Create LayerCache in worker init (pipeline-worker and preview-worker)
+    done: true
+  - text: Inject cache into each Pipeline.fromRaw() call
+    done: true
+  - text: Log cache stats after each processChain()
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test 5-filter chain — change last param, verify 4 cache hits
+    done: true
+  - text: Test identity pipeline — verify all hits on second run
+    done: true
+  - text: Benchmark with/without cache on slider interaction pattern
+    done: true
 extra: {}
