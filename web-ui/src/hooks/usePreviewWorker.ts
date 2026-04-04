@@ -67,12 +67,17 @@ export function usePreviewWorker() {
             sidebar.height = img.height;
             sidebar.getContext('2d')?.drawImage(img, 0, 0);
           }
-          // Draw to main viewport canvas (proxy display)
+          // Draw to main viewport canvas (proxy display).
+          // DON'T resize the canvas — keep it at the dimensions set by the
+          // full-res worker or initial load. The pan/zoom transform depends on
+          // the canvas matching imageWidth/imageHeight. Instead, stretch the
+          // proxy image to fill the existing canvas size.
           const viewport = viewportCanvasRef.current;
-          if (viewport) {
-            viewport.width = img.width;
-            viewport.height = img.height;
-            viewport.getContext('2d')?.drawImage(img, 0, 0);
+          if (viewport && viewport.width > 0 && viewport.height > 0) {
+            const ctx = viewport.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0, viewport.width, viewport.height);
+            }
           }
           URL.revokeObjectURL(url);
 
