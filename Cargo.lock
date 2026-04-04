@@ -3139,6 +3139,15 @@ name = "rasmcore-trellis"
 version = "0.1.0"
 
 [[package]]
+name = "rasmcore-v2-wasm"
+version = "0.1.0"
+dependencies = [
+ "rasmcore-codecs-v2",
+ "rasmcore-pipeline-v2",
+ "wit-bindgen-rt",
+]
+
+[[package]]
 name = "rasmcore-webp"
 version = "0.1.0"
 dependencies = [
