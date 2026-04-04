@@ -288,6 +288,59 @@ pub fn convert_color_space(pixels: &mut [f32], from: ColorSpace, to: ColorSpace)
     }
 }
 
+// ─── Codec Conversion Helpers ─────────────────────────────────────────────────
+// These helpers bridge between the f32 pipeline and native codec formats.
+// Codec implementations are independent — they work with native pixel bytes.
+// These helpers are used by codec adapters, not by codecs themselves.
+
+/// Convert f32 linear RGBA → sRGB u8 RGBA (gamma encode + quantize).
+/// Alpha channel is quantized directly (no gamma).
+pub fn f32_linear_to_srgb_rgba8(pixels: &[f32]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(pixels.len());
+    for chunk in pixels.chunks_exact(4) {
+        out.push((linear_to_srgb(chunk[0]).clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
+        out.push((linear_to_srgb(chunk[1]).clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
+        out.push((linear_to_srgb(chunk[2]).clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
+        out.push((chunk[3].clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
+    }
+    out
+}
+
+/// Convert f32 linear RGBA → sRGB u8 RGB (gamma encode + quantize, drop alpha).
+pub fn f32_linear_to_srgb_rgb8(pixels: &[f32]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(pixels.len() / 4 * 3);
+    for chunk in pixels.chunks_exact(4) {
+        out.push((linear_to_srgb(chunk[0]).clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
+        out.push((linear_to_srgb(chunk[1]).clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
+        out.push((linear_to_srgb(chunk[2]).clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
+    }
+    out
+}
+
+/// Convert sRGB u8 RGBA → f32 linear RGBA (degamma + normalize).
+pub fn srgb_rgba8_to_f32_linear(pixels: &[u8]) -> Vec<f32> {
+    let mut out = Vec::with_capacity(pixels.len());
+    for chunk in pixels.chunks_exact(4) {
+        out.push(srgb_to_linear(chunk[0] as f32 / 255.0));
+        out.push(srgb_to_linear(chunk[1] as f32 / 255.0));
+        out.push(srgb_to_linear(chunk[2] as f32 / 255.0));
+        out.push(chunk[3] as f32 / 255.0); // alpha: no gamma
+    }
+    out
+}
+
+/// Convert sRGB u8 RGB → f32 linear RGBA (degamma + normalize, alpha = 1.0).
+pub fn srgb_rgb8_to_f32_linear(pixels: &[u8]) -> Vec<f32> {
+    let mut out = Vec::with_capacity(pixels.len() / 3 * 4);
+    for chunk in pixels.chunks_exact(3) {
+        out.push(srgb_to_linear(chunk[0] as f32 / 255.0));
+        out.push(srgb_to_linear(chunk[1] as f32 / 255.0));
+        out.push(srgb_to_linear(chunk[2] as f32 / 255.0));
+        out.push(1.0); // opaque alpha
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -416,5 +469,37 @@ mod tests {
         convert_color_space(&mut pixels, ColorSpace::AcesCg, ColorSpace::Linear);
         assert!((pixels[0] - 5.0).abs() < 0.01);
         assert!((pixels[2] - 100.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn f32_to_srgb_rgba8_roundtrip() {
+        let input = vec![0.5f32, 0.3, 0.1, 0.8]; // linear f32
+        let u8_pixels = f32_linear_to_srgb_rgba8(&input);
+        let back = srgb_rgba8_to_f32_linear(&u8_pixels);
+        // u8 quantization limits precision to ~1/255
+        for i in 0..3 {
+            assert!((input[i] - back[i]).abs() < 0.005, "ch{i}: {:.4} vs {:.4}", input[i], back[i]);
+        }
+        assert!((input[3] - back[3]).abs() < 0.005); // alpha
+    }
+
+    #[test]
+    fn f32_to_srgb_rgb8_drops_alpha() {
+        let input = vec![0.5, 0.3, 0.1, 0.7];
+        let rgb = f32_linear_to_srgb_rgb8(&input);
+        assert_eq!(rgb.len(), 3); // no alpha
+        let back = srgb_rgb8_to_f32_linear(&rgb);
+        assert_eq!(back.len(), 4); // alpha added as 1.0
+        assert!((back[3] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn codec_conversion_preserves_black_white() {
+        let black = vec![0.0f32, 0.0, 0.0, 1.0];
+        let white = vec![1.0f32, 1.0, 1.0, 1.0];
+        let b8 = f32_linear_to_srgb_rgba8(&black);
+        let w8 = f32_linear_to_srgb_rgba8(&white);
+        assert_eq!(b8, vec![0, 0, 0, 255]);
+        assert_eq!(w8, vec![255, 255, 255, 255]);
     }
 }

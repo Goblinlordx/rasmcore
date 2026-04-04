@@ -60,6 +60,10 @@ pub use registry::{
     operations_by_kind, param_descriptors,
     ParamMap, FilterFactory, FilterFactoryRegistration,
     create_filter_node, registered_filter_factories,
+    EncoderFactory, EncoderFactoryRegistration,
+    encode_via_registry, registered_encoders,
+    DecoderFactory, DecoderFactoryRegistration, DecodedImageV2,
+    decode_via_registry, decode_with_hint_via_registry, registered_decoders,
 };
 
 // Re-export operation traits

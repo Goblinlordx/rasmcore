@@ -10,6 +10,7 @@ rasmcore-image = { path = "../rasmcore-image" }
 rasmcore-pipeline-v2 = { path = "../rasmcore-pipeline-v2" }
 rasmcore-fits = { path = "../rasmcore-fits" }
 inventory = "0.3"
+png = "0.17"
 
 [dev-dependencies]
 rasmcore-image = { path = "../rasmcore-image" }

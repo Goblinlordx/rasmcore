@@ -307,6 +307,126 @@ pub fn registered_filter_factories() -> Vec<&'static str> {
         .collect()
 }
 
+// ─── Encoder Factory Registration ────────────────────────────────────────────
+
+/// Encode function: takes f32 RGBA pixels + dimensions + params → encoded bytes.
+pub type EncoderFactory = fn(
+    pixels: &[f32],
+    width: u32,
+    height: u32,
+    params: &ParamMap,
+) -> Result<Vec<u8>, crate::node::PipelineError>;
+
+/// Registration entry for a V2 encoder.
+///
+/// The encoder adapter handles conversion from f32 pipeline format to the
+/// codec's native format. The codec implementation itself is independent
+/// of the pipeline.
+pub struct EncoderFactoryRegistration {
+    /// Format name (e.g., "png", "jpeg"). Used for dispatch.
+    pub name: &'static str,
+    /// Human-readable display name.
+    pub display_name: &'static str,
+    /// MIME type.
+    pub mime: &'static str,
+    /// File extensions.
+    pub extensions: &'static [&'static str],
+    /// Parameter descriptors for SDK/UI.
+    pub params: &'static [ParamDescriptor],
+    /// Encode function.
+    pub encode: EncoderFactory,
+}
+
+inventory::collect!(&'static EncoderFactoryRegistration);
+
+/// Encode f32 pixels to the specified format via registry lookup.
+pub fn encode_via_registry(
+    format: &str,
+    pixels: &[f32],
+    width: u32,
+    height: u32,
+    params: &ParamMap,
+) -> Option<Result<Vec<u8>, crate::node::PipelineError>> {
+    inventory::iter::<&'static EncoderFactoryRegistration>
+        .into_iter()
+        .copied()
+        .find(|r| r.name == format || r.extensions.contains(&format))
+        .map(|r| (r.encode)(pixels, width, height, params))
+}
+
+/// List all registered encoders.
+pub fn registered_encoders() -> Vec<&'static EncoderFactoryRegistration> {
+    inventory::iter::<&'static EncoderFactoryRegistration>
+        .into_iter()
+        .copied()
+        .collect()
+}
+
+// ─── Decoder Factory Registration ────────────────────────────────────────────
+
+/// Decoded result from a V2 decoder.
+pub struct DecodedImageV2 {
+    pub pixels: Vec<f32>,
+    pub width: u32,
+    pub height: u32,
+    pub color_space: crate::color_space::ColorSpace,
+}
+
+/// Decode function: takes encoded bytes → f32 RGBA pixels.
+pub type DecoderFactory = fn(
+    data: &[u8],
+) -> Result<DecodedImageV2, crate::node::PipelineError>;
+
+/// Detection function: checks if data matches this codec's format.
+pub type FormatDetector = fn(data: &[u8]) -> bool;
+
+/// Registration entry for a V2 decoder.
+pub struct DecoderFactoryRegistration {
+    /// Format name (e.g., "png", "jpeg").
+    pub name: &'static str,
+    /// Human-readable display name.
+    pub display_name: &'static str,
+    /// File extensions.
+    pub extensions: &'static [&'static str],
+    /// Format detection (magic bytes check).
+    pub detect: FormatDetector,
+    /// Decode function.
+    pub decode: DecoderFactory,
+}
+
+inventory::collect!(&'static DecoderFactoryRegistration);
+
+/// Decode bytes by auto-detecting format via registry.
+pub fn decode_via_registry(
+    data: &[u8],
+) -> Option<Result<DecodedImageV2, crate::node::PipelineError>> {
+    inventory::iter::<&'static DecoderFactoryRegistration>
+        .into_iter()
+        .copied()
+        .find(|r| (r.detect)(data))
+        .map(|r| (r.decode)(data))
+}
+
+/// Decode bytes with a format hint.
+pub fn decode_with_hint_via_registry(
+    data: &[u8],
+    hint: &str,
+) -> Option<Result<DecodedImageV2, crate::node::PipelineError>> {
+    inventory::iter::<&'static DecoderFactoryRegistration>
+        .into_iter()
+        .copied()
+        .find(|r| r.name == hint || r.extensions.contains(&hint))
+        .map(|r| (r.decode)(data))
+}
+
+/// List all registered decoders.
+pub fn registered_decoders() -> Vec<&'static DecoderFactoryRegistration> {
+    inventory::iter::<&'static DecoderFactoryRegistration>
+        .into_iter()
+        .copied()
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

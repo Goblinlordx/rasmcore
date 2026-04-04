@@ -18,6 +18,7 @@
 pub mod convert;
 pub mod decoders;
 pub mod encoders;
+pub mod v2_adapters;
 
 // Re-export dispatch functions
 pub use decoders::{decode, decode_with_hint, detect_format};
