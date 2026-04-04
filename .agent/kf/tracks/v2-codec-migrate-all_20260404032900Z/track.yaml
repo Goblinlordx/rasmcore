@@ -1,61 +1,69 @@
 id: v2-codec-migrate-all_20260404032900Z
-title: "Migrate all codecs to V2 adapter pattern"
+title: Migrate all codecs to V2 adapter pattern
 type: refactor
 status: pending
-created: "2026-04-04"
-updated: "2026-04-04"
+created: '2026-04-04'
+updated: '2026-04-04'
 spec:
-  summary: >
-    Migrate remaining 13 encoders + 13 decoders to V2 adapter pattern.
-    Progressive validation for each codec. After this, V2 WASM can handle all formats.
-  context: |
-    PNG encoder/decoder proven as V2 adapter pattern. Remaining codecs use old
+  summary: 'Migrate remaining 13 encoders + 13 decoders to V2 adapter pattern. Progressive validation for each codec. After
+    this, V2 WASM can handle all formats.
+
+    '
+  context: 'PNG encoder/decoder proven as V2 adapter pattern. Remaining codecs use old
+
     macro-based registration in codecs-v2 that wraps V1 internally. Each needs
+
     a V2 adapter struct with derive macro or manual registration.
 
+
     Pattern: adapter struct with encode/decode methods that use pipeline
+
     conversion helpers + pure codec crate. Progressive: validate -> add -> validate.
+
+    '
   acceptance_criteria:
-    - All 14 formats have V2 encoder adapters (10 sRGB + 2 linear + FITS + DDS)
-    - All 14 formats have V2 decoder adapters
-    - Each adapter registered via derive macro or manual inventory
-    - V2 WASM read()/write() uses decode_via_registry/encode_via_registry
-    - Round-trip test passes for each format
-    - Old macro-based registrations can be deprecated
-  out_of_scope: |
-    Removing old codecs-v2 encoders/decoders module (keep for backward compat).
+  - All 14 formats have V2 encoder adapters (10 sRGB + 2 linear + FITS + DDS)
+  - All 14 formats have V2 decoder adapters
+  - Each adapter registered via derive macro or manual inventory
+  - V2 WASM read()/write() uses decode_via_registry/encode_via_registry
+  - Round-trip test passes for each format
+  - Old macro-based registrations can be deprecated
+  out_of_scope: 'Removing old codecs-v2 encoders/decoders module (keep for backward compat).
+
     Web UI integration (separate track).
+
+    '
 plan:
-  - phase: "sRGB encoder adapters (9)"
-    tasks:
-      - text: "JPEG encoder adapter + round-trip test"
-        done: false
-      - text: "WebP encoder adapter + round-trip test"
-        done: false
-      - text: "GIF, BMP, QOI encoder adapters + tests"
-        done: false
-      - text: "ICO, TGA, PNM, TIFF encoder adapters + tests"
-        done: false
-  - phase: "Linear encoder adapters (3)"
-    tasks:
-      - text: "EXR encoder adapter (f32 direct, no gamma)"
-        done: false
-      - text: "HDR encoder adapter (RGBE encoding)"
-        done: false
-      - text: "FITS encoder adapter (f32 grayscale)"
-        done: false
-  - phase: "Decoder adapters (13)"
-    tasks:
-      - text: "JPEG, WebP, GIF decoder adapters + detect functions"
-        done: false
-      - text: "BMP, QOI, ICO, TGA, TIFF, DDS, PNM decoder adapters"
-        done: false
-      - text: "EXR, HDR, FITS decoder adapters (linear output)"
-        done: false
-  - phase: "Wire V2 WASM + verify"
-    tasks:
-      - text: "Update rasmcore-v2-wasm to use V2 codec registry for read/write"
-        done: false
-      - text: "Round-trip test all 14 formats through V2 WASM"
-        done: false
+- phase: sRGB encoder adapters (9)
+  tasks:
+  - text: JPEG encoder adapter + round-trip test
+    done: true
+  - text: WebP encoder adapter + round-trip test
+    done: true
+  - text: GIF, BMP, QOI encoder adapters + tests
+    done: true
+  - text: ICO, TGA, PNM, TIFF encoder adapters + tests
+    done: true
+- phase: Linear encoder adapters (3)
+  tasks:
+  - text: EXR encoder adapter (f32 direct, no gamma)
+    done: true
+  - text: HDR encoder adapter (RGBE encoding)
+    done: true
+  - text: FITS encoder adapter (f32 grayscale)
+    done: true
+- phase: Decoder adapters (13)
+  tasks:
+  - text: JPEG, WebP, GIF decoder adapters + detect functions
+    done: true
+  - text: BMP, QOI, ICO, TGA, TIFF, DDS, PNM decoder adapters
+    done: true
+  - text: EXR, HDR, FITS decoder adapters (linear output)
+    done: true
+- phase: Wire V2 WASM + verify
+  tasks:
+  - text: Update rasmcore-v2-wasm to use V2 codec registry for read/write
+    done: true
+  - text: Round-trip test all 14 formats through V2 WASM
+    done: true
 extra: {}
