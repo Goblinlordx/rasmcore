@@ -21,6 +21,18 @@ function snakeToCamel(s) {
   return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 }
 
+/** Create a fluent Pipeline with layerCache + proxyScale wired via raw WIT resource. */
+function createPipeline(bytes, proxyScale?: number) {
+  const rawPipe = new PipelineClass();
+  if (layerCache && typeof rawPipe.setLayerCache === 'function') rawPipe.setLayerCache(layerCache);
+  if (proxyScale && proxyScale < 1.0 && typeof rawPipe.setProxyScale === 'function') rawPipe.setProxyScale(proxyScale);
+  const node = rawPipe.read(bytes, undefined);
+  const pipe = Object.create(Pipeline.prototype);
+  pipe._pipe = rawPipe;
+  pipe._node = node;
+  return pipe;
+}
+
 async function initSDK() {
   try {
     const sdk = await import('../sdk/v2/rasmcore-v2-image.js');
@@ -65,7 +77,7 @@ function loadImage(bytes) {
   let info = { width: 0, height: 0 };
 
   try {
-    const pipe = Pipeline.fromRaw(PipelineClass, previewBytes, undefined, layerCache);
+    const pipe = createPipeline(previewBytes);
     info = { width: pipe.info.width, height: pipe.info.height };
     fullWidth = info.width;
     fullHeight = info.height;
@@ -96,7 +108,7 @@ async function processChain(chain) {
   const t0 = performance.now();
   try {
     const proxyScale = computeProxyScale();
-    let pipe = Pipeline.fromRaw(PipelineClass, previewBytes, undefined, layerCache, proxyScale);
+    let pipe = createPipeline(previewBytes, proxyScale);
 
     for (const step of chain) {
       const method = snakeToCamel(step.name);
@@ -108,11 +120,12 @@ async function processChain(chain) {
       }
     }
 
-    // Attempt GPU dispatch — guarded until fluent SDK exposes WIT GPU methods
-    if (gpuHandler && typeof pipe.renderGpuPlan === 'function') {
+    // GPU dispatch — access raw WIT resource via pipe._pipe (private but accessible at runtime)
+    const raw = pipe._pipe;
+    const sinkNode = pipe._node;
+    if (gpuHandler && raw && typeof raw.renderGpuPlan === 'function') {
       try {
-        const sinkNode = pipe.sinkNode;
-        const gpuPlan = pipe.renderGpuPlan(sinkNode);
+        const gpuPlan = raw.renderGpuPlan(sinkNode);
         if (gpuPlan) {
           const ops: GpuShader[] = gpuPlan.shaders.map(s => ({
             source: s.source,
@@ -130,7 +143,7 @@ async function processChain(chain) {
             gpuPlan.height,
           );
           if ('ok' in result) {
-            pipe.injectGpuResult(sinkNode, Array.from(result.ok));
+            raw.injectGpuResult(sinkNode, Array.from(result.ok));
           }
         }
       } catch (_) {

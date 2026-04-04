@@ -23,6 +23,17 @@ function snakeToCamel(s) {
   return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 }
 
+/** Create a fluent Pipeline with layerCache wired via raw WIT resource. */
+function createPipeline(bytes) {
+  const rawPipe = new PipelineClass();
+  if (layerCache && typeof rawPipe.setLayerCache === 'function') rawPipe.setLayerCache(layerCache);
+  const node = rawPipe.read(bytes, undefined);
+  const pipe = Object.create(Pipeline.prototype);
+  pipe._pipe = rawPipe;
+  pipe._node = node;
+  return pipe;
+}
+
 async function initSDK() {
   try {
     const sdk = await import('../sdk/v2/rasmcore-v2-image.js');
@@ -68,7 +79,7 @@ function loadImage(bytes) {
   let info = { width: 0, height: 0 };
 
   try {
-    const pipe = Pipeline.fromRaw(PipelineClass, imageBytes, undefined, layerCache);
+    const pipe = createPipeline(imageBytes);
     info = { width: pipe.info.width, height: pipe.info.height };
     console.log(`[v2-pipeline] Loaded: ${info.width}x${info.height}`);
   } catch (e: any) {
@@ -91,11 +102,12 @@ async function processChain(chain, mode) {
   const timings = [];
 
   try {
-    let pipe = Pipeline.fromRaw(PipelineClass, imageBytes, undefined, layerCache);
+    let pipe = createPipeline(imageBytes);
 
-    // Enable tracing if the fluent SDK exposes it
-    if (typeof pipe.setTracing === 'function') {
-      pipe.setTracing(true);
+    // Access raw WIT resource for tracing + GPU dispatch
+    const raw = pipe._pipe;
+    if (raw && typeof raw.setTracing === 'function') {
+      raw.setTracing(true);
     }
 
     for (const step of chain) {
@@ -110,11 +122,12 @@ async function processChain(chain, mode) {
       timings.push({ name: step.name, ms: Math.round(performance.now() - t) });
     }
 
-    // Attempt GPU dispatch if WebGPU is available and fluent SDK exposes GPU plan
+    // GPU dispatch via raw WIT resource
     let gpuUsed = false;
-    if (gpuHandler && typeof pipe.renderGpuPlan === 'function') {
+    const sinkNode = pipe._node;
+    if (gpuHandler && raw && typeof raw.renderGpuPlan === 'function') {
       try {
-        const gpuPlan = pipe.renderGpuPlan(pipe.sinkNode);
+        const gpuPlan = raw.renderGpuPlan(sinkNode);
         if (gpuPlan) {
           const tGpu = performance.now();
           const ops: GpuShader[] = gpuPlan.shaders.map(s => ({
@@ -133,7 +146,7 @@ async function processChain(chain, mode) {
             gpuPlan.height,
           );
           if ('ok' in result) {
-            pipe.injectGpuResult(pipe.sinkNode, Array.from(result.ok));
+            raw.injectGpuResult(sinkNode, Array.from(result.ok));
             gpuUsed = true;
             timings.push({ name: 'gpu_dispatch', ms: Math.round(performance.now() - tGpu) });
           } else {
@@ -149,7 +162,7 @@ async function processChain(chain, mode) {
     const totalMs = Math.round(performance.now() - t0);
 
     // Collect trace events
-    const traceEvents = (typeof pipe.takeTrace === 'function') ? pipe.takeTrace() : [];
+    const traceEvents = (raw && typeof raw.takeTrace === 'function') ? raw.takeTrace() : [];
 
     // Log cache stats
     if (layerCache) {
@@ -180,7 +193,7 @@ function exportImage(chain, format, quality) {
   }
 
   try {
-    let pipe = Pipeline.fromRaw(PipelineClass, imageBytes, undefined, layerCache);
+    let pipe = createPipeline(imageBytes);
 
     for (const step of chain) {
       const method = snakeToCamel(step.name);
