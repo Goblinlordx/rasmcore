@@ -5,128 +5,137 @@ status: pending
 created: '2026-04-04'
 updated: '2026-04-04'
 spec:
-  summary: |
-    During docs build, render each operation on a reference image and embed a
+  summary: 'During docs build, render each operation on a reference image and embed a
+
     before/after split-view widget in each operation page. Auto-generate code
+
     examples from registry metadata.
-  context: |
-    The docs site (op-docs-macro track) generates per-operation HTML pages with
+
+    '
+  context: 'The docs site (op-docs-macro track) generates per-operation HTML pages with
+
     AsciiDoc prose and param tables. But there are no visual examples showing
+
     what each operation actually does. A before/after split-view per operation
+
     would let users see the effect immediately — like Photoshop filter previews.
 
+
     The build already has access to the full native pipeline (dump_registry runs
+
     cargo). A render-examples binary can apply each operation with default params
+
     to a canonical reference image, producing before/after PNGs that get embedded
+
     in the HTML pages.
 
+
     Code examples should also be auto-generated from registry metadata — the
+
     builder knows the operation name and default param values, so it can produce
+
     a TypeScript snippet automatically without manual authoring.
-  codebase_analysis: |
-    Existing docs infrastructure:
+
+    '
+  codebase_analysis: 'Existing docs infrastructure:
+
     - scripts/build-docs.mjs — SSG that reads registry JSON, renders .adoc + param tables
+
     - dump_registry binary — outputs JSON with name, params, doc_path per operation
+
     - Reference: V2 pipeline is fully native-runnable (cargo run)
+
     - ParamDescriptor has default values for all params
 
+
     For rendering examples:
+
     - Need a native binary that loads reference image, applies one filter, writes output PNG
+
     - rasmcore-pipeline-v2 + rasmcore-codecs-v2 can do this natively
+
     - Output: docs/build/assets/examples/{op-name}-after.png per operation
+
     - Before image: same reference for all, copied once to assets
 
+
     For split-view widget:
+
     - Pure CSS/HTML: two <img> elements, clip-path on the "after" image
+
     - Draggable divider (minimal JS, ~20 lines)
+
     - No framework dependency
+
+    '
   acceptance_criteria:
-    - Reference image at docs/assets/reference.png used for all examples
-    - render-examples binary applies each filter with default params to reference image
-    - Before/after PNGs generated to docs/build/assets/examples/
-    - Each operation page has a split-view widget showing before vs after
-    - Split-view has draggable divider (CSS + minimal JS)
-    - Code example auto-generated from registry (op name + default params as TypeScript)
-    - Operations without meaningful visual effect (e.g., identity at default=0) show gracefully
-    - build-docs.sh orchestrates both render-examples and SSG
-  out_of_scope: |
-    Custom example params per operation (future — use defaults for now).
+  - Reference image at docs/assets/reference.png used for all examples
+  - render-examples binary applies each filter with default params to reference image
+  - Before/after PNGs generated to docs/build/assets/examples/
+  - Each operation page has a split-view widget showing before vs after
+  - Split-view has draggable divider (CSS + minimal JS)
+  - Code example auto-generated from registry (op name + default params as TypeScript)
+  - Operations without meaningful visual effect (e.g., identity at default=0) show gracefully
+  - build-docs.sh orchestrates both render-examples and SSG
+  out_of_scope: 'Custom example params per operation (future — use defaults for now).
+
     Animated examples. Multiple reference images. Video examples.
-  technical_notes: |
-    Architecture:
 
-    1. render-examples binary (crates/rasmcore-v2-wasm/src/bin/render_examples.rs):
-       - Loads docs/assets/reference.png
-       - Iterates registered filters via inventory
-       - For each filter with params: creates pipeline, applies with defaults, writes PNG
-       - For paramless filters: applies directly
-       - Output: /tmp/docs-examples/{name}-after.png
-       - Also outputs the reference as {name}-before.png (or just one shared before.png)
-       - Skips filters where default params produce identity (amount=0, etc.)
-
-    2. Auto-generated code example:
-       - build-docs.mjs reads registry params with defaults
-       - Generates TypeScript snippet per operation:
-         ```typescript
-         Pipeline.open(imageBytes)
-           .brightness({ amount: 0.3 })
-           .writePng();
-         ```
-       - Uses non-default "showcase" values (e.g., amount=0.3 not 0.0)
-       - Injected into HTML page below the split-view
-
-    3. Split-view HTML widget:
-       - Two overlapping <img> elements in a container
-       - After image clipped with clip-path: inset(0 50% 0 0)
-       - Draggable divider updates clip-path percentage
-       - ~20 lines of inline JS, no dependencies
-       - Falls back gracefully if JS disabled (shows after image only)
-
-    4. Build pipeline update:
-       - build-docs.sh: cargo run --bin render_examples → node build-docs.mjs
-       - build-docs.mjs copies example PNGs to docs/build/assets/examples/
-       - Operation page template includes split-view if example exists
+    '
+  technical_notes: "Architecture:\n\n1. render-examples binary (crates/rasmcore-v2-wasm/src/bin/render_examples.rs):\n   -\
+    \ Loads docs/assets/reference.png\n   - Iterates registered filters via inventory\n   - For each filter with params: creates\
+    \ pipeline, applies with defaults, writes PNG\n   - For paramless filters: applies directly\n   - Output: /tmp/docs-examples/{name}-after.png\n\
+    \   - Also outputs the reference as {name}-before.png (or just one shared before.png)\n   - Skips filters where default\
+    \ params produce identity (amount=0, etc.)\n\n2. Auto-generated code example:\n   - build-docs.mjs reads registry params\
+    \ with defaults\n   - Generates TypeScript snippet per operation:\n     ```typescript\n     Pipeline.open(imageBytes)\n\
+    \       .brightness({ amount: 0.3 })\n       .writePng();\n     ```\n   - Uses non-default \"showcase\" values (e.g.,\
+    \ amount=0.3 not 0.0)\n   - Injected into HTML page below the split-view\n\n3. Split-view HTML widget:\n   - Two overlapping\
+    \ <img> elements in a container\n   - After image clipped with clip-path: inset(0 50% 0 0)\n   - Draggable divider updates\
+    \ clip-path percentage\n   - ~20 lines of inline JS, no dependencies\n   - Falls back gracefully if JS disabled (shows\
+    \ after image only)\n\n4. Build pipeline update:\n   - build-docs.sh: cargo run --bin render_examples → node build-docs.mjs\n\
+    \   - build-docs.mjs copies example PNGs to docs/build/assets/examples/\n   - Operation page template includes split-view\
+    \ if example exists\n"
 plan:
-  - phase: Reference Image and Renderer
-    tasks:
-      - text: Add docs/assets/reference.png (high-quality test image, ~1080p)
-        done: false
-      - text: Create render_examples.rs binary that loads reference and iterates filters
-        done: false
-      - text: Apply each filter with default params, write before/after PNGs
-        done: false
-      - text: Skip identity operations (default params produce no visible change)
-        done: false
-  - phase: Split-View Widget
-    tasks:
-      - text: HTML/CSS split-view component (two images, clip-path, draggable divider)
-        done: false
-      - text: Minimal inline JS for divider drag (~20 lines)
-        done: false
-      - text: Graceful fallback when no example image exists
-        done: false
-  - phase: Auto-Generated Code Examples
-    tasks:
-      - text: build-docs.mjs generates TypeScript snippet per operation from registry
-        done: false
-      - text: Use showcase param values (non-default, visually interesting)
-        done: false
-      - text: Inject code example below split-view in operation page
-        done: false
-  - phase: Build Pipeline Integration
-    tasks:
-      - text: build-docs.sh runs render_examples before SSG
-        done: false
-      - text: build-docs.mjs copies example PNGs to docs/build/assets/examples/
-        done: false
-      - text: Operation page template conditionally includes split-view
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Verify all operations with non-identity defaults have before/after images
-        done: false
-      - text: Split-view divider works in browser
-        done: false
-      - text: Code examples render correctly with syntax highlighting
-        done: false
+- phase: Reference Image and Renderer
+  tasks:
+  - text: Add docs/assets/reference.png (high-quality test image, ~1080p)
+    done: true
+  - text: Create render_examples.rs binary that loads reference and iterates filters
+    done: true
+  - text: Apply each filter with default params, write before/after PNGs
+    done: true
+  - text: Skip identity operations (default params produce no visible change)
+    done: true
+- phase: Split-View Widget
+  tasks:
+  - text: HTML/CSS split-view component (two images, clip-path, draggable divider)
+    done: true
+  - text: Minimal inline JS for divider drag (~20 lines)
+    done: true
+  - text: Graceful fallback when no example image exists
+    done: true
+- phase: Auto-Generated Code Examples
+  tasks:
+  - text: build-docs.mjs generates TypeScript snippet per operation from registry
+    done: true
+  - text: Use showcase param values (non-default, visually interesting)
+    done: true
+  - text: Inject code example below split-view in operation page
+    done: true
+- phase: Build Pipeline Integration
+  tasks:
+  - text: build-docs.sh runs render_examples before SSG
+    done: true
+  - text: build-docs.mjs copies example PNGs to docs/build/assets/examples/
+    done: true
+  - text: Operation page template conditionally includes split-view
+    done: true
+- phase: Verification
+  tasks:
+  - text: Verify all operations with non-identity defaults have before/after images
+    done: true
+  - text: Split-view divider works in browser
+    done: true
+  - text: Code examples render correctly with syntax highlighting
+    done: true
 extra: {}
