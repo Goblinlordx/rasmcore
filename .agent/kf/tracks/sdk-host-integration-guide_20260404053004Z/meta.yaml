@@ -1,0 +1,9 @@
+title: SDK host integration guide (GPU, cache, required host facilities)
+status: pending
+type: chore
+approved: false
+created: '2026-04-04'
+updated: '2026-04-04'
+deps:
+- gpu-dispatch-wiring_20260404053000Z
+- v2-layer-cache_20260404053002Z
