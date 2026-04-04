@@ -208,6 +208,26 @@ impl PipelineResource {
 
 // ─── WIT Bindings ���──────────────────────────────────────────────────────────
 
+// ─── Layer Cache Resource ────────────────────────────────────────────────────
+
+/// WASM-exported layer cache resource.
+///
+/// Wraps the domain LayerCache in Rc<RefCell<>> so it can be shared
+/// across pipeline instances.
+pub struct LayerCacheResource {
+    inner: Rc<RefCell<LayerCache>>,
+}
+
+impl LayerCacheResource {
+    /// Create with capacity in megabytes.
+    pub fn new_with_capacity(capacity_mb: u32) -> Self {
+        let budget = capacity_mb as usize * 1024 * 1024;
+        Self {
+            inner: Rc::new(RefCell::new(LayerCache::new(budget))),
+        }
+    }
+}
+
 #[cfg(target_arch = "wasm32")]
 struct Component;
 
@@ -217,6 +237,37 @@ bindings::export!(Component with_types_in bindings);
 #[cfg(target_arch = "wasm32")]
 impl wit::Guest for Component {
     type ImagePipelineV2 = PipelineResource;
+    type LayerCache = LayerCacheResource;
+}
+
+#[cfg(target_arch = "wasm32")]
+impl wit::GuestLayerCache for LayerCacheResource {
+    fn new(capacity_mb: u32) -> Self {
+        LayerCacheResource::new_with_capacity(capacity_mb)
+    }
+
+    fn stats(&self) -> wit::CacheStats {
+        let s = self.inner.borrow().stats();
+        wit::CacheStats {
+            entries: s.entries,
+            hits: s.hits,
+            misses: s.misses,
+            size_bytes: s.size_bytes,
+        }
+    }
+
+    fn clear(&self) {
+        self.inner.borrow_mut().clear();
+    }
+
+    fn set_cache_quality(&self, quality: wit::CacheQuality) {
+        let q = match quality {
+            wit::CacheQuality::Full => v2::CacheQuality::Full,
+            wit::CacheQuality::Q16 => v2::CacheQuality::Q16,
+            wit::CacheQuality::Q8 => v2::CacheQuality::Q8,
+        };
+        self.inner.borrow_mut().set_cache_quality(q);
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -335,6 +386,11 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
     fn set_demand_strategy(&self, _strategy: wit::DemandStrategy) {}
 
     fn set_gpu_available(&self, _available: bool) {}
+
+    fn set_layer_cache(&self, cache: wit::LayerCacheBorrow<'_>) {
+        let cache_resource = cache.get::<LayerCacheResource>();
+        self.set_layer_cache(cache_resource.inner.clone());
+    }
 
     fn write(
         &self,
@@ -561,6 +617,105 @@ mod tests {
             (output[2] - 0.7).abs() < 1e-5,
             "expected 0.7, got {}",
             output[2]
+        );
+    }
+
+    #[test]
+    fn layer_cache_integration() {
+        let lc = Rc::new(RefCell::new(LayerCache::new(64 * 1024 * 1024)));
+
+        // Pipeline 1: source → brightness(+0.25)
+        let pipe1 = PipelineResource::new();
+        pipe1.set_layer_cache(lc.clone());
+        let source1 = SourceNode {
+            pixels: vec![0.5, 0.3, 0.1, 1.0],
+            info: NodeInfo { width: 1, height: 1, color_space: ColorSpace::Linear },
+        };
+        // Use add_node_with_hash to simulate read() with known hash
+        let src_hash = v2::source_hash(b"test_image");
+        let src_id1 = pipe1.graph.borrow_mut().add_node_with_hash(Box::new(source1), src_hash);
+
+        let mut params = ParamMap::new();
+        params.floats.insert("amount".into(), 0.25);
+        let bright_id1 = pipe1.apply_filter(src_id1, "brightness", &params).unwrap();
+        let output1 = pipe1.render(bright_id1).unwrap();
+
+        // Check stats: all misses, entries stored
+        let stats1 = lc.borrow().stats();
+        assert!(stats1.entries > 0, "layer cache should have entries after first run");
+
+        // Pipeline 2: same source + same filter → should get cache hits
+        let pipe2 = PipelineResource::new();
+        pipe2.set_layer_cache(lc.clone());
+        let source2 = SourceNode {
+            pixels: vec![0.5, 0.3, 0.1, 1.0],
+            info: NodeInfo { width: 1, height: 1, color_space: ColorSpace::Linear },
+        };
+        let src_id2 = pipe2.graph.borrow_mut().add_node_with_hash(Box::new(source2), src_hash);
+
+        let mut params2 = ParamMap::new();
+        params2.floats.insert("amount".into(), 0.25);
+        let bright_id2 = pipe2.apply_filter(src_id2, "brightness", &params2).unwrap();
+        let output2 = pipe2.render(bright_id2).unwrap();
+
+        // Same output
+        assert_eq!(output1, output2, "cached result should match computed result");
+
+        // Should have hits
+        let stats2 = lc.borrow().stats();
+        assert!(stats2.hits > 0, "layer cache should have hits on second run");
+    }
+
+    #[test]
+    fn layer_cache_param_change_invalidates_downstream() {
+        let lc = Rc::new(RefCell::new(LayerCache::new(64 * 1024 * 1024)));
+
+        // Pipeline 1: source → brightness(+0.25) → brightness(+0.1)
+        let pipe1 = PipelineResource::new();
+        pipe1.set_layer_cache(lc.clone());
+        let source1 = SourceNode {
+            pixels: vec![0.5, 0.3, 0.1, 1.0],
+            info: NodeInfo { width: 1, height: 1, color_space: ColorSpace::Linear },
+        };
+        let src_hash = v2::source_hash(b"test_image_2");
+        let src_id = pipe1.graph.borrow_mut().add_node_with_hash(Box::new(source1), src_hash);
+
+        let mut p1 = ParamMap::new();
+        p1.floats.insert("amount".into(), 0.25);
+        let b1 = pipe1.apply_filter(src_id, "brightness", &p1).unwrap();
+
+        let mut p2 = ParamMap::new();
+        p2.floats.insert("amount".into(), 0.1);
+        let b2 = pipe1.apply_filter(b1, "brightness", &p2).unwrap();
+        let _out1 = pipe1.render(b2).unwrap();
+
+        let stats_after_first = lc.borrow().stats();
+        let hits_after_first = stats_after_first.hits;
+
+        // Pipeline 2: same source → brightness(+0.25) → brightness(+0.2) — last param changed
+        let pipe2 = PipelineResource::new();
+        pipe2.set_layer_cache(lc.clone());
+        let source2 = SourceNode {
+            pixels: vec![0.5, 0.3, 0.1, 1.0],
+            info: NodeInfo { width: 1, height: 1, color_space: ColorSpace::Linear },
+        };
+        let src_id2 = pipe2.graph.borrow_mut().add_node_with_hash(Box::new(source2), src_hash);
+
+        let mut p1b = ParamMap::new();
+        p1b.floats.insert("amount".into(), 0.25);
+        let b1b = pipe2.apply_filter(src_id2, "brightness", &p1b).unwrap();
+
+        let mut p2b = ParamMap::new();
+        p2b.floats.insert("amount".into(), 0.2); // Changed!
+        let b2b = pipe2.apply_filter(b1b, "brightness", &p2b).unwrap();
+        let _out2 = pipe2.render(b2b).unwrap();
+
+        let stats_after_second = lc.borrow().stats();
+        // The first brightness(+0.25) should be a cache hit (same upstream + same params)
+        // The second brightness(+0.2) is a miss (different params from +0.1)
+        assert!(
+            stats_after_second.hits > hits_after_first,
+            "should have at least one cache hit from unchanged upstream filter"
         );
     }
 }
