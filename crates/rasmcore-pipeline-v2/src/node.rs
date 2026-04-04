@@ -121,8 +121,8 @@ pub struct ReductionBuffer {
 pub struct TileHint {
     /// Minimum tile size below which this node wastes significant overlap.
     pub min_efficient_tile: u32,
-    /// Kernel/overlap radius in pixels (0 for point ops).
-    pub overlap_radius: u32,
+    /// Kernel/tile overlap in pixels (0 for point ops).
+    pub tile_overlap: u32,
 }
 
 /// ACES compliance level for a node.
@@ -248,7 +248,7 @@ pub trait Node {
 
     /// Advisory tile size hint for the demand strategy.
     ///
-    /// Neighborhood ops (blur, sharpen) should report their overlap radius
+    /// Neighborhood ops (blur, sharpen) should report their tile overlap
     /// so the strategy can pick tile sizes that minimize wasted overlap.
     fn tile_hint(&self) -> Option<TileHint> {
         None

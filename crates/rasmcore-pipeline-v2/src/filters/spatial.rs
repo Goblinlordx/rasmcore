@@ -1,7 +1,7 @@
 //! Spatial filters — neighborhood operations on f32 pixel data.
 //!
 //! All operate on `&[f32]` RGBA (4 channels). Input includes overlap region
-//! (expanded by the pipeline via `SpatialFilter::overlap_radius`). Output
+//! (expanded by the pipeline via `SpatialFilter::tile_overlap`). Output
 //! matches input dimensions. The FilterNode wrapper handles cropping to the
 //! requested tile.
 //!
@@ -104,7 +104,7 @@ impl Filter for GaussianBlur {
 }
 
 impl GaussianBlur {
-    pub fn overlap_radius(&self) -> u32 {
+    pub fn tile_overlap(&self) -> u32 {
         (self.radius * 3.0).ceil() as u32
     }
 }
@@ -171,7 +171,7 @@ impl Filter for BoxBlur {
         Ok(out)
     }
 
-    fn overlap_radius(&self) -> u32 {
+    fn tile_overlap(&self) -> u32 {
         self.radius
     }
 }

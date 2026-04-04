@@ -25,7 +25,7 @@ use crate::rect::Rect;
 ///   of the filter type — collected at graph setup time, NOT dependent on instance config.
 ///   The pipeline auto-composes it with io_f32 bindings (`load_pixel`/`store_pixel`).
 ///
-/// - **Spatial overlap**: override `overlap_radius()` to return the number of extra
+/// - **Spatial overlap**: override `tile_overlap()` to return the number of extra
 ///   pixels needed around each tile (e.g., blur kernel radius × 3).
 ///
 /// - **Analytic fusion**: override `analytic_expression()` to return a `PointOpExpr`.
@@ -84,7 +84,7 @@ pub trait Filter {
 
     /// Extra pixels needed around each tile for neighborhood operations.
     /// Default 0 = point operation (no overlap needed).
-    fn overlap_radius(&self) -> u32 {
+    fn tile_overlap(&self) -> u32 {
         0
     }
 

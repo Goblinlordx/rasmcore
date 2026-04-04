@@ -51,7 +51,7 @@ pub fn compose_shader(body: &str) -> String {
 ///
 /// Capabilities are detected at runtime from the filter:
 /// - `Filter::GPU_SHADER_BODY` → GPU dispatch
-/// - `Filter::overlap_radius()` → spatial tile expansion
+/// - `Filter::tile_overlap()` → spatial tile expansion
 /// - `Filter::analytic_expression()` → fusion optimizer
 ///
 /// One constructor. No variants. The node adapts to whatever the filter provides.
@@ -72,8 +72,8 @@ impl<F: Filter> FilterNode<F> {
         Self::new(upstream, info, filter)
     }
 
-    /// Backward compat — overlap is now detected from `filter.overlap_radius()`.
-    pub fn spatial(upstream: u32, info: NodeInfo, filter: F, _overlap_radius: u32) -> Self {
+    /// Backward compat — overlap is now detected from `filter.tile_overlap()`.
+    pub fn spatial(upstream: u32, info: NodeInfo, filter: F, _tile_overlap: u32) -> Self {
         Self::new(upstream, info, filter)
     }
 
@@ -144,11 +144,11 @@ impl<F: Filter + 'static> Node for FilterNode<F> {
     }
 
     fn tile_hint(&self) -> Option<TileHint> {
-        let r = self.filter.overlap_radius();
+        let r = self.filter.tile_overlap();
         if r > 0 {
             Some(TileHint {
                 min_efficient_tile: r * 8,
-                overlap_radius: r,
+                tile_overlap: r,
             })
         } else {
             None
@@ -156,7 +156,7 @@ impl<F: Filter + 'static> Node for FilterNode<F> {
     }
 
     fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> InputRectEstimate {
-        let r = self.filter.overlap_radius();
+        let r = self.filter.tile_overlap();
         if r > 0 {
             InputRectEstimate::Exact(output.expand_uniform(r, bounds_w, bounds_h))
         } else {
@@ -173,7 +173,7 @@ pub struct GpuFilterNode<F: Filter + GpuFilter> {
     upstream: u32,
     info: NodeInfo,
     filter: F,
-    overlap_radius: u32,
+    tile_overlap: u32,
     capabilities: NodeCapabilities,
 }
 
@@ -183,7 +183,7 @@ impl<F: Filter + GpuFilter> GpuFilterNode<F> {
             upstream,
             info,
             filter,
-            overlap_radius: 0,
+            tile_overlap: 0,
             capabilities: NodeCapabilities {
                 gpu: true,
                 ..NodeCapabilities::default()
@@ -191,12 +191,12 @@ impl<F: Filter + GpuFilter> GpuFilterNode<F> {
         }
     }
 
-    pub fn spatial(upstream: u32, info: NodeInfo, filter: F, overlap_radius: u32) -> Self {
+    pub fn spatial(upstream: u32, info: NodeInfo, filter: F, tile_overlap: u32) -> Self {
         Self {
             upstream,
             info,
             filter,
-            overlap_radius,
+            tile_overlap,
             capabilities: NodeCapabilities {
                 gpu: true,
                 ..NodeCapabilities::default()
@@ -258,10 +258,10 @@ impl<F: Filter + GpuFilter + 'static> Node for GpuFilterNode<F> {
     }
 
     fn tile_hint(&self) -> Option<TileHint> {
-        if self.overlap_radius > 0 {
+        if self.tile_overlap > 0 {
             Some(TileHint {
-                min_efficient_tile: self.overlap_radius * 8,
-                overlap_radius: self.overlap_radius,
+                min_efficient_tile: self.tile_overlap * 8,
+                tile_overlap: self.tile_overlap,
             })
         } else {
             None
@@ -269,9 +269,9 @@ impl<F: Filter + GpuFilter + 'static> Node for GpuFilterNode<F> {
     }
 
     fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> InputRectEstimate {
-        if self.overlap_radius > 0 {
+        if self.tile_overlap > 0 {
             InputRectEstimate::Exact(
-                output.expand_uniform(self.overlap_radius, bounds_w, bounds_h),
+                output.expand_uniform(self.tile_overlap, bounds_w, bounds_h),
             )
         } else {
             InputRectEstimate::Exact(output.clamp(bounds_w, bounds_h))
@@ -378,7 +378,7 @@ mod tests {
             Ok(output)
         }
 
-        fn overlap_radius(&self) -> u32 {
+        fn tile_overlap(&self) -> u32 {
             self.radius
         }
     }
@@ -506,7 +506,7 @@ mod tests {
 
         let blur_node = FilterNode::spatial(src, info, BoxBlur { radius: 2 }, 2);
         assert!(blur_node.tile_hint().is_some());
-        assert_eq!(blur_node.tile_hint().unwrap().overlap_radius, 2);
+        assert_eq!(blur_node.tile_hint().unwrap().tile_overlap, 2);
 
         let node_id = g.add_node(Box::new(blur_node));
         let pixels = g.request_full(node_id).unwrap();
