@@ -9,17 +9,33 @@ use rasmcore_pipeline_v2::node::NodeInfo;
 use rasmcore_pipeline_v2::ops::DecodedImage as V2DecodedImage;
 use rasmcore_pipeline_v2::PipelineError;
 
-/// Convert a V1 DecodedImage to V2 DecodedImage (f32 RGBA).
+/// Convert a V1 DecodedImage to V2 DecodedImage (f32 linear RGBA).
+///
+/// sRGB sources are degamma'd to linear during conversion so the V2 pipeline
+/// operates entirely in linear light. The encoder re-applies the sRGB transfer
+/// function on output.
 pub fn v1_to_v2(v1: V1DecodedImage) -> Result<V2DecodedImage, PipelineError> {
+    let v1_cs = v1.info.color_space;
     let pixels = pixels_to_f32_rgba(&v1.pixels, v1.info.format, v1.info.width, v1.info.height)?;
-    let color_space = map_color_space(v1.info.color_space);
+    let color_space = map_color_space(v1_cs);
+
+    // Linearize sRGB sources — V2 pipeline is f32 linear throughout.
+    let pixels = if color_space == V2ColorSpace::Srgb {
+        linearize_srgb(pixels)
+    } else {
+        pixels
+    };
 
     Ok(V2DecodedImage {
         pixels,
         info: NodeInfo {
             width: v1.info.width,
             height: v1.info.height,
-            color_space,
+            color_space: if color_space == V2ColorSpace::Srgb {
+                V2ColorSpace::Linear
+            } else {
+                color_space
+            },
         },
         icc_profile: v1.icc_profile,
     })
@@ -275,6 +291,29 @@ fn map_color_space(
     }
 }
 
+/// Apply sRGB EOTF (degamma) to f32 pixels that are sRGB-encoded.
+/// Converts from sRGB gamma space to linear light. Alpha is unchanged.
+fn linearize_srgb(mut pixels: Vec<f32>) -> Vec<f32> {
+    for chunk in pixels.chunks_exact_mut(4) {
+        chunk[0] = srgb_to_linear(chunk[0]);
+        chunk[1] = srgb_to_linear(chunk[1]);
+        chunk[2] = srgb_to_linear(chunk[2]);
+        // alpha unchanged
+    }
+    pixels
+}
+
+/// sRGB gamma-encoded → Linear. Per-channel. IEC 61966-2-1.
+#[inline]
+fn srgb_to_linear(v: f32) -> f32 {
+    let c = v.clamp(0.0, 1.0);
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
 /// Linear to sRGB, then quantize to u8. IEC 61966-2-1.
 #[inline]
 fn linear_to_srgb_u8(v: f32) -> u8 {
@@ -292,8 +331,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rgba8_roundtrip() {
+    fn rgba8_to_f32() {
         // 2x1 image: red pixel, green pixel
+        // pixels_to_f32_rgba does raw normalization (no degamma) — that's correct,
+        // linearization happens in v1_to_v2() based on color space.
         let v1_pixels: Vec<u8> = vec![255, 0, 0, 255, 0, 255, 0, 128];
         let f32_pixels = pixels_to_f32_rgba(&v1_pixels, PixelFormat::Rgba8, 2, 1).unwrap();
         assert_eq!(f32_pixels.len(), 8);
@@ -302,6 +343,29 @@ mod tests {
         assert!((f32_pixels[4] - 0.0).abs() < 1e-6); // R=0.0
         assert!((f32_pixels[5] - 1.0).abs() < 1e-6); // G=1.0
         assert!((f32_pixels[7] - 128.0 / 255.0).abs() < 1e-5); // A
+    }
+
+    #[test]
+    fn srgb_linearize_roundtrip() {
+        // sRGB mid-gray (128) should linearize then re-encode to ~128
+        let srgb_val = 128.0 / 255.0; // ~0.502
+        let linear = srgb_to_linear(srgb_val);
+        let back = linear_to_srgb_u8(linear);
+        assert!((back as i32 - 128).unsigned_abs() <= 1, "roundtrip: 128 → {back}");
+    }
+
+    #[test]
+    fn srgb_identity_roundtrip_all_values() {
+        // Every u8 value should roundtrip through linearize→encode within ±1
+        for i in 0u8..=255 {
+            let srgb = i as f32 / 255.0;
+            let linear = srgb_to_linear(srgb);
+            let back = linear_to_srgb_u8(linear);
+            assert!(
+                (back as i32 - i as i32).unsigned_abs() <= 1,
+                "u8 {i} → linear {linear:.6} → u8 {back} (expected ~{i})"
+            );
+        }
     }
 
     #[test]
