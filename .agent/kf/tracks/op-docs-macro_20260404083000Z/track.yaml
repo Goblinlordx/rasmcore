@@ -45,7 +45,10 @@ spec:
     - Behind cfg(feature = "docs") — empty strings without it
     - WASM build has no binary size increase
     - SSG binary outputs static HTML site to docs/build/
+    - Index page lists all operations grouped by category with links to detail pages
     - Each operation gets an HTML page with description, params table, example
+    - Cross-linking between operations (see-also references render as clickable links)
+    - Auto-generated sitemap.json for programmatic navigation
     - Manual pages from docs/pages/*.md are rendered into the same site
     - Site has navigation sidebar with categories and manual pages
     - dump_registry with docs feature includes doc fields in JSON
@@ -120,11 +123,15 @@ plan:
         done: false
   - phase: SSG Docs Builder
     tasks:
-      - text: Create scripts/build-docs.mjs (or Rust binary) that reads registry JSON
+      - text: Create scripts/build-docs.mjs that reads registry JSON
         done: false
       - text: HTML template with nav sidebar (categories + manual pages) and content area
         done: false
-      - text: Render per-operation HTML pages from registry (description, params, example)
+      - text: Index page listing all operations grouped by category with links
+        done: false
+      - text: Render per-operation HTML pages (description, params table, example, see-also links)
+        done: false
+      - text: Auto-generate sitemap.json with all pages for programmatic lookup
         done: false
       - text: Read manual pages from docs/pages/*.md with frontmatter (title, section, order)
         done: false
