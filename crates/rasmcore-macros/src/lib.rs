@@ -1244,3 +1244,216 @@ pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// V2 Encoder Derive — auto-registers EncoderFactoryRegistration
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Derive macro for V2 encoder registration.
+///
+/// The struct must implement an `encode` method with signature:
+///   `fn encode(pixels: &[f32], w: u32, h: u32, params: &ParamMap) -> Result<Vec<u8>, PipelineError>`
+///
+/// ```ignore
+/// #[derive(V2Encoder)]
+/// #[codec(name = "png", display_name = "PNG", mime = "image/png", extensions = "png")]
+/// struct PngEncoderAdapter;
+/// ```
+#[proc_macro_derive(V2Encoder, attributes(codec, param))]
+pub fn derive_v2_encoder(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as ItemStruct);
+    let struct_name = &input.ident;
+
+    let mut codec_name = String::new();
+    let mut display_name = String::new();
+    let mut mime = String::new();
+    let mut extensions_str = String::new();
+
+    for attr in &input.attrs {
+        if !attr.path().is_ident("codec") { continue; }
+        let _ = attr.parse_nested_meta(|meta| {
+            let key = meta.path.get_ident().unwrap().to_string();
+            let value = meta.value()?;
+            let lit: LitStr = value.parse()?;
+            match key.as_str() {
+                "name" => codec_name = lit.value(),
+                "display_name" => display_name = lit.value(),
+                "mime" => mime = lit.value(),
+                "extensions" => extensions_str = lit.value(),
+                _ => {}
+            }
+            Ok(())
+        });
+    }
+
+    if codec_name.is_empty() {
+        return syn::Error::new(proc_macro2::Span::call_site(),
+            "derive(V2Encoder) requires #[codec(name = \"...\", mime = \"...\", extensions = \"...\")]")
+            .to_compile_error().into();
+    }
+
+    if display_name.is_empty() {
+        display_name = codec_name.to_uppercase();
+    }
+
+    let extensions: Vec<&str> = extensions_str.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    let ext_count = extensions.len();
+    let ext_tokens: Vec<proc_macro2::TokenStream> = extensions.iter().map(|e| quote! { #e }).collect();
+
+    // Parse param fields (same as V2Filter)
+    let fields = match &input.fields {
+        Fields::Named(f) => f.named.iter().collect::<Vec<_>>(),
+        _ => vec![],
+    };
+
+    let mut param_descriptors = Vec::new();
+    for field in &fields {
+        let fname = field.ident.as_ref().unwrap();
+        let fname_str = fname.to_string();
+        let ftype = &field.ty;
+        let ftype_str = quote!(#ftype).to_string().replace(' ', "");
+
+        let mut min_val = quote! { None };
+        let mut max_val = quote! { None };
+        let mut step_val = quote! { None };
+        let mut default_val = quote! { None };
+        let mut hint_val = quote! { None };
+
+        for attr in &field.attrs {
+            if !attr.path().is_ident("param") { continue; }
+            let _ = attr.parse_nested_meta(|meta| {
+                let key = meta.path.get_ident().unwrap().to_string();
+                let value = meta.value()?;
+                let lit: Lit = value.parse()?;
+                match key.as_str() {
+                    "min" => { let v: f64 = match &lit { Lit::Float(f) => f.base10_parse().unwrap_or(0.0), Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64, _ => 0.0 }; min_val = quote! { Some(#v) }; }
+                    "max" => { let v: f64 = match &lit { Lit::Float(f) => f.base10_parse().unwrap_or(0.0), Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64, _ => 0.0 }; max_val = quote! { Some(#v) }; }
+                    "step" => { let v: f64 = match &lit { Lit::Float(f) => f.base10_parse().unwrap_or(0.0), Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64, _ => 0.0 }; step_val = quote! { Some(#v) }; }
+                    "default" => { let v: f64 = match &lit { Lit::Float(f) => f.base10_parse().unwrap_or(0.0), Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64, _ => 0.0 }; default_val = quote! { Some(#v) }; }
+                    "hint" => { if let Lit::Str(s) = &lit { let h = s.value(); hint_val = quote! { Some(#h) }; } }
+                    _ => {}
+                }
+                Ok(())
+            });
+        }
+
+        let param_type = match ftype_str.as_str() {
+            "f32" => quote! { rasmcore_pipeline_v2::ParamType::F32 },
+            "u32" | "u16" | "u8" => quote! { rasmcore_pipeline_v2::ParamType::U32 },
+            "bool" => quote! { rasmcore_pipeline_v2::ParamType::Bool },
+            _ => quote! { rasmcore_pipeline_v2::ParamType::F32 },
+        };
+
+        param_descriptors.push(quote! { rasmcore_pipeline_v2::ParamDescriptor {
+            name: #fname_str, value_type: #param_type,
+            min: #min_val, max: #max_val, step: #step_val,
+            default: #default_val, hint: #hint_val, constraints: &[],
+        }});
+    }
+
+    let param_count = param_descriptors.len();
+    let params_ident = format_ident!("__V2_ENC_PARAMS_{}", codec_name.to_uppercase());
+    let ext_ident = format_ident!("__V2_ENC_EXT_{}", codec_name.to_uppercase());
+    let reg_ident = format_ident!("__V2_ENC_REG_{}", codec_name.to_uppercase());
+
+    let expanded = quote! {
+        #[doc(hidden)]
+        #[allow(non_upper_case_globals)]
+        static #params_ident: [rasmcore_pipeline_v2::ParamDescriptor; #param_count] = [#(#param_descriptors),*];
+
+        #[doc(hidden)]
+        #[allow(non_upper_case_globals)]
+        static #ext_ident: [&str; #ext_count] = [#(#ext_tokens),*];
+
+        #[doc(hidden)]
+        #[allow(non_upper_case_globals)]
+        static #reg_ident: rasmcore_pipeline_v2::EncoderFactoryRegistration = rasmcore_pipeline_v2::EncoderFactoryRegistration {
+            name: #codec_name,
+            display_name: #display_name,
+            mime: #mime,
+            extensions: &#ext_ident,
+            params: &#params_ident,
+            encode: #struct_name::encode,
+        };
+        inventory::submit!(&#reg_ident);
+    };
+
+    TokenStream::from(expanded)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// V2 Decoder Derive — auto-registers DecoderFactoryRegistration
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Derive macro for V2 decoder registration.
+///
+/// The struct must implement:
+///   `fn detect(data: &[u8]) -> bool`
+///   `fn decode(data: &[u8]) -> Result<DecodedImageV2, PipelineError>`
+///
+/// ```ignore
+/// #[derive(V2Decoder)]
+/// #[codec(name = "png", display_name = "PNG", extensions = "png")]
+/// struct PngDecoderAdapter;
+/// ```
+#[proc_macro_derive(V2Decoder, attributes(codec))]
+pub fn derive_v2_decoder(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as ItemStruct);
+    let struct_name = &input.ident;
+
+    let mut codec_name = String::new();
+    let mut display_name = String::new();
+    let mut extensions_str = String::new();
+
+    for attr in &input.attrs {
+        if !attr.path().is_ident("codec") { continue; }
+        let _ = attr.parse_nested_meta(|meta| {
+            let key = meta.path.get_ident().unwrap().to_string();
+            let value = meta.value()?;
+            let lit: LitStr = value.parse()?;
+            match key.as_str() {
+                "name" => codec_name = lit.value(),
+                "display_name" => display_name = lit.value(),
+                "extensions" => extensions_str = lit.value(),
+                _ => {}
+            }
+            Ok(())
+        });
+    }
+
+    if codec_name.is_empty() {
+        return syn::Error::new(proc_macro2::Span::call_site(),
+            "derive(V2Decoder) requires #[codec(name = \"...\", extensions = \"...\")]")
+            .to_compile_error().into();
+    }
+
+    if display_name.is_empty() {
+        display_name = codec_name.to_uppercase();
+    }
+
+    let extensions: Vec<&str> = extensions_str.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    let ext_count = extensions.len();
+    let ext_tokens: Vec<proc_macro2::TokenStream> = extensions.iter().map(|e| quote! { #e }).collect();
+
+    let ext_ident = format_ident!("__V2_DEC_EXT_{}", codec_name.to_uppercase());
+    let reg_ident = format_ident!("__V2_DEC_REG_{}", codec_name.to_uppercase());
+
+    let expanded = quote! {
+        #[doc(hidden)]
+        #[allow(non_upper_case_globals)]
+        static #ext_ident: [&str; #ext_count] = [#(#ext_tokens),*];
+
+        #[doc(hidden)]
+        #[allow(non_upper_case_globals)]
+        static #reg_ident: rasmcore_pipeline_v2::DecoderFactoryRegistration = rasmcore_pipeline_v2::DecoderFactoryRegistration {
+            name: #codec_name,
+            display_name: #display_name,
+            extensions: &#ext_ident,
+            detect: #struct_name::detect,
+            decode: #struct_name::decode,
+        };
+        inventory::submit!(&#reg_ident);
+    };
+
+    TokenStream::from(expanded)
+}
