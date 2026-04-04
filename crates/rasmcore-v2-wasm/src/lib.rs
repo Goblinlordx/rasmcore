@@ -6,6 +6,13 @@
 //!
 //! No V1 NodeGraph, no V1 ImageNode, no u8 LUTs, no PixelFormat dispatch.
 
+// Force linker to include modules with inventory registrations.
+// Without these, the linker drops unused modules and their inventory::submit! entries.
+#[allow(unused_imports)]
+use rasmcore_pipeline_v2::filters as _v2_filters;
+#[allow(unused_imports)]
+use rasmcore_codecs_v2 as _v2_codecs;
+
 #[cfg(target_arch = "wasm32")]
 mod bindings;
 

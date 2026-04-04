@@ -49,3 +49,4 @@ tests/fixtures/.venv/
 web-ui/node_modules/
 web-ui/dist/
 web-ui/sdk
+sdk/typescript/v2-generated/
