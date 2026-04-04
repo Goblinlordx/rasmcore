@@ -15,7 +15,8 @@ use criterion::{
 use rasmcore_pipeline_v2::filters::adjustment::{Brightness, Contrast, Invert};
 use rasmcore_pipeline_v2::filters::color::{HueRotate, Saturate};
 use rasmcore_pipeline_v2::filters::spatial::GaussianBlur;
-use rasmcore_pipeline_v2::ops::Filter;
+use rasmcore_pipeline_v2::fusion::{lower_to_closure, lower_to_f32_lut};
+use rasmcore_pipeline_v2::ops::{Filter, PointOpExpr};
 
 // ─── Synthetic Test Images ─────────────────────────────────────────────────
 
@@ -246,6 +247,131 @@ fn perf_multi_op(c: &mut Criterion) {
     group.finish();
 }
 
+// ─── Performance — Fused Point-Op Chain (LUT vs Closure) ──────────────────
+
+fn perf_fused_chain(c: &mut Criterion) {
+    let mut group = c.benchmark_group("fused_chain");
+
+    // Build a 7-filter expression tree: brightness(+0.05) composed 7 times
+    // This simulates a long fused chain with deep recursive evaluation.
+    let mut expr = PointOpExpr::Input;
+    for _ in 0..7 {
+        expr = PointOpExpr::Add(
+            Box::new(expr),
+            Box::new(PointOpExpr::Constant(0.01)),
+        );
+    }
+
+    let images: Vec<(&str, u32, u32, Vec<f32>)> = vec![
+        ("400px", SMALL_W, SMALL_H, gradient_image(SMALL_W, SMALL_H)),
+        ("4K", LARGE_W, LARGE_H, gradient_image(LARGE_W, LARGE_H)),
+    ];
+
+    for (res_name, _w, _h, input) in &images {
+        let pixels = input.len() / 4;
+        group.throughput(Throughput::Elements(pixels as u64));
+
+        // Benchmark: LUT path (new)
+        let lut = lower_to_f32_lut(&expr);
+        group.bench_with_input(
+            BenchmarkId::new("lut", *res_name),
+            input,
+            |b, input| {
+                b.iter(|| {
+                    let mut out = input.clone();
+                    for pixel in out.chunks_exact_mut(4) {
+                        pixel[0] = lut.apply(black_box(pixel[0]));
+                        pixel[1] = lut.apply(black_box(pixel[1]));
+                        pixel[2] = lut.apply(black_box(pixel[2]));
+                    }
+                    out
+                });
+            },
+        );
+
+        // Benchmark: closure path (old)
+        let closure = lower_to_closure(&expr);
+        group.bench_with_input(
+            BenchmarkId::new("closure", *res_name),
+            input,
+            |b, input| {
+                b.iter(|| {
+                    let mut out = input.clone();
+                    for pixel in out.chunks_exact_mut(4) {
+                        pixel[0] = closure(black_box(pixel[0]));
+                        pixel[1] = closure(black_box(pixel[1]));
+                        pixel[2] = closure(black_box(pixel[2]));
+                    }
+                    out
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
+// ─── Performance — Complex Fused Chain (Gamma + Contrast) ─────────────────
+
+fn perf_fused_complex(c: &mut Criterion) {
+    let mut group = c.benchmark_group("fused_complex");
+
+    // brightness(+0.1) → contrast(1.5) → gamma(2.2): includes Pow (transcendental)
+    let bright = PointOpExpr::Add(
+        Box::new(PointOpExpr::Input),
+        Box::new(PointOpExpr::Constant(0.1)),
+    );
+    let contrast = PointOpExpr::Add(
+        Box::new(PointOpExpr::Mul(
+            Box::new(PointOpExpr::Sub(
+                Box::new(bright),
+                Box::new(PointOpExpr::Constant(0.5)),
+            )),
+            Box::new(PointOpExpr::Constant(1.5)),
+        )),
+        Box::new(PointOpExpr::Constant(0.5)),
+    );
+    let expr = PointOpExpr::Pow(
+        Box::new(PointOpExpr::Max(
+            Box::new(contrast),
+            Box::new(PointOpExpr::Constant(0.0)),
+        )),
+        Box::new(PointOpExpr::Constant(1.0 / 2.2)),
+    );
+
+    let input = gradient_image(LARGE_W, LARGE_H);
+    let pixels = (LARGE_W as u64) * (LARGE_H as u64);
+    group.throughput(Throughput::Elements(pixels));
+
+    let lut = lower_to_f32_lut(&expr);
+    group.bench_function("lut_4K", |b| {
+        b.iter(|| {
+            let mut out = input.clone();
+            for pixel in out.chunks_exact_mut(4) {
+                pixel[0] = lut.apply(black_box(pixel[0]));
+                pixel[1] = lut.apply(black_box(pixel[1]));
+                pixel[2] = lut.apply(black_box(pixel[2]));
+            }
+            out
+        });
+    });
+
+    let closure = lower_to_closure(&expr);
+    group.bench_function("closure_4K", |b| {
+        b.iter(|| {
+            let mut out = input.clone();
+            for pixel in out.chunks_exact_mut(4) {
+                pixel[0] = closure(black_box(pixel[0]));
+                pixel[1] = closure(black_box(pixel[1]));
+                pixel[2] = closure(black_box(pixel[2]));
+            }
+            out
+        });
+    });
+
+    group.finish();
+}
+
 // ─── Main ──────────────────────────────────────────────────────────────────
 
 criterion_group!(
@@ -254,5 +380,7 @@ criterion_group!(
     correctness_difference,
     perf_single_op,
     perf_multi_op,
+    perf_fused_chain,
+    perf_fused_complex,
 );
 criterion_main!(benches);
