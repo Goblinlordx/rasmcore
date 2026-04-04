@@ -15,6 +15,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   return (
     <html lang="en">
+      <head>
+        <script type="importmap" dangerouslySetInnerHTML={{ __html: JSON.stringify({
+          imports: {
+            "@bytecodealliance/preview2-shim/cli": "/sdk/v2/preview2-shim/cli.js",
+            "@bytecodealliance/preview2-shim/clocks": "/sdk/v2/preview2-shim/clocks.js",
+            "@bytecodealliance/preview2-shim/filesystem": "/sdk/v2/preview2-shim/filesystem.js",
+            "@bytecodealliance/preview2-shim/io": "/sdk/v2/preview2-shim/io.js",
+            "@bytecodealliance/preview2-shim/random": "/sdk/v2/preview2-shim/random.js",
+          }
+        })}} />
+      </head>
       <body>
         <div className="layout">
           <Sidebar registry={registry} manualPages={manualPages} />

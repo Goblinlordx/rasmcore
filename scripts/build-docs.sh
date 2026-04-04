@@ -26,6 +26,14 @@ cp "$PROJECT_ROOT/sdk/typescript/v2-generated/rasmcore-v2-image.d.ts" "$PROJECT_
 cp "$PROJECT_ROOT/sdk/typescript/v2-generated/"*.wasm "$PROJECT_ROOT/docs/site/public/sdk/v2/"
 cp -r "$PROJECT_ROOT/sdk/typescript/v2-generated/interfaces" "$PROJECT_ROOT/docs/site/public/sdk/v2/" 2>/dev/null || true
 
+echo "=== Copying preview2-shim (browser) for import map ==="
+SHIM_SRC="$PROJECT_ROOT/docs/site/node_modules/@bytecodealliance/preview2-shim/lib/browser"
+SHIM_DST="$PROJECT_ROOT/docs/site/public/sdk/v2/preview2-shim"
+if [ -d "$SHIM_SRC" ]; then
+  mkdir -p "$SHIM_DST"
+  cp "$SHIM_SRC"/*.js "$SHIM_DST/"
+fi
+
 echo "=== Building Next.js docs site ==="
 cd "$PROJECT_ROOT/docs/site"
 npm install --silent

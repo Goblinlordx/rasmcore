@@ -29,12 +29,14 @@ $(DOCS_EXAMPLES): crates/rasmcore-v2-wasm/src/bin/render_examples.rs
 	cargo run --bin render_examples -p rasmcore-v2-wasm --release 2>/dev/null
 
 ## Copy SDK for live playground
-$(DOCS_SDK): sdk/typescript/v2-generated/rasmcore-v2-image.js
+$(DOCS_SDK): sdk/typescript/v2-generated/rasmcore-v2-image.js $(DOCS_NODE_MODULES)
 	mkdir -p $(DOCS_SITE)/public/sdk/v2
 	cp sdk/typescript/v2-generated/rasmcore-v2-image.js $(DOCS_SITE)/public/sdk/v2/
 	cp sdk/typescript/v2-generated/rasmcore-v2-image.d.ts $(DOCS_SITE)/public/sdk/v2/ 2>/dev/null || true
 	cp sdk/typescript/v2-generated/*.wasm $(DOCS_SITE)/public/sdk/v2/
 	cp -r sdk/typescript/v2-generated/interfaces $(DOCS_SITE)/public/sdk/v2/ 2>/dev/null || true
+	mkdir -p $(DOCS_SITE)/public/sdk/v2/preview2-shim
+	cp $(DOCS_SITE)/node_modules/@bytecodealliance/preview2-shim/lib/browser/*.js $(DOCS_SITE)/public/sdk/v2/preview2-shim/ 2>/dev/null || true
 
 ## Copy example images to public
 .PHONY: docs-copy-examples

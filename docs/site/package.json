@@ -11,7 +11,8 @@
     "next": "^15",
     "react": "^19",
     "react-dom": "^19",
-    "@asciidoctor/core": "^3"
+    "@asciidoctor/core": "^3",
+    "@bytecodealliance/preview2-shim": "^0.17"
   },
   "devDependencies": {
     "@types/node": "^22",
