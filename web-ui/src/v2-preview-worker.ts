@@ -34,6 +34,7 @@ let LayerCacheClass = null;
 let layerCache = null; // Shared cross-pipeline content-addressed cache
 let previewBytes = null;
 let gpuHandler: GpuHandlerV2 | null = null;
+let displayMode = false; // true when OffscreenCanvas received and display configured
 
 function snakeToCamel(s) {
   return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
@@ -204,6 +205,8 @@ async function processChain(chain) {
     // GPU dispatch — access raw WIT resource via pipe._pipe (private but accessible at runtime)
     const raw = pipe._pipe;
     const sinkNode = pipe._node;
+    let gpuDisplayed = false;
+
     if (gpuHandler && raw && typeof raw.renderGpuPlan === 'function') {
       try {
         const gpuPlan = raw.renderGpuPlan(sinkNode);
@@ -217,14 +220,29 @@ async function processChain(chain) {
             params: new Uint8Array(s.params),
             extraBuffers: s.extraBuffers.map(b => new Uint8Array(b)),
           }));
-          const result = await gpuHandler.execute(
-            ops,
-            new Float32Array(gpuPlan.inputPixels),
-            gpuPlan.width,
-            gpuPlan.height,
-          );
-          if ('ok' in result) {
-            raw.injectGpuResult(sinkNode, Array.from(result.ok));
+
+          if (displayMode && gpuHandler.hasDisplay) {
+            // Direct display path — compute + blit, no CPU readback
+            const err = await gpuHandler.executeAndDisplay(
+              ops,
+              new Float32Array(gpuPlan.inputPixels),
+              gpuPlan.width,
+              gpuPlan.height,
+            );
+            if (!err) {
+              gpuDisplayed = true;
+            }
+          } else {
+            // Legacy path — readback to CPU for PNG encode
+            const result = await gpuHandler.execute(
+              ops,
+              new Float32Array(gpuPlan.inputPixels),
+              gpuPlan.width,
+              gpuPlan.height,
+            );
+            if ('ok' in result) {
+              raw.injectGpuResult(sinkNode, Array.from(result.ok));
+            }
           }
         }
       } catch (_) {
@@ -232,6 +250,41 @@ async function processChain(chain) {
       }
     }
 
+    // If display mode handled rendering, send timing only (no PNG)
+    if (gpuDisplayed) {
+      const totalMs = Math.round(performance.now() - t0);
+      if (layerCache) {
+        const s = layerCache.stats();
+        console.log(`[v2-preview] ${totalMs}ms (display) | cache: ${s.hits} hits, ${s.misses} misses, ${s.entries} entries`);
+      } else {
+        console.log(`[v2-preview] ${totalMs}ms (display)`);
+      }
+      self.postMessage({ type: 'displayed', totalMs, proxyMax: PREVIEW_MAX });
+      return;
+    }
+
+    // CPU-only or fallback: if display mode is active, upload and blit
+    if (displayMode && gpuHandler?.hasDisplay) {
+      try {
+        const raw2 = pipe._pipe;
+        const node2 = pipe._node;
+        if (raw2 && typeof raw2.render === 'function') {
+          const rendered = raw2.render(node2);
+          if (rendered) {
+            const f32 = new Float32Array(rendered.pixels);
+            gpuHandler.displayFromCpu(f32, rendered.width, rendered.height);
+            const totalMs = Math.round(performance.now() - t0);
+            console.log(`[v2-preview] ${totalMs}ms (cpu→display)`);
+            self.postMessage({ type: 'displayed', totalMs, proxyMax: PREVIEW_MAX });
+            return;
+          }
+        }
+      } catch (_) {
+        // Fall through to PNG path
+      }
+    }
+
+    // PNG fallback path (no display canvas, or display failed)
     const output = pipe.write('png');
     const totalMs = Math.round(performance.now() - t0);
 
@@ -251,6 +304,30 @@ async function processChain(chain) {
   }
 }
 
+// ─── Display Surface ───────────────────────────────────────────────────────
+
+async function initDisplay(canvas: OffscreenCanvas, hdr: boolean) {
+  if (!gpuHandler) return;
+  try {
+    await gpuHandler.setDisplayCanvas(canvas, hdr);
+    displayMode = true;
+    console.log(`[v2-preview] Display mode enabled (HDR: ${hdr})`);
+  } catch (e: any) {
+    console.warn('[v2-preview] Display init failed, staying in PNG mode:', e?.message);
+  }
+}
+
+function handleViewport(data: any) {
+  if (!gpuHandler || !displayMode) return;
+  gpuHandler.updateViewport(
+    data.panX, data.panY, data.zoom,
+    data.canvasWidth, data.canvasHeight,
+    data.imageWidth, data.imageHeight,
+    data.toneMode ?? 0,
+  );
+  gpuHandler.displayOnly();
+}
+
 // ─── Message Handler ────────────────────────────────────────────────────────
 
 self.onmessage = (e) => {
@@ -259,11 +336,17 @@ self.onmessage = (e) => {
     case 'init':
       initSDK();
       break;
+    case 'init-display':
+      initDisplay(e.data.canvas, e.data.hdr ?? false);
+      break;
     case 'load':
       loadImage(e.data.imageBytes);
       break;
     case 'process':
       processChain(e.data.chain);
+      break;
+    case 'viewport':
+      handleViewport(e.data);
       break;
   }
 };
