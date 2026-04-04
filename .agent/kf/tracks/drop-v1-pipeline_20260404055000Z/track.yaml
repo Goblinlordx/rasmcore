@@ -1,0 +1,128 @@
+id: drop-v1-pipeline_20260404055000Z
+title: Drop V1 pipeline from WASM build and web UI
+type: refactor
+status: pending
+created: '2026-04-04'
+updated: '2026-04-04'
+spec:
+  summary: |
+    Remove V1 pipeline, WIT interfaces, workers, SDK generation, and adapter code.
+    V2 is the sole execution path. Preserve V1 domain code for parity testing.
+  context: |
+    The web UI already uses V2 exclusively (v2-pipeline-worker, v2-preview-worker).
+    The V2 WASM component (rasmcore-v2-wasm) is built separately from V1
+    (rasmcore-image). But V1 artifacts remain: dead workers, V1 WIT interfaces
+    (412 lines of hardcoded per-filter methods), V1 SDK generation scripts, V1
+    adapter code in rasmcore-image/src/adapter/, and the V1 WASM build.
+    The 13MB V2 core.wasm is already V2-only. The V1 component is not built
+    for web UI but still compiles in the workspace. Removing V1 reduces workspace
+    compile time, eliminates confusion, and ensures no accidental V1 usage.
+  codebase_analysis: |
+    V1 artifacts to remove:
+    - web-ui/src/pipeline-worker.ts (V1 worker, not imported by any hook)
+    - web-ui/src/preview-worker.ts (V1 worker, not imported by any hook)
+    - web-ui/src/utils/manifest.ts V1 SDK introspection (needs V2 listOperations)
+    - scripts/generate-fluent-sdk.cjs (V1 SDK generator)
+    - scripts/generate-ts-sdk.sh (V1 TS types)
+    - sdk/typescript/src/rcimage.ts (V1 fluent SDK)
+    - wit/image/ (V1 WIT interfaces: pipeline.wit, decoder.wit, encoder.wit, etc.)
+    - crates/rasmcore-image/src/adapter/ (V1 WIT adapters, generated code)
+    - crates/rasmcore-image/src/bindings.rs (V1 WIT bindings)
+
+    V1 crates that lose their only consumer:
+    - rasmcore-gpu-shaders (deprecated, V1 WGSL fragments)
+    - rasmcore-filter-* (7 crates, re-export from rasmcore-image domain)
+    - rasmcore-filters-std, rasmcore-codecs-std (V1 aggregators)
+
+    V1 crates still needed:
+    - rasmcore-pipeline: LayerCache (V2 layer cache track will port this)
+    - rasmcore-pipeline: GPU traits (rasmcore-cli uses them)
+    - rasmcore-cli: native CLI using V1 pipeline (needs separate V2 migration)
+    - rasmcore-image/src/domain/: actual filter/codec implementations (reference code)
+
+    Web UI manifest.ts loads V1 SDK for operation discovery — must switch to
+    V2 Pipeline.listOperations() or Pipeline.listOperationsFromRaw().
+  acceptance_criteria:
+    - V1 web workers removed (pipeline-worker.ts, preview-worker.ts)
+    - V1 WIT interfaces removed (wit/image/)
+    - V1 SDK generation scripts removed
+    - manifest.ts uses V2 listOperations() for operation discovery
+    - V1 adapter code removed from rasmcore-image (src/adapter/)
+    - rasmcore-image removed from workspace members (or kept as library-only, not WASM target)
+    - V1 WASM component no longer builds (cargo component build -p rasmcore-image fails gracefully or is removed)
+    - V2 web UI builds and works unchanged
+    - rasmcore-gpu-shaders removed from workspace
+    - validate.sh still passes (V2 build + tests)
+  out_of_scope: |
+    Migrating rasmcore-cli to V2 (separate future track).
+    Removing V1 domain code (filters/codecs in rasmcore-image/src/domain/) — kept as reference.
+    Removing rasmcore-pipeline crate (still needed by CLI and for LayerCache port).
+    Removing rasmcore-filter-* crates (they are reverse deps, not blocking anything).
+  technical_notes: |
+    Approach:
+    1. Start with web UI: remove V1 workers, switch manifest.ts to V2 discovery
+    2. Remove V1 WIT interfaces (wit/image/) and adapter code
+    3. Remove rasmcore-image from component build target (keep as library for domain code)
+    4. Remove dead build scripts and SDK artifacts
+    5. Clean up workspace members (remove rasmcore-gpu-shaders, filter crates optional)
+    6. Verify V2 build pipeline end-to-end
+
+    The rasmcore-image crate can remain as a library (not a WASM component) for:
+    - Domain code reference (filters, codecs, transforms)
+    - Parity testing (V2 output vs V1 reference)
+    - rasmcore-cli (until separately migrated to V2)
+
+    Key risk: manifest.ts operation discovery. Currently loads V1 SDK to enumerate
+    filter names and params. Must switch to V2 listOperations() which returns
+    the same metadata from the registry. The V2 fluent SDK already has
+    Pipeline.listOperationsFromRaw(PipelineClass) for this.
+plan:
+  - phase: Web UI Cleanup
+    tasks:
+      - text: Delete web-ui/src/pipeline-worker.ts (V1 full-res worker)
+        done: false
+      - text: Delete web-ui/src/preview-worker.ts (V1 preview worker)
+        done: false
+      - text: Update manifest.ts to use V2 listOperations() instead of V1 SDK introspection
+        done: false
+      - text: Remove any V1 SDK imports from web-ui components
+        done: false
+      - text: Verify web UI builds and all operations still appear in toolbar
+        done: false
+  - phase: V1 WIT and Adapter Removal
+    tasks:
+      - text: Remove wit/image/ directory (V1 WIT interfaces)
+        done: false
+      - text: Remove crates/rasmcore-image/src/adapter/ (V1 WIT adapters)
+        done: false
+      - text: Remove crates/rasmcore-image/src/bindings.rs (V1 WIT bindings)
+        done: false
+      - text: Remove component metadata from rasmcore-image Cargo.toml
+        done: false
+      - text: Verify rasmcore-image still compiles as library (not WASM component)
+        done: false
+  - phase: Build Script and SDK Cleanup
+    tasks:
+      - text: Remove scripts/generate-fluent-sdk.cjs (V1 SDK generator)
+        done: false
+      - text: Remove scripts/generate-ts-sdk.sh (V1 TS types)
+        done: false
+      - text: Remove sdk/typescript/src/rcimage.ts (V1 fluent SDK)
+        done: false
+      - text: Remove rasmcore-gpu-shaders from workspace
+        done: false
+      - text: Update validate.sh if it references V1 build steps
+        done: false
+  - phase: Verification
+    tasks:
+      - text: cargo build succeeds for workspace
+        done: false
+      - text: cargo component build -p rasmcore-v2-wasm succeeds
+        done: false
+      - text: build-v2-webui.sh succeeds end-to-end
+        done: false
+      - text: Web UI loads, operations appear, filters work
+        done: false
+      - text: V2 tests pass (domain tests, codec parity)
+        done: false
+extra: {}
