@@ -8,6 +8,7 @@ description = "V2 pipeline engine — f32-native, GPU-primary, zero built-in kno
 [dependencies]
 blake3 = "1"
 inventory = "0.3"
+rasmcore-macros = { path = "../rasmcore-macros" }
 serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]

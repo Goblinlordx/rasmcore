@@ -15,6 +15,9 @@
 //! 4. **Demand-driven**: Tiles are pulled from sinks through the graph. Each
 //!    node computes only what's requested.
 
+// Allow the V2Filter derive macro to reference `rasmcore_pipeline_v2::` from within this crate
+extern crate self as rasmcore_pipeline_v2;
+
 pub mod rect;
 pub mod node;
 pub mod color_space;

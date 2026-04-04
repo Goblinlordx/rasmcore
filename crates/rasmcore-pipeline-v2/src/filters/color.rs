@@ -1748,6 +1748,7 @@ use crate::registry::{FilterFactoryRegistration, ParamMap};
 macro_rules! reg_color {
     ($name:expr, $struct:ident { $($field:ident : $getter:ident),* $(,)? }) => {
         inventory::submit! { &FilterFactoryRegistration { name: $name,
+                display_name: "", category: "", params: &[],
             factory: |upstream, info, params| {
                 let f = $struct { $($field: params.$getter(stringify!($field))),* };
                 Box::new(FilterNode::point_op(upstream, info, f))
@@ -1756,6 +1757,7 @@ macro_rules! reg_color {
     };
     ($name:expr, $struct:ident) => {
         inventory::submit! { &FilterFactoryRegistration { name: $name,
+                display_name: "", category: "", params: &[],
             factory: |upstream, info, _params| { Box::new(FilterNode::point_op(upstream, info, $struct)) },
         } }
     };
@@ -1766,6 +1768,7 @@ reg_color!("saturate", Saturate { factor: get_f32 });
 reg_color!("vibrance", Vibrance { amount: get_f32 });
 reg_color!("sepia", Sepia { intensity: get_f32 });
 inventory::submit! { &FilterFactoryRegistration { name: "colorize",
+        display_name: "", category: "", params: &[],
     factory: |upstream, info, params| {
         Box::new(FilterNode::point_op(upstream, info, Colorize {
             target_r: params.get_f32("target_r"), target_g: params.get_f32("target_g"),
@@ -1774,6 +1777,7 @@ inventory::submit! { &FilterFactoryRegistration { name: "colorize",
     },
 } }
 inventory::submit! { &FilterFactoryRegistration { name: "modulate",
+        display_name: "", category: "", params: &[],
     factory: |upstream, info, params| {
         Box::new(FilterNode::point_op(upstream, info, Modulate {
             brightness: params.get_f32("brightness"), saturation: params.get_f32("saturation"),
@@ -1782,6 +1786,7 @@ inventory::submit! { &FilterFactoryRegistration { name: "modulate",
     },
 } }
 inventory::submit! { &FilterFactoryRegistration { name: "photo_filter",
+        display_name: "", category: "", params: &[],
     factory: |upstream, info, params| {
         Box::new(FilterNode::point_op(upstream, info, PhotoFilter {
             color_r: params.get_f32("color_r"), color_g: params.get_f32("color_g"),
@@ -1791,6 +1796,7 @@ inventory::submit! { &FilterFactoryRegistration { name: "photo_filter",
     },
 } }
 inventory::submit! { &FilterFactoryRegistration { name: "selective_color",
+        display_name: "", category: "", params: &[],
     factory: |upstream, info, params| {
         Box::new(FilterNode::point_op(upstream, info, SelectiveColor {
             target_hue: params.get_f32("target_hue"), hue_range: params.get_f32("hue_range"),
@@ -1807,6 +1813,7 @@ reg_color!("dither_ordered", DitherOrdered { max_colors: get_u32, map_size: get_
 reg_color!("dither_floyd_steinberg", DitherFloydSteinberg { max_colors: get_u32 });
 reg_color!("lab_sharpen", LabSharpen { amount: get_f32, radius: get_f32 });
 inventory::submit! { &FilterFactoryRegistration { name: "kmeans_quantize",
+        display_name: "", category: "", params: &[],
     factory: |upstream, info, params| {
         Box::new(FilterNode::point_op(upstream, info, KmeansQuantize {
             k: params.get_u32("k"), max_iterations: params.get_u32("max_iterations"),

@@ -976,11 +976,13 @@ use crate::filter_node::FilterNode;
 use crate::registry::{FilterFactoryRegistration, ParamMap};
 
 inventory::submit! { &FilterFactoryRegistration { name: "tonemap_reinhard",
+        display_name: "", category: "", params: &[],
     factory: |upstream, info, _params| {
         Box::new(FilterNode::point_op(upstream, info, TonemapReinhard))
     },
 } }
 inventory::submit! { &FilterFactoryRegistration { name: "tonemap_drago",
+        display_name: "", category: "", params: &[],
     factory: |upstream, info, params| {
         Box::new(FilterNode::point_op(upstream, info, TonemapDrago {
             l_max: params.get_f32("l_max"), bias: params.get_f32("bias"),
@@ -988,6 +990,7 @@ inventory::submit! { &FilterFactoryRegistration { name: "tonemap_drago",
     },
 } }
 inventory::submit! { &FilterFactoryRegistration { name: "tonemap_filmic",
+        display_name: "", category: "", params: &[],
     factory: |upstream, info, params| {
         Box::new(FilterNode::point_op(upstream, info, TonemapFilmic {
             a: params.get_f32("a"), b: params.get_f32("b"), c: params.get_f32("c"),
@@ -996,6 +999,7 @@ inventory::submit! { &FilterFactoryRegistration { name: "tonemap_filmic",
     },
 } }
 inventory::submit! { &FilterFactoryRegistration { name: "asc_cdl",
+        display_name: "", category: "", params: &[],
     factory: |upstream, info, params| {
         Box::new(FilterNode::point_op(upstream, info, AscCdl {
             slope: [params.get_f32("slope_r"), params.get_f32("slope_g"), params.get_f32("slope_b")],
@@ -1006,6 +1010,7 @@ inventory::submit! { &FilterFactoryRegistration { name: "asc_cdl",
     },
 } }
 inventory::submit! { &FilterFactoryRegistration { name: "split_toning",
+        display_name: "", category: "", params: &[],
     factory: |upstream, info, params| {
         Box::new(FilterNode::point_op(upstream, info, SplitToning {
             shadow_color: [params.get_f32("shadow_r"), params.get_f32("shadow_g"), params.get_f32("shadow_b")],
@@ -1015,6 +1020,7 @@ inventory::submit! { &FilterFactoryRegistration { name: "split_toning",
     },
 } }
 inventory::submit! { &FilterFactoryRegistration { name: "lift_gamma_gain",
+        display_name: "", category: "", params: &[],
     factory: |upstream, info, params| {
         Box::new(FilterNode::point_op(upstream, info, LiftGammaGain {
             lift: [params.get_f32("lift_r"), params.get_f32("lift_g"), params.get_f32("lift_b")],

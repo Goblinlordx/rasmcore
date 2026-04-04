@@ -1761,6 +1761,7 @@ use crate::registry::{FilterFactoryRegistration, ParamMap};
 macro_rules! register_enhance_factory {
     ($name:expr, $struct:ident { $($field:ident : $getter:ident),* $(,)? }) => {
         inventory::submit! { &FilterFactoryRegistration { name: $name,
+                display_name: "", category: "", params: &[],
             factory: |upstream, info, params| {
                 let f = $struct { $($field: params.$getter(stringify!($field))),* };
                 Box::new(FilterNode::point_op(upstream, info, f))
@@ -1769,6 +1770,7 @@ macro_rules! register_enhance_factory {
     };
     ($name:expr, $struct:ident) => {
         inventory::submit! { &FilterFactoryRegistration { name: $name,
+                display_name: "", category: "", params: &[],
             factory: |upstream, info, _params| { Box::new(FilterNode::point_op(upstream, info, $struct)) },
         } }
     };
@@ -1786,6 +1788,7 @@ register_enhance_factory!("nlm_denoise", NlmDenoise { h: get_f32, patch_radius: 
 register_enhance_factory!("pyramid_detail_remap", PyramidDetailRemap { sigma: get_f32, levels: get_u32 });
 register_enhance_factory!("retinex_ssr", RetinexSsr { sigma: get_f32 });
 inventory::submit! { &FilterFactoryRegistration { name: "shadow_highlight",
+        display_name: "", category: "", params: &[],
     factory: |upstream, info, params| {
         let f = ShadowHighlight {
             shadows: params.get_f32("shadows"), highlights: params.get_f32("highlights"),

@@ -250,13 +250,34 @@ pub type FilterFactory = fn(
 
 /// Registration entry for a dynamically-constructible filter.
 ///
-/// Each V2 filter registers one of these alongside its OperationRegistration.
-/// The adapter uses this to construct filters by name at runtime.
+/// Combines factory function with operation metadata. This is the single
+/// registration point for V2 filters — no separate OperationRegistration needed.
 pub struct FilterFactoryRegistration {
-    /// Filter name (must match OperationRegistration.name).
+    /// Unique filter name (e.g., "brightness", "gaussian_blur").
     pub name: &'static str,
-    /// Factory function.
+    /// Human-readable display name. Empty = auto-generate from name.
+    pub display_name: &'static str,
+    /// Category for grouping. Empty = "uncategorized".
+    pub category: &'static str,
+    /// Parameter descriptors for SDK/UI generation. Empty = no metadata.
+    pub params: &'static [ParamDescriptor],
+    /// Factory function that constructs the filter from dynamic params.
     pub factory: FilterFactory,
+}
+
+/// Helper to create a FilterFactoryRegistration with minimal fields.
+/// Used by manual registrations that haven't been migrated to #[derive(V2Filter)] yet.
+#[macro_export]
+macro_rules! filter_factory {
+    ($name:expr, $factory:expr) => {
+        &$crate::FilterFactoryRegistration {
+            name: $name,
+            display_name: "",
+            category: "",
+            params: &[],
+            factory: $factory,
+        }
+    };
 }
 
 inventory::collect!(&'static FilterFactoryRegistration);

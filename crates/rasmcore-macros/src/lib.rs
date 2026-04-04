@@ -1067,3 +1067,180 @@ pub fn derive_filter(input: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// V2 Filter Derive — auto-registers FilterFactoryRegistration for V2 pipeline
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Derive macro for V2 filter auto-registration.
+///
+/// Generates FilterFactoryRegistration + Default + ParamDescriptors + factory.
+/// Any crate depending on the crate with this struct gets the filter automatically.
+///
+/// ```ignore
+/// #[derive(V2Filter, Clone)]
+/// #[filter(name = "brightness", category = "adjustment")]
+/// pub struct Brightness {
+///     #[param(min = -1.0, max = 1.0, default = 0.0)]
+///     pub amount: f32,
+/// }
+/// ```
+#[proc_macro_derive(V2Filter, attributes(filter, param))]
+pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as ItemStruct);
+    let struct_name = &input.ident;
+
+    let mut filter_name = String::new();
+    let mut filter_category = String::new();
+    let mut display_name_override = String::new();
+
+    for attr in &input.attrs {
+        if !attr.path().is_ident("filter") { continue; }
+        let _ = attr.parse_nested_meta(|meta| {
+            let key = meta.path.get_ident().unwrap().to_string();
+            let value = meta.value()?;
+            let lit: LitStr = value.parse()?;
+            match key.as_str() {
+                "name" => filter_name = lit.value(),
+                "category" => filter_category = lit.value(),
+                "display_name" => display_name_override = lit.value(),
+                _ => {}
+            }
+            Ok(())
+        });
+    }
+
+    if filter_name.is_empty() || filter_category.is_empty() {
+        return syn::Error::new(proc_macro2::Span::call_site(),
+            "derive(V2Filter) requires #[filter(name = \"...\", category = \"...\")]")
+            .to_compile_error().into();
+    }
+
+    let display_name = if display_name_override.is_empty() {
+        filter_name.split('_').map(|w| {
+            let mut c = w.chars();
+            match c.next() {
+                None => String::new(),
+                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+            }
+        }).collect::<Vec<_>>().join(" ")
+    } else { display_name_override };
+
+    let fields = match &input.fields {
+        Fields::Named(f) => f.named.iter().collect::<Vec<_>>(),
+        _ => vec![],
+    };
+
+    let mut param_descriptors = Vec::new();
+    let mut factory_setters = Vec::new();
+    let mut default_entries = Vec::new();
+
+    for field in &fields {
+        let fname = field.ident.as_ref().unwrap();
+        let fname_str = fname.to_string();
+        let ftype = &field.ty;
+        let ftype_str = quote!(#ftype).to_string().replace(' ', "");
+
+        let mut min_val = quote! { None };
+        let mut max_val = quote! { None };
+        let mut step_val = quote! { None };
+        let mut default_f64: Option<f64> = None;
+        let mut hint_val = quote! { None };
+
+        for attr in &field.attrs {
+            if !attr.path().is_ident("param") { continue; }
+            let _ = attr.parse_nested_meta(|meta| {
+                let key = meta.path.get_ident().unwrap().to_string();
+                let value = meta.value()?;
+                let lit: Lit = value.parse()?;
+                match key.as_str() {
+                    "min" => { let v: f64 = match &lit { Lit::Float(f) => f.base10_parse().unwrap_or(0.0), Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64, _ => 0.0 }; min_val = quote! { Some(#v) }; }
+                    "max" => { let v: f64 = match &lit { Lit::Float(f) => f.base10_parse().unwrap_or(0.0), Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64, _ => 0.0 }; max_val = quote! { Some(#v) }; }
+                    "step" => { let v: f64 = match &lit { Lit::Float(f) => f.base10_parse().unwrap_or(0.0), Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64, _ => 0.0 }; step_val = quote! { Some(#v) }; }
+                    "default" => { let v: f64 = match &lit { Lit::Float(f) => f.base10_parse().unwrap_or(0.0), Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64, Lit::Bool(b) => if b.value { 1.0 } else { 0.0 }, _ => 0.0 }; default_f64 = Some(v); }
+                    "hint" => { if let Lit::Str(s) = &lit { let h = s.value(); hint_val = quote! { Some(#h) }; } }
+                    _ => {}
+                }
+                Ok(())
+            });
+        }
+
+        let default_val_token = match default_f64 { Some(v) => quote! { Some(#v) }, None => quote! { None } };
+        let default_expr = match default_f64 {
+            Some(v) if ftype_str == "bool" => { let bv = v != 0.0; quote! { #bv } }
+            Some(v) => { let lit = proc_macro2::Literal::f64_unsuffixed(v); quote! { #lit as #ftype } }
+            None => quote! { Default::default() },
+        };
+
+        let param_type = match ftype_str.as_str() {
+            "f32" => quote! { rasmcore_pipeline_v2::ParamType::F32 },
+            "f64" => quote! { rasmcore_pipeline_v2::ParamType::F64 },
+            "u32" | "u16" | "u8" | "u64" => quote! { rasmcore_pipeline_v2::ParamType::U32 },
+            "i32" | "i16" | "i8" => quote! { rasmcore_pipeline_v2::ParamType::I32 },
+            "bool" => quote! { rasmcore_pipeline_v2::ParamType::Bool },
+            _ => quote! { rasmcore_pipeline_v2::ParamType::F32 },
+        };
+
+        param_descriptors.push(quote! { rasmcore_pipeline_v2::ParamDescriptor {
+            name: #fname_str, value_type: #param_type,
+            min: #min_val, max: #max_val, step: #step_val,
+            default: #default_val_token, hint: #hint_val, constraints: &[],
+        }});
+
+        let setter = match ftype_str.as_str() {
+            "f32" => quote! { #fname: params.get_f32(#fname_str) },
+            "f64" => quote! { #fname: params.get_f32(#fname_str) as f64 },
+            "u32" => quote! { #fname: params.get_u32(#fname_str) },
+            "u16" => quote! { #fname: params.get_u32(#fname_str) as u16 },
+            "u8" => quote! { #fname: params.get_u32(#fname_str) as u8 },
+            "i32" => quote! { #fname: params.get_i32(#fname_str) },
+            "u64" => quote! { #fname: params.get_u64(#fname_str) },
+            "bool" => quote! { #fname: params.get_bool(#fname_str) },
+            _ => quote! { #fname: Default::default() },
+        };
+        factory_setters.push(setter);
+        default_entries.push(quote! { #fname: #default_expr });
+    }
+
+    let param_count = param_descriptors.len();
+    let params_ident = format_ident!("__V2_PARAMS_{}", filter_name.to_uppercase().replace('-', "_"));
+    let reg_ident = format_ident!("__V2_REG_{}", filter_name.to_uppercase().replace('-', "_"));
+
+    let factory_body = if fields.is_empty() {
+        quote! { Box::new(rasmcore_pipeline_v2::FilterNode::point_op(upstream, info, #struct_name)) }
+    } else {
+        quote! {
+            let f = #struct_name { #(#factory_setters),* };
+            Box::new(rasmcore_pipeline_v2::FilterNode::point_op(upstream, info, f))
+        }
+    };
+
+    let default_impl = if fields.is_empty() {
+        quote! {}  // Unit structs don't need Default
+    } else {
+        quote! {
+            impl ::std::default::Default for #struct_name {
+                fn default() -> Self { Self { #(#default_entries),* } }
+            }
+        }
+    };
+
+    let expanded = quote! {
+        #default_impl
+
+        #[doc(hidden)]
+        #[allow(non_upper_case_globals)]
+        static #params_ident: [rasmcore_pipeline_v2::ParamDescriptor; #param_count] = [#(#param_descriptors),*];
+
+        #[doc(hidden)]
+        #[allow(non_upper_case_globals)]
+        static #reg_ident: rasmcore_pipeline_v2::FilterFactoryRegistration = rasmcore_pipeline_v2::FilterFactoryRegistration {
+            name: #filter_name, display_name: #display_name, category: #filter_category,
+            params: &#params_ident,
+            factory: |upstream, info, params| { #factory_body },
+        };
+        inventory::submit!(&#reg_ident);
+    };
+
+    TokenStream::from(expanded)
+}

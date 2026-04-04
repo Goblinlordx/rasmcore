@@ -1319,6 +1319,7 @@ macro_rules! register_effect_factory {
         inventory::submit! {
             &FilterFactoryRegistration {
                 name: $name,
+                display_name: "", category: "", params: &[],
                 factory: |upstream, info, params| {
                     let f = $struct { $($field: params.$getter(stringify!($field))),* };
                     Box::new(FilterNode::point_op(upstream, info, f))
@@ -1330,6 +1331,7 @@ macro_rules! register_effect_factory {
         inventory::submit! {
             &FilterFactoryRegistration {
                 name: $name,
+                display_name: "", category: "", params: &[],
                 factory: |upstream, info, _params| {
                     Box::new(FilterNode::point_op(upstream, info, $struct))
                 },
@@ -1353,6 +1355,7 @@ register_effect_factory!("chromatic_aberration", ChromaticAberration { strength:
 inventory::submit! {
     &FilterFactoryRegistration {
         name: "glitch",
+        display_name: "", category: "", params: &[],
         factory: |upstream, info, params| {
             let f = Glitch {
                 shift_amount: params.get_f32("shift_amount"),

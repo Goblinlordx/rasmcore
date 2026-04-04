@@ -10,8 +10,10 @@ use crate::ops::{AnalyticOp, Filter, PointOpExpr};
 /// Brightness adjustment — additive offset.
 ///
 /// `output = input + amount` (clamped to [0, 1] only at encode boundary).
-#[derive(Clone)]
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "brightness", category = "adjustment")]
 pub struct Brightness {
+    #[param(min = -1.0, max = 1.0, step = 0.02, default = 0.0)]
     pub amount: f32,
 }
 
@@ -517,10 +519,13 @@ use crate::filter_node::FilterNode;
 use crate::registry::{FilterFactoryRegistration, ParamMap};
 
 macro_rules! register_factory {
-    ($name:expr, $struct:ident { $($field:ident : $getter:ident),* $(,)? }) => {
+    ($name:expr, $display:expr, $struct:ident { $($field:ident : $getter:ident),* $(,)? }) => {
         inventory::submit! {
             &FilterFactoryRegistration {
                 name: $name,
+                display_name: $display,
+                category: "adjustment",
+                params: &[],
                 factory: |upstream, info, params| {
                     let f = $struct { $($field: params.$getter(stringify!($field))),* };
                     Box::new(FilterNode::analytic(upstream, info, f))
@@ -528,10 +533,13 @@ macro_rules! register_factory {
             }
         }
     };
-    ($name:expr, $struct:ident) => {
+    ($name:expr, $display:expr, $struct:ident) => {
         inventory::submit! {
             &FilterFactoryRegistration {
                 name: $name,
+                display_name: $display,
+                category: "adjustment",
+                params: &[],
                 factory: |upstream, info, _params| {
                     Box::new(FilterNode::point_op(upstream, info, $struct)
                         .with_capabilities(crate::node::NodeCapabilities { analytic: true, ..Default::default() }))
@@ -541,39 +549,43 @@ macro_rules! register_factory {
     };
 }
 
-register_factory!("brightness", Brightness { amount: get_f32 });
-register_factory!("contrast", Contrast { amount: get_f32 });
-register_factory!("gamma", Gamma { gamma: get_f32 });
-register_factory!("exposure", Exposure { ev: get_f32, offset: get_f32, gamma_correction: get_f32 });
-register_factory!("invert", Invert);
-register_factory!("levels", Levels { black: get_f32, white: get_f32, gamma: get_f32 });
+// brightness: auto-registered via #[derive(V2Filter)] on the struct
+register_factory!("contrast", "Contrast", Contrast { amount: get_f32 });
+register_factory!("gamma", "Gamma", Gamma { gamma: get_f32 });
+register_factory!("exposure", "Exposure", Exposure { ev: get_f32, offset: get_f32, gamma_correction: get_f32 });
+register_factory!("invert", "Invert", Invert);
+register_factory!("levels", "Levels", Levels { black: get_f32, white: get_f32, gamma: get_f32 });
 inventory::submit! {
     &FilterFactoryRegistration {
         name: "posterize",
+        display_name: "Posterize",
+        category: "adjustment",
+        params: &[],
         factory: |upstream, info, params| {
             let f = Posterize { levels: params.get_u32("levels") as u8 };
-            Box::new(FilterNode::point_op(upstream, info, f)
-                .with_capabilities(crate::node::NodeCapabilities { analytic: true, ..Default::default() }))
+            Box::new(FilterNode::analytic(upstream, info, f))
         },
     }
 }
 inventory::submit! {
     &FilterFactoryRegistration {
         name: "sigmoidal_contrast",
+        display_name: "Sigmoidal Contrast",
+        category: "adjustment",
+        params: &[],
         factory: |upstream, info, params| {
             let f = SigmoidalContrast {
                 strength: params.get_f32("strength"),
                 midpoint: params.get_f32("midpoint"),
                 sharpen: params.get_bool("sharpen"),
             };
-            Box::new(FilterNode::point_op(upstream, info, f)
-                .with_capabilities(crate::node::NodeCapabilities { analytic: true, ..Default::default() }))
+            Box::new(FilterNode::analytic(upstream, info, f))
         },
     }
 }
-register_factory!("dodge", Dodge { amount: get_f32 });
-register_factory!("burn", Burn { amount: get_f32 });
-register_factory!("solarize", Solarize { threshold: get_f32 });
+register_factory!("dodge", "Dodge", Dodge { amount: get_f32 });
+register_factory!("burn", "Burn", Burn { amount: get_f32 });
+register_factory!("solarize", "Solarize", Solarize { threshold: get_f32 });
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 

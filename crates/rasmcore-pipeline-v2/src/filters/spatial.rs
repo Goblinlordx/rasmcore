@@ -692,26 +692,31 @@ use crate::filter_node::FilterNode;
 use crate::registry::{FilterFactoryRegistration, ParamMap};
 
 inventory::submit! { &FilterFactoryRegistration { name: "gaussian_blur",
+        display_name: "", category: "", params: &[],
     factory: |upstream, info, params| {
         Box::new(FilterNode::point_op(upstream, info, GaussianBlur { radius: params.get_f32("radius") }))
     },
 } }
 inventory::submit! { &FilterFactoryRegistration { name: "box_blur",
+        display_name: "", category: "", params: &[],
     factory: |upstream, info, params| {
         Box::new(FilterNode::point_op(upstream, info, BoxBlur { radius: params.get_u32("radius") }))
     },
 } }
 inventory::submit! { &FilterFactoryRegistration { name: "sharpen",
+        display_name: "", category: "", params: &[],
     factory: |upstream, info, params| {
         Box::new(FilterNode::point_op(upstream, info, Sharpen { radius: params.get_f32("radius"), amount: params.get_f32("amount") }))
     },
 } }
 inventory::submit! { &FilterFactoryRegistration { name: "median",
+        display_name: "", category: "", params: &[],
     factory: |upstream, info, params| {
         Box::new(FilterNode::point_op(upstream, info, Median { radius: params.get_u32("radius") }))
     },
 } }
 inventory::submit! { &FilterFactoryRegistration { name: "bilateral",
+        display_name: "", category: "", params: &[],
     factory: |upstream, info, params| {
         Box::new(FilterNode::point_op(upstream, info, Bilateral {
             diameter: params.get_u32("diameter"),
@@ -721,11 +726,13 @@ inventory::submit! { &FilterFactoryRegistration { name: "bilateral",
     },
 } }
 inventory::submit! { &FilterFactoryRegistration { name: "motion_blur",
+        display_name: "", category: "", params: &[],
     factory: |upstream, info, params| {
         Box::new(FilterNode::point_op(upstream, info, MotionBlur { angle: params.get_f32("angle"), length: params.get_f32("length") }))
     },
 } }
 inventory::submit! { &FilterFactoryRegistration { name: "high_pass",
+        display_name: "", category: "", params: &[],
     factory: |upstream, info, params| {
         Box::new(FilterNode::point_op(upstream, info, HighPass { radius: params.get_f32("radius") }))
     },
