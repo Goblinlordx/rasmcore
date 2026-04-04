@@ -1,0 +1,66 @@
+id: v2-fluent-sdk_20260404025800Z
+title: "V2 fluent TypeScript SDK — typed chainable API from operation registry"
+type: feature
+status: pending
+created: "2026-04-04"
+updated: "2026-04-04"
+spec:
+  summary: >
+    Generate a fluent TypeScript wrapper from V2 listOperations() metadata.
+    Typed filter methods (.brightness({amount})), typed encoder methods
+    (.writePng({compression})), chainable, generated at SDK build time.
+  context: |
+    The V2 WASM component exposes a generic API: applyFilter(name, params),
+    write(format, quality). The raw jco-transpiled SDK has these as imperative
+    methods with string names and byte-buffer params.
+
+    The fluent SDK wraps this with typed methods generated from the operation
+    registry metadata (listOperations returns name, params, types for every
+    registered filter and encoder). The generation happens at SDK build time
+    (script), not at runtime.
+
+    User writes: pipe.brightness({amount: 0.5}).blur({radius: 3}).writePng({})
+    Under the hood: applyFilter("brightness", serialize({amount: 0.5})) etc.
+  acceptance_criteria:
+    - Generated TypeScript class with typed method per registered filter
+    - Generated typed write methods per encoder (writePng, writeJpeg, etc.)
+    - Chainable API (each filter method returns the pipeline for chaining)
+    - Params are typed objects (not byte buffers)
+    - Generation script reads operation metadata from WASM component
+    - Adding a new V2 filter auto-generates the SDK method on rebuild
+  out_of_scope: |
+    Web UI integration (Track 2). Runtime SDK generation. Native Rust SDK.
+  technical_notes: |
+    Approach: Node.js script that instantiates the V2 WASM, calls
+    listOperations(), generates TypeScript source with one method per
+    operation. Each method serializes typed params to the binary ParamMap
+    format and calls applyFilter/write internally.
+
+    For encoders: parse encoder registrations similarly. Each encoder
+    gets a writeX() method with typed config.
+
+    The generated SDK imports the raw jco-transpiled module and wraps it.
+plan:
+  - phase: "SDK generator script"
+    tasks:
+      - text: "Script that instantiates V2 WASM and reads listOperations()"
+        done: false
+      - text: "Generate typed filter methods from operation params metadata"
+        done: false
+      - text: "Generate typed encoder write methods (writePng, writeJpeg, etc.)"
+        done: false
+      - text: "Generate ParamMap serialization from typed objects"
+        done: false
+  - phase: "Fluent API design"
+    tasks:
+      - text: "Pipeline builder class with chainable filter/write methods"
+        done: false
+      - text: "Type definitions for all filter configs"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Generated SDK has typed methods for all 76+ registered filters"
+        done: false
+      - text: "brightness({amount}).blur({radius}).writePng({}) works end-to-end"
+        done: false
+extra: {}

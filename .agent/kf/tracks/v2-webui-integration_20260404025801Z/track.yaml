@@ -1,0 +1,61 @@
+id: v2-webui-integration_20260404025801Z
+title: "Wire web UI to V2 pipeline — replace V1 SDK import"
+type: feature
+status: pending
+created: "2026-04-04"
+updated: "2026-04-04"
+spec:
+  summary: >
+    Update web UI workers to import V2 fluent SDK. Replace V1 API calls
+    with V2 typed methods. Remove V1 SDK dependency from web UI.
+  context: |
+    Web UI workers (preview-worker.ts, pipeline-worker.ts) currently import
+    the V1 SDK (rasmcore-image.js) and call V1 methods. After the fluent SDK
+    track, the V2 SDK provides typed chainable methods.
+
+    This track switches the import and updates all call sites.
+  acceptance_criteria:
+    - Web UI workers import V2 fluent SDK (not V1 rasmcore-image.js)
+    - All filter calls use V2 typed methods
+    - All encode calls use typed encoder methods (writePng, writeJpeg, etc.)
+    - Image loading works end-to-end in browser
+    - Fusion verified in browser (brightness +0.5 -0.5 = no loss)
+    - V1 SDK no longer imported by web UI
+  out_of_scope: |
+    GPU WebGPU dispatch. Full filter coverage testing. V1 removal.
+  technical_notes: |
+    The web UI build (Vite) needs to resolve the V2 SDK module.
+    The V2 SDK is generated to sdk/typescript/v2-generated/ then
+    the fluent wrapper is at sdk/typescript/v2-fluent/.
+
+    preview-worker.ts and pipeline-worker.ts change from:
+      import { pipeline } from '../sdk/rasmcore-image.js'
+    to:
+      import { Pipeline } from '../sdk/v2-fluent/index.js'
+
+    applyStep() changes from pipe[name](node, config) to
+    pipe[name](config) (chainable, node is implicit).
+plan:
+  - phase: "Worker migration"
+    tasks:
+      - text: "Update preview-worker.ts to import V2 fluent SDK"
+        done: false
+      - text: "Update pipeline-worker.ts to import V2 fluent SDK"
+        done: false
+      - text: "Update applyStep to use V2 typed filter methods"
+        done: false
+      - text: "Update write calls to use typed encoder methods"
+        done: false
+  - phase: "Build integration"
+    tasks:
+      - text: "Update web UI build config to resolve V2 SDK module"
+        done: false
+      - text: "Add V2 SDK build step to web UI dev server scripts"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Load image, apply filter, render preview in browser"
+        done: false
+      - text: "Verify fusion works (brightness +0.5 -0.5 round-trip)"
+        done: false
+extra: {}
