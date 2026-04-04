@@ -269,21 +269,19 @@ impl Graph {
     ) -> Result<Vec<f32>, PipelineError> {
         // 0. Layer cache check (content-addressed, cross-pipeline)
         let node_hash = self.content_hash(node_id);
-        if node_hash != ZERO_HASH {
-            if let Some(lc) = &self.layer_cache {
-                if let Some((pixels, _w, _h)) = lc.borrow_mut().get(&node_hash) {
-                    // Layer cache stores full-node output. If request is a sub-region, crop.
-                    let info = self.nodes.get(node_id as usize)
-                        .ok_or(PipelineError::NodeNotFound(node_id))?
-                        .info();
-                    let full_rect = Rect::new(0, 0, info.width, info.height);
-                    if request == full_rect {
-                        return Ok(pixels);
-                    }
-                    // Crop from full to requested region
-                    return Ok(crop_f32(&pixels, full_rect, request));
-                }
+        if node_hash != ZERO_HASH
+            && let Some(lc) = &self.layer_cache
+            && let Some((pixels, _w, _h)) = lc.borrow_mut().get(&node_hash)
+        {
+            // Layer cache stores full-node output. If request is a sub-region, crop.
+            let info = self.nodes.get(node_id as usize)
+                .ok_or(PipelineError::NodeNotFound(node_id))?
+                .info();
+            let full_rect = Rect::new(0, 0, info.width, info.height);
+            if request == full_rect {
+                return Ok(pixels);
             }
+            return Ok(crop_f32(&pixels, full_rect, request));
         }
 
         // 1. Spatial cache check (tile-level, per-pipeline)
@@ -299,39 +297,28 @@ impl Graph {
         let info = node.info();
 
         // 2. GPU-primary dispatch — batch consecutive GPU nodes
-        if let Some(executor) = &self.gpu_executor {
-            if let Some((source_id, gpu_chain)) = self.collect_gpu_chain(node_id, info.width, info.height) {
-                let timer = if self.tracing {
-                    Some(TraceTimer::new(TraceEventKind::GpuDispatch, format!("node_{node_id}"))
-                        .with_detail(format!("{} shaders, {}x{}", gpu_chain.len(), request.width, request.height)))
-                } else {
-                    None
-                };
+        if let Some(executor) = &self.gpu_executor
+            && let Some((source_id, gpu_chain)) = self.collect_gpu_chain(node_id, info.width, info.height)
+        {
+            let timer = if self.tracing {
+                Some(TraceTimer::new(TraceEventKind::GpuDispatch, format!("node_{node_id}"))
+                    .with_detail(format!("{} shaders, {}x{}", gpu_chain.len(), request.width, request.height)))
+            } else {
+                None
+            };
 
-                // Get input from the source node (first non-GPU node in the chain)
-                let executor = executor.clone();
-                let input = self.request_region(source_id, request)?;
-                match executor.execute(
-                    &gpu_chain,
-                    &input,
-                    request.width,
-                    request.height,
-                ) {
-                    Ok(gpu_pixels) => {
-                        if let Some(t) = timer {
-                            self.trace.push(t.finish());
-                        }
-                        self.cache.store(
-                            node_id,
-                            request,
-                            gpu_pixels.clone(),
-                            node_hash,
-                        );
-                        return Ok(gpu_pixels);
+            let executor = executor.clone();
+            let input = self.request_region(source_id, request)?;
+            match executor.execute(&gpu_chain, &input, request.width, request.height) {
+                Ok(gpu_pixels) => {
+                    if let Some(t) = timer {
+                        self.trace.push(t.finish());
                     }
-                    Err(_) => {
-                        // GPU failed — fall through to CPU
-                    }
+                    self.cache.store(node_id, request, gpu_pixels.clone(), node_hash);
+                    return Ok(gpu_pixels);
+                }
+                Err(_) => {
+                    // GPU failed — fall through to CPU
                 }
             }
         }
@@ -373,12 +360,12 @@ impl Graph {
 
         // Layer cache — store full-node results for cross-pipeline reuse.
         // Only store when the request covers the full node output.
-        if node_hash != ZERO_HASH {
-            if let Some(lc) = &self.layer_cache {
-                let full_rect = Rect::new(0, 0, info.width, info.height);
-                if request == full_rect && !lc.borrow().contains(&node_hash) {
-                    lc.borrow_mut().store(node_hash, &pixels, info.width, info.height);
-                }
+        if node_hash != ZERO_HASH
+            && let Some(lc) = &self.layer_cache
+        {
+            let full_rect = Rect::new(0, 0, info.width, info.height);
+            if request == full_rect && !lc.borrow().contains(&node_hash) {
+                lc.borrow_mut().store(node_hash, &pixels, info.width, info.height);
             }
         }
 
