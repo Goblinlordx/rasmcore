@@ -200,25 +200,31 @@ pub fn encode_sequence(
     Ok(buf)
 }
 
-/// Check if a PNG contains a chunk with the given 4-byte type.
-fn has_png_chunk(png_data: &[u8], chunk_type: &[u8; 4]) -> bool {
+/// Strip all PNG chunks whose type matches any in `chunk_types`.
+/// Returns a new Vec with those chunks removed.
+fn strip_png_chunks(png_data: &[u8], chunk_types: &[&[u8; 4]]) -> Vec<u8> {
     const PNG_SIG_LEN: usize = 8;
-    if png_data.len() < PNG_SIG_LEN + 12 {
-        return false;
-    }
+    let mut result = Vec::with_capacity(png_data.len());
+    result.extend_from_slice(&png_data[..PNG_SIG_LEN]);
     let mut pos = PNG_SIG_LEN;
     while pos + 12 <= png_data.len() {
         let len =
             u32::from_be_bytes([png_data[pos], png_data[pos + 1], png_data[pos + 2], png_data[pos + 3]])
                 as usize;
-        let ctype = &png_data[pos + 4..pos + 8];
-        if ctype == chunk_type {
-            return true;
+        let chunk_end = pos + 12 + len;
+        if chunk_end > png_data.len() {
+            // Malformed — copy rest and stop
+            result.extend_from_slice(&png_data[pos..]);
+            return result;
         }
-        // Move past length(4) + type(4) + data(len) + crc(4)
-        pos += 12 + len;
+        let ctype = &png_data[pos + 4..pos + 8];
+        let should_strip = chunk_types.iter().any(|t| ctype == *t);
+        if !should_strip {
+            result.extend_from_slice(&png_data[pos..chunk_end]);
+        }
+        pos = chunk_end;
     }
-    false
+    result
 }
 
 /// Embed an ICC profile into already-encoded PNG data as an iCCP chunk.
@@ -227,7 +233,8 @@ fn has_png_chunk(png_data: &[u8], chunk_type: &[u8; 4]) -> bool {
 /// compressed with deflate (zlib wrapper) as required by the PNG spec.
 ///
 /// Per the PNG spec, iCCP is mutually exclusive with cICP and sRGB chunks.
-/// If either is already present, the ICC profile is silently skipped.
+/// If either is already present, they are stripped first — an explicit ICC
+/// profile embedding overrides auto-inserted color space signaling.
 pub fn embed_icc_profile(png_data: &[u8], icc_profile: &[u8]) -> Result<Vec<u8>, ImageError> {
     const PNG_SIG: &[u8] = &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
@@ -235,10 +242,8 @@ pub fn embed_icc_profile(png_data: &[u8], icc_profile: &[u8]) -> Result<Vec<u8>,
         return Err(ImageError::InvalidInput("not a valid PNG".into()));
     }
 
-    // Mutual exclusion: iCCP cannot coexist with cICP or sRGB chunks.
-    if has_png_chunk(png_data, b"cICP") || has_png_chunk(png_data, b"sRGB") {
-        return Ok(png_data.to_vec());
-    }
+    // Mutual exclusion: strip existing cICP/sRGB chunks before inserting iCCP.
+    let png_data = strip_png_chunks(png_data, &[b"cICP", b"sRGB"]);
 
     // Compress ICC data with zlib (uncompressed deflate blocks for simplicity)
     let compressed = zlib_compress_store(icc_profile);
@@ -1123,7 +1128,7 @@ mod tests {
     }
 
     #[test]
-    fn icc_profile_skipped_when_cicp_present() {
+    fn icc_profile_replaces_cicp_chunk() {
         let pixels: Vec<u8> = (0..(8 * 8 * 3)).map(|i| (i % 256) as u8).collect();
         let info = ImageInfo {
             width: 8,
@@ -1132,29 +1137,35 @@ mod tests {
             color_space: ColorSpace::DisplayP3,
         };
         let encoded = encode(&pixels, &info, &PngEncodeConfig::default()).unwrap();
-        // Attempt to embed ICC profile — should be silently skipped
+        // Explicit ICC profile embedding strips cICP and adds iCCP
         let fake_icc = vec![42u8; 100];
         let with_icc = embed_icc_profile(&encoded, &fake_icc).unwrap();
         let chunks = collect_chunk_types(&with_icc);
         assert!(
-            !chunks.contains(&"iCCP".to_string()),
-            "iCCP must not coexist with cICP"
+            chunks.contains(&"iCCP".to_string()),
+            "iCCP should be present after explicit ICC embed"
         );
-        assert!(chunks.contains(&"cICP".to_string()));
+        assert!(
+            !chunks.contains(&"cICP".to_string()),
+            "cICP must be stripped when iCCP is added"
+        );
     }
 
     #[test]
-    fn icc_profile_skipped_when_srgb_present() {
+    fn icc_profile_replaces_srgb_chunk() {
         let (pixels, info) = make_test_pixels(); // color_space: Srgb
         let encoded = encode(&pixels, &info, &PngEncodeConfig::default()).unwrap();
         let fake_icc = vec![42u8; 100];
         let with_icc = embed_icc_profile(&encoded, &fake_icc).unwrap();
         let chunks = collect_chunk_types(&with_icc);
         assert!(
-            !chunks.contains(&"iCCP".to_string()),
-            "iCCP must not coexist with sRGB"
+            chunks.contains(&"iCCP".to_string()),
+            "iCCP should be present after explicit ICC embed"
         );
-        assert!(chunks.contains(&"sRGB".to_string()));
+        assert!(
+            !chunks.contains(&"sRGB".to_string()),
+            "sRGB must be stripped when iCCP is added"
+        );
     }
 
     #[test]
