@@ -1,45 +1,50 @@
 id: v2-wit-codegen_20260404002501Z
-title: "V2 WIT codegen — auto-generate interface from filter registry"
+title: V2 WIT codegen — auto-generate interface from filter registry
 type: feature
 status: pending
-created: "2026-04-04"
-updated: "2026-04-04"
+created: '2026-04-04'
+updated: '2026-04-04'
 spec:
-  summary: >
-    build.rs for rasmcore-v2-wasm that generates WIT declarations and adapter
-    dispatch from V2 filter registry. Zero manual wiring.
-  context: |
-    V2 filters register via inventory (FilterFactoryRegistration). The WIT
+  summary: 'build.rs for rasmcore-v2-wasm that generates WIT declarations and adapter dispatch from V2 filter registry. Zero
+    manual wiring.
+
+    '
+  context: 'V2 filters register via inventory (FilterFactoryRegistration). The WIT
+
     interface and adapter dispatch should be auto-generated from this registry.
+
     Adding a new V2 filter = implement Filter + register factory = done.
+
+    '
   acceptance_criteria:
-    - build.rs reads V2 filter registry metadata and generates WIT
-    - All 88 V2 filter structs appear in generated WIT
-    - Adapter dispatch generated from registry (not hand-written per filter)
-    - Adding a new filter requires zero manual WIT or adapter changes
-  out_of_scope: |
-    V1 codegen changes. Web UI integration. GPU dispatch.
+  - build.rs reads V2 filter registry metadata and generates WIT
+  - All 88 V2 filter structs appear in generated WIT
+  - Adapter dispatch generated from registry (not hand-written per filter)
+  - Adding a new filter requires zero manual WIT or adapter changes
+  out_of_scope: 'V1 codegen changes. Web UI integration. GPU dispatch.
+
+    '
 plan:
-  - phase: "Codegen foundation"
-    tasks:
-      - text: "build.rs reads V2 ParamDescriptor metadata at build time"
-        done: false
-      - text: "Generate WIT filter config records from ParamDescriptors"
-        done: false
-      - text: "Generate WIT filter method declarations"
-        done: false
-  - phase: "Adapter generation"
-    tasks:
-      - text: "Generate adapter dispatch (WIT config -> ParamMap -> create_filter_node)"
-        done: false
-      - text: "Generate write method dispatch from codecs-v2 registry"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "All 88 V2 filters accessible via generated WIT"
-        done: false
-      - text: "Add a test filter, verify it appears in WIT without manual changes"
-        done: false
-      - text: "cargo component build succeeds with generated WIT"
-        done: false
+- phase: Codegen foundation
+  tasks:
+  - text: build.rs reads V2 ParamDescriptor metadata at build time
+    done: true
+  - text: Generate WIT filter config records from ParamDescriptors
+    done: true
+  - text: Generate WIT filter method declarations
+    done: true
+- phase: Adapter generation
+  tasks:
+  - text: Generate adapter dispatch (WIT config -> ParamMap -> create_filter_node)
+    done: true
+  - text: Generate write method dispatch from codecs-v2 registry
+    done: true
+- phase: Verification
+  tasks:
+  - text: All 88 V2 filters accessible via generated WIT
+    done: true
+  - text: Add a test filter, verify it appears in WIT without manual changes
+    done: true
+  - text: cargo component build succeeds with generated WIT
+    done: true
 extra: {}
