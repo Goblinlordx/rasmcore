@@ -1,5 +1,5 @@
 use crate::domain::error::ImageError;
-use crate::domain::types::{DisposalMethod, FrameSequence, ImageInfo, PixelFormat};
+use crate::domain::types::{ColorSpace, DisposalMethod, FrameSequence, ImageInfo, PixelFormat};
 
 /// PNG filter type selection.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -107,6 +107,12 @@ pub fn encode(
                 .map_err(|e| ImageError::ProcessingFailed(format!("PNG: {e}")))?;
         }
     }
+
+    // Embed color space signaling chunk based on ImageInfo.color_space.
+    // sRGB → sRGB chunk; DisplayP3/Bt2020/etc → cICP chunk.
+    // ProPhotoRgb/AdobeRgb have no cICP code points and are left for ICC profile handling.
+    let buf = embed_color_space_chunk(&buf, info.color_space)?;
+
     Ok(buf)
 }
 
@@ -194,15 +200,44 @@ pub fn encode_sequence(
     Ok(buf)
 }
 
+/// Check if a PNG contains a chunk with the given 4-byte type.
+fn has_png_chunk(png_data: &[u8], chunk_type: &[u8; 4]) -> bool {
+    const PNG_SIG_LEN: usize = 8;
+    if png_data.len() < PNG_SIG_LEN + 12 {
+        return false;
+    }
+    let mut pos = PNG_SIG_LEN;
+    while pos + 12 <= png_data.len() {
+        let len =
+            u32::from_be_bytes([png_data[pos], png_data[pos + 1], png_data[pos + 2], png_data[pos + 3]])
+                as usize;
+        let ctype = &png_data[pos + 4..pos + 8];
+        if ctype == chunk_type {
+            return true;
+        }
+        // Move past length(4) + type(4) + data(len) + crc(4)
+        pos += 12 + len;
+    }
+    false
+}
+
 /// Embed an ICC profile into already-encoded PNG data as an iCCP chunk.
 ///
 /// Inserts the iCCP chunk after IHDR (before IDAT). The profile is
 /// compressed with deflate (zlib wrapper) as required by the PNG spec.
+///
+/// Per the PNG spec, iCCP is mutually exclusive with cICP and sRGB chunks.
+/// If either is already present, the ICC profile is silently skipped.
 pub fn embed_icc_profile(png_data: &[u8], icc_profile: &[u8]) -> Result<Vec<u8>, ImageError> {
     const PNG_SIG: &[u8] = &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
     if !png_data.starts_with(PNG_SIG) {
         return Err(ImageError::InvalidInput("not a valid PNG".into()));
+    }
+
+    // Mutual exclusion: iCCP cannot coexist with cICP or sRGB chunks.
+    if has_png_chunk(png_data, b"cICP") || has_png_chunk(png_data, b"sRGB") {
+        return Ok(png_data.to_vec());
     }
 
     // Compress ICC data with zlib (uncompressed deflate blocks for simplicity)
@@ -284,6 +319,149 @@ fn adler32(data: &[u8]) -> u32 {
         b = (b + a) % 65521;
     }
     (b << 16) | a
+}
+
+/// Map a `ColorSpace` to cICP (ITU-T H.273) code points.
+///
+/// Returns `Some((colour_primaries, transfer_characteristics, matrix_coefficients,
+/// video_full_range_flag))` for color spaces with well-defined cICP values.
+/// Returns `None` for color spaces that lack standard cICP code points
+/// (ProPhotoRgb, AdobeRgb) — these should use iCCP with an ICC profile instead.
+pub(crate) fn color_space_to_cicp(cs: ColorSpace) -> Option<(u8, u8, u8, u8)> {
+    match cs {
+        // BT.709 primaries, sRGB transfer, Identity matrix, full range
+        ColorSpace::Srgb => Some((1, 13, 0, 1)),
+        // BT.709 primaries, linear transfer, Identity matrix, full range
+        ColorSpace::LinearSrgb => Some((1, 8, 0, 1)),
+        // Display P3 primaries (SMPTE EG 432-1), sRGB transfer
+        ColorSpace::DisplayP3 => Some((12, 13, 0, 1)),
+        // BT.709 primaries, BT.709 transfer
+        ColorSpace::Bt709 => Some((1, 1, 0, 1)),
+        // BT.2020 primaries, BT.2020-10bit transfer
+        ColorSpace::Bt2020 => Some((9, 14, 0, 1)),
+        // No standard cICP code point for ProPhoto RGB primaries
+        ColorSpace::ProPhotoRgb => None,
+        // No standard cICP code point for Adobe RGB (1998)
+        ColorSpace::AdobeRgb => None,
+    }
+}
+
+/// Embed a cICP (Codec Independent Code Points) chunk into already-encoded PNG data.
+///
+/// The cICP chunk signals color space to browsers via ITU-T H.273 code points,
+/// as defined in PNG Third Edition (2025). Inserted after IHDR, before PLTE/IDAT.
+///
+/// Per the PNG spec, cICP is mutually exclusive with sRGB and iCCP chunks.
+pub fn embed_cicp_chunk(
+    png_data: &[u8],
+    colour_primaries: u8,
+    transfer_function: u8,
+    matrix_coefficients: u8,
+    full_range: u8,
+) -> Result<Vec<u8>, ImageError> {
+    const PNG_SIG: &[u8] = &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+
+    if !png_data.starts_with(PNG_SIG) {
+        return Err(ImageError::InvalidInput("not a valid PNG".into()));
+    }
+
+    // cICP payload: 4 bytes
+    let chunk_data = [
+        colour_primaries,
+        transfer_function,
+        matrix_coefficients,
+        full_range,
+    ];
+
+    // Build chunk: length(4) + "cICP"(4) + data(4) + CRC(4)
+    let chunk_len = 4u32;
+    let mut cicp_chunk = Vec::with_capacity(16);
+    cicp_chunk.extend_from_slice(&chunk_len.to_be_bytes());
+    cicp_chunk.extend_from_slice(b"cICP");
+    cicp_chunk.extend_from_slice(&chunk_data);
+    let crc = png_crc32(b"cICP", &chunk_data);
+    cicp_chunk.extend_from_slice(&crc.to_be_bytes());
+
+    // Insert after IHDR
+    if 8 + 12 > png_data.len() {
+        return Err(ImageError::InvalidInput("PNG too short".into()));
+    }
+    let ihdr_len =
+        u32::from_be_bytes([png_data[8], png_data[9], png_data[10], png_data[11]]) as usize;
+    let after_ihdr = 8 + 12 + ihdr_len;
+
+    let mut result = Vec::with_capacity(png_data.len() + cicp_chunk.len());
+    result.extend_from_slice(&png_data[..after_ihdr]);
+    result.extend_from_slice(&cicp_chunk);
+    result.extend_from_slice(&png_data[after_ihdr..]);
+
+    Ok(result)
+}
+
+/// Embed an sRGB chunk into already-encoded PNG data.
+///
+/// The sRGB chunk is a 1-byte payload indicating the rendering intent.
+/// Per the PNG spec, sRGB is mutually exclusive with cICP and iCCP chunks.
+pub fn embed_srgb_chunk(png_data: &[u8], rendering_intent: u8) -> Result<Vec<u8>, ImageError> {
+    const PNG_SIG: &[u8] = &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+
+    if !png_data.starts_with(PNG_SIG) {
+        return Err(ImageError::InvalidInput("not a valid PNG".into()));
+    }
+
+    // sRGB payload: 1 byte (rendering intent)
+    let chunk_data = [rendering_intent];
+
+    // Build chunk: length(4) + "sRGB"(4) + data(1) + CRC(4)
+    let chunk_len = 1u32;
+    let mut srgb_chunk = Vec::with_capacity(13);
+    srgb_chunk.extend_from_slice(&chunk_len.to_be_bytes());
+    srgb_chunk.extend_from_slice(b"sRGB");
+    srgb_chunk.extend_from_slice(&chunk_data);
+    let crc = png_crc32(b"sRGB", &chunk_data);
+    srgb_chunk.extend_from_slice(&crc.to_be_bytes());
+
+    // Insert after IHDR
+    if 8 + 12 > png_data.len() {
+        return Err(ImageError::InvalidInput("PNG too short".into()));
+    }
+    let ihdr_len =
+        u32::from_be_bytes([png_data[8], png_data[9], png_data[10], png_data[11]]) as usize;
+    let after_ihdr = 8 + 12 + ihdr_len;
+
+    let mut result = Vec::with_capacity(png_data.len() + srgb_chunk.len());
+    result.extend_from_slice(&png_data[..after_ihdr]);
+    result.extend_from_slice(&srgb_chunk);
+    result.extend_from_slice(&png_data[after_ihdr..]);
+
+    Ok(result)
+}
+
+/// Embed the appropriate color space signaling chunk into PNG data based on `ColorSpace`.
+///
+/// - `Srgb` → sRGB chunk (rendering intent: perceptual)
+/// - `DisplayP3`, `Bt2020`, `LinearSrgb`, `Bt709` → cICP chunk
+/// - `ProPhotoRgb`, `AdobeRgb` → no chunk (require ICC profile via `embed_icc_profile`)
+///
+/// This function is the primary entry point for color space metadata in PNG encoding.
+/// It respects mutual exclusion rules: cICP/sRGB/iCCP cannot coexist.
+pub fn embed_color_space_chunk(
+    png_data: &[u8],
+    color_space: ColorSpace,
+) -> Result<Vec<u8>, ImageError> {
+    match color_space {
+        ColorSpace::Srgb => {
+            // sRGB chunk with rendering intent 0 (perceptual)
+            embed_srgb_chunk(png_data, 0)
+        }
+        cs => match color_space_to_cicp(cs) {
+            Some((primaries, transfer, matrix, range)) => {
+                embed_cicp_chunk(png_data, primaries, transfer, matrix, range)
+            }
+            // ProPhotoRgb, AdobeRgb: no cICP code points — caller should use ICC profile
+            None => Ok(png_data.to_vec()),
+        },
+    }
 }
 
 /// Compute CRC32 for a PNG chunk (type + data).

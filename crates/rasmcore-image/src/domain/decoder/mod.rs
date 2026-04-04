@@ -1188,9 +1188,45 @@ pub(crate) fn decode_fits(data: &[u8]) -> Result<DecodedImage, ImageError> {
     })
 }
 
+/// Extract color space from a PNG cICP chunk, if present.
+///
+/// Scans PNG chunks for a cICP ancillary chunk (4-byte payload) and maps
+/// the ITU-T H.273 code points back to a `ColorSpace` variant.
+fn extract_png_cicp_color_space(data: &[u8]) -> Option<ColorSpace> {
+    const PNG_SIG_LEN: usize = 8;
+    if data.len() < PNG_SIG_LEN + 12 {
+        return None;
+    }
+    let mut pos = PNG_SIG_LEN;
+    while pos + 12 <= data.len() {
+        let len =
+            u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
+        let ctype = &data[pos + 4..pos + 8];
+        if ctype == b"cICP" && len == 4 && pos + 12 + len <= data.len() {
+            let primaries = data[pos + 8];
+            let transfer = data[pos + 9];
+            // matrix_coefficients at pos+10, full_range at pos+11 (always 0, 1 for RGB images)
+            return match (primaries, transfer) {
+                (1, 13) => Some(ColorSpace::Srgb),
+                (1, 8) => Some(ColorSpace::LinearSrgb),
+                (12, 13) => Some(ColorSpace::DisplayP3),
+                (1, 1) => Some(ColorSpace::Bt709),
+                (9, _) => Some(ColorSpace::Bt2020),
+                _ => None,
+            };
+        }
+        if ctype == b"IDAT" {
+            break; // cICP must appear before IDAT
+        }
+        pos += 12 + len;
+    }
+    None
+}
+
 /// Decode PNG using the `png` crate directly (bypasses image crate).
 pub(crate) fn decode_native_png(data: &[u8]) -> Result<DecodedImage, ImageError> {
     let icc_profile = extract_icc_profile(data);
+    let color_space = extract_png_cicp_color_space(data).unwrap_or(ColorSpace::Srgb);
 
     let mut decoder = png::Decoder::new(std::io::Cursor::new(data));
 
@@ -1250,7 +1286,7 @@ pub(crate) fn decode_native_png(data: &[u8]) -> Result<DecodedImage, ImageError>
             width,
             height,
             format,
-            color_space: ColorSpace::Srgb,
+            color_space,
         },
         icc_profile,
     })
