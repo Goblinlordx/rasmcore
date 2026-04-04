@@ -6,161 +6,173 @@ created: '2026-04-04'
 updated: '2026-04-04'
 spec:
   summary: |
-    Add doc capture to V2 derive macros, gate behind feature flag, and build
-    a static site generator that renders per-operation pages plus injected
-    manual pages into a deployable HTML documentation site.
+    Add doc path attribute to V2 derive macros pointing to sibling .adoc files.
+    AsciiDoc files live beside implementations as real, previewable documents.
+    SSG renders per-operation pages (AsciiDoc + param table) plus manual pages
+    into a deployable static HTML documentation site.
   context: |
     Operations are defined with derive macros and registered via inventory.
     Currently the registration structs carry name, category, params — but no
-    description, no examples, no param descriptions. Documentation lives only
-    in Rust doc comments invisible to runtime/SDK/UI.
+    documentation. Rich docs (admonitions, callouts, cross-references) need
+    more than Rust doc comments can provide.
 
-    The user wants:
-    1. Documentation defined beside the implementation (doc comments on structs/fields)
-    2. Automatically collected into registry metadata
-    3. Rendered into a static HTML documentation site (SSG)
-    4. Per-operation pages auto-generated from registry
-    5. Additional manual pages (guides, tutorials) injectable alongside
-    6. Zero binary cost for WASM/bin (feature-gated)
+    Design decisions:
+    1. Documentation as separate .adoc files beside the implementation
+    2. Macro records doc path explicitly: #[filter(doc = "path/to/brightness.adoc")]
+    3. SSG reads .adoc files and renders to HTML with param tables injected
+    4. AsciiDoc chosen over MDX for native richness without client-side JS
+    5. Manual pages (guides, tutorials) also .adoc, injectable alongside
+    6. Doc path stored in registry but .adoc content NOT embedded in binary
   codebase_analysis: |
     Derive macros (crates/rasmcore-macros/src/lib.rs):
-    - V2Filter (lines 1088-1246): parses #[filter(name, category)], #[param(...)],
-      generates FilterFactoryRegistration + inventory::submit!
-    - V2Encoder (lines 1262-1382): parses #[codec(name, display_name, mime, extensions)]
-    - V2Decoder (lines 1399-1459): parses #[codec(name, display_name, extensions)]
-    - Macros extract field types and attributes but NOT doc comments yet
+    - V2Filter: parses #[filter(name, category)], generates FilterFactoryRegistration
+    - V2Encoder: parses #[codec(name, display_name, mime, extensions)]
+    - V2Decoder: parses #[codec(name, display_name, extensions)]
+    - Adding doc = "..." to the attribute is a straightforward parser extension
 
     Registration structs (crates/rasmcore-pipeline-v2/src/registry.rs):
     - FilterFactoryRegistration: name, display_name, category, params, factory
-    - ParamDescriptor: name, value_type, min, max, step, default_val, hint
-    - No description/example fields on any struct
+    - Need to add: doc_path: &'static str (relative path to .adoc file)
+    - ParamDescriptor: already has hint field, could add description
 
-    dump_registry binary: serializes registry to JSON, could include doc fields.
-    Rust doc comments available to proc macros via #[doc = "..."] attributes.
+    dump_registry binary: serializes registry to JSON — can include doc_path.
+    SSG resolves doc_path relative to project root, reads .adoc, renders HTML.
   acceptance_criteria:
-    - Derive macros capture struct doc comments as operation description
-    - Derive macros capture field doc comments as param descriptions
-    - Derive macros extract # Example section from struct docs as usage example
-    - Doc strings stored in registration structs as &'static str
-    - Behind cfg(feature = "docs") — empty strings without it
-    - WASM build has no binary size increase
-    - SSG binary outputs static HTML site to docs/build/
-    - Index page lists all operations grouped by category with links to detail pages
-    - Each operation gets an HTML page with description, params table, example
-    - Cross-linking between operations (see-also references render as clickable links)
-    - Auto-generated sitemap.json for programmatic navigation
-    - Manual pages from docs/pages/*.md are rendered into the same site
+    - Macro accepts doc = "path" attribute on #[filter(...)] and #[codec(...)]
+    - doc_path stored in registration structs as &'static str
+    - dump_registry JSON includes doc_path for each operation
+    - .adoc files live beside implementations, previewable in any AsciiDoc viewer
+    - SSG renders .adoc content + auto-generated param table into HTML pages
+    - Ops without doc = "..." get a stub page (params table only, no prose)
+    - Index page lists all operations grouped by category with links
+    - Auto-generated sitemap.json for programmatic lookup
+    - Manual .adoc pages from docs/pages/ rendered into the same site
     - Site has navigation sidebar with categories and manual pages
-    - dump_registry with docs feature includes doc fields in JSON
+    - No binary size impact — doc_path is just a string, content is never embedded
   out_of_scope: |
-    Interactive examples. Search. Versioning/changelog.
-    Complex theming or CSS framework. Client-side JS.
+    Embedding .adoc content in the WASM binary. Interactive examples. Search.
+    Versioning/changelog. Complex theming.
   technical_notes: |
     Architecture:
 
     1. Macro changes (rasmcore-macros):
-       - Extract #[doc = "..."] from struct → description (before # Example)
-       - Extract # Example section → example code block
-       - Extract #[doc = "..."] from #[param] fields → param description
-       - Gate: cfg(feature = "docs") emits real strings, else ""
+       - Parse doc = "..." from #[filter(...)] and #[codec(...)]
+       - Store as doc_path: &'static str in registration struct
+       - Default to "" if not provided (stub page generated)
+       - No feature gating needed — it is just a path string, not content
 
     2. Registry struct changes (registry.rs):
-       - Add description, example to FilterFactoryRegistration
-       - Add description to ParamDescriptor
-       - Same for Encoder/Decoder registrations
-       - Default "" (backward compatible)
+       - Add doc_path: &'static str to FilterFactoryRegistration
+       - Add doc_path: &'static str to EncoderFactoryRegistration
+       - Add doc_path: &'static str to DecoderFactoryRegistration
+       - Add description: &'static str to ParamDescriptor (from field doc comments)
 
-    3. SSG docs builder (scripts/build-docs.mjs or crates/rasmcore-docs):
-       - Step 1: Run dump_registry --features docs → JSON with doc strings
-       - Step 2: Read manual pages from docs/pages/*.md (frontmatter: title, order, section)
-       - Step 3: Render HTML using a minimal template:
-         - Shared layout: nav sidebar + content area
-         - Nav groups: Operations by category + Manual pages by section
-         - Operation pages: title, description (rendered markdown), params table, example
-         - Manual pages: title, rendered markdown content
-       - Step 4: Output to docs/build/ (static HTML + CSS, no JS required)
-       - Use a markdown-to-HTML library (marked for Node, pulldown-cmark for Rust)
-
-    4. Manual page format (docs/pages/getting-started.md):
+    3. .adoc file convention:
        ```
-       ---
-       title: Getting Started
-       section: Guides
-       order: 1
-       ---
-       # Getting Started
+       docs/operations/filters/adjustment/brightness.adoc
+       docs/operations/filters/spatial/gaussian_blur.adoc
+       docs/operations/codecs/png.adoc
+       ```
+       Referenced from macro as:
+       ```rust
+       #[filter(name = "brightness", category = "adjustment",
+                doc = "docs/operations/filters/adjustment/brightness.adoc")]
+       ```
+
+    4. SSG docs builder (scripts/build-docs.mjs):
+       - npm dependency: asciidoctor.js (renders .adoc to HTML)
+       - Step 1: Run dump_registry → JSON with doc_path per op
+       - Step 2: For each op with doc_path, read .adoc, render to HTML
+       - Step 3: Inject auto-generated param table after the rendered content
+       - Step 4: For ops without doc_path, generate stub (param table only)
+       - Step 5: Read manual pages from docs/pages/*.adoc
+       - Step 6: Render all into shared HTML template with nav sidebar
+       - Step 7: Generate index.html (categorized op list) and sitemap.json
+       - Output to docs/build/
+
+    5. Manual page format (docs/pages/getting-started.adoc):
+       ```asciidoc
+       = Getting Started
+       :section: Guides
+       :order: 1
+
+       == Installation
        Content here...
        ```
 
-    5. Build command: scripts/build-docs.sh
-       - Builds dump_registry with docs feature
+    6. Build command: scripts/build-docs.sh
+       - Runs dump_registry (no special feature needed — just path strings)
        - Runs SSG script
        - Output: docs/build/ ready to deploy
-
-    Node.js SSG is simpler (marked + handlebars in ~100 lines) and consistent
-    with existing SDK generation scripts. Rust binary is an option if we want
-    zero external deps.
 plan:
   - phase: Registry Schema
     tasks:
-      - text: Add description and example fields (&'static str) to FilterFactoryRegistration
+      - text: Add doc_path field (&'static str) to FilterFactoryRegistration
         done: false
-      - text: Add description field to ParamDescriptor
+      - text: Add doc_path to EncoderFactoryRegistration and DecoderFactoryRegistration
         done: false
-      - text: Add description and example to EncoderFactoryRegistration and DecoderFactoryRegistration
+      - text: Add description field to ParamDescriptor (from field doc comments)
         done: false
-      - text: Add docs feature flag to rasmcore-pipeline-v2 and rasmcore-macros Cargo.toml
-        done: false
-  - phase: Macro Doc Extraction
+  - phase: Macro Changes
     tasks:
-      - text: V2Filter derive extracts struct #[doc] attributes, splits at # Example
+      - text: Parse doc = "..." from #[filter(...)] attribute, store in registration
         done: false
-      - text: V2Filter derive extracts field #[doc] attributes as param description
+      - text: Parse doc = "..." from #[codec(...)] attribute for encoders and decoders
         done: false
-      - text: V2Encoder and V2Decoder derive macros extract docs the same way
+      - text: Extract field #[doc] comments as ParamDescriptor description
         done: false
-      - text: Gate doc strings behind cfg(feature = "docs") — empty string without it
+      - text: Default doc_path to "" when not provided
+        done: false
+  - phase: dump_registry Update
+    tasks:
+      - text: Include doc_path in JSON output for filters, encoders, decoders
+        done: false
+      - text: Include param description in JSON output
         done: false
   - phase: SSG Docs Builder
     tasks:
-      - text: Create scripts/build-docs.mjs that reads registry JSON
+      - text: Create scripts/build-docs.mjs using asciidoctor.js
         done: false
-      - text: HTML template with nav sidebar (categories + manual pages) and content area
+      - text: HTML template with nav sidebar and content area
         done: false
       - text: Index page listing all operations grouped by category with links
         done: false
-      - text: Render per-operation HTML pages (description, params table, example, see-also links)
+      - text: Per-operation pages — render .adoc content + inject param table
         done: false
-      - text: Auto-generate sitemap.json with all pages for programmatic lookup
+      - text: Stub pages for ops without doc_path (param table only)
         done: false
-      - text: Read manual pages from docs/pages/*.md with frontmatter (title, section, order)
+      - text: Read manual pages from docs/pages/*.adoc with AsciiDoc attributes
         done: false
-      - text: Render manual pages into same HTML template
+      - text: Auto-generate sitemap.json
         done: false
       - text: Output complete static site to docs/build/
         done: false
-      - text: Add build-docs.sh script that runs dump_registry + SSG
+      - text: Add scripts/build-docs.sh orchestration script
         done: false
   - phase: Proof of Concept Content
     tasks:
-      - text: Add doc comments to brightness filter (description + example + param docs)
+      - text: Create docs/operations/filters/adjustment/brightness.adoc with full docs
         done: false
-      - text: Add doc comments to contrast and gaussian_blur filters
+      - text: Create docs/operations/filters/adjustment/contrast.adoc
         done: false
-      - text: Add doc comments to PNG encoder as codec example
+      - text: Create docs/operations/filters/spatial/gaussian_blur.adoc
         done: false
-      - text: Create docs/pages/getting-started.md as manual page example
+      - text: Create docs/operations/codecs/png.adoc as codec example
         done: false
-      - text: Run build-docs and verify output site renders correctly
+      - text: Wire doc = "..." attribute on brightness, contrast, gaussian_blur, PNG encoder
+        done: false
+      - text: Create docs/pages/getting-started.adoc as manual page example
+        done: false
+      - text: Run build-docs and verify output site
         done: false
   - phase: Verification
     tasks:
-      - text: WASM build without docs feature — verify no binary size increase
+      - text: Verify .adoc files are previewable standalone in AsciiDoc viewer
         done: false
-      - text: Build with docs feature — verify doc strings present in registry JSON
+      - text: dump_registry includes doc_path and param descriptions
         done: false
-      - text: Static site has working nav, operation pages, and manual pages
+      - text: Static site has working nav, op pages, manual pages, and index
         done: false
-      - text: dump_registry with docs feature includes description and example fields
+      - text: WASM binary size unchanged (doc_path is just a short string)
         done: false
 extra: {}
