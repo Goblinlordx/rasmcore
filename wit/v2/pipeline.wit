@@ -93,6 +93,12 @@ interface pipeline-v2 {
     /// Opaque handle to a node in the pipeline graph.
     type node-id = u32;
 
+    /// Read configuration options.
+    record read-config {
+        /// Format hint for ambiguous formats (e.g., "tga"). None = auto-detect.
+        format-hint: option<string>,
+    }
+
     /// The V2 pipeline resource.
     resource image-pipeline-v2 {
         constructor();
@@ -103,13 +109,7 @@ interface pipeline-v2 {
         /// Find an operation by name.
         find-operation: func(name: string) -> option<operation-info>;
 
-        /// Read configuration options.
-    record read-config {
-        /// Format hint for ambiguous formats (e.g., "tga"). None = auto-detect.
-        format-hint: option<string>,
-    }
-
-    // ─── Graph Management ───
+        // ─── Graph Management ───
         /// Add a source node (decode from bytes).
         read: func(data: buffer, config: option<read-config>) -> result<node-id, rasmcore-error>;
         /// Get node output metadata.
