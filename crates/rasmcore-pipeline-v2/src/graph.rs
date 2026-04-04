@@ -6,11 +6,14 @@
 //!
 //! All data is `Vec<f32>` — 4 channels (RGBA) per pixel. No format dispatch.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::cache::SpatialCache;
 use crate::demand::DemandStrategy;
 use crate::gpu::GpuExecutor;
+use crate::hash::{ContentHash, ZERO_HASH};
+use crate::layer_cache::LayerCache;
 use crate::node::{Node, NodeInfo, PipelineError, Upstream};
 use crate::rect::Rect;
 use crate::trace::{PipelineTrace, TraceEventKind, TraceTimer};
@@ -32,9 +35,20 @@ pub struct GpuPlan {
 /// Manages node topology, caching, GPU dispatch, and demand-driven execution.
 /// Knows nothing about specific operations — just dispatches through the
 /// `Node` trait.
+///
+/// ## Two-level caching
+///
+/// - **SpatialCache** (per-pipeline): tile-level reuse within a single execution.
+/// - **LayerCache** (cross-pipeline): content-addressed reuse across executions.
+///   Injected externally, persists across pipeline lifetimes. Keyed by blake3
+///   hash chains that encode the full computation lineage.
 pub struct Graph {
     pub(crate) nodes: Vec<Box<dyn Node>>,
     cache: SpatialCache,
+    /// Content hash per node — encodes full computation lineage.
+    content_hashes: Vec<ContentHash>,
+    /// Optional cross-pipeline layer cache (injected, shared).
+    layer_cache: Option<Rc<RefCell<LayerCache>>>,
     gpu_executor: Option<Rc<dyn GpuExecutor>>,
     demand_strategy: DemandStrategy,
     pub(crate) aces_strict: bool,
@@ -51,6 +65,8 @@ impl Graph {
         Self {
             nodes: Vec::new(),
             cache: SpatialCache::new(cache_budget),
+            content_hashes: Vec::new(),
+            layer_cache: None,
             gpu_executor: None,
             demand_strategy: DemandStrategy::default(),
             aces_strict: false,
@@ -61,11 +77,52 @@ impl Graph {
     }
 
     /// Add a node to the graph. Returns the node ID.
+    ///
+    /// The node gets ZERO_HASH as its content hash. Use `add_node_with_hash`
+    /// to provide a content hash for layer cache integration.
     pub fn add_node(&mut self, node: Box<dyn Node>) -> u32 {
         let id = self.nodes.len() as u32;
         self.nodes.push(node);
+        self.content_hashes.push(ZERO_HASH);
         self.optimized = false; // new node invalidates fusion
         id
+    }
+
+    /// Add a node with a pre-computed content hash.
+    ///
+    /// The content hash encodes the full computation lineage:
+    /// `hash(upstream_hash || op_name || param_bytes)`.
+    /// Used by the pipeline resource to enable layer cache lookups.
+    pub fn add_node_with_hash(&mut self, node: Box<dyn Node>, hash: ContentHash) -> u32 {
+        let id = self.nodes.len() as u32;
+        self.nodes.push(node);
+        self.content_hashes.push(hash);
+        self.optimized = false;
+        id
+    }
+
+    /// Get the content hash for a node.
+    pub fn content_hash(&self, node_id: u32) -> ContentHash {
+        self.content_hashes.get(node_id as usize).copied().unwrap_or(ZERO_HASH)
+    }
+
+    /// Set the cross-pipeline layer cache (injected, shared).
+    pub fn set_layer_cache(&mut self, cache: Rc<RefCell<LayerCache>>) {
+        self.layer_cache = Some(cache);
+    }
+
+    /// Reset layer cache references (call at start of a new pipeline run).
+    pub fn reset_layer_cache_references(&self) {
+        if let Some(lc) = &self.layer_cache {
+            lc.borrow_mut().reset_references();
+        }
+    }
+
+    /// Clean up unreferenced layer cache entries (call after pipeline completion).
+    pub fn cleanup_layer_cache(&self) {
+        if let Some(lc) = &self.layer_cache {
+            lc.borrow_mut().cleanup_unreferenced();
+        }
     }
 
     /// Set the GPU executor for GPU-primary dispatch.
@@ -210,7 +267,26 @@ impl Graph {
         node_id: u32,
         request: Rect,
     ) -> Result<Vec<f32>, PipelineError> {
-        // 1. Cache check
+        // 0. Layer cache check (content-addressed, cross-pipeline)
+        let node_hash = self.content_hash(node_id);
+        if node_hash != ZERO_HASH {
+            if let Some(lc) = &self.layer_cache {
+                if let Some((pixels, _w, _h)) = lc.borrow_mut().get(&node_hash) {
+                    // Layer cache stores full-node output. If request is a sub-region, crop.
+                    let info = self.nodes.get(node_id as usize)
+                        .ok_or(PipelineError::NodeNotFound(node_id))?
+                        .info();
+                    let full_rect = Rect::new(0, 0, info.width, info.height);
+                    if request == full_rect {
+                        return Ok(pixels);
+                    }
+                    // Crop from full to requested region
+                    return Ok(crop_f32(&pixels, full_rect, request));
+                }
+            }
+        }
+
+        // 1. Spatial cache check (tile-level, per-pipeline)
         if let Some(cached) = self.cache.query(node_id, request) {
             return Ok(cached);
         }
@@ -249,7 +325,7 @@ impl Graph {
                             node_id,
                             request,
                             gpu_pixels.clone(),
-                            crate::hash::ZERO_HASH,
+                            node_hash,
                         );
                         return Ok(gpu_pixels);
                     }
@@ -291,13 +367,28 @@ impl Graph {
             self.trace.push(t.finish());
         }
 
-        // Cache
+        // Spatial cache
         self.cache
-            .store(node_id, request, pixels.clone(), crate::hash::ZERO_HASH);
+            .store(node_id, request, pixels.clone(), node_hash);
+
+        // Layer cache — store full-node results for cross-pipeline reuse.
+        // Only store when the request covers the full node output.
+        if node_hash != ZERO_HASH {
+            if let Some(lc) = &self.layer_cache {
+                let full_rect = Rect::new(0, 0, info.width, info.height);
+                if request == full_rect && !lc.borrow().contains(&node_hash) {
+                    lc.borrow_mut().store(node_hash, &pixels, info.width, info.height);
+                }
+            }
+        }
+
         Ok(pixels)
     }
 
     /// Request the full output of a node (convenience).
+    ///
+    /// Layer cache storage happens inside `request_region()` when the request
+    /// covers the full node output and the node has a content hash.
     pub fn request_full(&mut self, node_id: u32) -> Result<Vec<f32>, PipelineError> {
         // Run fusion optimizer before execution — skip if already optimized
         if !self.optimized {
