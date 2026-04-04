@@ -872,4 +872,377 @@ mod tests {
             );
         }
     }
+
+    // ─── cICP / sRGB Chunk Tests ──────────────────────────────────────
+
+    /// Helper: scan PNG chunks and return the 4-byte type of each chunk found.
+    fn collect_chunk_types(png_data: &[u8]) -> Vec<String> {
+        let mut types = Vec::new();
+        let mut pos = 8; // skip PNG signature
+        while pos + 12 <= png_data.len() {
+            let len = u32::from_be_bytes([
+                png_data[pos],
+                png_data[pos + 1],
+                png_data[pos + 2],
+                png_data[pos + 3],
+            ]) as usize;
+            let ctype = std::str::from_utf8(&png_data[pos + 4..pos + 8])
+                .unwrap_or("????")
+                .to_string();
+            types.push(ctype);
+            pos += 12 + len;
+        }
+        types
+    }
+
+    /// Helper: extract cICP payload from PNG data.
+    fn extract_cicp_payload(png_data: &[u8]) -> Option<(u8, u8, u8, u8)> {
+        let mut pos = 8;
+        while pos + 12 <= png_data.len() {
+            let len = u32::from_be_bytes([
+                png_data[pos],
+                png_data[pos + 1],
+                png_data[pos + 2],
+                png_data[pos + 3],
+            ]) as usize;
+            let ctype = &png_data[pos + 4..pos + 8];
+            if ctype == b"cICP" && len == 4 {
+                return Some((
+                    png_data[pos + 8],
+                    png_data[pos + 9],
+                    png_data[pos + 10],
+                    png_data[pos + 11],
+                ));
+            }
+            pos += 12 + len;
+        }
+        None
+    }
+
+    /// Helper: extract sRGB payload (rendering intent) from PNG data.
+    fn extract_srgb_payload(png_data: &[u8]) -> Option<u8> {
+        let mut pos = 8;
+        while pos + 12 <= png_data.len() {
+            let len = u32::from_be_bytes([
+                png_data[pos],
+                png_data[pos + 1],
+                png_data[pos + 2],
+                png_data[pos + 3],
+            ]) as usize;
+            let ctype = &png_data[pos + 4..pos + 8];
+            if ctype == b"sRGB" && len == 1 {
+                return Some(png_data[pos + 8]);
+            }
+            pos += 12 + len;
+        }
+        None
+    }
+
+    #[test]
+    fn cicp_mapping_srgb() {
+        assert_eq!(color_space_to_cicp(ColorSpace::Srgb), Some((1, 13, 0, 1)));
+    }
+
+    #[test]
+    fn cicp_mapping_linear_srgb() {
+        assert_eq!(
+            color_space_to_cicp(ColorSpace::LinearSrgb),
+            Some((1, 8, 0, 1))
+        );
+    }
+
+    #[test]
+    fn cicp_mapping_display_p3() {
+        assert_eq!(
+            color_space_to_cicp(ColorSpace::DisplayP3),
+            Some((12, 13, 0, 1))
+        );
+    }
+
+    #[test]
+    fn cicp_mapping_bt709() {
+        assert_eq!(color_space_to_cicp(ColorSpace::Bt709), Some((1, 1, 0, 1)));
+    }
+
+    #[test]
+    fn cicp_mapping_bt2020() {
+        assert_eq!(
+            color_space_to_cicp(ColorSpace::Bt2020),
+            Some((9, 14, 0, 1))
+        );
+    }
+
+    #[test]
+    fn cicp_mapping_prophoto_rgb_none() {
+        assert_eq!(color_space_to_cicp(ColorSpace::ProPhotoRgb), None);
+    }
+
+    #[test]
+    fn cicp_mapping_adobe_rgb_none() {
+        assert_eq!(color_space_to_cicp(ColorSpace::AdobeRgb), None);
+    }
+
+    #[test]
+    fn encode_srgb_has_srgb_chunk() {
+        let (pixels, info) = make_test_pixels(); // color_space: Srgb
+        let encoded = encode(&pixels, &info, &PngEncodeConfig::default()).unwrap();
+        let chunks = collect_chunk_types(&encoded);
+        assert!(chunks.contains(&"sRGB".to_string()), "sRGB chunk missing");
+        assert!(
+            !chunks.contains(&"cICP".to_string()),
+            "cICP should not be present for sRGB"
+        );
+        // Verify rendering intent is perceptual (0)
+        assert_eq!(extract_srgb_payload(&encoded), Some(0));
+    }
+
+    #[test]
+    fn encode_display_p3_has_cicp_chunk() {
+        let pixels: Vec<u8> = (0..(8 * 8 * 3)).map(|i| (i % 256) as u8).collect();
+        let info = ImageInfo {
+            width: 8,
+            height: 8,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::DisplayP3,
+        };
+        let encoded = encode(&pixels, &info, &PngEncodeConfig::default()).unwrap();
+        let chunks = collect_chunk_types(&encoded);
+        assert!(chunks.contains(&"cICP".to_string()), "cICP chunk missing");
+        assert!(
+            !chunks.contains(&"sRGB".to_string()),
+            "sRGB should not be present for Display P3"
+        );
+        // Verify code points: primaries=12, transfer=13, matrix=0, range=1
+        assert_eq!(extract_cicp_payload(&encoded), Some((12, 13, 0, 1)));
+    }
+
+    #[test]
+    fn encode_bt2020_has_cicp_chunk() {
+        let pixels: Vec<u8> = (0..(8 * 8 * 3)).map(|i| (i % 256) as u8).collect();
+        let info = ImageInfo {
+            width: 8,
+            height: 8,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Bt2020,
+        };
+        let encoded = encode(&pixels, &info, &PngEncodeConfig::default()).unwrap();
+        assert_eq!(extract_cicp_payload(&encoded), Some((9, 14, 0, 1)));
+    }
+
+    #[test]
+    fn encode_linear_srgb_has_cicp_chunk() {
+        let pixels: Vec<u8> = (0..(8 * 8 * 3)).map(|i| (i % 256) as u8).collect();
+        let info = ImageInfo {
+            width: 8,
+            height: 8,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::LinearSrgb,
+        };
+        let encoded = encode(&pixels, &info, &PngEncodeConfig::default()).unwrap();
+        assert_eq!(extract_cicp_payload(&encoded), Some((1, 8, 0, 1)));
+    }
+
+    #[test]
+    fn encode_bt709_has_cicp_chunk() {
+        let pixels: Vec<u8> = (0..(8 * 8 * 3)).map(|i| (i % 256) as u8).collect();
+        let info = ImageInfo {
+            width: 8,
+            height: 8,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Bt709,
+        };
+        let encoded = encode(&pixels, &info, &PngEncodeConfig::default()).unwrap();
+        assert_eq!(extract_cicp_payload(&encoded), Some((1, 1, 0, 1)));
+    }
+
+    #[test]
+    fn encode_prophoto_rgb_no_cicp_no_srgb() {
+        let pixels: Vec<u8> = (0..(8 * 8 * 3)).map(|i| (i % 256) as u8).collect();
+        let info = ImageInfo {
+            width: 8,
+            height: 8,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::ProPhotoRgb,
+        };
+        let encoded = encode(&pixels, &info, &PngEncodeConfig::default()).unwrap();
+        let chunks = collect_chunk_types(&encoded);
+        assert!(!chunks.contains(&"cICP".to_string()));
+        assert!(!chunks.contains(&"sRGB".to_string()));
+    }
+
+    #[test]
+    fn srgb_chunk_rendering_intents() {
+        let (pixels, info) = make_test_pixels();
+        let _base = encode(&pixels, &info, &PngEncodeConfig::default()).unwrap();
+        // The encode() path always uses intent 0 (perceptual).
+        // Test the standalone embed_srgb_chunk with other intents.
+        // First, make a PNG without any color chunks for testing.
+        let raw = {
+            let mut buf = Vec::new();
+            let mut enc = png::Encoder::new(&mut buf, 8, 8);
+            enc.set_color(png::ColorType::Rgb);
+            enc.set_depth(png::BitDepth::Eight);
+            let mut w = enc.write_header().unwrap();
+            let px = vec![0u8; 8 * 8 * 3];
+            w.write_image_data(&px).unwrap();
+            drop(w);
+            buf
+        };
+        for intent in 0..=3u8 {
+            let with_srgb = embed_srgb_chunk(&raw, intent).unwrap();
+            assert_eq!(
+                extract_srgb_payload(&with_srgb),
+                Some(intent),
+                "rendering intent {intent} mismatch"
+            );
+        }
+    }
+
+    #[test]
+    fn cicp_chunk_after_ihdr_before_idat() {
+        let pixels: Vec<u8> = (0..(8 * 8 * 3)).map(|i| (i % 256) as u8).collect();
+        let info = ImageInfo {
+            width: 8,
+            height: 8,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::DisplayP3,
+        };
+        let encoded = encode(&pixels, &info, &PngEncodeConfig::default()).unwrap();
+        let chunks = collect_chunk_types(&encoded);
+        let cicp_idx = chunks.iter().position(|c| c == "cICP").unwrap();
+        let idat_idx = chunks.iter().position(|c| c == "IDAT").unwrap();
+        let ihdr_idx = chunks.iter().position(|c| c == "IHDR").unwrap();
+        assert!(
+            cicp_idx > ihdr_idx,
+            "cICP must appear after IHDR"
+        );
+        assert!(
+            cicp_idx < idat_idx,
+            "cICP must appear before IDAT"
+        );
+    }
+
+    #[test]
+    fn icc_profile_skipped_when_cicp_present() {
+        let pixels: Vec<u8> = (0..(8 * 8 * 3)).map(|i| (i % 256) as u8).collect();
+        let info = ImageInfo {
+            width: 8,
+            height: 8,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::DisplayP3,
+        };
+        let encoded = encode(&pixels, &info, &PngEncodeConfig::default()).unwrap();
+        // Attempt to embed ICC profile — should be silently skipped
+        let fake_icc = vec![42u8; 100];
+        let with_icc = embed_icc_profile(&encoded, &fake_icc).unwrap();
+        let chunks = collect_chunk_types(&with_icc);
+        assert!(
+            !chunks.contains(&"iCCP".to_string()),
+            "iCCP must not coexist with cICP"
+        );
+        assert!(chunks.contains(&"cICP".to_string()));
+    }
+
+    #[test]
+    fn icc_profile_skipped_when_srgb_present() {
+        let (pixels, info) = make_test_pixels(); // color_space: Srgb
+        let encoded = encode(&pixels, &info, &PngEncodeConfig::default()).unwrap();
+        let fake_icc = vec![42u8; 100];
+        let with_icc = embed_icc_profile(&encoded, &fake_icc).unwrap();
+        let chunks = collect_chunk_types(&with_icc);
+        assert!(
+            !chunks.contains(&"iCCP".to_string()),
+            "iCCP must not coexist with sRGB"
+        );
+        assert!(chunks.contains(&"sRGB".to_string()));
+    }
+
+    #[test]
+    fn icc_profile_works_when_no_color_chunk() {
+        let pixels: Vec<u8> = (0..(8 * 8 * 3)).map(|i| (i % 256) as u8).collect();
+        let info = ImageInfo {
+            width: 8,
+            height: 8,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::ProPhotoRgb, // No cICP/sRGB chunk emitted
+        };
+        let encoded = encode(&pixels, &info, &PngEncodeConfig::default()).unwrap();
+        let fake_icc = vec![42u8; 100];
+        let with_icc = embed_icc_profile(&encoded, &fake_icc).unwrap();
+        let chunks = collect_chunk_types(&with_icc);
+        assert!(
+            chunks.contains(&"iCCP".to_string()),
+            "iCCP should be embedded when no cICP/sRGB present"
+        );
+    }
+
+    #[test]
+    fn roundtrip_display_p3_color_space_preserved() {
+        let pixels: Vec<u8> = (0..(8 * 8 * 3)).map(|i| (i % 256) as u8).collect();
+        let info = ImageInfo {
+            width: 8,
+            height: 8,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::DisplayP3,
+        };
+        let encoded = encode(&pixels, &info, &PngEncodeConfig::default()).unwrap();
+        let decoded = crate::domain::decoder::decode(&encoded).unwrap();
+        assert_eq!(
+            decoded.info.color_space,
+            ColorSpace::DisplayP3,
+            "color_space must survive encode→decode roundtrip"
+        );
+        assert_eq!(decoded.pixels, pixels, "pixels must be exact");
+    }
+
+    #[test]
+    fn roundtrip_bt2020_color_space_preserved() {
+        let pixels: Vec<u8> = (0..(8 * 8 * 3)).map(|i| (i % 256) as u8).collect();
+        let info = ImageInfo {
+            width: 8,
+            height: 8,
+            format: PixelFormat::Rgb8,
+            color_space: ColorSpace::Bt2020,
+        };
+        let encoded = encode(&pixels, &info, &PngEncodeConfig::default()).unwrap();
+        let decoded = crate::domain::decoder::decode(&encoded).unwrap();
+        assert_eq!(decoded.info.color_space, ColorSpace::Bt2020);
+    }
+
+    #[test]
+    fn roundtrip_srgb_color_space_preserved() {
+        let (pixels, info) = make_test_pixels(); // Srgb
+        let encoded = encode(&pixels, &info, &PngEncodeConfig::default()).unwrap();
+        let decoded = crate::domain::decoder::decode(&encoded).unwrap();
+        // sRGB doesn't produce cICP, decoder defaults to Srgb, so this should pass
+        assert_eq!(decoded.info.color_space, ColorSpace::Srgb);
+    }
+
+    #[test]
+    fn roundtrip_16bit_display_p3() {
+        let (w, h) = (8u32, 8u32);
+        let mut pixels = Vec::with_capacity((w * h * 6) as usize);
+        for i in 0..(w * h) {
+            let r = ((i * 257) % 65536) as u16;
+            let g = ((i * 131 + 1000) % 65536) as u16;
+            let b = ((i * 73 + 5000) % 65536) as u16;
+            pixels.extend_from_slice(&r.to_le_bytes());
+            pixels.extend_from_slice(&g.to_le_bytes());
+            pixels.extend_from_slice(&b.to_le_bytes());
+        }
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Rgb16,
+            color_space: ColorSpace::DisplayP3,
+        };
+        let encoded = encode(&pixels, &info, &PngEncodeConfig::default()).unwrap();
+        // Verify cICP chunk is present
+        assert_eq!(extract_cicp_payload(&encoded), Some((12, 13, 0, 1)));
+        // Verify roundtrip
+        let decoded = crate::domain::decoder::decode(&encoded).unwrap();
+        assert_eq!(decoded.info.color_space, ColorSpace::DisplayP3);
+        assert_eq!(decoded.info.format, PixelFormat::Rgb16);
+        assert_eq!(decoded.pixels, pixels, "16-bit P3 roundtrip must be pixel-exact");
+    }
 }
