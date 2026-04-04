@@ -1,0 +1,8 @@
+title: GPU shader cache with pre-compilation API
+status: pending
+type: feature
+approved: false
+created: '2026-04-04'
+updated: '2026-04-04'
+deps:
+- gpu-dispatch-wiring_20260404053000Z

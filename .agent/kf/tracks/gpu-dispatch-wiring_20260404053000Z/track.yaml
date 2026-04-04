@@ -1,0 +1,100 @@
+id: gpu-dispatch-wiring_20260404053000Z
+title: Wire GPU dispatch end-to-end (WASM + browser WebGPU)
+type: feature
+status: pending
+created: '2026-04-04'
+updated: '2026-04-04'
+spec:
+  summary: |
+    Make GPU actually fire: wire GpuExecutor in WASM adapter, connect browser
+    WebGPU handler as host-side executor, add tracing and benchmarks to verify.
+    Supersedes pipeline-perf-tracing track.
+  context: |
+    7 brightness up/down nodes take 731ms in the web UI. Analytic fusion works
+    correctly (creates single FusedPointOpNode with pre-compiled WGSL), but GPU
+    executor is never initialized in the WASM adapter. set_gpu_available() is a
+    no-op stub. Everything falls back to unoptimized CPU per-pixel evaluation.
+    The browser already has gpu-handler-v2.ts with WebGPU dispatch and shader
+    caching, but it is never connected to the pipeline.
+  codebase_analysis: |
+    - rasmcore-v2-wasm/src/lib.rs: PipelineResource::new() never calls set_gpu_executor()
+    - set_gpu_available() at line 300 is a no-op stub
+    - GpuExecutor trait in pipeline-v2/src/gpu.rs is well-defined
+    - graph.rs collect_gpu_chain() and request_region() GPU path is implemented but unreachable
+    - web-ui/src/gpu-handler-v2.ts has full WebGPU dispatch with shader caching
+    - Native executor in rasmcore-cli/gpu_executor.rs works with wgpu
+    - FusedPointOpNode generates valid WGSL but it goes nowhere
+    - Graph has no optimize() guard — re-fuses on every request_full()
+  acceptance_criteria:
+    - GPU executor fires for fused analytic nodes (FusedPointOpNode WGSL dispatches to GPU)
+    - Browser WebGPU handler receives shaders from WASM pipeline and executes them
+    - Native benchmark shows GPU path vs CPU path timing comparison
+    - PipelineTrace struct captures fusion, shader compile, GPU dispatch, CPU fallback timings
+    - optimize() has guard to skip redundant fusion passes
+    - 7 brightness up/down chain executes in under 50ms (GPU) vs 731ms (CPU)
+  out_of_scope: |
+    Shader pre-compilation API (separate track). Layer cache (separate track).
+    CPU optimization (separate track). Reduction buffer support in browser handler.
+  technical_notes: |
+    The V2 pipeline cannot call WebGPU directly from WASM — GPU is a host operation.
+    Architecture: WASM generates GpuShader structs (WGSL source + params), passes
+    them to host via a callback/import mechanism. The host (browser JS or native CLI)
+    compiles and dispatches.
+
+    For browser: the existing gpu-handler-v2.ts already does this. We need to:
+    1. Define a WIT import for GPU execution (host provides the implementation)
+    2. WASM calls the import with shader source, params, input pixels
+    3. Host (JS) delegates to GpuHandlerV2.execute()
+    4. Result flows back to WASM
+
+    Alternative simpler approach: keep GPU dispatch in JS worker layer.
+    Worker intercepts pipeline output, checks for GPU-capable nodes, dispatches
+    via GpuHandlerV2, feeds result back. This avoids WIT import complexity.
+
+    For native: wire WgpuExecutor into Graph via set_gpu_executor().
+
+    Add PipelineTrace with opt-in tracing for diagnostics.
+plan:
+  - phase: Tracing Infrastructure
+    tasks:
+      - text: Add PipelineTrace struct with TraceEvent enum (Fusion, ShaderCompile, GpuDispatch, CpuFallback, Encode)
+        done: false
+      - text: Each event carries name, duration_us, and optional detail string
+        done: false
+      - text: Add graph.set_tracing(true) / graph.take_trace() API
+        done: false
+      - text: Instrument fusion.rs optimize() with trace events
+        done: false
+      - text: Instrument graph.rs request_region() GPU and CPU paths
+        done: false
+      - text: Add optimized flag to Graph to skip redundant fusion passes
+        done: false
+  - phase: Native GPU Wiring
+    tasks:
+      - text: Add bench-pipeline binary in rasmcore-pipeline-v2
+        done: false
+      - text: Wire WgpuExecutor into bench-pipeline via graph.set_gpu_executor()
+        done: false
+      - text: Benchmark N brightness nodes — cold start, warm, incremental, identity fusion
+        done: false
+      - text: Verify GPU path fires and trace shows GpuDispatch events
+        done: false
+  - phase: Browser GPU Wiring
+    tasks:
+      - text: Design host GPU callback mechanism (WIT import or JS worker-layer dispatch)
+        done: false
+      - text: Implement WASM-to-host GPU shader handoff
+        done: false
+      - text: Wire GpuHandlerV2 as the host-side executor in V2 workers
+        done: false
+      - text: V2 workers expose trace data in result messages for devtools
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Native benchmark shows GPU under 50ms for 7-brightness chain
+        done: false
+      - text: Browser devtools shows GpuDispatch trace events (not CpuFallback)
+        done: false
+      - text: optimize() guard prevents redundant fusion on same graph
+        done: false
+extra: {}
