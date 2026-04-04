@@ -2,6 +2,7 @@ import type { Operation, UiParam } from '../types';
 
 declare const __SDK_PATH__: string;
 const SDK_PATH = typeof __SDK_PATH__ !== 'undefined' ? __SDK_PATH__ : '/sdk';
+const V2_SDK_PATH = `${typeof __SDK_PATH__ !== 'undefined' ? __SDK_PATH__ : '/sdk'}/v2`;
 
 function snakeToCamel(s: string) {
   return s.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
@@ -304,32 +305,56 @@ export async function loadManifest(): Promise<LoadedManifest> {
     }
   }
 
-  // Discover operations from SDK
+  // Discover operations from V2 registry (authoritative source of truth)
   const operations: Operation[] = [];
   try {
-    const sdk = await import(/* @vite-ignore */ `${SDK_PATH}/rasmcore-image.js`);
-    const PipelineClass = sdk.pipeline.ImagePipeline;
+    const sdk = await import(/* @vite-ignore */ `${V2_SDK_PATH}/rasmcore-v2-image.js`);
+    const PipelineClass = sdk.pipelineV2.ImagePipelineV2;
     const tempPipe = new PipelineClass();
-    const proto = Object.getPrototypeOf(tempPipe);
-    const methodNames = Object.getOwnPropertyNames(proto).filter(
-      (n: string) => typeof proto[n] === 'function' && !SKIP.has(n) && !n.startsWith('write'),
-    );
-    for (const name of methodNames) {
-      if (!paramMeta[name]) continue;
-      const rawCat = categories[name] || 'other';
+    const v2Ops = tempPipe.listOperations();
+
+    for (const op of v2Ops) {
+      if (op.kind !== 'filter' && op.kind !== 'transform' && op.kind !== 'color-conversion') continue;
+      const camelName = snakeToCamel(op.name);
+
+      // Build params from V2 registry if not already in param-manifest
+      if (!paramMeta[camelName] && op.params && op.params.length > 0) {
+        paramMeta[camelName] = op.params.map((p: { name: string; valueType: string; min?: number; max?: number; step?: number; defaultVal?: number; hint?: string }) =>
+          mapParam({
+            name: p.name,
+            type: p.valueType.replace('-val', ''),
+            min: p.min ?? null,
+            max: p.max ?? null,
+            step: p.step ?? null,
+            default: p.defaultVal ?? null,
+            hint: p.hint || undefined,
+          }),
+        ).filter((p: UiParam | null): p is UiParam => p !== null);
+      }
+
+      const rawCat = op.category || categories[camelName] || 'other';
       const category = CATEGORY_LABELS[rawCat] || rawCat.charAt(0).toUpperCase() + rawCat.slice(1);
-      operations.push({ name, category, params: paramMeta[name] });
+      operations.push({
+        name: camelName,
+        category,
+        params: paramMeta[camelName] || [],
+      });
     }
   } catch (e) {
-    console.warn('Could not discover operations from SDK:', e);
+    console.warn('Could not discover V2 operations:', e);
   }
 
-  // Discover write formats
+  // Discover write formats from V2 registry
   let writeFormats: string[] = ['jpeg', 'png', 'webp'];
   try {
-    const sdk = await import(/* @vite-ignore */ `${SDK_PATH}/rasmcore-image.js`);
-    const fmts = sdk.pipeline.supportedWriteFormats();
-    if (fmts && fmts.length > 0) writeFormats = fmts;
+    const sdk = await import(/* @vite-ignore */ `${V2_SDK_PATH}/rasmcore-v2-image.js`);
+    const PipelineClass = sdk.pipelineV2.ImagePipelineV2;
+    const tempPipe = new PipelineClass();
+    const v2Ops = tempPipe.listOperations();
+    const encoders = v2Ops
+      .filter((op: { kind: string; name: string }) => op.kind === 'encoder')
+      .map((op: { name: string }) => op.name.replace('_encode', ''));
+    if (encoders.length > 0) writeFormats = encoders;
   } catch {
     /* fallback */
   }
