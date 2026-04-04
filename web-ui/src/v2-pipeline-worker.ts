@@ -14,6 +14,8 @@ import { Pipeline } from '../sdk/v2/fluent/index';
 import { GpuHandlerV2, type GpuShader } from './gpu-handler-v2';
 
 let PipelineClass = null;
+let LayerCacheClass = null;
+let layerCache = null; // Shared cross-pipeline content-addressed cache
 let imageBytes = null;
 let gpuHandler: GpuHandlerV2 | null = null;
 
@@ -25,6 +27,13 @@ async function initSDK() {
   try {
     const sdk = await import('../sdk/v2/rasmcore-v2-image.js');
     PipelineClass = sdk.pipelineV2.ImagePipelineV2;
+    LayerCacheClass = sdk.pipelineV2.LayerCache;
+
+    // Create shared layer cache for cross-pipeline content-addressed caching
+    if (LayerCacheClass) {
+      layerCache = new LayerCacheClass(256); // 256 MB capacity
+      console.log('[v2-pipeline] Layer cache created (256 MB)');
+    }
 
     // Initialize WebGPU handler if available
     if (GpuHandlerV2.isAvailable()) {
@@ -59,7 +68,7 @@ function loadImage(bytes) {
   let info = { width: 0, height: 0 };
 
   try {
-    const pipe = Pipeline.fromRaw(PipelineClass, imageBytes);
+    const pipe = Pipeline.fromRaw(PipelineClass, imageBytes, undefined, layerCache);
     info = { width: pipe.info.width, height: pipe.info.height };
     console.log(`[v2-pipeline] Loaded: ${info.width}x${info.height}`);
   } catch (e: any) {
@@ -82,7 +91,7 @@ async function processChain(chain, mode) {
   const timings = [];
 
   try {
-    let pipe = Pipeline.fromRaw(PipelineClass, imageBytes);
+    let pipe = Pipeline.fromRaw(PipelineClass, imageBytes, undefined, layerCache);
 
     // Enable tracing for diagnostics
     pipe.setTracing(true);
@@ -140,7 +149,14 @@ async function processChain(chain, mode) {
 
     // Collect trace events
     const traceEvents = pipe.takeTrace();
-    console.log(`[v2-pipeline] ${totalMs}ms (GPU: ${gpuUsed})`);
+
+    // Log cache stats
+    if (layerCache) {
+      const s = layerCache.stats();
+      console.log(`[v2-pipeline] ${totalMs}ms (GPU: ${gpuUsed}) | cache: ${s.hits} hits, ${s.misses} misses, ${s.entries} entries`);
+    } else {
+      console.log(`[v2-pipeline] ${totalMs}ms (GPU: ${gpuUsed})`);
+    }
 
     const buf = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength);
     self.postMessage(
@@ -163,7 +179,7 @@ function exportImage(chain, format, quality) {
   }
 
   try {
-    let pipe = Pipeline.fromRaw(PipelineClass, imageBytes);
+    let pipe = Pipeline.fromRaw(PipelineClass, imageBytes, undefined, layerCache);
 
     for (const step of chain) {
       const method = snakeToCamel(step.name);

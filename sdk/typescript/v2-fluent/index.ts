@@ -415,10 +415,14 @@ export class Pipeline {
     return new Pipeline(pipe, node);
   }
 
-  /** Create a pipeline from a pre-loaded pipeline class (for web workers). */
+  /** Create a pipeline from a pre-loaded pipeline class (for web workers).
+   *  Optionally accepts a LayerCache for cross-pipeline result reuse. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  static fromRaw(PipelineClass: any, data: Uint8Array, config?: ReadConfig): Pipeline {
+  static fromRaw(PipelineClass: any, data: Uint8Array, config?: ReadConfig, layerCache?: any): Pipeline {
     const pipe = new PipelineClass();
+    if (layerCache && pipe.setLayerCache) {
+      pipe.setLayerCache(layerCache);
+    }
     const readConfig = config ? { formatHint: config.hint } : undefined;
     const node = pipe.read(data, readConfig);
     return new Pipeline(pipe, node);
