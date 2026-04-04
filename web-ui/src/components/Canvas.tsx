@@ -11,6 +11,10 @@ interface Props {
   imageWidth: number;
   imageHeight: number;
   onAddLayer: (file: File) => void;
+  /** Whether WebGPU display mode is active (shader handles pan/zoom). */
+  displayMode?: boolean;
+  /** Forward viewport changes to worker for shader-based pan/zoom. */
+  onViewportChange?: (panX: number, panY: number, zoom: number, canvasWidth: number, canvasHeight: number) => void;
 }
 
 export default function Canvas({
@@ -20,6 +24,8 @@ export default function Canvas({
   imageWidth,
   imageHeight,
   onAddLayer,
+  displayMode = false,
+  onViewportChange,
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const splitContainerRef = useRef<HTMLDivElement>(null);
@@ -38,9 +44,21 @@ export default function Canvas({
     (containerRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
     transform.gestureRef(el);
   }, [containerRef, transform.gestureRef]);
+  // In display mode, canvas fills the viewport — shader handles pan/zoom
   const canvasStyle = hasImage
-    ? computeTransformCSS(transform.state, containerSize, imageWidth, imageHeight)
+    ? (displayMode
+        ? { position: 'absolute' as const, left: 0, top: 0, width: containerSize.width, height: containerSize.height }
+        : computeTransformCSS(transform.state, containerSize, imageWidth, imageHeight))
     : undefined;
+
+  // Forward viewport changes to worker for shader-based pan/zoom
+  useEffect(() => {
+    if (!displayMode || !onViewportChange || !hasImage) return;
+    onViewportChange(
+      transform.state.panX, transform.state.panY, transform.state.zoom,
+      containerSize.width, containerSize.height,
+    );
+  }, [displayMode, onViewportChange, hasImage, transform.state.panX, transform.state.panY, transform.state.zoom, containerSize.width, containerSize.height]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {

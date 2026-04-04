@@ -6,6 +6,7 @@ import { useLayers } from './hooks/useLayers';
 import { useChain } from './hooks/useChain';
 import { generateCode } from './utils/codeGeneration';
 import { getWideGamutContext } from './utils/canvasColorSpace';
+import { isWebGpuAvailable, isHdrDisplay } from './utils/webgpuDetect';
 import Toolbar from './components/Toolbar';
 import Canvas from './components/Canvas';
 import RightPanel from './components/RightPanel';
@@ -60,6 +61,21 @@ export default function App() {
   useEffect(() => {
     preview.viewportCanvasRef.current = worker.previewCanvasRef.current;
   });
+
+  // Transfer OffscreenCanvas to preview worker for WebGPU direct display
+  const webgpuInitRef = useRef(false);
+  useEffect(() => {
+    if (webgpuInitRef.current || !isWebGpuAvailable()) return;
+    const canvas = worker.previewCanvasRef.current;
+    if (!canvas) return;
+    try {
+      const offscreen = canvas.transferControlToOffscreen();
+      preview.setDisplayCanvas(offscreen, isHdrDisplay());
+      webgpuInitRef.current = true;
+    } catch {
+      // transferControlToOffscreen failed — stay in 2D mode
+    }
+  }, [preview, worker.previewCanvasRef]);
 
   // After proxy render completes — background warm disabled for now (perf)
   useEffect(() => {
@@ -224,6 +240,14 @@ export default function App() {
           imageWidth={worker.imageInfo?.width ?? 0}
           imageHeight={worker.imageInfo?.height ?? 0}
           onAddLayer={handleAddLayer}
+          displayMode={preview.displayMode}
+          onViewportChange={useCallback((panX: number, panY: number, zoom: number, cw: number, ch: number) => {
+            preview.sendViewport(
+              panX, panY, zoom, cw, ch,
+              worker.imageInfo?.width ?? 0, worker.imageInfo?.height ?? 0,
+              isHdrDisplay() ? 1 : 0,
+            );
+          }, [preview, worker.imageInfo?.width, worker.imageInfo?.height])}
         />
         <RightPanel>
           <LayerPanel

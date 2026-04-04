@@ -5,6 +5,8 @@ export interface PreviewState {
   processing: boolean;
   /** Last proxy render time in ms */
   proxyMs: number | null;
+  /** Whether display mode is active (WebGPU direct rendering) */
+  displayMode: boolean;
 }
 
 export function usePreviewWorker() {
@@ -15,6 +17,7 @@ export function usePreviewWorker() {
     ready: false,
     processing: false,
     proxyMs: null,
+    displayMode: false,
   });
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   /** External viewport canvas — proxy results draw here for main display */
@@ -24,6 +27,8 @@ export function usePreviewWorker() {
   const queuedChainRef = useRef<any[] | null>(null); // single-slot queue
   /** Called after each proxy render completes (for background warm trigger) */
   const onProxyCompleteRef = useRef<(() => void) | null>(null);
+  /** OffscreenCanvas to transfer to worker for WebGPU display */
+  const pendingDisplayCanvasRef = useRef<{ canvas: OffscreenCanvas; hdr: boolean } | null>(null);
 
   useEffect(() => {
     const w = new Worker(new URL('../v2-preview-worker.ts', import.meta.url), { type: 'module' });
@@ -36,6 +41,16 @@ export function usePreviewWorker() {
       if (type === 'ready') {
         readyRef.current = true;
         setState((s) => ({ ...s, ready: true }));
+        // Send OffscreenCanvas for WebGPU display if queued
+        if (pendingDisplayCanvasRef.current && workerRef.current) {
+          const { canvas, hdr } = pendingDisplayCanvasRef.current;
+          workerRef.current.postMessage(
+            { type: 'init-display', canvas, hdr },
+            [canvas],
+          );
+          setState((s) => ({ ...s, displayMode: true }));
+          pendingDisplayCanvasRef.current = null;
+        }
         // Drain pending load if image was queued before SDK was ready
         if (pendingLoadRef.current && workerRef.current) {
           workerRef.current.postMessage({ type: 'load', imageBytes: pendingLoadRef.current }, [
@@ -49,6 +64,22 @@ export function usePreviewWorker() {
       if (type === 'loaded') {
         processingRef.current = false;
         setState((s) => ({ ...s, processing: false }));
+        return;
+      }
+
+      // WebGPU display mode — worker rendered directly to canvas, no PNG
+      if (type === 'displayed') {
+        processingRef.current = false;
+        setState((s) => ({ ...s, processing: false, proxyMs: e.data.totalMs }));
+        if (onProxyCompleteRef.current) onProxyCompleteRef.current();
+        // Drain single-slot queue
+        if (queuedChainRef.current && workerRef.current) {
+          const next = queuedChainRef.current;
+          queuedChainRef.current = null;
+          processingRef.current = true;
+          setState((s) => ({ ...s, processing: true }));
+          workerRef.current.postMessage({ type: 'process', chain: next });
+        }
         return;
       }
 
@@ -142,6 +173,35 @@ export function usePreviewWorker() {
     [],
   );
 
+  /** Queue an OffscreenCanvas to be sent to the worker for WebGPU display. */
+  const setDisplayCanvas = useCallback((canvas: OffscreenCanvas, hdr: boolean) => {
+    if (readyRef.current && workerRef.current) {
+      workerRef.current.postMessage(
+        { type: 'init-display', canvas, hdr },
+        [canvas],
+      );
+      setState((s) => ({ ...s, displayMode: true }));
+    } else {
+      pendingDisplayCanvasRef.current = { canvas, hdr };
+    }
+  }, []);
+
+  /** Forward viewport state to worker for shader-based pan/zoom. */
+  const sendViewport = useCallback((
+    panX: number, panY: number, zoom: number,
+    canvasWidth: number, canvasHeight: number,
+    imageWidth: number, imageHeight: number,
+    toneMode?: number,
+  ) => {
+    workerRef.current?.postMessage({
+      type: 'viewport',
+      panX, panY, zoom,
+      canvasWidth, canvasHeight,
+      imageWidth, imageHeight,
+      toneMode: toneMode ?? 0,
+    });
+  }, []);
+
   return {
     ...state,
     previewCanvasRef,
@@ -149,5 +209,7 @@ export function usePreviewWorker() {
     onProxyCompleteRef,
     loadImage,
     processChain,
+    setDisplayCanvas,
+    sendViewport,
   };
 }
