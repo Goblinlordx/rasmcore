@@ -86,10 +86,11 @@ async function processChain(chain) {
       }
     }
 
-    // Attempt GPU dispatch
-    if (gpuHandler) {
+    // Attempt GPU dispatch — guarded until fluent SDK exposes WIT GPU methods
+    if (gpuHandler && typeof pipe.renderGpuPlan === 'function') {
       try {
-        const gpuPlan = pipe.renderGpuPlan(pipe.sinkNode);
+        const sinkNode = pipe.sinkNode;
+        const gpuPlan = pipe.renderGpuPlan(sinkNode);
         if (gpuPlan) {
           const ops: GpuShader[] = gpuPlan.shaders.map(s => ({
             source: s.source,
@@ -107,7 +108,7 @@ async function processChain(chain) {
             gpuPlan.height,
           );
           if ('ok' in result) {
-            pipe.injectGpuResult(pipe.sinkNode, Array.from(result.ok));
+            pipe.injectGpuResult(sinkNode, Array.from(result.ok));
           }
         }
       } catch (_) {

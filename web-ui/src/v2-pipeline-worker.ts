@@ -93,8 +93,10 @@ async function processChain(chain, mode) {
   try {
     let pipe = Pipeline.fromRaw(PipelineClass, imageBytes, undefined, layerCache);
 
-    // Enable tracing for diagnostics
-    pipe.setTracing(true);
+    // Enable tracing if the fluent SDK exposes it
+    if (typeof pipe.setTracing === 'function') {
+      pipe.setTracing(true);
+    }
 
     for (const step of chain) {
       const t = performance.now();
@@ -108,14 +110,13 @@ async function processChain(chain, mode) {
       timings.push({ name: step.name, ms: Math.round(performance.now() - t) });
     }
 
-    // Attempt GPU dispatch if WebGPU is available
+    // Attempt GPU dispatch if WebGPU is available and fluent SDK exposes GPU plan
     let gpuUsed = false;
-    if (gpuHandler) {
+    if (gpuHandler && typeof pipe.renderGpuPlan === 'function') {
       try {
         const gpuPlan = pipe.renderGpuPlan(pipe.sinkNode);
         if (gpuPlan) {
           const tGpu = performance.now();
-          // Convert WASM gpu-shader records to GpuHandlerV2 format
           const ops: GpuShader[] = gpuPlan.shaders.map(s => ({
             source: s.source,
             entryPoint: s.entryPoint,
@@ -148,7 +149,7 @@ async function processChain(chain, mode) {
     const totalMs = Math.round(performance.now() - t0);
 
     // Collect trace events
-    const traceEvents = pipe.takeTrace();
+    const traceEvents = (typeof pipe.takeTrace === 'function') ? pipe.takeTrace() : [];
 
     // Log cache stats
     if (layerCache) {
