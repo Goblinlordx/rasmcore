@@ -56,3 +56,14 @@ filter-migrate-remaining_20260402050834Z/fix-filter-params-webui_20260402144500Z
   risk: medium
   note: "Both regenerate pipeline.wit filter signatures — bug fix should merge first"
   added: "2026-04-02"
+
+# WebGPU display research conflicts with GPU infrastructure tracks
+gpu-shader-cache_20260404053001Z/research-webgpu-display_20260404154202Z:
+  risk: high
+  note: "Both modify gpu-handler-v2.ts GPU execution path"
+  added: "2026-04-04"
+
+pipeline-perf-tracing_20260404050900Z/research-webgpu-display_20260404154202Z:
+  risk: high
+  note: "Both modify v2-preview-worker.ts and GPU dispatch"
+  added: "2026-04-04"
