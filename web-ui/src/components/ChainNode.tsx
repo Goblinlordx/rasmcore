@@ -5,37 +5,31 @@ import ParamControl from './ParamControl';
 interface Props {
   node: ChainNodeType;
   index: number;
-  isEditing: boolean;
-  onEdit: () => void;
+  isSelected: boolean;
+  onToggleSelect: () => void;
   onRemove: () => void;
-  onApply: () => void;
-  onCancelEdit: () => void;
   onParamChange: (paramName: string, value: number | string | boolean) => void;
   onDragStart: (idx: number, el: HTMLElement) => void;
   onDragEnd: () => void;
   onDragOver: (e: React.DragEvent) => void;
   onDrop: (targetIdx: number) => void;
-  previewCanvasRef?: React.RefObject<HTMLCanvasElement | null>;
 }
 
 export default function ChainNode({
   node,
   index,
-  isEditing,
-  onEdit,
+  isSelected,
+  onToggleSelect,
   onRemove,
-  onApply,
-  onCancelEdit,
   onParamChange,
   onDragStart,
   onDragEnd,
   onDragOver,
   onDrop,
-  previewCanvasRef,
 }: Props) {
   const cardRef = useRef<HTMLDivElement>(null);
 
-  const className = 'node-card' + (isEditing ? ' editing' : '') + (!node.applied ? ' pending' : '');
+  const className = 'node-card' + (isSelected ? ' editing' : '');
 
   return (
     <div
@@ -58,11 +52,12 @@ export default function ChainNode({
         onDrop(index);
       }}
     >
-      <div className="node-header">
+      <div className="node-header" onClick={onToggleSelect} style={{ cursor: 'pointer' }}>
         <span
           className="drag-handle"
           draggable
           onDragStart={(e) => {
+            e.stopPropagation();
             onDragStart(index, cardRef.current!);
             e.dataTransfer.effectAllowed = 'move';
             if (cardRef.current) {
@@ -74,37 +69,33 @@ export default function ChainNode({
             if (cardRef.current) cardRef.current.style.opacity = '1';
             onDragEnd();
           }}
+          onClick={(e) => e.stopPropagation()}
         >
           {'\u2807'}
         </span>
         <span className="node-name">
           {index + 1}. {node.op.name}
-          {!node.applied ? ' *' : ''}
         </span>
         <span className="node-actions">
           <span className="node-timing">{node.timingMs > 0 ? `${node.timingMs}ms` : ''}</span>
-          {!isEditing && node.op.params.length > 0 && (
-            <span
-              style={{ cursor: 'pointer', color: '#60a5fa', fontSize: '0.85rem' }}
-              title="Edit parameters"
-              onClick={onEdit}
-            >
-              {'\u270E'}
-            </span>
-          )}
-          <span className="node-remove" onClick={onRemove}>
+          <span className="node-remove" onClick={(e) => { e.stopPropagation(); onRemove(); }}>
             {'\u2715'}
           </span>
         </span>
       </div>
 
-      {!isEditing && node.op.params.length > 0 && (
-        <div style={{ fontSize: '0.65rem', color: '#666', padding: '0 8px 4px' }}>
+      {/* Collapsed: show param summary */}
+      {!isSelected && node.op.params.length > 0 && (
+        <div
+          style={{ fontSize: '0.65rem', color: '#666', padding: '0 8px 4px', cursor: 'pointer' }}
+          onClick={onToggleSelect}
+        >
           {node.op.params.map((p) => `${p.name}=${node.paramValues[p.name]}`).join(', ')}
         </div>
       )}
 
-      {isEditing && (
+      {/* Expanded: show param controls */}
+      {isSelected && node.op.params.length > 0 && (
         <div className="node-body">
           {node.op.params.map((p) => (
             <ParamControl
@@ -114,13 +105,6 @@ export default function ChainNode({
               onChange={(v) => onParamChange(p.name, v)}
             />
           ))}
-          {/* Preview renders directly on the main viewport canvas */}
-          <div style={{ marginTop: 6, display: 'flex', gap: 6 }}>
-            <button onClick={onApply}>Apply</button>
-            <button className="secondary" style={{ background: '#333' }} onClick={onCancelEdit}>
-              Cancel
-            </button>
-          </div>
         </div>
       )}
     </div>

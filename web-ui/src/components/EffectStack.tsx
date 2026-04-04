@@ -4,30 +4,24 @@ import ChainNodeComponent from './ChainNode';
 
 interface Props {
   chain: ChainNodeType[];
-  editingNodeId: number | null;
+  selectedNodeId: number | null;
   activeLayerName: string;
-  onSetEditing: (id: number | null) => void;
+  onSetSelected: (id: number | null) => void;
   onRemoveNode: (id: number) => void;
   onMoveNode: (from: number, to: number) => void;
-  onApplyNode: (id: number) => void;
   onParamChange: (nodeId: number, paramName: string, value: number | string | boolean) => void;
-  onApplyFullChain: () => void;
   onSchedulePreview: () => void;
-  previewCanvasRef: React.RefObject<HTMLCanvasElement | null>;
 }
 
 export default function EffectStack({
   chain,
-  editingNodeId,
+  selectedNodeId,
   activeLayerName,
-  onSetEditing,
+  onSetSelected,
   onRemoveNode,
   onMoveNode,
-  onApplyNode,
   onParamChange,
-  onApplyFullChain,
   onSchedulePreview,
-  previewCanvasRef,
 }: Props) {
   const dragSrcIdx = useRef<number | null>(null);
 
@@ -66,14 +60,11 @@ export default function EffectStack({
               key={node.id}
               node={node}
               index={idx}
-              isEditing={editingNodeId === node.id}
-              onEdit={() => onSetEditing(node.id)}
+              isSelected={selectedNodeId === node.id}
+              onToggleSelect={() =>
+                onSetSelected(selectedNodeId === node.id ? null : node.id)
+              }
               onRemove={() => onRemoveNode(node.id)}
-              onApply={() => {
-                onApplyNode(node.id);
-                onApplyFullChain();
-              }}
-              onCancelEdit={() => onSetEditing(null)}
               onParamChange={(name, val) => {
                 onParamChange(node.id, name, val);
                 onSchedulePreview();
@@ -82,7 +73,6 @@ export default function EffectStack({
               onDragEnd={handleDragEnd}
               onDragOver={() => {}}
               onDrop={handleDrop}
-              previewCanvasRef={editingNodeId === node.id ? previewCanvasRef : undefined}
             />
           ))}
         </div>

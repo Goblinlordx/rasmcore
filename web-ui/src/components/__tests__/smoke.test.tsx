@@ -174,16 +174,13 @@ describe('Component smoke tests', () => {
     render(
       <EffectStack
         chain={[]}
-        editingNodeId={null}
+        selectedNodeId={null}
         activeLayerName=""
-        onSetEditing={() => {}}
+        onSetSelected={() => {}}
         onRemoveNode={() => {}}
         onMoveNode={() => {}}
-        onApplyNode={() => {}}
         onParamChange={() => {}}
-        onApplyFullChain={() => {}}
         onSchedulePreview={() => {}}
-        previewCanvasRef={{ current: null }}
       />,
     );
     expect(screen.getByText('Select an operation from the toolbar')).toBeInTheDocument();
@@ -201,11 +198,9 @@ describe('Component smoke tests', () => {
       <ChainNode
         node={node}
         index={0}
-        isEditing={false}
-        onEdit={() => {}}
+        isSelected={false}
+        onToggleSelect={() => {}}
         onRemove={() => {}}
-        onApply={() => {}}
-        onCancelEdit={() => {}}
         onParamChange={() => {}}
         onDragStart={() => {}}
         onDragEnd={() => {}}

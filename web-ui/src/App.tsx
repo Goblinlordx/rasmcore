@@ -240,16 +240,13 @@ export default function App() {
           />
           <EffectStack
             chain={chain}
-            editingNodeId={editingNodeId}
+            selectedNodeId={editingNodeId}
             activeLayerName={activeLayer?.name || ''}
-            onSetEditing={setEditingNodeId}
+            onSetSelected={setEditingNodeId}
             onRemoveNode={handleRemoveNode}
             onMoveNode={handleMoveNode}
-            onApplyNode={applyNode}
             onParamChange={updateParam}
-            onApplyFullChain={applyFullChain}
             onSchedulePreview={schedulePreview}
-            previewCanvasRef={preview.previewCanvasRef}
           />
         </RightPanel>
       </div>
