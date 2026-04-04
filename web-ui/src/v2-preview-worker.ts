@@ -1,57 +1,42 @@
 // @ts-nocheck
 /**
- * V2 preview worker — processes chains using the V2 pipeline (f32-native, fusion).
+ * V2 preview worker — processes chains using the V2 fluent SDK (f32-native, fusion).
  *
- * Uses the V2 WASM component exclusively. No V1 code in the execution path.
- * Analytic operations (brightness, contrast, etc.) are fused at graph setup.
+ * Uses the V2 fluent Pipeline class for named method dispatch:
+ *   pipe.brightness({amount: 0.5}) instead of pipe.applyFilter(node, 'brightness', bytes)
  */
+
+import { Pipeline } from '../sdk/v2/fluent/index';
 
 const PREVIEW_MAX = 400;
 
-let Pipeline = null;
+let PipelineClass = null;
 let previewBytes = null;
+
+function snakeToCamel(s) {
+  return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+}
 
 async function initSDK() {
   try {
     const sdk = await import('../sdk/v2/rasmcore-v2-image.js');
-    Pipeline = sdk.pipelineV2.ImagePipelineV2;
+    PipelineClass = sdk.pipelineV2.ImagePipelineV2;
     self.postMessage({ type: 'ready' });
   } catch (e) {
     self.postMessage({ type: 'error', message: `V2 Preview SDK init failed: ${e.message}` });
   }
 }
 
-// ─── Param serialization (V2 binary format) ─────────────────────────────────
+// ─── Config building ────────────────────────────────────────────────────────
 
-function serializeParams(params, paramValues) {
-  if (!params || params.length === 0) return new Uint8Array(0);
-  const buf = [];
+function buildConfig(params, paramValues) {
+  const config = {};
   for (const p of params) {
-    const name = p.name;
     const value = paramValues[p.name];
     if (value === undefined || value === null) continue;
-
-    // Push name
-    buf.push(name.length);
-    for (let i = 0; i < name.length; i++) buf.push(name.charCodeAt(i));
-
-    // Push typed value
-    if (p.type === 'bool' || typeof value === 'boolean') {
-      buf.push(2); // bool
-      buf.push(value ? 1 : 0);
-    } else if (Number.isInteger(value) && (p.witType === 'u32' || p.witType === 'i32' || p.type === 'u32')) {
-      buf.push(1); // u32
-      const ab = new ArrayBuffer(4);
-      new DataView(ab).setUint32(0, value, true);
-      buf.push(...new Uint8Array(ab));
-    } else {
-      buf.push(0); // f32
-      const ab = new ArrayBuffer(4);
-      new DataView(ab).setFloat32(0, Number(value), true);
-      buf.push(...new Uint8Array(ab));
-    }
+    config[snakeToCamel(p.name)] = value;
   }
-  return new Uint8Array(buf);
+  return config;
 }
 
 // ─── Load ───────────────────────────────────────────────────────────────────
@@ -61,10 +46,8 @@ function loadImage(bytes) {
   let info = { width: 0, height: 0 };
 
   try {
-    const pipe = new Pipeline();
-    const src = pipe.read(previewBytes, undefined);
-    const nodeInfo = pipe.nodeInfo(src);
-    info = { width: nodeInfo.width, height: nodeInfo.height };
+    const pipe = Pipeline.fromRaw(PipelineClass, previewBytes);
+    info = { width: pipe.info.width, height: pipe.info.height };
     console.log(`[v2-preview] Loaded: ${info.width}x${info.height}`);
   } catch (e: any) {
     const detail = e?.payload ? JSON.stringify(e.payload, null, 2) : e?.message || String(e);
@@ -84,15 +67,19 @@ function processChain(chain) {
 
   const t0 = performance.now();
   try {
-    const pipe = new Pipeline();
-    let current = pipe.read(previewBytes, undefined);
+    let pipe = Pipeline.fromRaw(PipelineClass, previewBytes);
 
     for (const step of chain) {
-      const params = serializeParams(step.params, step.paramValues);
-      current = pipe.applyFilter(current, step.name, params);
+      const method = snakeToCamel(step.name);
+      if (!step.params || step.params.length === 0) {
+        pipe = pipe[method]();
+      } else {
+        const config = buildConfig(step.params, step.paramValues);
+        pipe = pipe[method](config);
+      }
     }
 
-    const output = pipe.write(current, 'png', undefined);
+    const output = pipe.write('png');
     const totalMs = Math.round(performance.now() - t0);
     console.log(`[v2-preview] ${totalMs}ms`);
 

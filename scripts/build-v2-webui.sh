@@ -22,7 +22,10 @@ echo "=== Syncing into web-ui/sdk/v2/ ==="
 mkdir -p "$WEBUI_SDK_DIR"
 cp -r "$PROJECT_ROOT/sdk/typescript/v2-generated/"* "$WEBUI_SDK_DIR/"
 mkdir -p "$WEBUI_SDK_DIR/fluent"
-cp "$PROJECT_ROOT/sdk/typescript/v2-fluent/index.ts" "$WEBUI_SDK_DIR/fluent/"
+# Fix import path: in the source tree it's ../v2-generated/interfaces/
+# but in web-ui/sdk/v2/fluent/ the interfaces dir is at ../interfaces/
+sed 's|../v2-generated/interfaces/|../interfaces/|g' \
+  "$PROJECT_ROOT/sdk/typescript/v2-fluent/index.ts" > "$WEBUI_SDK_DIR/fluent/index.ts"
 
 echo "=== Done ==="
 echo "Web UI SDK at: $WEBUI_SDK_DIR"
