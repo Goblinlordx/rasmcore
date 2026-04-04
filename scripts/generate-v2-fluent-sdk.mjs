@@ -159,10 +159,19 @@ export class Pipeline {
     this._node = node;
   }
 
-  /** Create a pipeline from raw image bytes. */
+  /** Create a pipeline from raw image bytes (auto-loads WASM module). */
   static open(data: Uint8Array, config?: ReadConfig): Pipeline {
     const { pipelineV2 } = require('../v2-generated/rasmcore-v2-image.js');
     const pipe = new pipelineV2.ImagePipelineV2();
+    const readConfig = config ? { formatHint: config.hint } : undefined;
+    const node = pipe.read(data, readConfig);
+    return new Pipeline(pipe, node);
+  }
+
+  /** Create a pipeline from a pre-loaded pipeline class (for web workers). */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  static fromRaw(PipelineClass: any, data: Uint8Array, config?: ReadConfig): Pipeline {
+    const pipe = new PipelineClass();
     const readConfig = config ? { formatHint: config.hint } : undefined;
     const node = pipe.read(data, readConfig);
     return new Pipeline(pipe, node);
@@ -238,10 +247,18 @@ for (const enc of encoderFormats) {
 
 ts += `  // ─── Discovery ──────────────────────────────────────────────────────────
 
-  /** List all available operations. */
+  /** List all available operations (auto-loads WASM module). */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   static listOperations(): any[] {
     const { pipelineV2 } = require('../v2-generated/rasmcore-v2-image.js');
     const pipe = new pipelineV2.ImagePipelineV2();
+    return pipe.listOperations();
+  }
+
+  /** List all available operations from a pre-loaded pipeline class. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  static listOperationsFromRaw(PipelineClass: any): any[] {
+    const pipe = new PipelineClass();
     return pipe.listOperations();
   }
 }
