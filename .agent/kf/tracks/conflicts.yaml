@@ -67,3 +67,19 @@ pipeline-perf-tracing_20260404050900Z/research-webgpu-display_20260404154202Z:
   risk: high
   note: "Both modify v2-preview-worker.ts and GPU dispatch"
   added: "2026-04-04"
+
+# WebGPU display surface implementation conflicts
+canvas-display-p3_20260404154201Z/webgpu-display-surface_20260404160855Z:
+  risk: high
+  note: "Both modify Canvas.tsx and usePreviewWorker — P3 sets 2D canvas colorSpace, display replaces with WebGPU canvas"
+  added: "2026-04-04"
+
+gpu-shader-cache_20260404053001Z/webgpu-display-surface_20260404160855Z:
+  risk: high
+  note: "Both modify gpu-handler-v2.ts — shader cache adds compute pipeline cache, display adds render pipeline and canvas context"
+  added: "2026-04-04"
+
+pipeline-perf-tracing_20260404050900Z/webgpu-display-surface_20260404160855Z:
+  risk: high
+  note: "Both modify v2-preview-worker.ts processChain() — tracing adds instrumentation, display adds executeAndDisplay path"
+  added: "2026-04-04"

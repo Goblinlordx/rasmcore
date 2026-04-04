@@ -348,3 +348,6 @@ v2-staged-execution_20260403063500Z:
 
 # Zero-warning enforcement — no deps (standalone cleanup + policy)
 zero-warnings-enforce_20260404095800Z: []
+
+# WebGPU direct display surface — no deps (high conflict with gpu-shader-cache, pipeline-perf-tracing, canvas-display-p3)
+webgpu-display-surface_20260404160855Z: []

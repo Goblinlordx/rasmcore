@@ -1,0 +1,148 @@
+id: webgpu-display-surface_20260404160855Z
+title: "WebGPU direct display surface with HDR preview"
+type: feature
+status: pending
+created: 2026-04-04
+updated: 2026-04-04
+spec:
+  summary: |
+    Render GPU compute output directly to a WebGPU canvas surface
+    (rgba16float + extended tone mapping), eliminating the current
+    f32 -> PNG encode -> 2D canvas round-trip. Estimated ~5.7x display
+    latency improvement for GPU-accelerated filter chains.
+  context: |
+    The current display pipeline is wasteful for GPU-accelerated previews:
+      GPU f32 compute -> mapAsync(READ) -> CPU copy -> PNG encode (WASM)
+      -> postMessage -> Blob -> Image -> 2D canvas
+
+    The f32 pixel data already exists in a GPU storage buffer after compute
+    shaders finish. A render pass can blit the compute output buffer
+    directly to the canvas texture — zero CPU round-trip.
+
+    WebGPU canvas with rgba16float format and GPUCanvasToneMapping mode
+    'extended' enables true HDR display (luminance values > 1.0) on
+    HDR-capable monitors. Combined with shader-based pan/zoom, this
+    provides sub-pixel precision and nearest-neighbor sampling at all
+    zoom levels.
+
+    Design doc: .agent/kf/tracks/research-webgpu-display_20260404154202Z/design.md
+  codebase_analysis: |
+    GpuHandlerV2 (web-ui/src/gpu-handler-v2.ts):
+    - Pure compute pipeline: storage buffers only, no render passes
+    - Ping-pong pattern: bufferA <-> bufferB for chained shaders
+    - Output: mapAsync(READ) -> Float32Array -> returned to caller
+    - Per-instance shader cache: Map<string, GPUComputePipeline>
+    - No canvas reference or texture context
+
+    Preview worker (web-ui/src/v2-preview-worker.ts):
+    - Receives Float32Array from GpuHandlerV2.execute()
+    - Injects back into WASM pipeline via injectGpuResult()
+    - Calls pipe.write('png') to get displayable bytes
+    - Posts PNG bytes to main thread
+
+    Canvas (web-ui/src/components/Canvas.tsx):
+    - Standard 2D canvas via React refs (previewCanvasRef, originalCanvasRef)
+    - Pan/zoom via CSS transforms in useCanvasTransform
+    - Split-view via CSS clipPath on canvas elements
+
+    usePreviewWorker (web-ui/src/hooks/usePreviewWorker.ts):
+    - Creates Web Worker, handles init/load/process/result messages
+    - On result: Blob -> objectURL -> Image -> canvas.drawImage()
+    - Single-slot queue for coalescing rapid updates
+
+    useCanvasTransform (web-ui/src/hooks/useCanvasTransform.ts):
+    - Returns TransformState { zoom, panX, panY }
+    - Applies CSS transform: translate + scale on canvas element
+    - Wheel zoom, mouse/touch pan, pinch-to-zoom (Safari gesture)
+
+    Existing shader directory: web-ui/src/shaders/ (contains lut3d.wgsl)
+  acceptance_criteria:
+    - GPU compute output renders directly to WebGPU canvas without CPU readback
+    - Canvas configured with rgba16float format and toneMapping extended on HDR displays
+    - Fullscreen-triangle WGSL blit shader with viewport uniform for pan/zoom
+    - Pan/zoom operates via shader viewport uniform (sub-pixel precision, nearest-neighbor)
+    - Viewport-only updates (pan/zoom) re-blit without recomputing filters (<1ms)
+    - CPU-only filter results upload to GPU and display via same blit path
+    - OffscreenCanvas transferred to worker — worker owns both compute and display
+    - 2D canvas fallback path preserved for non-WebGPU browsers (current behavior unchanged)
+    - Split-view (before/after) works correctly with WebGPU canvas
+    - HDR detection via matchMedia('(dynamic-range: high)')
+  out_of_scope: |
+    - Changes to WASM pipeline or WIT interfaces
+    - AVIF/JXL encoding for HDR output files
+    - Bilinear sampling mode (future enhancement via viewport uniform flag)
+    - Color management / Display-P3 (separate track: canvas-display-p3)
+    - Shader pre-compilation cache (separate track: gpu-shader-cache)
+    - Performance tracing instrumentation (separate track: pipeline-perf-tracing)
+    - Export path changes — file output continues to use mapAsync -> WASM encoder
+  technical_notes: |
+    Architecture decisions (from design doc):
+
+    1. Extend GpuHandlerV2 (not separate DisplayRenderer) — compute + render
+       must share the same command encoder for correct GPU ordering. The class
+       grows by ~60 lines.
+
+    2. OffscreenCanvas in worker — GPUDevice lives in the worker, so the render
+       pass must also live there. Main thread transfers OffscreenCanvas at init.
+
+    3. Single canvas element, context chosen at startup — WebGPU support is
+       static per session. No dual-canvas DOM complexity.
+
+    4. Shader-based pan/zoom — viewport uniform in blit shader provides sub-pixel
+       precision and nearest-neighbor sampling. Canvas element stays at full
+       viewport size with no CSS transforms when in WebGPU mode.
+
+    5. Buffer lifetime: create/destroy per executeAndDisplay() call. Compute
+       buffers used by both compute and render passes in same command buffer,
+       destroyed after queue.submit().
+
+    6. CPU-only results: upload via device.queue.writeBuffer(), blit via same
+       render pass. Unified display path, negligible overhead (~1ms).
+
+    Browser support: Chrome 131+, Edge 131+ (rgba16float + toneMapping).
+    Firefox/Safari do not yet support all required features — they use the
+    2D canvas fallback path.
+plan:
+  - phase: GPU Handler Display Extension
+    tasks:
+      - text: Create web-ui/src/shaders/display-blit.wgsl with fullscreen-triangle vertex shader and storage-buffer-to-canvas fragment shader including Viewport uniform struct
+        done: false
+      - text: Add setDisplayCanvas(canvas OffscreenCanvas) to GpuHandlerV2 — configure WebGPU context (rgba16float, toneMapping, alphaMode), create blit render pipeline, create persistent viewport uniform buffer
+        done: false
+      - text: Add updateViewport(panX, panY, zoom, canvasWidth, canvasHeight, imageWidth, imageHeight, toneMode) method — writes Viewport struct to uniform buffer via device.queue.writeBuffer()
+        done: false
+      - text: Add executeAndDisplay(ops, input, width, height) method — same compute dispatch as execute() but appends render pass that blits final storage buffer to canvas texture in same command encoder, no mapAsync readback
+        done: false
+      - text: Add displayOnly() method — re-runs just the blit render pass using last compute output buffer (for viewport-only updates without recompute), returns immediately if no previous output
+        done: false
+      - text: Add displayFromCpu(pixels Float32Array, width, height) method — uploads f32 data to GPU storage buffer via writeBuffer then runs blit render pass (for CPU-only filter chain results)
+        done: false
+      - text: Verify blit shader compiles and renders correctly with a test harness — create a manual test page that initializes GpuHandlerV2 with a canvas, uploads a solid-color f32 buffer, and confirms pixel output
+        done: false
+  - phase: Worker Integration
+    tasks:
+      - text: Handle init-display message in v2-preview-worker.ts — receive OffscreenCanvas, call gpuHandler.setDisplayCanvas(), store displayMode flag
+        done: false
+      - text: Handle viewport message in v2-preview-worker.ts — call gpuHandler.updateViewport() with received params, then gpuHandler.displayOnly() to re-blit
+        done: false
+      - text: Modify processChain in v2-preview-worker.ts — when displayMode is true and GPU path succeeds, call executeAndDisplay() instead of execute(), skip PNG encode and postMessage for display, still postMessage timing metadata
+        done: false
+      - text: Handle CPU-only chains in display mode — when no GPU plan exists, get f32 pixels from WASM pipeline render(), call gpuHandler.displayFromCpu(), skip PNG encode path
+        done: false
+      - text: Preserve PNG fallback — when displayMode is false (no OffscreenCanvas received), keep entire current execute() + PNG encode + postMessage path unchanged
+        done: false
+  - phase: Canvas and React Integration
+    tasks:
+      - text: Add WebGPU detection utility — check navigator.gpu exists, detect HDR via matchMedia('(dynamic-range: high)'), export as isWebGpuAvailable() and isHdrDisplay()
+        done: false
+      - text: Update Canvas.tsx — when WebGPU available, call transferControlToOffscreen() on preview canvas at mount and pass OffscreenCanvas to worker via init-display message; skip CSS transform on WebGPU canvas (shader handles pan/zoom)
+        done: false
+      - text: Update usePreviewWorker.ts — accept optional OffscreenCanvas, send init-display message after worker ready, forward viewport updates to worker, skip Blob/Image/drawImage path when in display mode (worker renders directly)
+        done: false
+      - text: Update useCanvasTransform.ts — add onViewportChange callback that fires on every pan/zoom state change, used by usePreviewWorker to forward viewport updates to worker
+        done: false
+      - text: Verify split-view works with WebGPU canvas — CSS clipPath on canvas element should still work since the canvas is a normal DOM element; test before/after comparison in all three view modes
+        done: false
+      - text: End-to-end verification — load an image, apply filters, verify WebGPU display path renders correctly, verify pan/zoom is smooth, verify fallback to 2D canvas works when WebGPU is unavailable (test in Firefox)
+        done: false
+extra: {}
