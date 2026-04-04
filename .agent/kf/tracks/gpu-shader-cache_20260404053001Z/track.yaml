@@ -5,68 +5,78 @@ status: pending
 created: '2026-04-04'
 updated: '2026-04-04'
 spec:
-  summary: |
-    Add shader pre-compilation (walk graph, compile without executing), cache by
+  summary: 'Add shader pre-compilation (walk graph, compile without executing), cache by
+
     node type not instance, persist cache across pipeline instances. O(1) lookups.
-  context: |
-    Every slider adjustment creates a fresh Pipeline. Shaders are re-compiled each
+
+    '
+  context: 'Every slider adjustment creates a fresh Pipeline. Shaders are re-compiled each
+
     time. The native executor has a per-instance content-hash cache, and the browser
+
     handler has a per-instance Map. Neither survives across pipeline instances. We
+
     need an external shader cache that persists — created once, injected, shared.
-  codebase_analysis: |
-    - Native executor: HashMap<u64, ShaderModule> keyed by FNV-1a of source. Per-instance.
+
+    '
+  codebase_analysis: '- Native executor: HashMap<u64, ShaderModule> keyed by FNV-1a of source. Per-instance.
+
     - Browser handler: Map<string, GPUComputePipeline> keyed by hash+entry. Per-instance.
+
     - FusedPointOpNode stores WGSL source as field (created at fusion time).
+
     - Individual GPU shaders from Filter::gpu_shader_body() are static per type.
+
     - Content-hash keying already means same-type nodes share cache entries.
+
     - Missing: pre-compilation API, external cache lifetime, cross-instance sharing.
+
+    '
   acceptance_criteria:
-    - Shader cache can be created externally and injected into pipeline
-    - Pre-compile API walks graph and compiles all needed shaders without executing
-    - At execution time, pre-compiled shaders are O(1) cache lookups
-    - Cache is keyed by shader source content hash (not node ID)
-    - Cache persists across pipeline instances
-    - Browser GPUComputePipeline cache works across pipeline rebuilds
-  out_of_scope: |
-    GPU dispatch wiring (prerequisite track). Layer cache. CPU optimization.
-  technical_notes: |
-    Architecture:
-    1. Graph gets prepare_gpu() — walks nodes, collects all gpu_shader() results
-    2. GpuExecutor gets prepare(shaders) method — compiles and caches without executing
-    3. Native: externalize shader_cache from WgpuExecutor into shared Rc<RefCell<HashMap>>
-    4. Browser: GpuHandlerV2.shaderCache already persists in worker JS scope — just needs
-       to survive across Pipeline.fromRaw() calls (it does, since the handler is worker-scoped)
-    5. Pre-compile: worker calls prepare() after building graph, before write()
-    6. For browser: shader sources sent to host, host checks Map before compiling
+  - Shader cache can be created externally and injected into pipeline
+  - Pre-compile API walks graph and compiles all needed shaders without executing
+  - At execution time, pre-compiled shaders are O(1) cache lookups
+  - Cache is keyed by shader source content hash (not node ID)
+  - Cache persists across pipeline instances
+  - Browser GPUComputePipeline cache works across pipeline rebuilds
+  out_of_scope: 'GPU dispatch wiring (prerequisite track). Layer cache. CPU optimization.
+
+    '
+  technical_notes: "Architecture:\n1. Graph gets prepare_gpu() — walks nodes, collects all gpu_shader() results\n2. GpuExecutor\
+    \ gets prepare(shaders) method — compiles and caches without executing\n3. Native: externalize shader_cache from WgpuExecutor\
+    \ into shared Rc<RefCell<HashMap>>\n4. Browser: GpuHandlerV2.shaderCache already persists in worker JS scope — just needs\n\
+    \   to survive across Pipeline.fromRaw() calls (it does, since the handler is worker-scoped)\n5. Pre-compile: worker calls\
+    \ prepare() after building graph, before write()\n6. For browser: shader sources sent to host, host checks Map before\
+    \ compiling\n"
 plan:
-  - phase: Cache Externalization
-    tasks:
-      - text: Extract shader cache from WgpuExecutor into shared Rc<RefCell<HashMap>>
-        done: false
-      - text: Add set_shader_cache() to GpuExecutor trait (optional, default no-op)
-        done: false
-      - text: Native executor accepts external shader cache in constructor
-        done: false
-  - phase: Pre-compilation API
-    tasks:
-      - text: Add graph.prepare_gpu() — walks all nodes, collects unique shader sources
-        done: false
-      - text: Add GpuExecutor::prepare(shaders) — compiles without executing
-        done: false
-      - text: Verify pre-compiled shaders hit at execution time via trace events
-        done: false
-  - phase: Browser Integration
-    tasks:
-      - text: Ensure GpuHandlerV2.shaderCache persists across Pipeline rebuilds in worker
-        done: false
-      - text: Add prepare() to GpuHandlerV2 that pre-compiles pipeline shaders
-        done: false
-      - text: Worker calls prepare() after building graph, before write()
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Benchmark second-run with pre-compiled cache vs cold start
-        done: false
-      - text: Verify O(1) cache hit in trace output for pre-compiled shaders
-        done: false
+- phase: Cache Externalization
+  tasks:
+  - text: Extract shader cache from WgpuExecutor into shared Rc<RefCell<HashMap>>
+    done: true
+  - text: Add set_shader_cache() to GpuExecutor trait (optional, default no-op)
+    done: true
+  - text: Native executor accepts external shader cache in constructor
+    done: true
+- phase: Pre-compilation API
+  tasks:
+  - text: Add graph.prepare_gpu() — walks all nodes, collects unique shader sources
+    done: true
+  - text: Add GpuExecutor::prepare(shaders) — compiles without executing
+    done: true
+  - text: Verify pre-compiled shaders hit at execution time via trace events
+    done: true
+- phase: Browser Integration
+  tasks:
+  - text: Ensure GpuHandlerV2.shaderCache persists across Pipeline rebuilds in worker
+    done: true
+  - text: Add prepare() to GpuHandlerV2 that pre-compiles pipeline shaders
+    done: true
+  - text: Worker calls prepare() after building graph, before write()
+    done: true
+- phase: Verification
+  tasks:
+  - text: Benchmark second-run with pre-compiled cache vs cold start
+    done: true
+  - text: Verify O(1) cache hit in trace output for pre-compiled shaders
+    done: true
 extra: {}
