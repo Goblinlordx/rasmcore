@@ -840,4 +840,123 @@ mod tests {
         let result = g.request_full(src).unwrap();
         assert_eq!(result, injected, "inject_gpu_result should be cached");
     }
+
+    // ─── Layer Cache Tests ──────────────────────────────────────────────
+
+    /// Helper: build a 5-filter chain with content hashes.
+    /// Returns (graph, node_ids) where node_ids[0] = source, node_ids[1..5] = filters.
+    fn build_5_filter_chain(
+        lc: Rc<RefCell<crate::layer_cache::LayerCache>>,
+        factors: [f32; 5],
+    ) -> (Graph, Vec<u32>) {
+        use crate::hash::{content_hash, source_hash};
+
+        let mut g = Graph::new(0);
+        g.set_layer_cache(lc);
+
+        let src_hash = source_hash(b"test image");
+        let src = g.add_node_with_hash(
+            Box::new(SolidColorNode { width: 2, height: 2, color: [0.5, 0.3, 0.1, 1.0] }),
+            src_hash,
+        );
+
+        let mut ids = vec![src];
+        let mut prev_hash = src_hash;
+        let mut prev_id = src;
+
+        for (i, &factor) in factors.iter().enumerate() {
+            let info = g.node_info(prev_id).unwrap();
+            let h = content_hash(&prev_hash, &format!("scale_{i}"), &factor.to_le_bytes());
+            let id = g.add_node_with_hash(
+                Box::new(ScaleNode { upstream: prev_id, factor, info }),
+                h,
+            );
+            ids.push(id);
+            prev_hash = h;
+            prev_id = id;
+        }
+
+        (g, ids)
+    }
+
+    #[test]
+    fn layer_cache_identity_all_hits_on_second_run() {
+        let lc = Rc::new(RefCell::new(crate::layer_cache::LayerCache::new(64 * 1024 * 1024)));
+
+        // First run: all misses, all results stored
+        let (mut g1, ids1) = build_5_filter_chain(lc.clone(), [1.0, 2.0, 0.5, 1.5, 0.8]);
+        let last1 = *ids1.last().unwrap();
+        let out1 = g1.request_full(last1).unwrap();
+
+        let stats1 = lc.borrow().stats();
+        assert_eq!(stats1.entries, 6, "all 6 nodes (source + 5 filters) should be stored");
+        assert_eq!(stats1.hits, 0, "no hits on first run");
+        assert_eq!(stats1.misses, 6, "6 misses on first run (one per node)");
+
+        // Second run: same chain, same params
+        // Layer cache short-circuits at the last node (instant hit on the final result)
+        let (mut g2, ids2) = build_5_filter_chain(lc.clone(), [1.0, 2.0, 0.5, 1.5, 0.8]);
+        let last2 = *ids2.last().unwrap();
+        let out2 = g2.request_full(last2).unwrap();
+
+        assert_eq!(out1, out2, "cached result should match computed result");
+
+        let stats2 = lc.borrow().stats();
+        // The last node hits immediately — no intermediate nodes are checked
+        assert_eq!(stats2.hits, 1, "1 hit (last node short-circuits entire chain)");
+        assert_eq!(stats2.misses, 6, "no new misses on identical second run");
+    }
+
+    #[test]
+    fn layer_cache_5_filter_chain_last_param_changed() {
+        let lc = Rc::new(RefCell::new(crate::layer_cache::LayerCache::new(64 * 1024 * 1024)));
+
+        // First run: source → scale(1.0) → scale(2.0) → scale(0.5) → scale(1.5) → scale(0.8)
+        let (mut g1, ids1) = build_5_filter_chain(lc.clone(), [1.0, 2.0, 0.5, 1.5, 0.8]);
+        let last1 = *ids1.last().unwrap();
+        let _out1 = g1.request_full(last1).unwrap();
+
+        let stats_after_first = lc.borrow().stats();
+
+        // Second run: change only last param (0.8 → 0.9)
+        // Execution trace:
+        //   request_region(5) → LC miss (different hash)
+        //   node5.compute → request(4) → LC hit! (node4 hash unchanged)
+        //   Only node5 recomputes from cached node4.
+        let (mut g2, ids2) = build_5_filter_chain(lc.clone(), [1.0, 2.0, 0.5, 1.5, 0.9]);
+        let last2 = *ids2.last().unwrap();
+        let _out2 = g2.request_full(last2).unwrap();
+
+        let stats_after_second = lc.borrow().stats();
+        let new_hits = stats_after_second.hits - stats_after_first.hits;
+        let new_misses = stats_after_second.misses - stats_after_first.misses;
+
+        assert_eq!(new_hits, 1, "1 hit (node4 — closest unchanged ancestor)");
+        assert_eq!(new_misses, 1, "1 miss (node5 — changed param)");
+    }
+
+    #[test]
+    fn layer_cache_middle_param_change_invalidates_downstream() {
+        let lc = Rc::new(RefCell::new(crate::layer_cache::LayerCache::new(64 * 1024 * 1024)));
+
+        // First run
+        let (mut g1, ids1) = build_5_filter_chain(lc.clone(), [1.0, 2.0, 0.5, 1.5, 0.8]);
+        let _out1 = g1.request_full(*ids1.last().unwrap()).unwrap();
+        let stats1 = lc.borrow().stats();
+
+        // Second run: change filter 1 (index 1), params: [1.0, 3.0, 0.5, 1.5, 0.8]
+        // Execution trace:
+        //   request(5) → miss, request(4) → miss, request(3) → miss,
+        //   request(2) → miss (hash changed), request(1) → hit! (unchanged)
+        //   Nodes 2-5 recompute from cached node1.
+        let (mut g2, ids2) = build_5_filter_chain(lc.clone(), [1.0, 3.0, 0.5, 1.5, 0.8]);
+        let _out2 = g2.request_full(*ids2.last().unwrap()).unwrap();
+        let stats2 = lc.borrow().stats();
+
+        let new_hits = stats2.hits - stats1.hits;
+        let new_misses = stats2.misses - stats1.misses;
+
+        assert_eq!(new_hits, 1, "1 hit (node1 — closest unchanged ancestor)");
+        assert_eq!(new_misses, 4, "4 misses (nodes 2-5 — changed + downstream)");
+    }
 }
