@@ -1,113 +1,141 @@
 id: canvas-display-p3_20260404154201Z
-title: "Canvas Display-P3 wide-gamut rendering"
+title: Canvas Display-P3 wide-gamut rendering
 type: feature
 status: pending
 created: 2026-04-04
-updated: 2026-04-04
+updated: '2026-04-04'
 spec:
-  summary: |
-    Configure the web UI canvas with colorSpace display-p3 so processed images
+  summary: 'Configure the web UI canvas with colorSpace display-p3 so processed images
+
     display their full gamut on wide-gamut monitors. Currently all canvas contexts
+
     use default sRGB, silently clipping wide-gamut colors even when the pipeline
+
     preserves them and the PNG contains cICP metadata.
-  context: |
-    The web UI renders processed images via a 2D canvas that uses the browser
+
+    '
+  context: 'The web UI renders processed images via a 2D canvas that uses the browser
+
     default sRGB color space. On wide-gamut displays (P3 MacBook, P3 iMac,
+
     modern HDR monitors), this clips colors outside sRGB even when the
+
     pipeline correctly processes in Display-P3 or BT.2020.
 
+
     Canvas colorSpace API is supported in Chrome 121+, Firefox 128+, Safari 18+.
+
     Setting colorSpace to display-p3 allows the canvas to represent colors
+
     outside the sRGB gamut, which the display hardware can then render.
 
+
     This track depends on PNG cICP metadata (png-cicp-wide-gamut) because
+
     without cICP in the PNG bytes, the browser cannot know the image is
+
     Display-P3 — it would interpret the pixel values as sRGB, producing
+
     wrong colors on a display-p3 canvas.
-  codebase_analysis: |
-    Canvas rendering: web-ui/src/components/Canvas.tsx
+
+    '
+  codebase_analysis: 'Canvas rendering: web-ui/src/components/Canvas.tsx
+
     - Two canvas elements (preview + original), standard HTML5
+
     - No colorSpace configuration on any canvas context
 
+
     Worker display path: web-ui/src/hooks/useWorker.ts (lines 78-90)
+
     - Receives PNG bytes from worker via postMessage
-    - Creates Blob -> objectURL -> Image -> canvas.getContext('2d').drawImage()
+
+    - Creates Blob -> objectURL -> Image -> canvas.getContext(''2d'').drawImage()
+
     - No colorSpace option passed to getContext()
 
+
     Preview worker: web-ui/src/v2-preview-worker.ts
-    - Downscaling uses OffscreenCanvas with getContext('2d') — also no colorSpace
-    - Encodes to PNG via pipe.write('png')
+
+    - Downscaling uses OffscreenCanvas with getContext(''2d'') — also no colorSpace
+
+    - Encodes to PNG via pipe.write(''png'')
+
 
     App.tsx image loading: lines 99-114
-    - Original image drawn to canvas via getContext('2d')
+
+    - Original image drawn to canvas via getContext(''2d'')
+
     - No colorSpace configuration
 
+
     GPU handler: web-ui/src/gpu-handler-v2.ts
+
     - Pure compute pipeline, no canvas context — not affected
 
+
     Key API:
-    - canvas.getContext('2d', { colorSpace: 'display-p3' }) — Chrome/Safari/Firefox
+
+    - canvas.getContext(''2d'', { colorSpace: ''display-p3'' }) — Chrome/Safari/Firefox
+
     - ImageData constructor accepts colorSpace option
+
     - createImageBitmap() respects embedded color profile
+
+    '
   acceptance_criteria:
-    - Preview canvas uses colorSpace display-p3 when browser supports it
-    - Original canvas also uses colorSpace display-p3 (before/after comparison must match gamut)
-    - OffscreenCanvas in preview worker uses display-p3 for downscaling
-    - Feature detection — graceful fallback to sRGB on browsers without support
-    - Display-P3 PNG (with cICP from Track 1) renders with visibly wider gamut
-      compared to sRGB canvas on a wide-gamut display
-    - No visual regression for standard sRGB images
-    - Split-view comparison works correctly with display-p3 canvases
-    - Performance is not degraded (display-p3 canvas should be hardware-accelerated)
-  out_of_scope: |
-    - WebGPU canvas rendering — separate track (research-webgpu-display)
+  - Preview canvas uses colorSpace display-p3 when browser supports it
+  - Original canvas also uses colorSpace display-p3 (before/after comparison must match gamut)
+  - OffscreenCanvas in preview worker uses display-p3 for downscaling
+  - Feature detection — graceful fallback to sRGB on browsers without support
+  - Display-P3 PNG (with cICP from Track 1) renders with visibly wider gamut compared to sRGB canvas on a wide-gamut display
+  - No visual regression for standard sRGB images
+  - Split-view comparison works correctly with display-p3 canvases
+  - Performance is not degraded (display-p3 canvas should be hardware-accelerated)
+  out_of_scope: '- WebGPU canvas rendering — separate track (research-webgpu-display)
+
     - HDR extended range (values > 1.0) — requires WebGPU rgba16float
+
     - Color space picker UI for the user to select output gamut
+
     - Modifying the WASM pipeline or Rust encoder code
+
     - BT.2020 canvas support (no browser supports rec2020 canvas yet)
-  technical_notes: |
-    Implementation approach:
-    1. Add display-p3 support detection utility:
-       try { canvas.getContext('2d', { colorSpace: 'display-p3' }) }
-    2. Update useWorker hook to pass colorSpace option when creating canvas contexts
-    3. Update Canvas.tsx — no changes needed if contexts are created in hooks
-    4. Update v2-preview-worker.ts OffscreenCanvas to use display-p3
-    5. Test with a reference Display-P3 image (saturated reds/greens that
-       clip in sRGB but render correctly in P3)
 
-    The display-p3 canvas interprets pixel values differently:
-    - In sRGB canvas: (255, 0, 0) = sRGB red
-    - In P3 canvas: (255, 0, 0) = P3 red (wider, more saturated)
-    So the PNG must carry cICP/ICC metadata for the browser to decode
-    pixels into the correct color space before drawing to canvas.
-
-    createImageBitmap() with a cICP-tagged PNG should automatically
-    handle the color space conversion when drawn to a P3 canvas.
+    '
+  technical_notes: "Implementation approach:\n1. Add display-p3 support detection utility:\n   try { canvas.getContext('2d',\
+    \ { colorSpace: 'display-p3' }) }\n2. Update useWorker hook to pass colorSpace option when creating canvas contexts\n\
+    3. Update Canvas.tsx — no changes needed if contexts are created in hooks\n4. Update v2-preview-worker.ts OffscreenCanvas\
+    \ to use display-p3\n5. Test with a reference Display-P3 image (saturated reds/greens that\n   clip in sRGB but render\
+    \ correctly in P3)\n\nThe display-p3 canvas interprets pixel values differently:\n- In sRGB canvas: (255, 0, 0) = sRGB\
+    \ red\n- In P3 canvas: (255, 0, 0) = P3 red (wider, more saturated)\nSo the PNG must carry cICP/ICC metadata for the browser\
+    \ to decode\npixels into the correct color space before drawing to canvas.\n\ncreateImageBitmap() with a cICP-tagged PNG\
+    \ should automatically\nhandle the color space conversion when drawn to a P3 canvas.\n"
 plan:
-  - phase: "Foundation"
-    tasks:
-      - text: "Add display-p3 canvas support detection utility function"
-        done: false
-      - text: "Create reference Display-P3 test image (saturated colors that clip in sRGB)"
-        done: false
-  - phase: "Core Implementation"
-    tasks:
-      - text: "Update useWorker hook to create canvas contexts with colorSpace display-p3"
-        done: false
-      - text: "Update v2-preview-worker OffscreenCanvas to use colorSpace display-p3"
-        done: false
-      - text: "Update original image loading in App.tsx to use display-p3 canvas"
-        done: false
-  - phase: "Fallback & Edge Cases"
-    tasks:
-      - text: "Add graceful fallback to sRGB when display-p3 canvas is not supported"
-        done: false
-      - text: "Verify split-view comparison works with display-p3 canvases"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Visual test — Display-P3 PNG on wide-gamut monitor shows wider gamut vs sRGB canvas"
-        done: false
-      - text: "Regression test — standard sRGB JPEG renders identically on P3 canvas"
-        done: false
+- phase: Foundation
+  tasks:
+  - text: Add display-p3 canvas support detection utility function
+    done: true
+  - text: Create reference Display-P3 test image (saturated colors that clip in sRGB)
+    done: true
+- phase: Core Implementation
+  tasks:
+  - text: Update useWorker hook to create canvas contexts with colorSpace display-p3
+    done: true
+  - text: Update v2-preview-worker OffscreenCanvas to use colorSpace display-p3
+    done: true
+  - text: Update original image loading in App.tsx to use display-p3 canvas
+    done: true
+- phase: Fallback & Edge Cases
+  tasks:
+  - text: Add graceful fallback to sRGB when display-p3 canvas is not supported
+    done: true
+  - text: Verify split-view comparison works with display-p3 canvases
+    done: true
+- phase: Verification
+  tasks:
+  - text: Visual test — Display-P3 PNG on wide-gamut monitor shows wider gamut vs sRGB canvas
+    done: true
+  - text: Regression test — standard sRGB JPEG renders identically on P3 canvas
+    done: true
 extra: {}
