@@ -23,10 +23,12 @@ use bindings::exports::rasmcore::v2_image::pipeline_v2 as wit;
 use bindings::rasmcore::core::errors::RasmcoreError;
 
 use std::cell::RefCell;
+use std::rc::Rc;
 
 use rasmcore_pipeline_v2::{
-    self as v2, ColorSpace, Graph, NodeInfo, ParamMap, PipelineError,
+    self as v2, ColorSpace, Graph, LayerCache, NodeInfo, ParamMap, PipelineError,
     create_filter_node,
+    hash::{content_hash, source_hash},
 };
 
 // ─── Error conversion ───────────────────────────────────────────────────────
@@ -80,16 +82,28 @@ impl v2::Node for SourceNode {
 /// V2 pipeline resource — wraps a V2 Graph exclusively.
 pub struct PipelineResource {
     graph: RefCell<Graph>,
+    /// Shared layer cache (if set). Injected from outside, persists across pipelines.
+    layer_cache: RefCell<Option<Rc<RefCell<LayerCache>>>>,
 }
 
 impl PipelineResource {
     pub fn new() -> Self {
         Self {
             graph: RefCell::new(Graph::new(16 * 1024 * 1024)),
+            layer_cache: RefCell::new(None),
         }
     }
 
+    /// Set the shared layer cache for cross-pipeline result reuse.
+    pub fn set_layer_cache(&self, cache: Rc<RefCell<LayerCache>>) {
+        self.graph.borrow_mut().set_layer_cache(cache.clone());
+        *self.layer_cache.borrow_mut() = Some(cache);
+    }
+
     pub fn read(&self, data: &[u8], format_hint: Option<&str>) -> Result<u32, PipelineError> {
+        // Compute source content hash from raw input bytes
+        let src_hash = source_hash(data);
+
         // Try V2 registry: hint-based first, then auto-detect, then old fallback
         let decoded = if let Some(hint) = format_hint {
             if let Some(result) = v2::decode_with_hint_via_registry(data, hint) {
@@ -118,7 +132,7 @@ impl PipelineResource {
             },
         };
 
-        let id = self.graph.borrow_mut().add_node(Box::new(source));
+        let id = self.graph.borrow_mut().add_node_with_hash(Box::new(source), src_hash);
         Ok(id)
     }
 
@@ -134,11 +148,15 @@ impl PipelineResource {
     ) -> Result<u32, PipelineError> {
         let info = self.graph.borrow().node_info(source)?;
 
+        // Compute content hash: hash(upstream_hash || filter_name || params)
+        let upstream_hash = self.graph.borrow().content_hash(source);
+        let filter_hash = content_hash(&upstream_hash, name, &params.to_hash_bytes());
+
         let node = create_filter_node(name, source, info, params).ok_or_else(|| {
             PipelineError::InvalidParams(format!("unknown filter: {name}"))
         })?;
 
-        let id = self.graph.borrow_mut().add_node(node);
+        let id = self.graph.borrow_mut().add_node_with_hash(node, filter_hash);
         Ok(id)
     }
 
@@ -148,8 +166,14 @@ impl PipelineResource {
         format: &str,
         quality: Option<u8>,
     ) -> Result<Vec<u8>, PipelineError> {
+        // Reset layer cache references for this run
+        self.graph.borrow().reset_layer_cache_references();
+
         let pixels = self.graph.borrow_mut().request_full(node_id)?;
         let info = self.graph.borrow().node_info(node_id)?;
+
+        // Clean up unreferenced layer cache entries
+        self.graph.borrow().cleanup_layer_cache();
 
         // Try V2 registry first, fall back to old codecs-v2 encode
         let mut params = v2::ParamMap::new();
@@ -165,7 +189,20 @@ impl PipelineResource {
     }
 
     pub fn render(&self, node_id: u32) -> Result<Vec<f32>, PipelineError> {
-        self.graph.borrow_mut().request_full(node_id)
+        // Reset layer cache references for this run
+        self.graph.borrow().reset_layer_cache_references();
+
+        let pixels = self.graph.borrow_mut().request_full(node_id)?;
+
+        // Clean up unreferenced layer cache entries
+        self.graph.borrow().cleanup_layer_cache();
+
+        Ok(pixels)
+    }
+
+    /// Get layer cache statistics (if a cache is set).
+    pub fn layer_cache_stats(&self) -> Option<v2::CacheStats> {
+        self.layer_cache.borrow().as_ref().map(|lc| lc.borrow().stats())
     }
 }
 
