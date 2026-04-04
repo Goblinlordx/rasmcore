@@ -710,4 +710,43 @@ mod tests {
         let trace = g.take_trace();
         assert!(trace.events.is_empty(), "no events when tracing is disabled");
     }
+
+    #[test]
+    fn gpu_plan_returns_none_for_non_gpu_nodes() {
+        let mut g = Graph::new(0);
+        let src = g.add_node(Box::new(SolidColorNode {
+            width: 4,
+            height: 4,
+            color: [0.5, 0.3, 0.1, 1.0],
+        }));
+        let info = g.node_info(src).unwrap();
+        let scale = g.add_node(Box::new(ScaleNode {
+            upstream: src,
+            factor: 2.0,
+            info,
+        }));
+
+        // ScaleNode doesn't have gpu_shaders() — plan should be None
+        let plan = g.gpu_plan(scale).unwrap();
+        assert!(plan.is_none(), "non-GPU nodes should return None gpu_plan");
+    }
+
+    #[test]
+    fn inject_gpu_result_caches_for_render() {
+        let mut g = Graph::new(16 * 1024 * 1024); // enable cache
+        let src = g.add_node(Box::new(SolidColorNode {
+            width: 2,
+            height: 2,
+            color: [0.5, 0.3, 0.1, 1.0],
+        }));
+
+        // Inject custom pixels as if GPU computed them
+        let injected = vec![1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0,
+                            0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+        g.inject_gpu_result(src, injected.clone());
+
+        // Subsequent render should return the injected data (from cache)
+        let result = g.request_full(src).unwrap();
+        assert_eq!(result, injected, "inject_gpu_result should be cached");
+    }
 }
