@@ -5,144 +5,144 @@ status: pending
 created: '2026-04-04'
 updated: '2026-04-04'
 spec:
-  summary: |
-    Three-tier rendering: interactive proxy (~1080p) for instant feedback,
+  summary: 'Three-tier rendering: interactive proxy (~1080p) for instant feedback,
+
     background full-res worker silently warming the layer cache, near-instant
+
     export when user hits download.
-  context: |
-    Currently the preview worker downscales to 400px and renders into a tiny
-    sidebar thumbnail. The full-res worker takes 731ms+ per update. The user
-    sees either a useless tiny preview or waits for full-res on every change.
 
-    Professional editors (Lightroom, Capture One, DaVinci) use proxy mode: all
-    interactive editing happens on a lower-res proxy, full-res is computed in
-    the background, and export is near-instant because the cache is warm.
+    '
+  context: "Currently the preview worker downscales to 400px and renders into a tiny\nsidebar thumbnail. The full-res worker\
+    \ takes 731ms+ per update. The user\nsees either a useless tiny preview or waits for full-res on every change.\n\nProfessional\
+    \ editors (Lightroom, Capture One, DaVinci) use proxy mode: all\ninteractive editing happens on a lower-res proxy, full-res\
+    \ is computed in\nthe background, and export is near-instant because the cache is warm.\n\nThe desired architecture:\n\
+    1. Interactive proxy (~1080p) — displayed in the main viewport. All slider\n   drags, filter adds, reorders render at\
+    \ proxy resolution. Instant feedback.\n2. Background full-res warm — a separate worker silently runs the same chain\n\
+    \   at full resolution, populating the layer cache. User never waits for this.\n3. Export/download — cache is already\
+    \ warm from step 2. Only the last changed\n   node needs to compute. Near-instant.\n\nPreview should also trigger on ALL\
+    \ chain changes (add/remove/reorder nodes),\nnot just param changes. Currently preview only fires on param change with\n\
+    600ms debounce, so adding a no-param filter like invert shows nothing.\n"
+  codebase_analysis: 'Preview worker (v2-preview-worker.ts):
 
-    The desired architecture:
-    1. Interactive proxy (~1080p) — displayed in the main viewport. All slider
-       drags, filter adds, reorders render at proxy resolution. Instant feedback.
-    2. Background full-res warm — a separate worker silently runs the same chain
-       at full resolution, populating the layer cache. User never waits for this.
-    3. Export/download — cache is already warm from step 2. Only the last changed
-       node needs to compute. Near-instant.
-
-    Preview should also trigger on ALL chain changes (add/remove/reorder nodes),
-    not just param changes. Currently preview only fires on param change with
-    600ms debounce, so adding a no-param filter like invert shows nothing.
-  codebase_analysis: |
-    Preview worker (v2-preview-worker.ts):
     - PREVIEW_MAX=400 (too small for viewport display)
+
     - Creates fresh Pipeline per processChain() call
+
     - No cache between runs
+
     - setProxyScale() exists in V1 preview worker but not wired in V2
 
+
     Full-res worker (v2-pipeline-worker.ts):
+
     - Processes at full resolution
+
     - Creates fresh Pipeline per call
+
     - No layer cache (V2 cache track pending)
+
     - Result drawn to main viewport canvas
 
+
     Hooks:
+
     - usePreviewWorker: 600ms debounce, single-slot queue (latest wins)
+
     - useWorker: queue-based, timeout after 15s
+
     - Preview triggers only on processChain() which fires on param changes
+
     - Chain structure changes (add/remove node) trigger full-res, not preview
 
+
     V1 precedent: preview-worker.ts had setProxyScale(scale) which scaled
+
     spatial params (blur radius, etc.) proportionally. V2 pipeline-v2 does NOT
+
     have proxy scale support yet.
+
+    '
   acceptance_criteria:
-    - Proxy mode renders at up to 1080p (max dimension 1920, fit to aspect ratio)
-    - Main viewport shows proxy result during all editing (slider drags, node changes)
-    - Preview triggers on ALL chain changes (params, add, remove, reorder)
-    - Preview debounce reduced to 100-150ms for responsive feel
-    - Background full-res worker runs silently after each proxy render completes
-    - Background results populate layer cache (when v2-layer-cache track is done)
-    - On export/download, only uncached nodes compute — near-instant if cache is warm
-    - Subtle viewport indicator when showing proxy vs full-res (e.g. status bar label)
-    - If proxy render takes >200ms, adaptively reduce resolution
-  out_of_scope: |
-    Layer cache implementation (separate track v2-layer-cache).
+  - Proxy mode renders at up to 1080p (max dimension 1920, fit to aspect ratio)
+  - Main viewport shows proxy result during all editing (slider drags, node changes)
+  - Preview triggers on ALL chain changes (params, add, remove, reorder)
+  - Preview debounce reduced to 100-150ms for responsive feel
+  - Background full-res worker runs silently after each proxy render completes
+  - Background results populate layer cache (when v2-layer-cache track is done)
+  - On export/download, only uncached nodes compute — near-instant if cache is warm
+  - Subtle viewport indicator when showing proxy vs full-res (e.g. status bar label)
+  - If proxy render takes >200ms, adaptively reduce resolution
+  out_of_scope: 'Layer cache implementation (separate track v2-layer-cache).
+
     GPU dispatch (separate track gpu-dispatch-wiring).
+
     Viewport pan/zoom (separate track webui-viewport-panzoom).
+
     Tiled rendering. Progressive refinement.
-  technical_notes: |
-    Architecture — three workers:
-    1. Proxy worker (upgraded preview worker):
-       - PREVIEW_MAX = 1920 (or viewport-adaptive)
-       - Renders to main viewport canvas (not sidebar thumbnail)
-       - Debounce 100-150ms, single-slot queue (latest params win)
-       - setProxyScale(scale) for spatial param scaling (blur radius etc.)
-    2. Background warm worker (new or reuse full-res worker):
-       - Triggered after proxy completes (or on idle timeout)
-       - Runs same chain at full resolution
-       - Result stored in layer cache but NOT displayed
-       - Lower priority than proxy — can be cancelled if user changes params
-    3. Export worker (full-res worker):
-       - On download click, runs final chain
-       - Hits layer cache for all nodes except most-recently-changed
-       - Returns encoded output (PNG, JPEG, etc.)
 
-    Implementation phases:
-    Phase 1: Upgrade proxy to 1080p and display in viewport (no background warm)
-    Phase 2: Add background warm worker feeding layer cache
-    Phase 3: Wire export to use warm cache
-
-    Proxy scale for spatial params: when the proxy is 0.5x the original,
-    a blur radius of 10px should become 5px on the proxy. The V2 pipeline
-    needs a setProxyScale(scale) method that scales params with hint=rc.pixels.
-    This already exists conceptually from V1 preview-worker.ts.
+    '
+  technical_notes: "Architecture — three workers:\n1. Proxy worker (upgraded preview worker):\n   - PREVIEW_MAX = 1920 (or\
+    \ viewport-adaptive)\n   - Renders to main viewport canvas (not sidebar thumbnail)\n   - Debounce 100-150ms, single-slot\
+    \ queue (latest params win)\n   - setProxyScale(scale) for spatial param scaling (blur radius etc.)\n2. Background warm\
+    \ worker (new or reuse full-res worker):\n   - Triggered after proxy completes (or on idle timeout)\n   - Runs same chain\
+    \ at full resolution\n   - Result stored in layer cache but NOT displayed\n   - Lower priority than proxy — can be cancelled\
+    \ if user changes params\n3. Export worker (full-res worker):\n   - On download click, runs final chain\n   - Hits layer\
+    \ cache for all nodes except most-recently-changed\n   - Returns encoded output (PNG, JPEG, etc.)\n\nImplementation phases:\n\
+    Phase 1: Upgrade proxy to 1080p and display in viewport (no background warm)\nPhase 2: Add background warm worker feeding\
+    \ layer cache\nPhase 3: Wire export to use warm cache\n\nProxy scale for spatial params: when the proxy is 0.5x the original,\n\
+    a blur radius of 10px should become 5px on the proxy. The V2 pipeline\nneeds a setProxyScale(scale) method that scales\
+    \ params with hint=rc.pixels.\nThis already exists conceptually from V1 preview-worker.ts.\n"
 plan:
-  - phase: Proxy Viewport Display
-    tasks:
-      - text: Increase PREVIEW_MAX from 400 to 1920 in v2-preview-worker.ts
-        done: false
-      - text: Preview worker renders to main viewport canvas (not sidebar thumbnail)
-        done: false
-      - text: Trigger preview on ALL chain changes (params, add, remove, reorder)
-        done: false
-      - text: Reduce debounce from 600ms to 100-150ms
-        done: false
-      - text: Add proxy quality indicator in status bar
-        done: false
-      - text: Benchmark proxy at 1080p — add adaptive resolution if >200ms
-        done: false
-  - phase: Proxy Scale for Spatial Params
-    tasks:
-      - text: Add setProxyScale(scale) to V2 pipeline (graph or pipeline resource)
-        done: false
-      - text: Filters with hint=rc.pixels auto-scale params by proxy factor
-        done: false
-      - text: Preview worker computes and sets proxy scale based on downscale ratio
-        done: false
-  - phase: Background Cache Warming
-    tasks:
-      - text: Add background warm worker (separate Web Worker or reuse full-res with low priority)
-        done: false
-      - text: After proxy render completes, queue full-res chain to warm worker
-        done: false
-      - text: Warm worker populates layer cache (requires v2-layer-cache track)
-        done: false
-      - text: Cancel warm worker if user changes params before it completes
-        done: false
-      - text: Do not display warm worker output (cache only)
-        done: false
-  - phase: Export Fast Path
-    tasks:
-      - text: Export path checks layer cache before computing each node
-        done: false
-      - text: Only uncached nodes compute on export — rest are cache hits
-        done: false
-      - text: Status indicator shows cache warm progress if export before warm completes
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Test rapid slider interaction — proxy updates smoothly at 1080p
-        done: false
-      - text: Test export after editing — verify near-instant from warm cache
-        done: false
-      - text: Test export during active editing — verify graceful fallback
-        done: false
-      - text: Test with 8K image — proxy is fast, background warm takes longer but completes
-        done: false
+- phase: Proxy Viewport Display
+  tasks:
+  - text: Increase PREVIEW_MAX from 400 to 1920 in v2-preview-worker.ts
+    done: true
+  - text: Preview worker renders to main viewport canvas (not sidebar thumbnail)
+    done: true
+  - text: Trigger preview on ALL chain changes (params, add, remove, reorder)
+    done: true
+  - text: Reduce debounce from 600ms to 100-150ms
+    done: true
+  - text: Add proxy quality indicator in status bar
+    done: true
+  - text: Benchmark proxy at 1080p — add adaptive resolution if >200ms
+    done: true
+- phase: Proxy Scale for Spatial Params
+  tasks:
+  - text: Add setProxyScale(scale) to V2 pipeline (graph or pipeline resource)
+    done: true
+  - text: Filters with hint=rc.pixels auto-scale params by proxy factor
+    done: true
+  - text: Preview worker computes and sets proxy scale based on downscale ratio
+    done: true
+- phase: Background Cache Warming
+  tasks:
+  - text: Add background warm worker (separate Web Worker or reuse full-res with low priority)
+    done: true
+  - text: After proxy render completes, queue full-res chain to warm worker
+    done: true
+  - text: Warm worker populates layer cache (requires v2-layer-cache track)
+    done: true
+  - text: Cancel warm worker if user changes params before it completes
+    done: true
+  - text: Do not display warm worker output (cache only)
+    done: true
+- phase: Export Fast Path
+  tasks:
+  - text: Export path checks layer cache before computing each node
+    done: true
+  - text: Only uncached nodes compute on export — rest are cache hits
+    done: true
+  - text: Status indicator shows cache warm progress if export before warm completes
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test rapid slider interaction — proxy updates smoothly at 1080p
+    done: true
+  - text: Test export after editing — verify near-instant from warm cache
+    done: true
+  - text: Test export during active editing — verify graceful fallback
+    done: true
+  - text: Test with 8K image — proxy is fast, background warm takes longer but completes
+    done: true
 extra: {}
