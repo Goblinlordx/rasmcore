@@ -143,6 +143,42 @@ interface pipeline-v2 {
         detail: option<string>,
     }
 
+    // ─── Layer Cache ────────────────────────────────────────────────────
+
+    /// Layer cache statistics.
+    record cache-stats {
+        entries: u32,
+        hits: u64,
+        misses: u64,
+        size-bytes: u64,
+    }
+
+    /// Cache storage quality for layer cache entries.
+    enum cache-quality {
+        /// Full precision — store cached data as f32 (default).
+        full,
+        /// Quantize to 16-bit per channel (halves memory).
+        q16,
+        /// Quantize to 8-bit per channel (quarters memory).
+        q8,
+    }
+
+    /// Content-addressed layer cache for cross-pipeline result reuse.
+    ///
+    /// Created once by the host, injected into pipelines. Persists across
+    /// pipeline lifetimes. Keyed by blake3 hash chains encoding the full
+    /// computation lineage.
+    resource layer-cache {
+        /// Create a layer cache with the given capacity in megabytes.
+        constructor(capacity-mb: u32);
+        /// Get cache statistics.
+        stats: func() -> cache-stats;
+        /// Clear all cached entries.
+        clear: func();
+        /// Set the storage quality for new cache entries.
+        set-cache-quality: func(quality: cache-quality);
+    }
+
     /// The V2 pipeline resource.
     resource image-pipeline-v2 {
         constructor();
@@ -172,6 +208,8 @@ interface pipeline-v2 {
         set-demand-strategy: func(strategy: demand-strategy);
         /// Set the GPU executor availability.
         set-gpu-available: func(available: bool);
+        /// Set the layer cache for cross-pipeline result reuse.
+        set-layer-cache: func(cache: borrow<layer-cache>);
 
         // ─── Execution ───
         /// Execute the pipeline and encode output.
