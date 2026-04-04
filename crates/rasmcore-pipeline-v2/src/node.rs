@@ -219,6 +219,17 @@ pub trait Node {
         NodeCapabilities::default()
     }
 
+    /// Analytic expression for this node (point op fusion).
+    ///
+    /// If this node is a per-channel point operation expressible as an
+    /// algebraic expression tree, return it. The fusion optimizer composes
+    /// consecutive analytic expressions and constant-folds them.
+    ///
+    /// Default: None (not an analytic point op).
+    fn analytic_expression(&self) -> Option<crate::ops::PointOpExpr> {
+        None
+    }
+
     /// ACES compliance level of this node.
     ///
     /// Default: Unknown. Override to declare compliance status.

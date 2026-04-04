@@ -523,7 +523,7 @@ macro_rules! register_factory {
                 name: $name,
                 factory: |upstream, info, params| {
                     let f = $struct { $($field: params.$getter(stringify!($field))),* };
-                    Box::new(FilterNode::point_op(upstream, info, f))
+                    Box::new(FilterNode::analytic(upstream, info, f))
                 },
             }
         }
@@ -533,7 +533,8 @@ macro_rules! register_factory {
             &FilterFactoryRegistration {
                 name: $name,
                 factory: |upstream, info, _params| {
-                    Box::new(FilterNode::point_op(upstream, info, $struct))
+                    Box::new(FilterNode::point_op(upstream, info, $struct)
+                        .with_capabilities(crate::node::NodeCapabilities { analytic: true, ..Default::default() }))
                 },
             }
         }
@@ -551,7 +552,8 @@ inventory::submit! {
         name: "posterize",
         factory: |upstream, info, params| {
             let f = Posterize { levels: params.get_u32("levels") as u8 };
-            Box::new(FilterNode::point_op(upstream, info, f))
+            Box::new(FilterNode::point_op(upstream, info, f)
+                .with_capabilities(crate::node::NodeCapabilities { analytic: true, ..Default::default() }))
         },
     }
 }
@@ -564,7 +566,8 @@ inventory::submit! {
                 midpoint: params.get_f32("midpoint"),
                 sharpen: params.get_bool("sharpen"),
             };
-            Box::new(FilterNode::point_op(upstream, info, f))
+            Box::new(FilterNode::point_op(upstream, info, f)
+                .with_capabilities(crate::node::NodeCapabilities { analytic: true, ..Default::default() }))
         },
     }
 }

@@ -58,6 +58,8 @@ pub struct FilterNode<F: Filter> {
     overlap_radius: u32,
     /// Node capabilities.
     capabilities: NodeCapabilities,
+    /// Analytic expression provider (auto-detected from AnalyticOp impl).
+    analytic_fn: Option<fn(&F) -> crate::ops::PointOpExpr>,
 }
 
 impl<F: Filter> FilterNode<F> {
@@ -69,6 +71,7 @@ impl<F: Filter> FilterNode<F> {
             filter,
             overlap_radius: 0,
             capabilities: NodeCapabilities::default(),
+            analytic_fn: None,
         }
     }
 
@@ -80,6 +83,7 @@ impl<F: Filter> FilterNode<F> {
             filter,
             overlap_radius,
             capabilities: NodeCapabilities { gpu: false, ..NodeCapabilities::default() },
+            analytic_fn: None,
         }
     }
 
@@ -92,6 +96,21 @@ impl<F: Filter> FilterNode<F> {
     /// Get a reference to the underlying filter.
     pub fn filter(&self) -> &F {
         &self.filter
+    }
+}
+
+/// Auto-detect AnalyticOp: if the filter implements it, set the capability.
+impl<F: Filter + crate::ops::AnalyticOp> FilterNode<F> {
+    /// Create a FilterNode that auto-detects analytic capability.
+    pub fn analytic(upstream: u32, info: NodeInfo, filter: F) -> Self {
+        Self {
+            upstream,
+            info,
+            filter,
+            overlap_radius: 0,
+            capabilities: NodeCapabilities { analytic: true, ..Default::default() },
+            analytic_fn: Some(|f| f.expression()),
+        }
     }
 }
 
@@ -135,6 +154,10 @@ impl<F: Filter + 'static> Node for FilterNode<F> {
 
     fn capabilities(&self) -> NodeCapabilities {
         self.capabilities
+    }
+
+    fn analytic_expression(&self) -> Option<crate::ops::PointOpExpr> {
+        self.analytic_fn.map(|f| f(&self.filter))
     }
 
     fn tile_hint(&self) -> Option<TileHint> {

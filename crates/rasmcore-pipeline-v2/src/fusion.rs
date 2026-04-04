@@ -567,7 +567,7 @@ fn fuse_analytical_chains(graph: &mut Graph) {
             continue;
         }
         let node = graph.get_node(i as u32);
-        if !node.capabilities().analytic {
+        if node.analytic_expression().is_none() {
             continue;
         }
 
@@ -580,7 +580,7 @@ fn fuse_analytical_chains(graph: &mut Graph) {
                 break;
             }
             let up = upstream_ids[0] as usize;
-            if up >= n || fused[up] || !graph.get_node(up as u32).capabilities().analytic {
+            if up >= n || fused[up] || graph.get_node(up as u32).analytic_expression().is_none() {
                 break;
             }
             chain.push(up);
@@ -595,9 +595,8 @@ fn fuse_analytical_chains(graph: &mut Graph) {
         // We need to compose outer(inner(v))
         let exprs: Vec<PointOpExpr> = chain
             .iter()
-            .map(|&id| graph.get_node_expression(id as u32))
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap_or_default();
+            .filter_map(|&id| graph.get_node(id as u32).analytic_expression())
+            .collect();
 
         if exprs.is_empty() {
             continue;

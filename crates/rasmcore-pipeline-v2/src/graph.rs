@@ -189,6 +189,8 @@ impl Graph {
 
     /// Request the full output of a node (convenience).
     pub fn request_full(&mut self, node_id: u32) -> Result<Vec<f32>, PipelineError> {
+        // Run fusion optimizer before execution (idempotent — safe to call multiple times)
+        crate::fusion::optimize(self);
         let info = self.node_info(node_id)?;
         self.request_region(node_id, Rect::new(0, 0, info.width, info.height))
     }
