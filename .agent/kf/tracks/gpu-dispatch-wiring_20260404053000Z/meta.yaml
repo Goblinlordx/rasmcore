@@ -1,5 +1,5 @@
 title: Wire GPU dispatch end-to-end (WASM + browser WebGPU)
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-04'
