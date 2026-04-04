@@ -1,0 +1,164 @@
+id: docs-live-playground_20260405151500Z
+title: 'Docs: live interactive playground per operation'
+type: feature
+status: pending
+created: '2026-04-05'
+updated: '2026-04-05'
+spec:
+  summary: |
+    Embed the V2 WASM pipeline in docs pages for live rendering. Each operation
+    page has an interactive playground: param sliders, live split-view before/after,
+    and a code example that updates as the user adjusts values.
+  context: |
+    Current docs have static before/after images rendered at build time with fixed
+    showcase params. The user cannot interact or see what different param values do.
+
+    The V2 WASM module already runs in the browser (13MB, loads in the web-ui).
+    The same module can be loaded in the docs site. Each operation page would:
+    1. Load the reference image into a WASM pipeline instance
+    2. Show param controls (sliders, toggles) matching the operation's ParamDescriptor
+    3. On param change, re-run the single filter and update the "after" canvas
+    4. Display before/after in the split-view (before = reference, after = live render)
+    5. Update the code example to reflect current param values
+
+    This is essentially a per-operation mini version of the web-ui, but focused
+    on a single filter with no chain management.
+  codebase_analysis: |
+    Existing infrastructure:
+    - V2 WASM component (sdk/typescript/v2-generated/) loads in browser via jco
+    - V2 fluent SDK (sdk/typescript/v2-fluent/) wraps pipeline with typed methods
+    - Registry provides ParamDescriptor (name, type, min, max, step, default, hint)
+    - Web UI already does exactly this: load WASM, build controls, process chain
+    - SplitView component exists (or will exist in Next.js migration)
+
+    Key constraint: WASM module is 13MB. For docs, we should lazy-load it only
+    when the user interacts with the playground (click "Try it" or scroll into view).
+    Initial page load shows the static pre-rendered image. WASM loads on demand.
+
+    The V2 fluent SDK Pipeline.fromRaw(PipelineClass, imageBytes) is the entry point.
+    Single filter application: pipe = Pipeline.fromRaw(cls, img); pipe = pipe[method](params); result = pipe.write('png')
+  acceptance_criteria:
+    - Each operation page has an interactive playground section
+    - Playground shows param controls generated from ParamDescriptor (sliders, toggles, spinners)
+    - Adjusting a param re-renders the filter on the reference image in real time
+    - Split-view shows before (reference) vs after (live render) with draggable divider
+    - Code example updates live to reflect current param values
+    - WASM module lazy-loads on first interaction (not on page load)
+    - Static pre-rendered image shown before WASM loads (graceful degradation)
+    - Loading indicator while WASM initializes
+    - Playground works for paramless filters (just shows the effect, no controls)
+    - Debounced rendering (100ms) to avoid excessive re-renders during slider drag
+  out_of_scope: |
+    Multi-filter chain playground. GPU acceleration in docs. Export functionality.
+    Mobile touch controls. Filter comparison (side-by-side two different filters).
+  technical_notes: |
+    Architecture (assumes Next.js docs site from docs-nextjs-ssg track):
+
+    1. Playground React component (docs/components/Playground.tsx):
+       - Props: operationName, params (ParamDescriptor[]), referenceImageUrl
+       - State: paramValues (Record<string, number|boolean>), wasmReady, rendering
+       - Lazy loads WASM on first render or user interaction
+       - Renders param controls from ParamDescriptor metadata
+       - On param change (debounced): runs pipeline, draws result to canvas
+
+    2. WASM loading (docs/lib/wasm-loader.ts):
+       - Singleton: load once, share across all playground instances
+       - Lazy: import('../public/sdk/v2/rasmcore-v2-image.js') on demand
+       - Returns PipelineClass for Pipeline.fromRaw()
+       - Loading state exposed as promise
+
+    3. Param controls (docs/components/ParamControls.tsx):
+       - Generates slider/toggle/spinner for each ParamDescriptor
+       - Maps hint to control type (rc.color_rgb -> color picker, etc.)
+       - Emits onChange with updated param values
+       - Shows current numeric value next to slider
+
+    4. Live code example (docs/components/LiveCodeExample.tsx):
+       - Receives operationName + current paramValues
+       - Generates TypeScript snippet reflecting current values
+       - Highlights syntax (Prism or similar)
+       - Updates on every param change
+
+    5. Integration in operation page:
+       ```tsx
+       <SplitView
+         before={referenceImageUrl}
+         after={<canvas ref={afterCanvasRef} />}
+       />
+       <ParamControls params={op.params} values={paramValues} onChange={setParamValues} />
+       <LiveCodeExample op={op.name} params={paramValues} />
+       ```
+
+    6. WASM assets: copy V2 WASM + jco SDK to docs/public/sdk/v2/ during build.
+       Next.js serves them as static files.
+
+    7. Rendering pipeline (in Playground):
+       ```typescript
+       const pipe = Pipeline.fromRaw(PipelineClass, refImageBytes);
+       const result = pipe[snakeToCamel(opName)](paramValues);
+       const png = result.write('png');
+       // Draw PNG to afterCanvas
+       ```
+       Debounced at 100ms. Uses requestAnimationFrame for smooth updates.
+plan:
+  - phase: WASM Loader
+    tasks:
+      - text: Create docs/lib/wasm-loader.ts — lazy singleton loader for V2 WASM module
+        done: false
+      - text: Copy V2 WASM + SDK files to docs/public/sdk/v2/ during build
+        done: false
+      - text: Loading state management (promise-based, shared across components)
+        done: false
+  - phase: Param Controls Component
+    tasks:
+      - text: Create ParamControls.tsx — generates controls from ParamDescriptor array
+        done: false
+      - text: Slider for numeric params (min/max/step from descriptor)
+        done: false
+      - text: Toggle for boolean params
+        done: false
+      - text: Color picker for rc.color_rgb hint
+        done: false
+      - text: Display current value next to each control
+        done: false
+  - phase: Live Code Example
+    tasks:
+      - text: Create LiveCodeExample.tsx — generates TypeScript snippet from current param values
+        done: false
+      - text: Syntax highlighting (CSS-based or lightweight library)
+        done: false
+      - text: Updates reactively on param change
+        done: false
+  - phase: Playground Component
+    tasks:
+      - text: Create Playground.tsx — orchestrates WASM loading, rendering, controls, code
+        done: false
+      - text: Load reference image as ArrayBuffer on mount
+        done: false
+      - text: On param change (debounced 100ms), run single filter via fluent SDK
+        done: false
+      - text: Draw result to canvas, display in split-view as "after"
+        done: false
+      - text: Show static pre-rendered image before WASM loads
+        done: false
+      - text: Loading indicator during WASM init
+        done: false
+  - phase: Integration
+    tasks:
+      - text: Add Playground to each operation page in Next.js
+        done: false
+      - text: Paramless operations show playground with no controls (just the effect)
+        done: false
+      - text: Verify playground works across all registered filters
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Playground loads and renders correctly for brightness (param filter)
+        done: false
+      - text: Playground works for invert (paramless filter)
+        done: false
+      - text: Code example updates in sync with slider changes
+        done: false
+      - text: WASM loads lazily — page load time not affected by 13MB module
+        done: false
+extra: {}
