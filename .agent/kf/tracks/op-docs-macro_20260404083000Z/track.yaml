@@ -1,113 +1,116 @@
 id: op-docs-macro_20260404083000Z
-title: Operation documentation macro and docs builder
+title: Operation documentation macro and SSG docs site
 type: feature
 status: pending
 created: '2026-04-04'
 updated: '2026-04-04'
 spec:
   summary: |
-    Add doc capture to V2Filter/V2Encoder/V2Decoder derive macros. Struct doc
-    comments become operation description, field doc comments become param
-    descriptions, and an # Example section becomes the usage example. Docs are
-    gated behind a feature flag (zero cost in WASM/bin). A docs builder binary
-    renders per-operation pages from the registry.
+    Add doc capture to V2 derive macros, gate behind feature flag, and build
+    a static site generator that renders per-operation pages plus injected
+    manual pages into a deployable HTML documentation site.
   context: |
-    Operations are defined with derive macros (#[derive(V2Filter)]) and registered
-    via inventory. Currently the registration structs (FilterFactoryRegistration,
-    EncoderFactoryRegistration, DecoderFactoryRegistration) carry name, category,
-    params — but no description, no examples, no param descriptions. Documentation
-    lives only in Rust doc comments that are invisible to the runtime/SDK/UI.
+    Operations are defined with derive macros and registered via inventory.
+    Currently the registration structs carry name, category, params — but no
+    description, no examples, no param descriptions. Documentation lives only
+    in Rust doc comments invisible to runtime/SDK/UI.
 
-    The user wants: documentation defined beside the implementation, automatically
-    collected, and renderable into per-operation doc pages. For WASM and normal
-    binaries, doc strings should be dropped (zero binary size cost). A separate
-    docs builder compiles with docs enabled and generates the output.
+    The user wants:
+    1. Documentation defined beside the implementation (doc comments on structs/fields)
+    2. Automatically collected into registry metadata
+    3. Rendered into a static HTML documentation site (SSG)
+    4. Per-operation pages auto-generated from registry
+    5. Additional manual pages (guides, tutorials) injectable alongside
+    6. Zero binary cost for WASM/bin (feature-gated)
   codebase_analysis: |
     Derive macros (crates/rasmcore-macros/src/lib.rs):
-    - V2Filter (lines 1088-1246): parses #[filter(name, category)], #[param(...)], generates
-      FilterFactoryRegistration + inventory::submit!
+    - V2Filter (lines 1088-1246): parses #[filter(name, category)], #[param(...)],
+      generates FilterFactoryRegistration + inventory::submit!
     - V2Encoder (lines 1262-1382): parses #[codec(name, display_name, mime, extensions)]
     - V2Decoder (lines 1399-1459): parses #[codec(name, display_name, extensions)]
-    - Macros already extract field types and attributes but NOT doc comments
+    - Macros extract field types and attributes but NOT doc comments yet
 
     Registration structs (crates/rasmcore-pipeline-v2/src/registry.rs):
-    - FilterFactoryRegistration: name, display_name, category, params, factory (no description)
-    - EncoderFactoryRegistration: name, display_name, mime, extensions, params, encode
-    - DecoderFactoryRegistration: name, display_name, extensions, detect, decode
-    - OperationRegistration: name, display_name, category, kind, params, capabilities
-    - ParamDescriptor: name, value_type, min, max, step, default_val, hint (no description)
+    - FilterFactoryRegistration: name, display_name, category, params, factory
+    - ParamDescriptor: name, value_type, min, max, step, default_val, hint
+    - No description/example fields on any struct
 
-    dump_registry binary (crates/rasmcore-v2-wasm/src/bin/dump_registry.rs):
-    - Serializes registry to JSON for SDK generation
-    - Could include doc fields when docs feature is enabled
-
-    Rust doc comments on structs are available to proc macros via #[doc = "..."]
-    attributes on the token stream. The macro can extract them.
+    dump_registry binary: serializes registry to JSON, could include doc fields.
+    Rust doc comments available to proc macros via #[doc = "..."] attributes.
   acceptance_criteria:
-    - Derive macros capture struct-level doc comments as operation description
-    - Derive macros capture field-level doc comments as param descriptions
+    - Derive macros capture struct doc comments as operation description
+    - Derive macros capture field doc comments as param descriptions
     - Derive macros extract # Example section from struct docs as usage example
-    - Doc strings stored in registration structs as &'static str fields
-    - Behind cfg(feature = "docs") — compiles to empty strings without the feature
-    - WASM build does not include doc strings (no binary size impact)
-    - Docs builder binary (cargo run --bin build-docs --features docs) renders pages
-    - Each operation gets a page with description, params table, and example
-    - dump_registry includes doc fields when built with docs feature
+    - Doc strings stored in registration structs as &'static str
+    - Behind cfg(feature = "docs") — empty strings without it
+    - WASM build has no binary size increase
+    - SSG binary outputs static HTML site to docs/build/
+    - Each operation gets an HTML page with description, params table, example
+    - Manual pages from docs/pages/*.md are rendered into the same site
+    - Site has navigation sidebar with categories and manual pages
+    - dump_registry with docs feature includes doc fields in JSON
   out_of_scope: |
-    Rich HTML rendering or static site generator. Interactive examples.
-    Versioning or changelog. Param validation docs beyond what the schema provides.
+    Interactive examples. Search. Versioning/changelog.
+    Complex theming or CSS framework. Client-side JS.
   technical_notes: |
     Architecture:
 
-    1. Macro changes (rasmcore-macros/src/lib.rs):
-       - Extract #[doc = "..."] attributes from struct item (concatenate lines)
-       - Split at "# Example" heading: before = description, after = example
-       - Extract #[doc = "..."] from each #[param] field
-       - Emit these as &'static str fields in the registration struct
-       - Gate with: if cfg!(feature = "docs") { "the doc string" } else { "" }
-       - Actually, cfg in proc macro output uses: #[cfg(feature = "docs")] on the
-         doc string const, with a fallback empty string. Or simpler: always emit
-         the string but the registration struct field is Option<&'static str> and
-         the macro emits None when docs feature is off.
+    1. Macro changes (rasmcore-macros):
+       - Extract #[doc = "..."] from struct → description (before # Example)
+       - Extract # Example section → example code block
+       - Extract #[doc = "..."] from #[param] fields → param description
+       - Gate: cfg(feature = "docs") emits real strings, else ""
 
     2. Registry struct changes (registry.rs):
-       - Add to FilterFactoryRegistration: description: &'static str, example: &'static str
-       - Add to ParamDescriptor: description: &'static str
-       - Add same to Encoder/Decoder registrations
-       - Default to "" for all (backward compatible)
+       - Add description, example to FilterFactoryRegistration
+       - Add description to ParamDescriptor
+       - Same for Encoder/Decoder registrations
+       - Default "" (backward compatible)
 
-    3. Feature flag:
-       - Add "docs" feature to rasmcore-pipeline-v2 and rasmcore-macros Cargo.toml
-       - Macro checks: if docs feature is enabled, emit actual strings
-       - If not enabled, emit empty strings ("")
-       - Zero binary impact for WASM builds
+    3. SSG docs builder (scripts/build-docs.mjs or crates/rasmcore-docs):
+       - Step 1: Run dump_registry --features docs → JSON with doc strings
+       - Step 2: Read manual pages from docs/pages/*.md (frontmatter: title, order, section)
+       - Step 3: Render HTML using a minimal template:
+         - Shared layout: nav sidebar + content area
+         - Nav groups: Operations by category + Manual pages by section
+         - Operation pages: title, description (rendered markdown), params table, example
+         - Manual pages: title, rendered markdown content
+       - Step 4: Output to docs/build/ (static HTML + CSS, no JS required)
+       - Use a markdown-to-HTML library (marked for Node, pulldown-cmark for Rust)
 
-    4. Docs builder (new binary: crates/rasmcore-docs/src/main.rs or bin in pipeline-v2):
-       - cargo run --bin build-docs --features docs
-       - Iterates all registrations via inventory
-       - For each op: renders Markdown page with title, description, params table, example
-       - Output to docs/operations/ directory
-       - Could also output JSON for web-based docs viewer
+    4. Manual page format (docs/pages/getting-started.md):
+       ```
+       ---
+       title: Getting Started
+       section: Guides
+       order: 1
+       ---
+       # Getting Started
+       Content here...
+       ```
 
-    5. Annotate existing filters:
-       - Add doc comments to brightness, contrast, and 1-2 others as proof of concept
-       - Not all filters need docs immediately — empty string is the default
+    5. Build command: scripts/build-docs.sh
+       - Builds dump_registry with docs feature
+       - Runs SSG script
+       - Output: docs/build/ ready to deploy
+
+    Node.js SSG is simpler (marked + handlebars in ~100 lines) and consistent
+    with existing SDK generation scripts. Rust binary is an option if we want
+    zero external deps.
 plan:
   - phase: Registry Schema
     tasks:
-      - text: Add description and example fields to FilterFactoryRegistration
+      - text: Add description and example fields (&'static str) to FilterFactoryRegistration
         done: false
       - text: Add description field to ParamDescriptor
         done: false
-      - text: Add description and example fields to EncoderFactoryRegistration and DecoderFactoryRegistration
+      - text: Add description and example to EncoderFactoryRegistration and DecoderFactoryRegistration
         done: false
-      - text: Add docs feature flag to rasmcore-pipeline-v2 Cargo.toml
+      - text: Add docs feature flag to rasmcore-pipeline-v2 and rasmcore-macros Cargo.toml
         done: false
   - phase: Macro Doc Extraction
     tasks:
-      - text: V2Filter derive extracts struct #[doc] attributes as description string
-        done: false
-      - text: V2Filter derive splits at # Example to separate description from example
+      - text: V2Filter derive extracts struct #[doc] attributes, splits at # Example
         done: false
       - text: V2Filter derive extracts field #[doc] attributes as param description
         done: false
@@ -115,31 +118,41 @@ plan:
         done: false
       - text: Gate doc strings behind cfg(feature = "docs") — empty string without it
         done: false
-  - phase: Docs Builder
+  - phase: SSG Docs Builder
     tasks:
-      - text: Create build-docs binary that iterates all registrations
+      - text: Create scripts/build-docs.mjs (or Rust binary) that reads registry JSON
         done: false
-      - text: Render per-operation Markdown page (title, description, params table, example)
+      - text: HTML template with nav sidebar (categories + manual pages) and content area
         done: false
-      - text: Output to docs/operations/ directory
+      - text: Render per-operation HTML pages from registry (description, params, example)
         done: false
-      - text: Add JSON output mode for programmatic consumption
+      - text: Read manual pages from docs/pages/*.md with frontmatter (title, section, order)
         done: false
-  - phase: Proof of Concept
+      - text: Render manual pages into same HTML template
+        done: false
+      - text: Output complete static site to docs/build/
+        done: false
+      - text: Add build-docs.sh script that runs dump_registry + SSG
+        done: false
+  - phase: Proof of Concept Content
     tasks:
-      - text: Add doc comments to brightness filter as reference example
+      - text: Add doc comments to brightness filter (description + example + param docs)
         done: false
       - text: Add doc comments to contrast and gaussian_blur filters
         done: false
       - text: Add doc comments to PNG encoder as codec example
         done: false
-      - text: Run build-docs and verify output pages render correctly
+      - text: Create docs/pages/getting-started.md as manual page example
+        done: false
+      - text: Run build-docs and verify output site renders correctly
         done: false
   - phase: Verification
     tasks:
       - text: WASM build without docs feature — verify no binary size increase
         done: false
-      - text: Build with docs feature — verify all doc strings present in registry
+      - text: Build with docs feature — verify doc strings present in registry JSON
+        done: false
+      - text: Static site has working nav, operation pages, and manual pages
         done: false
       - text: dump_registry with docs feature includes description and example fields
         done: false
