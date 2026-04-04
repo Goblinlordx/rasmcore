@@ -99,6 +99,50 @@ interface pipeline-v2 {
         format-hint: option<string>,
     }
 
+    /// A GPU compute shader description for host-side dispatch.
+    record gpu-shader {
+        /// Complete WGSL source (io_f32 bindings + body, already composed).
+        source: string,
+        /// Entry point function name.
+        entry-point: string,
+        /// Workgroup size (x, y, z).
+        workgroup-x: u32,
+        workgroup-y: u32,
+        workgroup-z: u32,
+        /// Serialized uniform parameters (little-endian, 4-byte aligned).
+        params: buffer,
+        /// Extra read-only storage buffers (kernel weights, LUTs, etc.).
+        extra-buffers: list<buffer>,
+    }
+
+    /// GPU execution plan — returned by render-gpu-plan when GPU dispatch is possible.
+    record gpu-plan {
+        /// GPU shaders to execute in sequence (ping-pong).
+        shaders: list<gpu-shader>,
+        /// Input f32 pixel data from the source node (upstream of GPU chain).
+        input-pixels: pixel-buffer,
+        /// Pixel dimensions.
+        width: u32,
+        height: u32,
+    }
+
+    /// Trace event kind.
+    enum trace-event-kind {
+        fusion,
+        shader-compile,
+        gpu-dispatch,
+        cpu-fallback,
+        encode,
+    }
+
+    /// A single pipeline trace event.
+    record trace-event {
+        kind: trace-event-kind,
+        name: string,
+        duration-us: u64,
+        detail: option<string>,
+    }
+
     /// The V2 pipeline resource.
     resource image-pipeline-v2 {
         constructor();
@@ -134,5 +178,26 @@ interface pipeline-v2 {
         write: func(node: node-id, format: string, quality: option<u8>) -> result<buffer, rasmcore-error>;
         /// Execute and return raw f32 pixel data (no encoding).
         render: func(node: node-id) -> result<pixel-buffer, rasmcore-error>;
+
+        // ─── GPU Dispatch (host-side) ───
+        /// Get the GPU execution plan for a node, if a GPU chain exists.
+        ///
+        /// Returns the shader chain + source input pixels. The host dispatches
+        /// these through WebGPU/wgpu and calls inject-gpu-result with the output.
+        /// Returns none if no GPU chain exists (use render() for CPU fallback).
+        render-gpu-plan: func(node: node-id) -> result<option<gpu-plan>, rasmcore-error>;
+
+        /// Inject GPU execution result back into the pipeline cache.
+        ///
+        /// After the host executes the GPU plan, call this with the output
+        /// f32 pixels. The pipeline caches the result so subsequent render()
+        /// or write() calls use it instead of re-computing.
+        inject-gpu-result: func(node: node-id, pixels: pixel-buffer);
+
+        // ─── Tracing ───
+        /// Enable or disable pipeline tracing.
+        set-tracing: func(enabled: bool);
+        /// Take collected trace events, clearing the internal buffer.
+        take-trace: func() -> list<trace-event>;
     }
 }

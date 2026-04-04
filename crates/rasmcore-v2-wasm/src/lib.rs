@@ -311,6 +311,61 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
     fn render(&self, node: u32) -> Result<Vec<f32>, RasmcoreError> {
         self.render(node).map_err(to_wit_error)
     }
+
+    fn render_gpu_plan(&self, node: u32) -> Result<Option<wit::GpuPlan>, RasmcoreError> {
+        let plan = self
+            .graph
+            .borrow_mut()
+            .gpu_plan(node)
+            .map_err(to_wit_error)?;
+
+        Ok(plan.map(|p| wit::GpuPlan {
+            shaders: p
+                .shaders
+                .into_iter()
+                .map(|s| wit::GpuShader {
+                    source: s.body,
+                    entry_point: s.entry_point.to_string(),
+                    workgroup_x: s.workgroup_size[0],
+                    workgroup_y: s.workgroup_size[1],
+                    workgroup_z: s.workgroup_size[2],
+                    params: s.params,
+                    extra_buffers: s.extra_buffers,
+                })
+                .collect(),
+            input_pixels: p.input_pixels,
+            width: p.width,
+            height: p.height,
+        }))
+    }
+
+    fn inject_gpu_result(&self, node: u32, pixels: Vec<f32>) {
+        self.graph.borrow_mut().inject_gpu_result(node, pixels);
+    }
+
+    fn set_tracing(&self, enabled: bool) {
+        self.graph.borrow_mut().set_tracing(enabled);
+    }
+
+    fn take_trace(&self) -> Vec<wit::TraceEvent> {
+        let trace = self.graph.borrow_mut().take_trace();
+        trace
+            .events
+            .into_iter()
+            .map(|e| wit::TraceEvent {
+                kind: match e.kind {
+                    v2::TraceEventKind::Fusion => wit::TraceEventKind::Fusion,
+                    v2::TraceEventKind::ShaderCompile => wit::TraceEventKind::ShaderCompile,
+                    v2::TraceEventKind::GpuDispatch => wit::TraceEventKind::GpuDispatch,
+                    v2::TraceEventKind::CpuFallback => wit::TraceEventKind::CpuFallback,
+                    v2::TraceEventKind::Encode => wit::TraceEventKind::Encode,
+                },
+                name: e.name,
+                duration_us: e.duration_us,
+                detail: e.detail,
+            })
+            .collect()
+    }
 }
 
 // ─── Param deserialization ──────────────────────────────────────────────────

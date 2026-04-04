@@ -15,6 +15,18 @@ use crate::node::{Node, NodeInfo, PipelineError, Upstream};
 use crate::rect::Rect;
 use crate::trace::{PipelineTrace, TraceEventKind, TraceTimer};
 
+/// GPU execution plan — returned by `Graph::gpu_plan()` for host-side dispatch.
+pub struct GpuPlan {
+    /// GPU shaders to execute in sequence (ping-pong).
+    pub shaders: Vec<crate::node::GpuShader>,
+    /// Input f32 pixel data from the source node (upstream of GPU chain).
+    pub input_pixels: Vec<f32>,
+    /// Width of the input/output image.
+    pub width: u32,
+    /// Height of the input/output image.
+    pub height: u32,
+}
+
 /// The V2 pipeline graph.
 ///
 /// Manages node topology, caching, GPU dispatch, and demand-driven execution.
@@ -95,6 +107,55 @@ impl Graph {
     /// Number of nodes in the graph.
     pub fn node_count(&self) -> u32 {
         self.nodes.len() as u32
+    }
+
+    /// Extract the GPU execution plan for a node without executing it.
+    ///
+    /// Runs fusion, then collects the GPU shader chain. Returns the shaders,
+    /// the source node's pixel data, and dimensions. Returns None if no GPU
+    /// chain exists.
+    ///
+    /// Used by hosts (browser JS) that handle GPU dispatch externally.
+    pub fn gpu_plan(
+        &mut self,
+        node_id: u32,
+    ) -> Result<Option<GpuPlan>, PipelineError> {
+        // Run fusion first
+        if !self.optimized {
+            crate::fusion::optimize(self);
+            self.optimized = true;
+        }
+
+        let info = self.node_info(node_id)?;
+        let chain = self.collect_gpu_chain(node_id, info.width, info.height);
+
+        match chain {
+            Some((source_id, shaders)) if !shaders.is_empty() => {
+                let request = Rect::new(0, 0, info.width, info.height);
+                let input = self.request_region(source_id, request)?;
+                Ok(Some(GpuPlan {
+                    shaders,
+                    input_pixels: input,
+                    width: info.width,
+                    height: info.height,
+                }))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// Inject externally-computed GPU result into the cache.
+    ///
+    /// After the host executes the GPU plan, call this to cache the result.
+    /// Subsequent render()/write() calls for this node will use the cached data.
+    pub fn inject_gpu_result(&mut self, node_id: u32, pixels: Vec<f32>) {
+        let info = match self.node_info(node_id) {
+            Ok(i) => i,
+            Err(_) => return,
+        };
+        let rect = Rect::new(0, 0, info.width, info.height);
+        self.cache
+            .store(node_id, rect, pixels, crate::hash::ZERO_HASH);
     }
 
     /// Request f32 pixel data for a region from a node.

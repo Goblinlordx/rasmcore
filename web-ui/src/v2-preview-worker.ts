@@ -7,11 +7,13 @@
  */
 
 import { Pipeline } from '../sdk/v2/fluent/index';
+import { GpuHandlerV2, type GpuShader } from './gpu-handler-v2';
 
 const PREVIEW_MAX = 400;
 
 let PipelineClass = null;
 let previewBytes = null;
+let gpuHandler: GpuHandlerV2 | null = null;
 
 function snakeToCamel(s) {
   return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
@@ -21,6 +23,11 @@ async function initSDK() {
   try {
     const sdk = await import('../sdk/v2/rasmcore-v2-image.js');
     PipelineClass = sdk.pipelineV2.ImagePipelineV2;
+
+    if (GpuHandlerV2.isAvailable()) {
+      gpuHandler = new GpuHandlerV2();
+    }
+
     self.postMessage({ type: 'ready' });
   } catch (e) {
     self.postMessage({ type: 'error', message: `V2 Preview SDK init failed: ${e.message}` });
@@ -59,7 +66,7 @@ function loadImage(bytes) {
 
 // ─── Process ────────────────────────────────────────────────────────────────
 
-function processChain(chain) {
+async function processChain(chain) {
   if (!previewBytes) {
     self.postMessage({ type: 'error', message: 'No image loaded' });
     return;
@@ -76,6 +83,35 @@ function processChain(chain) {
       } else {
         const config = buildConfig(step.params, step.paramValues);
         pipe = pipe[method](config);
+      }
+    }
+
+    // Attempt GPU dispatch
+    if (gpuHandler) {
+      try {
+        const gpuPlan = pipe.renderGpuPlan(pipe.sinkNode);
+        if (gpuPlan) {
+          const ops: GpuShader[] = gpuPlan.shaders.map(s => ({
+            source: s.source,
+            entryPoint: s.entryPoint,
+            workgroupX: s.workgroupX,
+            workgroupY: s.workgroupY,
+            workgroupZ: s.workgroupZ,
+            params: new Uint8Array(s.params),
+            extraBuffers: s.extraBuffers.map(b => new Uint8Array(b)),
+          }));
+          const result = await gpuHandler.execute(
+            ops,
+            new Float32Array(gpuPlan.inputPixels),
+            gpuPlan.width,
+            gpuPlan.height,
+          );
+          if ('ok' in result) {
+            pipe.injectGpuResult(pipe.sinkNode, Array.from(result.ok));
+          }
+        }
+      } catch (_) {
+        // GPU failed — CPU fallback via write() below
       }
     }
 

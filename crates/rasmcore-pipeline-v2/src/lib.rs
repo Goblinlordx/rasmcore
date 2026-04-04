@@ -48,7 +48,7 @@ pub use node::{Node, NodeInfo, NodeCapabilities, GpuShader, TileHint, PipelineEr
 pub use aces_audit::{AcesViolation, AcesAuditResult};
 pub use color_space::ColorSpace;
 pub use gpu::{GpuError, GpuExecutor};
-pub use graph::Graph;
+pub use graph::{Graph, GpuPlan};
 pub use demand::{DemandStrategy, DemandHint};
 pub use cache::SpatialCache;
 pub use hash::content_hash;

@@ -4,12 +4,18 @@
  *
  * Uses the V2 fluent Pipeline class for named method dispatch:
  *   pipe.brightness({amount: 0.5}) instead of pipe.applyFilter(node, 'brightness', bytes)
+ *
+ * GPU dispatch: after building the filter chain, checks for a GPU plan
+ * (fused shader chain). If WebGPU is available, dispatches shaders via
+ * GpuHandlerV2 and injects the result back into the pipeline cache.
  */
 
 import { Pipeline } from '../sdk/v2/fluent/index';
+import { GpuHandlerV2, type GpuShader } from './gpu-handler-v2';
 
 let PipelineClass = null;
 let imageBytes = null;
+let gpuHandler: GpuHandlerV2 | null = null;
 
 function snakeToCamel(s) {
   return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
@@ -19,6 +25,15 @@ async function initSDK() {
   try {
     const sdk = await import('../sdk/v2/rasmcore-v2-image.js');
     PipelineClass = sdk.pipelineV2.ImagePipelineV2;
+
+    // Initialize WebGPU handler if available
+    if (GpuHandlerV2.isAvailable()) {
+      gpuHandler = new GpuHandlerV2();
+      console.log('[v2-pipeline] WebGPU available');
+    } else {
+      console.log('[v2-pipeline] WebGPU not available — CPU only');
+    }
+
     self.postMessage({ type: 'ready' });
   } catch (e) {
     self.postMessage({ type: 'error', message: `V2 SDK init failed: ${e.message}` });
@@ -57,7 +72,7 @@ function loadImage(bytes) {
 
 // ─── Process ────────────────────────────────────────────────────────────────
 
-function processChain(chain, mode) {
+async function processChain(chain, mode) {
   if (!imageBytes) {
     self.postMessage({ type: 'error', message: 'No image loaded' });
     return;
@@ -68,6 +83,9 @@ function processChain(chain, mode) {
 
   try {
     let pipe = Pipeline.fromRaw(PipelineClass, imageBytes);
+
+    // Enable tracing for diagnostics
+    pipe.setTracing(true);
 
     for (const step of chain) {
       const t = performance.now();
@@ -81,12 +99,54 @@ function processChain(chain, mode) {
       timings.push({ name: step.name, ms: Math.round(performance.now() - t) });
     }
 
+    // Attempt GPU dispatch if WebGPU is available
+    let gpuUsed = false;
+    if (gpuHandler) {
+      try {
+        const gpuPlan = pipe.renderGpuPlan(pipe.sinkNode);
+        if (gpuPlan) {
+          const tGpu = performance.now();
+          // Convert WASM gpu-shader records to GpuHandlerV2 format
+          const ops: GpuShader[] = gpuPlan.shaders.map(s => ({
+            source: s.source,
+            entryPoint: s.entryPoint,
+            workgroupX: s.workgroupX,
+            workgroupY: s.workgroupY,
+            workgroupZ: s.workgroupZ,
+            params: new Uint8Array(s.params),
+            extraBuffers: s.extraBuffers.map(b => new Uint8Array(b)),
+          }));
+          const result = await gpuHandler.execute(
+            ops,
+            new Float32Array(gpuPlan.inputPixels),
+            gpuPlan.width,
+            gpuPlan.height,
+          );
+          if ('ok' in result) {
+            pipe.injectGpuResult(pipe.sinkNode, Array.from(result.ok));
+            gpuUsed = true;
+            timings.push({ name: 'gpu_dispatch', ms: Math.round(performance.now() - tGpu) });
+          } else {
+            console.warn('[v2-pipeline] GPU failed, falling back to CPU:', result.err);
+          }
+        }
+      } catch (gpuErr) {
+        console.warn('[v2-pipeline] GPU plan extraction failed:', gpuErr);
+      }
+    }
+
     const output = pipe.write('png');
     const totalMs = Math.round(performance.now() - t0);
-    console.log(`[v2-pipeline] ${totalMs}ms`);
+
+    // Collect trace events
+    const traceEvents = pipe.takeTrace();
+    console.log(`[v2-pipeline] ${totalMs}ms (GPU: ${gpuUsed})`);
 
     const buf = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength);
-    self.postMessage({ type: 'result', png: buf, timings, totalMs, mode }, [buf]);
+    self.postMessage(
+      { type: 'result', png: buf, timings, totalMs, mode, gpuUsed, traceEvents },
+      [buf],
+    );
   } catch (e: any) {
     const detail = e?.payload ? JSON.stringify(e.payload, null, 2) : e?.message || String(e);
     console.error('[v2-pipeline] Error:', detail);
