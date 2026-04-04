@@ -35,6 +35,7 @@ let layerCache = null; // Shared cross-pipeline content-addressed cache
 let previewBytes = null;
 let gpuHandler: GpuHandlerV2 | null = null;
 let displayMode = false; // true when OffscreenCanvas received and display configured
+let tracingEnabled = false; // opt-in pipeline tracing
 
 function snakeToCamel(s) {
   return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
@@ -68,11 +69,39 @@ function createPipeline(bytes, proxyScale?: number) {
   const rawPipe = new PipelineClass();
   if (layerCache && typeof rawPipe.setLayerCache === 'function') rawPipe.setLayerCache(layerCache);
   if (proxyScale && proxyScale < 1.0 && typeof rawPipe.setProxyScale === 'function') rawPipe.setProxyScale(proxyScale);
+  if (tracingEnabled && typeof rawPipe.setTracing === 'function') rawPipe.setTracing(true);
   const node = rawPipe.read(bytes, undefined);
   const pipe = Object.create(Pipeline.prototype);
   pipe._pipe = rawPipe;
   pipe._node = node;
   return pipe;
+}
+
+/** Collect trace events from the raw pipeline and format for logging. */
+function collectTrace(rawPipe): { name: string; ms: number; detail?: string }[] | null {
+  if (!tracingEnabled || !rawPipe || typeof rawPipe.takeTrace !== 'function') return null;
+  try {
+    const events = rawPipe.takeTrace();
+    if (!events || events.length === 0) return null;
+    return events.map(e => ({
+      name: `${e.kind}:${e.name}`,
+      ms: e.durationUs / 1000,
+      detail: e.detail || undefined,
+    }));
+  } catch {
+    return null;
+  }
+}
+
+/** Log trace events to console for devtools. */
+function logTrace(trace: { name: string; ms: number; detail?: string }[] | null, totalMs: number) {
+  if (!trace) return;
+  console.group(`[v2-preview] Trace (${totalMs}ms total)`);
+  for (const e of trace) {
+    const detail = e.detail ? ` — ${e.detail}` : '';
+    console.log(`  ${e.name}: ${e.ms.toFixed(1)}ms${detail}`);
+  }
+  console.groupEnd();
 }
 
 async function initSDK() {
@@ -256,13 +285,15 @@ async function processChain(chain) {
     // If display mode handled rendering, send timing only (no PNG)
     if (gpuDisplayed) {
       const totalMs = Math.round(performance.now() - t0);
+      const trace = collectTrace(raw);
+      logTrace(trace, totalMs);
       if (layerCache) {
         const s = layerCache.stats();
         console.log(`[v2-preview] ${totalMs}ms (display) | cache: ${s.hits} hits, ${s.misses} misses, ${s.entries} entries`);
       } else {
         console.log(`[v2-preview] ${totalMs}ms (display)`);
       }
-      self.postMessage({ type: 'displayed', totalMs, proxyMax: PREVIEW_MAX });
+      self.postMessage({ type: 'displayed', totalMs, proxyMax: PREVIEW_MAX, trace });
       return;
     }
 
@@ -290,6 +321,8 @@ async function processChain(chain) {
     // PNG fallback path (no display canvas, or display failed)
     const output = pipe.write('png');
     const totalMs = Math.round(performance.now() - t0);
+    const trace = collectTrace(pipe._pipe);
+    logTrace(trace, totalMs);
 
     if (layerCache) {
       const s = layerCache.stats();
@@ -299,7 +332,7 @@ async function processChain(chain) {
     }
 
     const buf = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength);
-    self.postMessage({ type: 'result', png: buf, totalMs, proxyMax: PREVIEW_MAX }, [buf]);
+    self.postMessage({ type: 'result', png: buf, totalMs, proxyMax: PREVIEW_MAX, trace }, [buf]);
   } catch (e: any) {
     const detail = e?.payload ? JSON.stringify(e.payload, null, 2) : e?.message || String(e);
     console.error('[v2-preview] Process failed:', detail);
@@ -350,6 +383,9 @@ self.onmessage = (e) => {
       break;
     case 'viewport':
       handleViewport(e.data);
+      break;
+    case 'set-tracing':
+      tracingEnabled = !!e.data.enabled;
       break;
   }
 };
