@@ -9,7 +9,6 @@ use crate::domain::filter_traits::CpuFilter;
 /// With blade_count=0, uses a circular disc (same as bokeh_blur).
 /// With blade_count=5-12, uses a regular polygon simulating a camera aperture
 /// with that many blades, rotated by the rotation parameter.
-
 /// Lens blur config.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(

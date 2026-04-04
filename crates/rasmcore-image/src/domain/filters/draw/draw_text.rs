@@ -4,7 +4,6 @@
 use crate::domain::filters::common::*;
 
 /// Draw text on the image using the embedded 8x16 bitmap font.
-
 /// Parameters for draw_text.
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct DrawTextParams {

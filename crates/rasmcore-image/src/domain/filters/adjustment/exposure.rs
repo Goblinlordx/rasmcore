@@ -6,7 +6,6 @@ use crate::domain::filters::common::*;
 /// Photoshop-style exposure adjustment — logarithmic brightness with offset and gamma.
 ///
 /// Uses the composable LUT infrastructure from `point_ops`. Fully LUT-collapsible.
-
 /// Parameters for Photoshop-style exposure adjustment.
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct ExposureParams {

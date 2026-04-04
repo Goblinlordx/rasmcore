@@ -15,7 +15,6 @@ use crate::domain::filter_traits::CpuFilter;
 ///
 /// Reference: GEGL gegl:shadows-highlights (GPL3+).
 /// Validated against GEGL (EXACT tier target).
-
 #[derive(rasmcore_macros::Filter, Clone)]
 /// Shadow/Highlight adjustment — local tone mapping for shadows and highlights.
 /// Port of GEGL gegl:shadows-highlights (darktable algorithm by Ulrich Pegelow).

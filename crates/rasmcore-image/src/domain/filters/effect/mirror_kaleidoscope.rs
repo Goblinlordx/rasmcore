@@ -117,7 +117,7 @@ fn kaleidoscope(
             let local_angle = theta - seg_start;
 
             // Mirror alternating segments
-            let mapped_angle = if seg_idx % 2 == 0 {
+            let mapped_angle = if seg_idx.is_multiple_of(2) {
                 local_angle + offset_rad
             } else {
                 (seg_angle - local_angle) + offset_rad

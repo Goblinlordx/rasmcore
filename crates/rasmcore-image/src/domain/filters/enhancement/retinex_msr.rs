@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Multi-scale Retinex (user-facing wrapper with 3 fixed sigma scales).
-
 /// Parameters for multi-scale Retinex.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "retinex_msr", category = "enhancement", group = "retinex", variant = "msr", reference = "Jobson et al. 1997 multi-scale Retinex")]

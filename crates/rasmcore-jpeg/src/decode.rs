@@ -2070,7 +2070,6 @@ mod debug_tests {
     /// Previously had a multi-MCU encoder bug; fixed and now passes with PSNR > 25 dB.
     /// Pixel-exact decode parity vs djpeg confirmed in tests/parity.rs.
     #[test]
-
     fn decode_gray_gradient_reasonable_psnr() {
         let mut pixels = vec![0u8; 16 * 16];
         for y in 0..16 {

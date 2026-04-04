@@ -6,7 +6,6 @@ use crate::domain::filters::common::*;
 /// Adjust brightness (-1.0 to 1.0).
 ///
 /// Uses the composable LUT infrastructure from `point_ops`.
-
 /// Parameters for brightness adjustment.
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct BrightnessParams {

@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Morphological closing (user-facing wrapper).
-
 /// Parameters for morphological closing.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "morph_close", category = "morphology", group = "morphology", variant = "close", reference = "dilation then erosion")]

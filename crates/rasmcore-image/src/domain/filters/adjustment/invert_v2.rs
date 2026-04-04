@@ -57,14 +57,14 @@ impl CpuFilter for InvertV2 {
         let has_alpha = channels == 4;
 
         let mut output = pixels.clone();
-        for i in 0..output.len() {
+        for (i, pixel) in output.iter_mut().enumerate() {
             if has_alpha && i % 4 == 3 {
                 continue; // preserve alpha
             }
-            let orig = output[i];
+            let orig = *pixel;
             let inverted = 255 - orig;
             // Blend between original and inverted based on strength
-            output[i] = ((orig as f32 * (1.0 - self.strength) + inverted as f32 * self.strength) + 0.5) as u8;
+            *pixel = ((orig as f32 * (1.0 - self.strength) + inverted as f32 * self.strength) + 0.5) as u8;
         }
 
         Ok(output)

@@ -9,7 +9,6 @@ use crate::domain::filters::common::*;
 /// luminosity. The "this layer" range controls where the top layer is
 /// visible; the "underlying" range controls where the bottom layer
 /// shows through. Feather creates smooth transitions at range boundaries.
-
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Blend-If — Photoshop-style conditional compositing by luminosity.
 pub struct BlendIfParams {

@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Non-local means denoising (user-facing wrapper with scalar params).
-
 /// Parameters for NLM denoising.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "nlm_denoise", category = "enhancement", group = "denoise", variant = "nlm", reference = "Buades et al. 2005 non-local means")]

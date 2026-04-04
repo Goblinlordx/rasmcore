@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Multiply each channel by a factor (clamped to 0-255).
-
 /// Parameters for evaluate_multiply — multiply each channel by factor.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "evaluate_multiply", category = "evaluate", group = "evaluate", variant = "multiply", reference = "ImageMagick -evaluate Multiply", point_op = "true")]

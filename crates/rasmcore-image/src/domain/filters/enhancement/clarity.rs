@@ -12,7 +12,7 @@ use crate::domain::filter_traits::CpuFilter;
 ///
 /// - `amount`: enhancement strength (0.0-2.0 typical, 1.0 = full effect)
 /// - `sigma`: blur radius for local contrast (30-50 typical)
-
+///
 /// Parameters for clarity (midtone local contrast).
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "clarity", category = "enhancement", reference = "midtone-weighted local contrast")]

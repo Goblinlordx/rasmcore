@@ -8,7 +8,6 @@ use crate::domain::filter_traits::CpuFilter;
 ///
 /// Keeps a band of the image sharp while progressively blurring toward the edges.
 /// Creates a miniature/diorama effect. The focus band can be rotated via the angle param.
-
 /// Tilt-shift blur config.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(

@@ -12,7 +12,6 @@ use crate::domain::filter_traits::CpuFilter;
 /// - `strength`: correction strength 0.0 (none) to 1.0 (full correction)
 ///
 /// The output has the same dimensions and format as the input.
-
 /// Parameters for perspective_correct.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "perspective_correct", category = "advanced", group = "perspective", variant = "correct", reference = "automatic perspective rectification")]

@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 
 /// Levels adjustment: remap [black, white] input range with gamma curve.
 /// Matches ImageMagick `-level black%,white%,gamma`.
-
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Levels adjustment — remap input black/white points with gamma
 pub struct LevelsParams {

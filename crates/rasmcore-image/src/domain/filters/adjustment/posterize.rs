@@ -4,7 +4,6 @@
 use crate::domain::filters::common::*;
 
 /// Posterize to N discrete levels per channel (user-facing, LUT-collapsible).
-
 /// Parameters for posterize.
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct PosterizeParams {

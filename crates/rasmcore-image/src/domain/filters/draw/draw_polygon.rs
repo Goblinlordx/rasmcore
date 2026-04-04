@@ -4,7 +4,6 @@
 use crate::domain::filters::common::*;
 
 /// Draw a polygon on the image. Points are `[{x, y}, ...]` coordinates.
-
 /// Parameters for draw_polygon.
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct DrawPolygonParams {

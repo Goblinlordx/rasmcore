@@ -226,6 +226,7 @@ pub struct SubGraphBuilder {
     input_info: ImageInfo,
     /// Closures that build the internal graph. Each receives (input_node_id, &mut NodeGraph)
     /// and returns the ID of its terminal node.
+    #[allow(clippy::type_complexity)]
     build_steps: Vec<Box<dyn FnOnce(u32, &mut NodeGraph) -> u32>>,
 }
 
@@ -369,9 +370,9 @@ impl AnalysisSink for AutoLevelsAnalysis {
         let range = (white as f32 - black as f32).max(1.0);
         let mut sum = 0f64;
         let mut count = 0u64;
-        for i in (black as usize)..=(white as usize) {
-            sum += (i as f64 - black as f64) * histogram[i] as f64;
-            count += histogram[i] as u64;
+        for (i, &bin) in histogram[(black as usize)..=(white as usize)].iter().enumerate() {
+            sum += i as f64 * bin as f64;
+            count += bin as u64;
         }
         let mean_norm = if count > 0 {
             (sum / count as f64 / range as f64) as f32
@@ -507,6 +508,7 @@ where
     M: ParamMapper,
 {
     /// Builds the analysis graph. Returns (graph, terminal_node_id).
+    #[allow(clippy::type_complexity)]
     analysis_builder:
         Box<dyn FnOnce(&std::rc::Rc<RefCell<rasmcore_pipeline::LayerCache>>) -> (NodeGraph, u32)>,
     /// The analysis sink that consumes pixels and produces results.
@@ -514,6 +516,7 @@ where
     /// Maps analysis result to processing params.
     mapper: M,
     /// Builds the processing graph using mapped params. Returns (graph, output_node_id).
+    #[allow(clippy::type_complexity)]
     process_builder: Box<
         dyn FnOnce(
             M::Output,

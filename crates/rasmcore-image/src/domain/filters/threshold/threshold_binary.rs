@@ -7,7 +7,6 @@ use crate::domain::filter_traits::CpuFilter;
 /// Apply binary threshold to a grayscale image.
 ///
 /// Pixels >= threshold become max_value, pixels < threshold become 0.
-
 /// Parameters for binary threshold.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "threshold_binary", category = "threshold", group = "threshold", variant = "binary", reference = "fixed-level binary threshold")]

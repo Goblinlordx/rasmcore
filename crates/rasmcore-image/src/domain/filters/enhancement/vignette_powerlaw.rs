@@ -10,7 +10,6 @@ use crate::domain::filter_traits::{CpuFilter, GpuFilter};
 /// This is a computationally cheap alternative to the Gaussian vignette
 /// with a different aesthetic (smooth polynomial falloff vs. Gaussian).
 #[allow(clippy::too_many_arguments)]
-
 /// Parameters for the power-law vignette mode.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "vignette_powerlaw", category = "enhancement", group = "vignette", variant = "powerlaw", reference = "power-law radial falloff")]

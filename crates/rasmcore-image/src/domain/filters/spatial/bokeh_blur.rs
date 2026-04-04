@@ -12,7 +12,6 @@ use crate::domain::filter_traits::CpuFilter;
 ///
 /// `radius` is the kernel half-size in pixels (kernel side = 2*radius+1).
 /// Minimum radius is 1.
-
 /// Parameters for bokeh (lens) blur.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(

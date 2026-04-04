@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Draw a line on the image. Color components are 0-255.
-
 /// Parameters for draw_line.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "draw_line", category = "draw", group = "draw", variant = "line", reference = "Bresenham/anti-aliased line")]

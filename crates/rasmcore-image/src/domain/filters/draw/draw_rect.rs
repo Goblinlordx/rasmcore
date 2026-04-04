@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Draw a rectangle on the image. Set filled=true for solid fill.
-
 /// Parameters for draw_rect.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "draw_rect", category = "draw", group = "draw", variant = "rect", reference = "filled/outlined rectangle")]

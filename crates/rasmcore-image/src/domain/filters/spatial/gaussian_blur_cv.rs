@@ -16,7 +16,7 @@ use crate::domain::filter_traits::CpuFilter;
 /// required.
 ///
 /// - `sigma`: Gaussian standard deviation
-
+///
 /// Parameters for OpenCV-compatible Gaussian blur.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(

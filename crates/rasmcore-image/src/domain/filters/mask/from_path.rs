@@ -76,6 +76,7 @@ fn rasterize_circle(buf: &mut [f32], w: usize, h: usize, cx: f32, cy: f32, r: f3
 }
 
 /// Rasterize a line of circles between two points (for multi-point paths).
+#[allow(clippy::too_many_arguments)]
 pub fn rasterize_stroke_segment(
     buf: &mut [f32],
     w: usize,

@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Divide each channel by a factor (clamped to 0-255).
-
 /// Parameters for evaluate_divide — divide each channel by factor.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "evaluate_divide", category = "evaluate", group = "evaluate", variant = "divide", reference = "ImageMagick -evaluate Divide", point_op = "true")]

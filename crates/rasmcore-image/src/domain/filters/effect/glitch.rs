@@ -130,6 +130,9 @@ impl CpuFilter for GlitchParams {
                     let dst_idx = (row * w + x) * ch;
 
                     // Shifted source for RGB channels with per-channel offset
+                    // Each channel has a distinct source x (chromatic aberration), so
+                    // copy_from_slice cannot be used here — suppress the lint.
+                    #[allow(clippy::manual_memcpy)]
                     for c in 0..3 {
                         let c_offset = match c {
                             0 => channel_offset,  // Red shifts extra

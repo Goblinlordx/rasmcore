@@ -9,7 +9,6 @@ use crate::domain::filter_traits::CpuFilter;
 /// IM equivalent: -modulate brightness,saturation,hue
 /// Uses HSB (same as HSV where B=V=max(R,G,B)), not HSL.
 /// Identity at (100, 100, 0).
-
 #[derive(rasmcore_macros::Filter, Clone)]
 /// HSB modulate — combined brightness, saturation, hue adjustment.
 #[filter(name = "modulate", category = "color", reference = "luma-preserving HSL modulation", color_op = "true")]

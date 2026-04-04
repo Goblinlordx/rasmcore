@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Raise normalized channel values to a power.
-
 /// Parameters for evaluate_pow — raise normalized channel to power.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "evaluate_pow", category = "evaluate", group = "evaluate", variant = "pow", reference = "ImageMagick -evaluate Pow", point_op = "true")]

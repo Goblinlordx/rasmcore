@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Adjust saturation by `factor` (0=grayscale, 1=unchanged, 2=double).
-
 /// Parameters for saturate.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "saturate", category = "color", reference = "HSV saturation scaling", color_op = "true")]

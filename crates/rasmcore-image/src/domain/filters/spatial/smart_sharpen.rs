@@ -14,7 +14,6 @@ use crate::domain::filter_traits::CpuFilter;
 /// along strong edges.
 ///
 /// Reference: similar to Photoshop's Smart Sharpen (Remove: Lens Blur mode).
-
 /// Parameters for smart sharpen (edge-preserving unsharp mask).
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(

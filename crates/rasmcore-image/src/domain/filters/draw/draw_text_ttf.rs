@@ -7,7 +7,6 @@ use crate::domain::filters::common::*;
 ///
 /// Font data is passed as bytes (no filesystem access — WASM-compatible).
 /// Falls back to bitmap font when font_data is empty.
-
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 /// TrueType text rendering parameters.
 pub struct DrawTextTtfParams {

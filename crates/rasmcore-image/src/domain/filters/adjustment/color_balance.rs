@@ -8,7 +8,6 @@ use crate::domain::filters::common::*;
 /// Shifts colors along Cyan-Red, Magenta-Green, and Yellow-Blue axes
 /// independently for shadows, midtones, and highlights. Tonal ranges use
 /// smooth luminance-based weighting with Rec. 709 luma coefficients.
-
 /// Parameters for Photoshop-style color balance adjustment.
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct ColorBalanceParams {

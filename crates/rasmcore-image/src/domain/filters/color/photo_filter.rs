@@ -9,7 +9,6 @@ use crate::domain::filter_traits::{CpuFilter, GpuFilter};
 /// Blends a solid color over the image at the given density. When
 /// preserve_luminosity is enabled, the original pixel's luminance is
 /// maintained (only hue/saturation shifts). PS Photo Filter equivalent.
-
 #[derive(rasmcore_macros::Filter, Clone)]
 /// Photo Filter — warming/cooling color overlay like a camera lens filter.
 #[filter(name = "photo_filter", category = "color")]

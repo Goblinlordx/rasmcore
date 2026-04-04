@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Draw an ellipse on the image.
-
 /// Parameters for draw_ellipse.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "draw_ellipse", category = "draw", group = "draw", variant = "ellipse", reference = "filled/outlined ellipse")]

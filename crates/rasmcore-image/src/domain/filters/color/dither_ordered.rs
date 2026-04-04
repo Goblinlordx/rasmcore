@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Ordered (Bayer) dithering with median-cut palette.
-
 /// Parameters for ordered (Bayer) dithering.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "dither_ordered", category = "color", group = "quantize", variant = "dither_ordered", reference = "Bayer matrix ordered dithering")]

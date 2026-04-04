@@ -13,7 +13,7 @@ use crate::domain::filter_traits::CpuFilter;
 /// - `patch_radius`: local patch size for dark channel (typical: 7-15)
 /// - `omega`: haze removal strength 0.0-1.0 (typical: 0.95)
 /// - `t_min`: minimum transmission to avoid noise amplification (typical: 0.1)
-
+///
 /// Parameters for dehaze (dark channel prior).
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "dehaze", category = "enhancement", reference = "He et al. 2009 dark channel prior dehazing")]

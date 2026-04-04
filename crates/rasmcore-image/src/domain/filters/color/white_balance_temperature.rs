@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::{CpuFilter, GpuFilter};
 
 /// Temperature-based white balance adjustment.
-
 /// Parameters for white balance temperature adjustment.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "white_balance_temperature", category = "color", group = "white_balance", variant = "temperature", reference = "Planckian locus color temperature")]

@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Rotate hue by `degrees` (0-360). Works on RGB8 and RGBA8 images.
-
 /// Parameters for hue_rotate.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "hue_rotate", category = "color", reference = "HSV hue rotation", color_op = "true")]

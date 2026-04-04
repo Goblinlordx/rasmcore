@@ -987,11 +987,11 @@ pub fn parse_csp(text: &str) -> Result<ColorLut3D, ImageError> {
         // Use the first channel's curve as a representative (simplification —
         // full per-channel preLUT would need per-channel absorb)
         let pairs = &pre_luts[0];
-        for i in 0..256 {
+        for (i, entry) in lut_1d.iter_mut().enumerate() {
             let x = i as f32 / 255.0;
             // Linear interpolation through preLUT pairs
             let y = interpolate_pairs(pairs, x);
-            lut_1d[i] = (y * 255.0 + 0.5).clamp(0.0, 255.0) as u8;
+            *entry = (y * 255.0 + 0.5).clamp(0.0, 255.0) as u8;
         }
         clut = absorb_1d_pre(&lut_1d, &clut);
     }

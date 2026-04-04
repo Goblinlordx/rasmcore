@@ -19,7 +19,6 @@ pub struct MaskFeatherParams {
 ///
 /// Works on Gray8 (extracts channel, blurs, returns Gray8).
 /// For RGB8: converts to gray, blurs, returns as RGB8 with R=G=B.
-
 impl CpuFilter for MaskFeatherParams {
     fn compute(
         &self,

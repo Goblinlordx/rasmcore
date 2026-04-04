@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Morphological opening (user-facing wrapper).
-
 /// Parameters for morphological opening.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "morph_open", category = "morphology", group = "morphology", variant = "open", reference = "erosion then dilation")]

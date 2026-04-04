@@ -58,9 +58,7 @@ pub fn healing_brush(
             let src_idx = (sy as usize * w + sx as usize) * ch;
             let dst_idx = (y * w + x) * ch;
             let color_ch = if ch == 4 { 3 } else { ch };
-            for c in 0..color_ch {
-                cloned[dst_idx + c] = fg_pixels[src_idx + c];
-            }
+            cloned[dst_idx..(color_ch + dst_idx)].copy_from_slice(&fg_pixels[src_idx..(color_ch + src_idx)]);
         }
     }
 

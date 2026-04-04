@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Add a constant value to each channel (clamped to 0-255).
-
 /// Parameters for evaluate_add — add constant to each channel.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "evaluate_add", category = "evaluate", group = "evaluate", variant = "add", reference = "ImageMagick -evaluate Add", point_op = "true")]

@@ -20,7 +20,7 @@ use crate::domain::filter_traits::CpuFilter;
 ///
 /// - `sigma`: detail remapping strength (0.2 = strong enhancement, 1.0 = neutral, 3.0 = smooth)
 /// - `num_levels`: pyramid depth (0 = auto, typically 5-7)
-
+///
 /// Parameters for pyramid detail remapping.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "pyramid_detail_remap", category = "enhancement", reference = "Laplacian pyramid detail enhancement")]

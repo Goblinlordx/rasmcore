@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Morphological gradient (user-facing wrapper).
-
 /// Parameters for morphological gradient.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "morph_gradient", category = "morphology", group = "morphology", variant = "gradient", reference = "dilation minus erosion")]

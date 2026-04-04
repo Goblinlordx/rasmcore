@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Floor each channel at a minimum value.
-
 /// Parameters for evaluate_min — floor each channel at minimum value.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "evaluate_min", category = "evaluate", group = "evaluate", variant = "min", reference = "ImageMagick -evaluate Min", point_op = "true")]

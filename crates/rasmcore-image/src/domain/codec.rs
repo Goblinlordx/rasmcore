@@ -42,11 +42,14 @@ pub struct CodecRegistration {
     /// Decode image data to pixels. None = decode not supported.
     pub decode_fn: Option<fn(&[u8]) -> Result<DecodedImage, ImageError>>,
     /// Encode pixels to format. None = encode not supported.
+    #[allow(clippy::type_complexity)]
     pub encode_fn: Option<fn(&[u8], &ImageInfo, Option<u8>) -> Result<Vec<u8>, ImageError>>,
 
     /// Decode LUT file to ColorLut3D. None = not a LUT format.
+    #[allow(clippy::type_complexity)]
     pub decode_lut_fn: Option<fn(&[u8]) -> Result<ColorLut3D, ImageError>>,
     /// Encode ColorLut3D to format. None = not a LUT format or encode not supported.
+    #[allow(clippy::type_complexity)]
     pub encode_lut_fn: Option<fn(&ColorLut3D) -> Result<Vec<u8>, ImageError>>,
 }
 
@@ -56,12 +59,7 @@ inventory::collect!(&'static CodecRegistration);
 
 /// Find a codec by format name or file extension.
 pub fn find_codec(format: &str) -> Option<&'static CodecRegistration> {
-    for reg in inventory::iter::<&'static CodecRegistration>.into_iter().copied() {
-        if reg.format == format || reg.extensions.contains(&format) {
-            return Some(reg);
-        }
-    }
-    None
+    inventory::iter::<&'static CodecRegistration>.into_iter().copied().find(|&reg| reg.format == format || reg.extensions.contains(&format)).map(|v| v as _)
 }
 
 /// Detect format from data using registered detect_fn functions.
@@ -75,11 +73,10 @@ pub fn detect_format(data: &[u8]) -> Option<String> {
     entries.sort_by_key(|e| e.detection_priority);
 
     for entry in entries {
-        if let Some(detect) = entry.detect_fn {
-            if detect(data) {
+        if let Some(detect) = entry.detect_fn
+            && detect(data) {
                 return Some(entry.format.to_string());
             }
-        }
     }
     None
 }
@@ -102,14 +99,13 @@ pub fn decode_with_hint(
 ) -> Result<DecodedImage, ImageError> {
     if let Some(hint) = format_hint {
         if let Some(reg) = find_codec(hint) {
-            if let Some(detect) = reg.detect_fn {
-                if !detect(data) {
+            if let Some(detect) = reg.detect_fn
+                && !detect(data) {
                     return Err(ImageError::InvalidInput(format!(
                         "data does not match format '{}' (detection rejected)",
                         reg.format
                     )));
                 }
-            }
             if let Some(decode) = reg.decode_fn {
                 return decode(data);
             }
@@ -131,13 +127,11 @@ pub fn decode_with_hint(
     entries.sort_by_key(|e| e.detection_priority);
 
     for entry in &entries {
-        if let Some(detect) = entry.detect_fn {
-            if detect(data) {
-                if let Some(decode) = entry.decode_fn {
+        if let Some(detect) = entry.detect_fn
+            && detect(data)
+                && let Some(decode) = entry.decode_fn {
                     return decode(data);
                 }
-            }
-        }
     }
 
     let detected = detect_format(data).unwrap_or_else(|| "unknown".to_string());
@@ -173,7 +167,7 @@ pub fn encode(
 
 /// Check if a format is a registered LUT format (has encode_lut_fn or decode_lut_fn).
 pub fn is_lut_format(format: &str) -> bool {
-    find_codec(format).map_or(false, |r| r.encode_lut_fn.is_some() || r.decode_lut_fn.is_some())
+    find_codec(format).is_some_and(|r| r.encode_lut_fn.is_some() || r.decode_lut_fn.is_some())
 }
 
 /// Encode a ColorLut3D to a LUT format.
@@ -198,14 +192,13 @@ pub fn decode_lut_with_hint(
 ) -> Result<ColorLut3D, ImageError> {
     if let Some(hint) = format_hint {
         if let Some(reg) = find_codec(hint) {
-            if let Some(detect) = reg.detect_fn {
-                if !detect(data) {
+            if let Some(detect) = reg.detect_fn
+                && !detect(data) {
                     return Err(ImageError::InvalidInput(format!(
                         "data does not match LUT format '{}' (detection rejected)",
                         reg.format
                     )));
                 }
-            }
             if let Some(decode_lut) = reg.decode_lut_fn {
                 return decode_lut(data);
             }
@@ -227,13 +220,11 @@ pub fn decode_lut_with_hint(
     entries.sort_by_key(|e| e.detection_priority);
 
     for entry in &entries {
-        if let Some(detect) = entry.detect_fn {
-            if detect(data) {
-                if let Some(decode_lut) = entry.decode_lut_fn {
+        if let Some(detect) = entry.detect_fn
+            && detect(data)
+                && let Some(decode_lut) = entry.decode_lut_fn {
                     return decode_lut(data);
                 }
-            }
-        }
     }
 
     Err(ImageError::InvalidInput(
@@ -293,12 +284,12 @@ pub fn supported_lut_formats() -> Vec<String> {
 
 /// Check if a format supports decoding.
 pub fn can_decode(format: &str) -> bool {
-    find_codec(format).map_or(false, |r| r.decode_fn.is_some())
+    find_codec(format).is_some_and(|r| r.decode_fn.is_some())
 }
 
 /// Check if a format supports encoding.
 pub fn can_encode(format: &str) -> bool {
-    find_codec(format).map_or(false, |r| r.encode_fn.is_some())
+    find_codec(format).is_some_and(|r| r.encode_fn.is_some())
 }
 
 /// Get MIME type for a format.

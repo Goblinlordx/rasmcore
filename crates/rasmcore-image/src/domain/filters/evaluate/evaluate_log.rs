@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Logarithmic transform of channel values.
-
 /// Parameters for evaluate_log — logarithmic transform.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "evaluate_log", category = "evaluate", group = "evaluate", variant = "log", reference = "ImageMagick -evaluate Log", point_op = "true")]

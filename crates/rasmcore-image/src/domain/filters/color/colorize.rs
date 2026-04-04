@@ -11,7 +11,6 @@ use crate::domain::filter_traits::CpuFilter;
 /// - `"lab"`: CIELAB perceptual — replaces a*b* chrominance with parabolic
 ///   weighting by L*. Preserves subtle tint at highlights/shadows.
 ///   Based on the libvips/sharp tint() approach.
-
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "colorize", category = "color", reference = "W3C Compositing Level 1 / Photoshop Color blend mode", color_op = "true")]
 pub struct ColorizeParams {

@@ -410,8 +410,10 @@ pub fn generate_encode_dispatch(encoders: &[EncoderInfo]) -> String {
         if has_real_config {
             code.push_str(&format!("            {pattern} => {{\n"));
             if has_quality {
+                let has_extra_fields = enc.fields.iter().any(|f| f.name != "quality");
+                let struct_tail = if has_extra_fields { ", ..Default::default()" } else { "" };
                 code.push_str(&format!(
-                    "                let config = {module}::{config_struct} {{ quality: $quality.unwrap_or({module}::{config_struct}::default().quality), ..Default::default() }};\n"
+                    "                let config = {module}::{config_struct} {{ quality: $quality.unwrap_or({module}::{config_struct}::default().quality){struct_tail} }};\n"
                 ));
             } else {
                 code.push_str(&format!(

@@ -15,7 +15,6 @@ use crate::domain::filter_traits::CpuFilter;
 ///
 /// Reference: Jobson, Rahman, Woodell — "Properties and Performance of a
 /// Center/Surround Retinex" (IEEE Trans. Image Processing, 1997)
-
 /// Parameters for single-scale Retinex.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "retinex_ssr", category = "enhancement", group = "retinex", variant = "ssr", reference = "Land 1977 single-scale Retinex")]

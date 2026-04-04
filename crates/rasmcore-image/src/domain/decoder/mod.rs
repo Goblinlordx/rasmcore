@@ -49,12 +49,7 @@ inventory::collect!(&'static DecoderDispatchEntry);
 
 /// Find a decoder by format name or extension.
 pub fn find_decoder(format: &str) -> Option<&'static DecoderDispatchEntry> {
-    for entry in inventory::iter::<&'static DecoderDispatchEntry>.into_iter().copied() {
-        if entry.format == format || entry.extensions.contains(&format) {
-            return Some(entry);
-        }
-    }
-    None
+    inventory::iter::<&'static DecoderDispatchEntry>.into_iter().copied().find(|&entry| entry.format == format || entry.extensions.contains(&format)).map(|v| v as _)
 }
 
 /// List all decode formats from the dispatch registry.
@@ -150,7 +145,7 @@ inventory::submit! { &DecoderDispatchEntry {
 }}
 inventory::submit! { &DecoderDispatchEntry {
     format: "fits", extensions: &["fits", "fit"], priority: 60,
-    detect_fn: Some(|d| rasmcore_fits::is_fits(d)),
+    detect_fn: Some(rasmcore_fits::is_fits),
     decode_fn: decode_fits,
 }}
 
@@ -218,11 +213,10 @@ pub fn detect_format(header: &[u8]) -> Option<String> {
     entries.sort_by_key(|e| e.priority);
 
     for entry in entries {
-        if let Some(detect) = entry.detect_fn {
-            if detect(header) {
+        if let Some(detect) = entry.detect_fn
+            && detect(header) {
                 return Some(entry.format.to_string());
             }
-        }
     }
 
     // LUT format detection (these return ColorLut3D, not DecodedImage,
@@ -532,14 +526,13 @@ pub fn decode_with_hint(
         // Explicit format — find decoder by name/extension
         if let Some(entry) = find_decoder(hint) {
             // If decoder has detection, validate the data matches
-            if let Some(detect) = entry.detect_fn {
-                if !detect(data) {
+            if let Some(detect) = entry.detect_fn
+                && !detect(data) {
                     return Err(ImageError::InvalidInput(format!(
                         "data does not match format '{}' (detection rejected)",
                         entry.format
                     )));
                 }
-            }
             return (entry.decode_fn)(data);
         }
         return Err(ImageError::UnsupportedFormat(format!(
@@ -556,11 +549,10 @@ pub fn decode_with_hint(
     entries.sort_by_key(|e| e.priority);
 
     for entry in &entries {
-        if let Some(detect) = entry.detect_fn {
-            if detect(data) {
+        if let Some(detect) = entry.detect_fn
+            && detect(data) {
                 return (entry.decode_fn)(data);
             }
-        }
     }
 
     // No registered decoder matched

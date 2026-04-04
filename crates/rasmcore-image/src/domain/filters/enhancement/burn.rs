@@ -10,7 +10,6 @@ use crate::domain::filter_traits::{CpuFilter, GpuFilter};
 /// Formula: `output = pixel * (1 - exposure * range_weight(luma))`
 ///
 /// Validated: pixel-exact match against reference formula (max_diff=0).
-
 #[derive(rasmcore_macros::Filter, Clone)]
 /// Burn — darken exposure in a selected tonal range
 #[filter(name = "burn", category = "enhancement")]

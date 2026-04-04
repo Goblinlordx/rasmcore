@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Multi-scale Retinex with color restoration (user-facing wrapper).
-
 /// Parameters for multi-scale Retinex with color restoration.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "retinex_msrcr", category = "enhancement", group = "retinex", variant = "msrcr", reference = "Jobson et al. 1997 multi-scale Retinex with color restoration")]

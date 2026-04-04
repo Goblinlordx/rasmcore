@@ -16,7 +16,7 @@ use crate::domain::filter_traits::CpuFilter;
 /// - `sigma`: Gaussian blur radius controlling the separation frequency.
 ///   Higher sigma puts more detail into the low-pass (smoother high-pass).
 ///   Typical values: 2-10 for skin retouching, 10-30 for artistic effects.
-
+///
 /// Parameters for frequency separation — low-pass (structure) layer.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "frequency_low", category = "enhancement", group = "frequency", variant = "low", reference = "Gaussian low-pass separation")]

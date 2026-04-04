@@ -11,8 +11,10 @@ use super::helpers::{to_owned_type, to_pascal_case, to_qualified_binding_type};
 /// For spatial params (hint = rc.pixels), generates:
 /// - u32/u8: `(wit_config.field as f32 * self.proxy_scale.get()) as u32`
 /// - f32: `wit_config.field * self.proxy_scale.get()`
+///
 /// For non-spatial params, generates:
 /// - `wit_config.field`
+///
 fn proxy_scale_expr(field_accessor: &str, field: &ParamField) -> String {
     if !field.spatial {
         return format!("wit_config.{field_accessor}");

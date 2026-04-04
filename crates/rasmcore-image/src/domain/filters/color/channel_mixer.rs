@@ -8,7 +8,6 @@ use crate::domain::filter_traits::CpuFilter;
 ///
 /// Identity matrix (1,0,0, 0,1,0, 0,0,1) produces unchanged output.
 /// IM equivalent: `-color-matrix "rr rg rb 0 / gr gg gb 0 / br bg bb 0 / 0 0 0 1"`
-
 #[derive(rasmcore_macros::Filter, Clone)]
 /// Channel mixer — cross-mix RGB channels via a 3x3 matrix.
 #[filter(name = "channel_mixer", category = "color", reference = "RGB channel matrix multiplication", color_op = "true")]

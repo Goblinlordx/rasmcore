@@ -190,8 +190,6 @@ fn box_filter_f32(data: &[f32], w: usize, h: usize, radius: usize) -> Vec<f32> {
 }
 
 /// Registered filter — renders Harris corners as white dots on black Gray8 canvas.
-
-
 impl CpuFilter for HarrisCornersParams {
     fn compute(
         &self,

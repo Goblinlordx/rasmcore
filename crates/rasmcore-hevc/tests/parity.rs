@@ -24,7 +24,6 @@ fn decode_test_case(case: &str) -> Result<rasmcore_hevc::DecodedFrame, rasmcore_
 // ─── Pixel Parity Tests ────────────────────────────────────────────────────
 
 #[test]
-
 fn parity_flat_64x64_q22_pixels() {
     if !fixtures_available() {
         return;
@@ -55,7 +54,6 @@ fn parity_flat_64x64_q22_pixels() {
 }
 
 #[test]
-
 fn parity_flat_64x64_q37_pixels() {
     if !fixtures_available() {
         return;
@@ -79,7 +77,6 @@ fn parity_flat_64x64_q37_pixels() {
 }
 
 #[test]
-
 fn parity_gradient_128x128_q22_pixels() {
     if !fixtures_available() {
         return;
@@ -101,7 +98,6 @@ fn parity_gradient_128x128_q22_pixels() {
 }
 
 #[test]
-
 fn parity_checker_256x256_q22_pixels() {
     if !fixtures_available() {
         return;
@@ -377,7 +373,6 @@ fn yuv_diag_checker_256x256_q22() {
 }
 
 #[test]
-
 fn parity_all_cases_decode() {
     if !fixtures_available() {
         return;

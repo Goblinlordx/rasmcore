@@ -13,7 +13,6 @@ use crate::domain::filter_traits::GpuFilter;
 /// Cost is O(1) per pixel regardless of radius.
 ///
 /// Reference: matches Photoshop's Box Blur and OpenCV's cv2.blur().
-
 /// Parameters for box blur (uniform-weight kernel).
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(
@@ -66,9 +65,7 @@ impl CpuFilter for BoxBlurParams {
         #[inline(always)]
         fn load_pixel(src: &[f32], offset: usize, ch: usize) -> [f32; 4] {
             let mut p = [0.0f32; 4];
-            for c in 0..ch.min(4) {
-                p[c] = src[offset + c];
-            }
+            p[..ch.min(4)].copy_from_slice(&src[offset..(ch.min(4) + offset)]);
             p
         }
 
@@ -76,9 +73,7 @@ impl CpuFilter for BoxBlurParams {
         #[inline(always)]
         fn store_pixel(dst: &mut [f32], offset: usize, vals: [f32; 4], ch: usize, alpha_src: &[f32]) {
             let color_ch = if ch == 4 { 3 } else { ch };
-            for c in 0..color_ch {
-                dst[offset + c] = vals[c];
-            }
+            dst[offset..(color_ch + offset)].copy_from_slice(&vals[..color_ch]);
             if ch == 4 {
                 dst[offset + 3] = alpha_src[offset + 3]; // preserve alpha
             }

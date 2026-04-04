@@ -6,7 +6,6 @@ use crate::domain::filter_traits::{CpuFilter, GpuFilter};
 
 /// Oil painting effect: for each pixel, find the most frequent intensity
 /// in the neighborhood and output that pixel's color.
-
 #[derive(rasmcore_macros::Filter, Clone)]
 /// Oil paint effect — neighborhood mode filter
 #[filter(name = "oil_paint", category = "effect", reference = "Kuwahara-variant oil painting simulation")]

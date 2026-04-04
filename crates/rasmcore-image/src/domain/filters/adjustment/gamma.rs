@@ -4,7 +4,6 @@
 use crate::domain::filters::common::*;
 
 /// Gamma correction (user-facing, LUT-collapsible).
-
 /// Parameters for gamma correction.
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct GammaParams {

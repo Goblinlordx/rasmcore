@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Morphological dilation (user-facing wrapper).
-
 /// Parameters for morphological dilation.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "dilate", category = "morphology", group = "morphology", variant = "dilate", reference = "binary dilation")]

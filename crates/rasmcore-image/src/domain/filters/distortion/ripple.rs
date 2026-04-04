@@ -10,7 +10,6 @@ use crate::domain::filter_traits::{CpuFilter, GpuFilter};
 /// each pixel moves along its radial direction by `amplitude * sin(2π * r / wavelength)`.
 ///
 /// Equivalent to ImageMagick concentric wave effect.
-
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "ripple", category = "distortion", reference = "concentric ripple displacement")]
 pub struct RippleParams {

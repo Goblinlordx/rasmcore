@@ -8,7 +8,6 @@ use crate::domain::filters::common::*;
 ///
 /// Each pixel color is a weighted average of all control points, where
 /// weight = 1 / distance^power. IM equivalent: -sparse-color Shepard "..."
-
 /// Sparse color parameters (control points as string).
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 pub struct SparseColorParams {

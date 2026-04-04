@@ -9,7 +9,6 @@ use crate::domain::filter_traits::CpuFilter;
 /// Unlike `saturate` which applies a uniform multiplier, vibrance weights
 /// the boost inversely by current saturation — muted colors get more boost,
 /// already-vivid colors get less. amount=0 is identity.
-
 #[derive(rasmcore_macros::Filter, Clone)]
 /// Vibrance — perceptually weighted saturation boost.
 #[filter(name = "vibrance", category = "color", reference = "saturation-weighted chroma boost", color_op = "true")]

@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Flood fill (user-facing wrapper returning buffer only).
-
 /// Parameters for flood fill.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "flood_fill", category = "tool", reference = "seed-based flood fill")]

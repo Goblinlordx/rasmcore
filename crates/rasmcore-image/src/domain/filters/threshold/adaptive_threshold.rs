@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Adaptive threshold (user-facing wrapper with u32 method param).
-
 /// Parameters for adaptive threshold.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "adaptive_threshold", category = "threshold", group = "threshold", variant = "adaptive", reference = "local block-based adaptive threshold")]

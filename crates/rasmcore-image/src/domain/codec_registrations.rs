@@ -154,7 +154,7 @@ inventory::submit! { &CodecRegistration {
 
 inventory::submit! { &CodecRegistration {
     format: "fits", extensions: &["fits", "fit"], mime: "image/fits",
-    detect_fn: Some(|d| rasmcore_fits::is_fits(d)),
+    detect_fn: Some(rasmcore_fits::is_fits),
     detection_priority: 60,
     decode_fn: Some(crate::domain::decoder::decode_fits),
     encode_fn: Some(|px, info, _q| crate::domain::encoder::fits::encode_pixels(px, info)),
@@ -265,7 +265,7 @@ inventory::submit! { &CodecRegistration {
     detect_fn: Some(crate::domain::decoder::is_cube_lut),
     detection_priority: 210,
     decode_fn: None, encode_fn: None,
-    decode_lut_fn: Some(|d| crate::domain::decoder::decode_cube(d)),
+    decode_lut_fn: Some(crate::domain::decoder::decode_cube),
     encode_lut_fn: Some(crate::domain::encoder::cube::encode),
 }}
 
@@ -274,7 +274,7 @@ inventory::submit! { &CodecRegistration {
     detect_fn: Some(crate::domain::decoder::is_csp_lut),
     detection_priority: 210,
     decode_fn: None, encode_fn: None,
-    decode_lut_fn: Some(|d| crate::domain::decoder::decode_csp(d)),
+    decode_lut_fn: Some(crate::domain::decoder::decode_csp),
     encode_lut_fn: Some(crate::domain::encoder::lutcsp::encode),
 }}
 
@@ -283,7 +283,7 @@ inventory::submit! { &CodecRegistration {
     detect_fn: Some(crate::domain::decoder::is_3dl_lut),
     detection_priority: 310,
     decode_fn: None, encode_fn: None,
-    decode_lut_fn: Some(|d| crate::domain::decoder::decode_3dl(d)),
+    decode_lut_fn: Some(crate::domain::decoder::decode_3dl),
     encode_lut_fn: Some(crate::domain::encoder::lut3dl::encode),
 }}
 

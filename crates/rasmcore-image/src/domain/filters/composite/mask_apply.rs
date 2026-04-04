@@ -10,7 +10,6 @@ use crate::domain::filters::common::*;
 /// Mask is resized to match image dimensions if they differ.
 ///
 /// IM equivalent: `magick image mask -compose CopyOpacity -composite`
-
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Mask apply parameters.
 pub struct MaskApplyParams {

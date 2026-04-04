@@ -12,7 +12,7 @@ use crate::domain::filter_traits::CpuFilter;
 ///
 /// - `clip_limit`: contrast amplification limit (2.0-4.0 typical, higher = more contrast)
 /// - `tile_grid`: number of tiles per dimension (8 = 8x8 grid, OpenCV default)
-
+///
 /// Parameters for CLAHE contrast enhancement.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "clahe", category = "enhancement", reference = "Zuiderveld 1994 contrast-limited adaptive histogram equalization")]

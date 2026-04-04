@@ -9,7 +9,6 @@ use crate::domain::filters::common::*;
 /// edge maps. The normalize step is intentionally omitted because it
 /// amplifies the edge detector difference (MAE 24→239 with normalize).
 /// Registered as mapper because it changes pixel format (RGB8 → Gray8).
-
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Charcoal sketch effect — edge detection + blur + invert
 pub struct CharcoalParams {

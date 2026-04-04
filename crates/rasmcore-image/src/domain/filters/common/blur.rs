@@ -118,7 +118,7 @@ pub fn blur_impl(
     // Build separable Gaussian kernel
     let ksize = {
         let k = (sigma * 6.0 + 1.0).round() as usize;
-        if k % 2 == 0 { k + 1 } else { k }
+        if k.is_multiple_of(2) { k + 1 } else { k }
     };
     let ksize = ksize.max(3);
     let k1d = gaussian_kernel_1d(ksize, sigma);

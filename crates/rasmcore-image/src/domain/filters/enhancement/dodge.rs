@@ -15,7 +15,6 @@ use crate::domain::filter_traits::{CpuFilter, GpuFilter};
 /// - highlights: peaks at bright values, fades at midtones
 ///
 /// Validated: pixel-exact match against reference formula (max_diff=0).
-
 #[derive(rasmcore_macros::Filter, Clone)]
 /// Dodge — lighten exposure in a selected tonal range
 #[filter(name = "dodge", category = "enhancement")]

@@ -35,8 +35,8 @@ pub fn mask_luminance_range(
     };
 
     let n = (info.width as usize) * (info.height as usize);
-    let black_val = (black.clamp(0.0, 1.0) * 255.0) as f32;
-    let white_val = (white.clamp(0.0, 1.0) * 255.0).max(black_val) as f32;
+    let black_val = black.clamp(0.0, 1.0) * 255.0;
+    let white_val = (white.clamp(0.0, 1.0) * 255.0).max(black_val);
     let feath = feather.clamp(0.0, 128.0);
 
     let mut mask = Vec::with_capacity(n);

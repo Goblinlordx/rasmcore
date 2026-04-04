@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Color quantization via median-cut palette reduction.
-
 /// Parameters for color quantization.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "quantize", category = "color", group = "quantize", reference = "median cut palette quantization")]

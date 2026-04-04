@@ -107,7 +107,7 @@ fn zhang_suen_pass(img: &[u8], w: usize, h: usize, first_sub: bool) -> Vec<usize
             }
 
             // 2 <= B(P1) <= 6
-            if neighbors < 2 || neighbors > 6 {
+            if !(2..=6).contains(&neighbors) {
                 continue;
             }
 

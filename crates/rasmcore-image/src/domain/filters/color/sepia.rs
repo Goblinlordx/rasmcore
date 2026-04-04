@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Apply sepia tone with given `intensity` (0=none, 1=full sepia).
-
 /// Parameters for sepia.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "sepia", category = "color", reference = "sepia tone matrix", color_op = "true")]

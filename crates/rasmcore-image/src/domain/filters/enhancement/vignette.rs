@@ -18,7 +18,6 @@ use crate::domain::filter_traits::{CpuFilter, GpuFilter};
 /// tiled execution. For non-tiled usage, set tile offsets to 0 and full dims
 /// to the image dimensions.
 #[allow(clippy::too_many_arguments)]
-
 /// Parameters for the default (Gaussian) vignette effect.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "vignette", category = "enhancement", group = "vignette", reference = "Gaussian radial darkening")]

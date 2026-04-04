@@ -10,7 +10,6 @@ use crate::domain::filter_traits::{CpuFilter, GpuFilter};
 /// vertical wave shifts columns left/right.
 ///
 /// Equivalent to ImageMagick `-wave {amplitude}x{wavelength}`.
-
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "wave", category = "distortion", reference = "sinusoidal wave displacement")]
 pub struct WaveParams {

@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Subtract a constant value from each channel (clamped to 0-255).
-
 /// Parameters for evaluate_subtract — subtract constant from each channel.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "evaluate_subtract", category = "evaluate", group = "evaluate", variant = "subtract", reference = "ImageMagick -evaluate Subtract", point_op = "true")]

@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Draw an arc (partial ellipse outline) on the image.
-
 /// Parameters for draw_arc.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "draw_arc", category = "draw", group = "draw", variant = "arc", reference = "elliptical arc stroke")]

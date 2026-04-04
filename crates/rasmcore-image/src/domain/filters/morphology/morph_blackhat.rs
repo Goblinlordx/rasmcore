@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Morphological black-hat (user-facing wrapper).
-
 /// Parameters for morphological black-hat.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "morph_blackhat", category = "morphology", group = "morphology", variant = "blackhat", reference = "closing minus input")]

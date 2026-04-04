@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 
 /// Sigmoidal contrast: S-curve contrast adjustment.
 /// Matches ImageMagick `-sigmoidal-contrast strengthxmidpoint%`.
-
 #[derive(rasmcore_macros::ConfigParams, Clone)]
 /// Sigmoidal contrast — S-curve contrast adjustment
 pub struct SigmoidalContrastParams {

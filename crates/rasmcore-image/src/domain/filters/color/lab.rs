@@ -152,11 +152,9 @@ pub struct LabSharpenParams {
     pub radius: f32,
 }
 
-/// Unsharp-mask sharpening applied only to LAB L channel, preserving color.
-///
-/// Converts to LAB, applies unsharp mask to L only (L + amount * (L - blurred_L)),
-/// then converts back. This avoids color fringing artifacts from RGB-domain sharpening.
-
+// Unsharp-mask sharpening applied only to LAB L channel, preserving color.
+// Converts to LAB, applies unsharp mask to L only (L + amount * (L - blurred_L)),
+// then converts back. This avoids color fringing artifacts from RGB-domain sharpening.
 
 // ── LAB Adjust (shift a/b channels) ─────────────────────────────────────
 

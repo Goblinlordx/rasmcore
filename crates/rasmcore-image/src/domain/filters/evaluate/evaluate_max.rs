@@ -5,7 +5,6 @@ use crate::domain::filters::common::*;
 use crate::domain::filter_traits::CpuFilter;
 
 /// Ceiling each channel at a maximum value.
-
 /// Parameters for evaluate_max — ceiling each channel at maximum value.
 #[derive(rasmcore_macros::Filter, Clone)]
 #[filter(name = "evaluate_max", category = "evaluate", group = "evaluate", variant = "max", reference = "ImageMagick -evaluate Max", point_op = "true")]
