@@ -53,6 +53,7 @@ macro_rules! v2_decoder {
                 capabilities: OperationCapabilities {
                     gpu: false, analytic: false, affine: false, clut: false,
                 },
+                doc_path: "",
             }
         }
     };
@@ -100,6 +101,7 @@ macro_rules! v2_f32_decoder {
                 capabilities: OperationCapabilities {
                     gpu: false, analytic: false, affine: false, clut: false,
                 },
+                doc_path: "",
             }
         }
     };

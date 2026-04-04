@@ -65,6 +65,7 @@ macro_rules! v2_srgb_encoder {
                 capabilities: OperationCapabilities {
                     gpu: false, analytic: false, affine: false, clut: false,
                 },
+                doc_path: "",
             }
         }
     };
@@ -116,6 +117,7 @@ macro_rules! v2_linear_encoder {
                 capabilities: OperationCapabilities {
                     gpu: false, analytic: false, affine: false, clut: false,
                 },
+                doc_path: "",
             }
         }
     };
@@ -131,6 +133,7 @@ static QUALITY_PARAM: [ParamDescriptor; 1] = [ParamDescriptor {
     step: Some(1.0),
     default: Some(85.0),
     hint: Some("slider"),
+    description: "Encoding quality (1-100). Higher values produce larger files with better quality.",
     constraints: &[],
 }];
 
@@ -305,6 +308,7 @@ inventory::submit! {
         capabilities: OperationCapabilities {
             gpu: false, analytic: false, affine: false, clut: false,
         },
+        doc_path: "",
     }
 }
 

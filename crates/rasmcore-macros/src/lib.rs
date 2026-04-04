@@ -1093,6 +1093,7 @@ pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
     let mut filter_name = String::new();
     let mut filter_category = String::new();
     let mut display_name_override = String::new();
+    let mut doc_path = String::new();
 
     for attr in &input.attrs {
         if !attr.path().is_ident("filter") { continue; }
@@ -1104,6 +1105,7 @@ pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
                 "name" => filter_name = lit.value(),
                 "category" => filter_category = lit.value(),
                 "display_name" => display_name_override = lit.value(),
+                "doc" => doc_path = lit.value(),
                 _ => {}
             }
             Ok(())
@@ -1140,6 +1142,19 @@ pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
         let fname_str = fname.to_string();
         let ftype = &field.ty;
         let ftype_str = quote!(#ftype).to_string().replace(' ', "");
+
+        // Extract field doc comments for param description
+        let field_doc = field.attrs.iter()
+            .filter(|a| a.path().is_ident("doc"))
+            .filter_map(|a| {
+                if let syn::Meta::NameValue(nv) = &a.meta {
+                    if let syn::Expr::Lit(syn::ExprLit { lit: Lit::Str(s), .. }) = &nv.value {
+                        return Some(s.value());
+                    }
+                }
+                None
+            })
+            .collect::<Vec<_>>().join("\n").trim().to_string();
 
         let mut min_val = quote! { None };
         let mut max_val = quote! { None };
@@ -1184,7 +1199,8 @@ pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
         param_descriptors.push(quote! { rasmcore_pipeline_v2::ParamDescriptor {
             name: #fname_str, value_type: #param_type,
             min: #min_val, max: #max_val, step: #step_val,
-            default: #default_val_token, hint: #hint_val, constraints: &[],
+            default: #default_val_token, hint: #hint_val, description: #field_doc,
+            constraints: &[],
         }});
 
         let setter = match ftype_str.as_str() {
@@ -1237,7 +1253,7 @@ pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
         #[allow(non_upper_case_globals)]
         static #reg_ident: rasmcore_pipeline_v2::FilterFactoryRegistration = rasmcore_pipeline_v2::FilterFactoryRegistration {
             name: #filter_name, display_name: #display_name, category: #filter_category,
-            params: &#params_ident,
+            params: &#params_ident, doc_path: #doc_path,
             factory: |upstream, info, params| { #factory_body },
         };
         inventory::submit!(&#reg_ident);
@@ -1283,6 +1299,7 @@ pub fn derive_v2_encoder(input: TokenStream) -> TokenStream {
     let mut display_name = String::new();
     let mut mime = String::new();
     let mut extensions_str = String::new();
+    let mut enc_doc_path = String::new();
 
     for attr in &input.attrs {
         if !attr.path().is_ident("codec") { continue; }
@@ -1295,6 +1312,7 @@ pub fn derive_v2_encoder(input: TokenStream) -> TokenStream {
                 "display_name" => display_name = lit.value(),
                 "mime" => mime = lit.value(),
                 "extensions" => extensions_str = lit.value(),
+                "doc" => enc_doc_path = lit.value(),
                 _ => {}
             }
             Ok(())
@@ -1388,6 +1406,7 @@ pub fn derive_v2_encoder(input: TokenStream) -> TokenStream {
             mime: #mime,
             extensions: &#ext_ident,
             params: &#params_ident,
+            doc_path: #enc_doc_path,
             encode: #struct_name::encode,
         };
         inventory::submit!(&#reg_ident);
@@ -1419,6 +1438,7 @@ pub fn derive_v2_decoder(input: TokenStream) -> TokenStream {
     let mut codec_name = String::new();
     let mut display_name = String::new();
     let mut extensions_str = String::new();
+    let mut dec_doc_path = String::new();
 
     for attr in &input.attrs {
         if !attr.path().is_ident("codec") { continue; }
@@ -1430,6 +1450,7 @@ pub fn derive_v2_decoder(input: TokenStream) -> TokenStream {
                 "name" => codec_name = lit.value(),
                 "display_name" => display_name = lit.value(),
                 "extensions" => extensions_str = lit.value(),
+                "doc" => dec_doc_path = lit.value(),
                 _ => {}
             }
             Ok(())
@@ -1464,6 +1485,7 @@ pub fn derive_v2_decoder(input: TokenStream) -> TokenStream {
             name: #codec_name,
             display_name: #display_name,
             extensions: &#ext_ident,
+            doc_path: #dec_doc_path,
             detect: #struct_name::detect,
             decode: #struct_name::decode,
         };

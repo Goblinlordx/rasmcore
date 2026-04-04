@@ -62,6 +62,8 @@ pub struct ParamDescriptor {
     pub default: Option<f64>,
     /// UI hint (e.g., "log_slider", "color_picker", "angle_dial").
     pub hint: Option<&'static str>,
+    /// Human-readable description (from field doc comment).
+    pub description: &'static str,
     /// Contextual constraints (validated at graph build time).
     pub constraints: &'static [ParamConstraint],
 }
@@ -150,6 +152,8 @@ pub struct OperationRegistration {
     pub params: &'static [ParamDescriptor],
     /// Operation capabilities (GPU, fusion flags).
     pub capabilities: OperationCapabilities,
+    /// Relative path to AsciiDoc documentation file. Empty = no docs.
+    pub doc_path: &'static str,
 }
 
 inventory::collect!(&'static OperationRegistration);
@@ -298,6 +302,8 @@ pub struct FilterFactoryRegistration {
     pub category: &'static str,
     /// Parameter descriptors for SDK/UI generation. Empty = no metadata.
     pub params: &'static [ParamDescriptor],
+    /// Relative path to AsciiDoc documentation file. Empty = no docs.
+    pub doc_path: &'static str,
     /// Factory function that constructs the filter from dynamic params.
     pub factory: FilterFactory,
 }
@@ -378,6 +384,8 @@ pub struct EncoderFactoryRegistration {
     pub extensions: &'static [&'static str],
     /// Parameter descriptors for SDK/UI.
     pub params: &'static [ParamDescriptor],
+    /// Relative path to AsciiDoc documentation file. Empty = no docs.
+    pub doc_path: &'static str,
     /// Encode function.
     pub encode: EncoderFactory,
 }
@@ -433,6 +441,8 @@ pub struct DecoderFactoryRegistration {
     pub display_name: &'static str,
     /// File extensions.
     pub extensions: &'static [&'static str],
+    /// Relative path to AsciiDoc documentation file. Empty = no docs.
+    pub doc_path: &'static str,
     /// Format detection (magic bytes check).
     pub detect: FormatDetector,
     /// Decode function.
