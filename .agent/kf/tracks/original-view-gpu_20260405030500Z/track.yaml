@@ -1,0 +1,118 @@
+id: original-view-gpu_20260405030500Z
+title: "GPU display path for original image view"
+type: feature
+status: pending
+created: 2026-04-05
+updated: 2026-04-05
+spec:
+  summary: |
+    Use the same GPU display path (renderGpuPlan + executeAndDisplay) for the
+    original/before image instead of the 2D canvas drawImage path. A dedicated
+    original-view worker runs read() with no filters and blits via WebGPU.
+  context: |
+    The preview (processed) image uses a WebGPU OffscreenCanvas with the GPU
+    display path: renderGpuPlan → executeAndDisplay → blit shader → canvas.
+    The original image uses a separate 2D canvas with drawImage from a PNG
+    blob. This creates two different rendering paths with different sizing,
+    color management, and format support.
+
+    Using the same GPU path for both ensures:
+    - Consistent display across before/after views
+    - Formats browsers cannot decode (EXR, HDR, FITS, HEIC) display correctly
+      because rasmcore handles decoding
+    - Same pan/zoom behavior via the blit shader viewport uniform
+    - Same color space handling (linear → display via tone mapping)
+    - No CSS stretch issues — the shader handles image-to-canvas mapping
+  codebase_analysis: |
+    Current original image path (App.tsx):
+    - File bytes → Blob → createObjectURL → Image.onload → canvas.getContext('2d')
+      → drawImage. Browser handles decoding. Only works for browser-supported formats.
+
+    Current preview path (v2-preview-worker.ts):
+    - File bytes → WASM read() → filter chain → renderGpuPlan → executeAndDisplay
+      → blit shader → OffscreenCanvas. Works for any format rasmcore can decode.
+
+    What is needed:
+    - A second OffscreenCanvas transferred to a worker for the original view
+    - The worker runs: createPipeline(imageBytes) → renderGpuPlan(sourceNode)
+      → executeAndDisplay with empty shader list (passthrough)
+    - The gpu_plan passthrough feature (just merged) makes this work: empty
+      shaders list = upload pixels + blit directly
+    - Pan/zoom synchronized between both canvases via shared viewport state
+
+    Options for worker architecture:
+    A) Dedicated original-view worker (separate Web Worker)
+    B) Reuse preview worker with a second OffscreenCanvas
+    C) Reuse preview worker — render original as a zero-filter chain
+
+    Option C is simplest: the preview worker already has the pipeline
+    infrastructure. Send it a second OffscreenCanvas for the original view.
+    When the original tab is shown, render with an empty chain.
+  acceptance_criteria:
+    - Original image displays via GPU blit path (not 2D canvas drawImage)
+    - Original view matches preview view sizing and positioning
+    - Split view shows both canvases with consistent rendering
+    - EXR/HDR/FITS images display correctly in original view
+    - Pan/zoom works identically on both canvases
+    - No stretch or aspect ratio issues
+    - No flickering when switching between Current/Original/Split tabs
+  out_of_scope: |
+    - Full-res original view (preview resolution is acceptable for now)
+    - Color management differences between original and processed
+    - Dual-worker architecture (single worker handles both for simplicity)
+  technical_notes: |
+    Implementation approach (Option C — reuse preview worker):
+
+    1. Transfer a second OffscreenCanvas to the preview worker for original view
+       - New message: { type: 'init-original-display', canvas }
+       - Worker creates a second GpuHandlerV2 instance (or extends existing
+         one with a second display target)
+
+    2. On image load, render original via gpu-plan passthrough:
+       - createPipeline(previewBytes) with no filters
+       - renderGpuPlan(sourceNode) returns empty shaders + source pixels
+       - executeAndDisplay uploads pixels and blits to original canvas
+
+    3. Pan/zoom: forward viewport changes to both canvases
+       - Both use the same viewport uniform values
+       - Both blit shaders map image → canvas identically
+
+    4. Remove the 2D canvas original rendering from App.tsx:
+       - No more Blob → Image → drawImage path
+       - No more getWideGamutContext for original canvas
+
+    5. Canvas.tsx: both canvases use display-mode style (fill viewport,
+       shader handles pan/zoom). No more separate originalStyle.
+
+    Alternative: if a second GpuHandlerV2 instance is too heavy, the
+    worker can re-blit the source pixels to the original canvas using
+    a shared pixel buffer (source pixels are already in GPU memory from
+    the first renderGpuPlan call).
+plan:
+  - phase: "Worker Infrastructure"
+    tasks:
+      - text: "Add second OffscreenCanvas support to preview worker for original display"
+        done: false
+      - text: "On image load, render original via empty-chain gpu-plan passthrough"
+        done: false
+      - text: "Forward viewport changes to both original and preview display canvases"
+        done: false
+  - phase: "UI Integration"
+    tasks:
+      - text: "Transfer second OffscreenCanvas from App.tsx to preview worker"
+        done: false
+      - text: "Remove 2D canvas drawImage path for original image in App.tsx"
+        done: false
+      - text: "Update Canvas.tsx — both canvases use display-mode fill style"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Test original view displays correctly with JPEG, PNG, and EXR"
+        done: false
+      - text: "Test split view shows both canvases with consistent sizing"
+        done: false
+      - text: "Test pan/zoom synchronized between original and preview"
+        done: false
+      - text: "Test no flickering when switching Current/Original/Split tabs"
+        done: false
+extra: {}
