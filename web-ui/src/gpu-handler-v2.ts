@@ -64,6 +64,19 @@ export class GpuHandlerV2 {
   private lastOutputBuf: GPUBuffer | null = null;
   private lastImageWidth = 0;
   private lastImageHeight = 0;
+  /** Buffers queued for deferred destruction — destroyed on next submit, not immediately. */
+  private pendingDestroy: GPUBuffer[] = [];
+
+  /** Queue a buffer for destruction on the next submit (not immediately). */
+  private deferDestroy(buf: GPUBuffer): void {
+    this.pendingDestroy.push(buf);
+  }
+
+  /** Flush deferred destroys — safe to call before a new submit. */
+  private flushDeferred(): void {
+    for (const buf of this.pendingDestroy) buf.destroy();
+    this.pendingDestroy.length = 0;
+  }
 
   static isAvailable(): boolean {
     return typeof navigator !== 'undefined' && 'gpu' in navigator;
@@ -202,10 +215,11 @@ export class GpuHandlerV2 {
           1,
         );
         pass.end();
+        this.flushDeferred();
         device.queue.submit([encoder.finish()]);
 
-        paramBuf.destroy();
-        extras.forEach(b => b.destroy());
+        this.deferDestroy(paramBuf);
+        extras.forEach(b => this.deferDestroy(b));
         [readBuf, writeBuf] = [writeBuf, readBuf];
       }
 
@@ -216,6 +230,7 @@ export class GpuHandlerV2 {
       });
       const copyEnc = device.createCommandEncoder();
       copyEnc.copyBufferToBuffer(readBuf, 0, staging, 0, byteCount);
+      this.flushDeferred();
       device.queue.submit([copyEnc.finish()]);
 
       await staging.mapAsync(GPUMapMode.READ);
@@ -479,26 +494,28 @@ export class GpuHandlerV2 {
         );
         pass.end();
 
-        paramBuf.destroy();
-        extras.forEach(b => b.destroy());
+        this.deferDestroy(paramBuf);
+        extras.forEach(b => this.deferDestroy(b));
         [readBuf, writeBuf] = [writeBuf, readBuf];
       }
 
       // Blit render pass — reads compute output, writes to canvas
       this.appendBlitPass(encoder, readBuf);
 
+      // Flush previous frame's deferred destroys before submitting new work
+      this.flushDeferred();
       device.queue.submit([encoder.finish()]);
 
-      // Keep reference for displayOnly() re-blit
+      // Defer destruction of previous frame's output buffer
       if (this.lastOutputBuf && this.lastOutputBuf !== readBuf) {
-        this.lastOutputBuf.destroy();
+        this.deferDestroy(this.lastOutputBuf);
       }
       this.lastOutputBuf = readBuf;
       this.lastImageWidth = width;
       this.lastImageHeight = height;
 
-      // Destroy the other ping-pong buffer
-      if (writeBuf !== readBuf) writeBuf.destroy();
+      // Defer destruction of the other ping-pong buffer
+      if (writeBuf !== readBuf) this.deferDestroy(writeBuf);
 
       return null; // success
     } catch (e) {
@@ -537,10 +554,12 @@ export class GpuHandlerV2 {
 
     const encoder = this.device.createCommandEncoder();
     this.appendBlitPass(encoder, buf);
+
+    this.flushDeferred();
     this.device.queue.submit([encoder.finish()]);
 
-    // Keep for displayOnly()
-    if (this.lastOutputBuf) this.lastOutputBuf.destroy();
+    // Defer destruction of previous frame's buffer
+    if (this.lastOutputBuf) this.deferDestroy(this.lastOutputBuf);
     this.lastOutputBuf = buf;
     this.lastImageWidth = width;
     this.lastImageHeight = height;
@@ -575,6 +594,7 @@ export class GpuHandlerV2 {
 
   destroy(): void {
     this.shaderCache.clear();
+    this.flushDeferred();
     if (this.lastOutputBuf) { this.lastOutputBuf.destroy(); this.lastOutputBuf = null; }
     if (this.viewportBuf) { this.viewportBuf.destroy(); this.viewportBuf = null; }
     this.displayCanvas = null;
