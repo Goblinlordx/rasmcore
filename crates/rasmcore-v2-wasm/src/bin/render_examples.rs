@@ -118,7 +118,9 @@ fn main() {
         let fid = g.add_node((f.factory)(sid, info.clone(), &params));
         match g.request_full(fid) {
             Ok(out_px) => {
-                fs::write(out.join(format!("{}-after.png", f.name)), encode_png(&out_px, w, h)).unwrap();
+                // Use output node dimensions (may differ from input for scope/transform filters)
+                let out_info = g.node_info(fid).unwrap_or(info.clone());
+                fs::write(out.join(format!("{}-after.png", f.name)), encode_png(&out_px, out_info.width, out_info.height)).unwrap();
                 ok += 1;
             }
             Err(e) => { eprintln!("WARN: {} failed: {}", f.name, e); fail += 1; }
