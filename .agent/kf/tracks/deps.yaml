@@ -358,3 +358,6 @@ cli-v2-migration_20260405000540Z:
 
 remove-v1-pipeline-crate_20260405000541Z:
   - cli-v2-migration_20260405000540Z
+
+# Docs sidebar ordering — no deps
+docs-sidebar-ordering_20260405033639Z: []
