@@ -17,6 +17,7 @@
   "devDependencies": {
     "@types/node": "^22",
     "@types/react": "^19",
+    "@webgpu/types": "^0.1",
     "typescript": "^5"
   }
 }
