@@ -5,7 +5,6 @@
  * canvas rendering. No f32→u8 quantize loop — GPU blits directly to canvas.
  */
 
-// @ts-expect-error — SDK lib import
 import { GpuHandlerV2 } from '../../../../sdk/v2/lib/gpu-handler';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -123,7 +122,7 @@ export async function renderFilterToCanvas(
       if (plan) {
         // Configure GPU canvas if not already done
         if (!gpuHandler.hasDisplay) {
-          await gpuHandler.setDisplayCanvas(canvas, false);
+          await gpuHandler.setDisplayCanvas(canvas as unknown as OffscreenCanvas, false);
         }
         gpuHandler.updateViewport(0, 0, 1.0, info.width, info.height, info.width, info.height, 0);
 
