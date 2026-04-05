@@ -1,108 +1,105 @@
 id: fix-exposure-ev-only_20260405010000Z
-title: "Clean up Exposure filter — pure EV stops, remove bundled offset/gamma"
+title: Clean up Exposure filter — pure EV stops, remove bundled offset/gamma
 type: bug
 status: pending
 created: 2026-04-05
-updated: 2026-04-05
+updated: '2026-04-05'
 spec:
-  summary: |
-    Simplify Exposure to just output = input * 2^ev. Remove the bundled
+  summary: 'Simplify Exposure to just output = input * 2^ev. Remove the bundled
+
     offset and gamma_correction params which cause visual bugs and make
+
     the filter non-composable. Deprecate naive additive Brightness in
+
     favor of Exposure as the primary brightness control.
-  context: |
-    The current Exposure filter bundles three operations into one:
-    output = ((input + offset) * 2^ev) ^ (1/gamma_correction)
 
-    This causes multiple issues:
-    1. At ev=0, offset=0, gamma_correction=1 the filter should be identity
-       but may produce all-black due to floating point edge cases with powf
-    2. At round EV numbers, output changes significantly compared to values
-       in between — the powf(inv_gamma) amplifies discontinuities
-    3. The bundled gamma makes fusion non-composable (Exposure + Gamma
-       chain cant simplify because Exposure already has gamma inside)
-    4. The offset param is additive in linear — same perceptual non-uniformity
-       problem as the Brightness filter
-
-    Professional tools (Lightroom, Resolve) use pure EV stops for exposure:
-    just output = input * 2^ev. No offset, no gamma. Those are separate
-    controls (Offset filter, Gamma filter).
-
-    The project also needs the additive Brightness filter deprecated or
-    reworked, since v + amount in linear space produces non-uniform
-    perceptual results (dark areas shift much more than light areas).
-    Exposure with EV stops is the correct replacement for brightness
-    in a linear pipeline.
-  codebase_analysis: |
-    crates/rasmcore-pipeline-v2/src/filters/adjustment.rs:
-    - Exposure struct (lines 120-127): ev, offset, gamma_correction params
-    - compute() (lines 130-143): ((v + offset) * 2^ev).max(0).powf(1/gamma)
-    - analytic_expression() (lines 145-160): same formula as expression tree
-    - The powf(1/gamma_correction) is the source of discontinuities and
-      the all-black bug when gamma_correction approaches 0
-
-    - Brightness struct (lines 15-19): amount param, additive v + amount
-    - This should be deprecated in favor of Exposure for user-facing brightness
-
-    SDK: sdk/typescript/v2-fluent/index.ts lines 347-351
-    - ExposureConfig has ev, offset, gammaCorrection fields
-    - These need to be simplified to just ev
-
-    The Gamma filter (lines 84-113) already exists as a separate filter.
-    The Offset concept can remain as the existing Brightness filter for
-    users who specifically want additive offset (advanced use case).
+    '
+  context: "The current Exposure filter bundles three operations into one:\noutput = ((input + offset) * 2^ev) ^ (1/gamma_correction)\n\
+    \nThis causes multiple issues:\n1. At ev=0, offset=0, gamma_correction=1 the filter should be identity\n   but may produce\
+    \ all-black due to floating point edge cases with powf\n2. At round EV numbers, output changes significantly compared\
+    \ to values\n   in between — the powf(inv_gamma) amplifies discontinuities\n3. The bundled gamma makes fusion non-composable\
+    \ (Exposure + Gamma\n   chain cant simplify because Exposure already has gamma inside)\n4. The offset param is additive\
+    \ in linear — same perceptual non-uniformity\n   problem as the Brightness filter\n\nProfessional tools (Lightroom, Resolve)\
+    \ use pure EV stops for exposure:\njust output = input * 2^ev. No offset, no gamma. Those are separate\ncontrols (Offset\
+    \ filter, Gamma filter).\n\nThe project also needs the additive Brightness filter deprecated or\nreworked, since v + amount\
+    \ in linear space produces non-uniform\nperceptual results (dark areas shift much more than light areas).\nExposure with\
+    \ EV stops is the correct replacement for brightness\nin a linear pipeline.\n"
+  codebase_analysis: "crates/rasmcore-pipeline-v2/src/filters/adjustment.rs:\n- Exposure struct (lines 120-127): ev, offset,\
+    \ gamma_correction params\n- compute() (lines 130-143): ((v + offset) * 2^ev).max(0).powf(1/gamma)\n- analytic_expression()\
+    \ (lines 145-160): same formula as expression tree\n- The powf(1/gamma_correction) is the source of discontinuities and\n\
+    \  the all-black bug when gamma_correction approaches 0\n\n- Brightness struct (lines 15-19): amount param, additive v\
+    \ + amount\n- This should be deprecated in favor of Exposure for user-facing brightness\n\nSDK: sdk/typescript/v2-fluent/index.ts\
+    \ lines 347-351\n- ExposureConfig has ev, offset, gammaCorrection fields\n- These need to be simplified to just ev\n\n\
+    The Gamma filter (lines 84-113) already exists as a separate filter.\nThe Offset concept can remain as the existing Brightness\
+    \ filter for\nusers who specifically want additive offset (advanced use case).\n"
   acceptance_criteria:
-    - Exposure filter has single param ev (EV stops)
-    - Formula is output = input * 2^ev (no offset, no gamma)
-    - ev=0 produces exact identity (no visual change)
-    - Smooth visual transition across all EV values (no discontinuities at integers)
-    - analytic_expression() returns Mul(Input, Constant(2^ev)) — trivially fusable
-    - Existing Gamma and Brightness filters remain available (separate controls)
-    - SDK ExposureConfig updated to single ev field
-    - param-manifest.json reflects the simplified params
-    - All existing tests pass or are updated
-  out_of_scope: |
-    - ACES color management (separate track)
+  - Exposure filter has single param ev (EV stops)
+  - Formula is output = input * 2^ev (no offset, no gamma)
+  - ev=0 produces exact identity (no visual change)
+  - Smooth visual transition across all EV values (no discontinuities at integers)
+  - analytic_expression() returns Mul(Input, Constant(2^ev)) — trivially fusable
+  - Existing Gamma and Brightness filters remain available (separate controls)
+  - SDK ExposureConfig updated to single ev field
+  - param-manifest.json reflects the simplified params
+  - All existing tests pass or are updated
+  out_of_scope: '- ACES color management (separate track)
+
     - Changing Brightness formula (may be addressed separately or via ACES)
+
     - UI changes to promote Exposure over Brightness (app-layer decision)
-  technical_notes: |
-    The fix is straightforward:
+
+    '
+  technical_notes: 'The fix is straightforward:
+
 
     1. Remove offset and gamma_correction from Exposure struct
+
     2. Simplify compute to: pixel[c] = pixel[c] * multiplier
+
     3. Simplify analytic_expression to: Mul(Input, Constant(2^ev))
+
     4. Update param annotations: single #[param(min=-10, max=10, step=0.1, default=0)]
+
     5. Update SDK ExposureConfig
+
     6. Update tests
 
+
     The simplified expression Mul(Input, Constant) is the most fusable
+
     form possible — it composes trivially with any other point op.
 
+
     For the Brightness filter: leave it as-is for now. It still works
+
     correctly in a technical sense (additive linear offset). The ACES
+
     track will make it perceptually correct by changing the working space.
+
     Or the app layer can prefer Exposure for the brightness slider.
+
+    '
 plan:
-  - phase: "Simplify Filter"
-    tasks:
-      - text: "Remove offset and gamma_correction params from Exposure struct"
-        done: false
-      - text: "Simplify compute() to output = input * 2^ev"
-        done: false
-      - text: "Simplify analytic_expression() to Mul(Input, Constant(2^ev))"
-        done: false
-      - text: "Update SDK ExposureConfig to single ev field"
-        done: false
-  - phase: "Testing"
-    tasks:
-      - text: "Test ev=0 produces exact identity (pixel-exact roundtrip)"
-        done: false
-      - text: "Test ev=1 doubles pixel values, ev=-1 halves them"
-        done: false
-      - text: "Test smooth transition across ev=-2 to ev=+2 (no discontinuities)"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Verify param-manifest.json shows simplified exposure params"
-        done: false
+- phase: Simplify Filter
+  tasks:
+  - text: Remove offset and gamma_correction params from Exposure struct
+    done: true
+  - text: Simplify compute() to output = input * 2^ev
+    done: true
+  - text: Simplify analytic_expression() to Mul(Input, Constant(2^ev))
+    done: true
+  - text: Update SDK ExposureConfig to single ev field
+    done: true
+- phase: Testing
+  tasks:
+  - text: Test ev=0 produces exact identity (pixel-exact roundtrip)
+    done: true
+  - text: Test ev=1 doubles pixel values, ev=-1 halves them
+    done: true
+  - text: Test smooth transition across ev=-2 to ev=+2 (no discontinuities)
+    done: true
+- phase: Verification
+  tasks:
+  - text: Verify param-manifest.json shows simplified exposure params
+    done: true
 extra: {}
