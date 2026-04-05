@@ -1,121 +1,104 @@
 id: simd-autovec-pointops_20260404235000Z
-title: "SIMD auto-vectorizable [f32; 4] patterns for V2 point-op filters"
+title: SIMD auto-vectorizable [f32; 4] patterns for V2 point-op filters
 type: chore
 status: pending
 created: 2026-04-04
-updated: 2026-04-04
+updated: '2026-04-05'
 spec:
-  summary: |
-    Restructure ~35 uniform-RGB filter loops in adjustment, grading, effect,
+  summary: 'Restructure ~35 uniform-RGB filter loops in adjustment, grading, effect,
+
     and enhancement to use [f32; 4] array math that LLVM auto-vectorizes to
+
     SSE/NEON/WASM SIMD128 on all targets. No explicit intrinsics needed.
-  context: |
-    V2 pipeline processes RGBA f32 pixels (4 floats per pixel). Most point-op
+
+    '
+  context: 'V2 pipeline processes RGBA f32 pixels (4 floats per pixel). Most point-op
+
     filters apply the same operation to R, G, B channels independently with
+
     alpha preserved. Currently these use chunks_exact_mut(4) with per-element
+
     scalar indexing (pixel[0], pixel[1], pixel[2]). LLVM can auto-vectorize
+
     this but is unreliable.
 
+
     V1 rasmcore-kernel proved that [f32; 4] array math (vec4_tetrahedral)
+
     reliably auto-vectorizes to f32x4 SIMD on all targets. This track ports
+
     that pattern to V2.
 
+
     Per project rule: all image ops must use SIMD from initial impl.
-  codebase_analysis: |
-    Affected files (all in crates/rasmcore-pipeline-v2/src/filters/):
 
-    adjustment.rs — Brightness, Contrast, Gamma, Exposure, Levels,
-      Posterize, SigmoidalContrast, Dodge, Burn, Solarize, Invert (11 filters)
-    grading.rs — CurvesMaster, LinearGainGamma, Temperature, Shadows,
-      Highlights, Exposure2 (6 filters)
-    effect.rs — GaussianNoise, UniformNoise, SaltPepperNoise,
-      PoissonNoise (4 filters)
-    enhancement.rs — AutoLevel, FrequencyHigh (2 filters)
-    color.rs — WhiteBalanceTemperature, GrayWorld (2 filters, uniform RGB)
-
-    Total: ~25 filters with uniform RGB loops. All use the pattern:
-      for pixel in out.chunks_exact_mut(4) {
-          pixel[0] = f(pixel[0]);
-          pixel[1] = f(pixel[1]);
-          pixel[2] = f(pixel[2]);
-      }
-
-    Target pattern:
-      for pixel in out.chunks_exact_mut(4) {
-          let mut v = [pixel[0], pixel[1], pixel[2], pixel[3]];
-          v[0] = f(v[0]); v[1] = f(v[1]); v[2] = f(v[2]);
-          pixel.copy_from_slice(&v);
-      }
-    Or where the operation is pure arithmetic (no transcendentals):
-      for pixel in out.chunks_exact_mut(4) {
-          let v = [pixel[0], pixel[1], pixel[2], 0.0];
-          let r = [v[0] + offset, v[1] + offset, v[2] + offset, pixel[3]];
-          pixel.copy_from_slice(&r);
-      }
+    '
+  codebase_analysis: "Affected files (all in crates/rasmcore-pipeline-v2/src/filters/):\n\nadjustment.rs — Brightness, Contrast,\
+    \ Gamma, Exposure, Levels,\n  Posterize, SigmoidalContrast, Dodge, Burn, Solarize, Invert (11 filters)\ngrading.rs — CurvesMaster,\
+    \ LinearGainGamma, Temperature, Shadows,\n  Highlights, Exposure2 (6 filters)\neffect.rs — GaussianNoise, UniformNoise,\
+    \ SaltPepperNoise,\n  PoissonNoise (4 filters)\nenhancement.rs — AutoLevel, FrequencyHigh (2 filters)\ncolor.rs — WhiteBalanceTemperature,\
+    \ GrayWorld (2 filters, uniform RGB)\n\nTotal: ~25 filters with uniform RGB loops. All use the pattern:\n  for pixel in\
+    \ out.chunks_exact_mut(4) {\n      pixel[0] = f(pixel[0]);\n      pixel[1] = f(pixel[1]);\n      pixel[2] = f(pixel[2]);\n\
+    \  }\n\nTarget pattern:\n  for pixel in out.chunks_exact_mut(4) {\n      let mut v = [pixel[0], pixel[1], pixel[2], pixel[3]];\n\
+    \      v[0] = f(v[0]); v[1] = f(v[1]); v[2] = f(v[2]);\n      pixel.copy_from_slice(&v);\n  }\nOr where the operation\
+    \ is pure arithmetic (no transcendentals):\n  for pixel in out.chunks_exact_mut(4) {\n      let v = [pixel[0], pixel[1],\
+    \ pixel[2], 0.0];\n      let r = [v[0] + offset, v[1] + offset, v[2] + offset, pixel[3]];\n      pixel.copy_from_slice(&r);\n\
+    \  }\n"
   acceptance_criteria:
-    - All uniform-RGB filters use [f32; 4] array patterns in their compute() loops
-    - Existing tests pass unchanged (same output, different codegen)
-    - Godbolt or cargo-show-asm confirms f32x4 instructions emitted for at least brightness/contrast/invert on x86 and wasm32
-    - No explicit std::arch intrinsics (pure auto-vectorization only)
-    - No performance regression (should be neutral or faster)
-  out_of_scope: |
-    - Cross-channel filters (HSL, color matrix, luminance-based) — different SIMD pattern
+  - All uniform-RGB filters use [f32; 4] array patterns in their compute() loops
+  - Existing tests pass unchanged (same output, different codegen)
+  - Godbolt or cargo-show-asm confirms f32x4 instructions emitted for at least brightness/contrast/invert on x86 and wasm32
+  - No explicit std::arch intrinsics (pure auto-vectorization only)
+  - No performance regression (should be neutral or faster)
+  out_of_scope: '- Cross-channel filters (HSL, color matrix, luminance-based) — different SIMD pattern
+
     - Spatial/neighborhood filters (blur, median) — separate track
+
     - FusedPointOpNode/F32Lut — separate track
+
     - Explicit WASM SIMD128 or SSE intrinsics — auto-vec only in this track
-  technical_notes: |
-    The key pattern is replacing:
-      pixel[0] = op; pixel[1] = op; pixel[2] = op;
-    with:
-      let mut v: [f32; 4] = pixel.try_into().unwrap();
-      v[0] = op; v[1] = op; v[2] = op;
-      pixel.copy_from_slice(&v);
 
-    For simple arithmetic (add, mul, sub) the compiler often vectorizes both
-    patterns. But for compound operations (mul + add + clamp), the [f32; 4]
-    pattern gives LLVM a clearer vectorization target.
-
-    For filters with transcendentals (powf, exp, ln), auto-vectorization
-    won't help the transcendental itself, but will vectorize the surrounding
-    arithmetic. These are low priority — the LUT path handles them via fusion.
-
-    Priority order for restructuring:
-    1. Brightness, Contrast, Invert (simplest, highest usage)
-    2. Gamma, Exposure, Levels (transcendental but still beneficial)
-    3. Grading filters (LinearGainGamma, Temperature, Shadows, Highlights)
-    4. Effect filters (noise — random number generation limits vectorization)
-    5. Enhancement filters (AutoLevel, FrequencyHigh)
+    '
+  technical_notes: "The key pattern is replacing:\n  pixel[0] = op; pixel[1] = op; pixel[2] = op;\nwith:\n  let mut v: [f32;\
+    \ 4] = pixel.try_into().unwrap();\n  v[0] = op; v[1] = op; v[2] = op;\n  pixel.copy_from_slice(&v);\n\nFor simple arithmetic\
+    \ (add, mul, sub) the compiler often vectorizes both\npatterns. But for compound operations (mul + add + clamp), the [f32;\
+    \ 4]\npattern gives LLVM a clearer vectorization target.\n\nFor filters with transcendentals (powf, exp, ln), auto-vectorization\n\
+    won't help the transcendental itself, but will vectorize the surrounding\narithmetic. These are low priority — the LUT\
+    \ path handles them via fusion.\n\nPriority order for restructuring:\n1. Brightness, Contrast, Invert (simplest, highest\
+    \ usage)\n2. Gamma, Exposure, Levels (transcendental but still beneficial)\n3. Grading filters (LinearGainGamma, Temperature,\
+    \ Shadows, Highlights)\n4. Effect filters (noise — random number generation limits vectorization)\n5. Enhancement filters\
+    \ (AutoLevel, FrequencyHigh)\n"
 plan:
-  - phase: "Core Adjustment Filters"
-    tasks:
-      - text: "Restructure Brightness, Contrast, Invert compute() to [f32; 4] patterns"
-        done: false
-      - text: "Restructure Gamma, Exposure, Levels compute() to [f32; 4] patterns"
-        done: false
-      - text: "Restructure Posterize, SigmoidalContrast, Dodge, Burn, Solarize compute()"
-        done: false
-  - phase: "Grading + Color Filters"
-    tasks:
-      - text: "Restructure CurvesMaster, LinearGainGamma, Temperature compute()"
-        done: false
-      - text: "Restructure Shadows, Highlights, Exposure2 compute()"
-        done: false
-      - text: "Restructure WhiteBalanceTemperature, GrayWorld compute()"
-        done: false
-  - phase: "Effect + Enhancement Filters"
-    tasks:
-      - text: "Restructure GaussianNoise, UniformNoise, SaltPepperNoise, PoissonNoise compute()"
-        done: false
-      - text: "Restructure AutoLevel, FrequencyHigh compute()"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Run full rasmcore-image lib test suite — verify zero regressions"
-        done: false
-      - text: "Run pipeline-v2 benchmarks — verify no performance regression"
-        done: false
-      - text: "Spot-check LLVM codegen for brightness/contrast/invert on x86-64 (cargo-show-asm or godbolt)"
-        done: false
-      - text: "WASM component build — verify clean compilation with wasm32 target"
-        done: false
+- phase: Core Adjustment Filters
+  tasks:
+  - text: Restructure Brightness, Contrast, Invert compute() to [f32; 4] patterns
+    done: true
+  - text: Restructure Gamma, Exposure, Levels compute() to [f32; 4] patterns
+    done: true
+  - text: Restructure Posterize, SigmoidalContrast, Dodge, Burn, Solarize compute()
+    done: true
+- phase: Grading + Color Filters
+  tasks:
+  - text: Restructure CurvesMaster, LinearGainGamma, Temperature compute()
+    done: true
+  - text: Restructure Shadows, Highlights, Exposure2 compute()
+    done: true
+  - text: Restructure WhiteBalanceTemperature, GrayWorld compute()
+    done: true
+- phase: Effect + Enhancement Filters
+  tasks:
+  - text: Restructure GaussianNoise, UniformNoise, SaltPepperNoise, PoissonNoise compute()
+    done: true
+  - text: Restructure AutoLevel, FrequencyHigh compute()
+    done: true
+- phase: Verification
+  tasks:
+  - text: Run full rasmcore-image lib test suite — verify zero regressions
+    done: true
+  - text: Run pipeline-v2 benchmarks — verify no performance regression
+    done: true
+  - text: Spot-check LLVM codegen for brightness/contrast/invert on x86-64 (cargo-show-asm or godbolt)
+    done: true
+  - text: WASM component build — verify clean compilation with wasm32 target
+    done: true
 extra: {}
