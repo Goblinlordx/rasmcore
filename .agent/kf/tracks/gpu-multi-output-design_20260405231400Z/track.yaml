@@ -1,127 +1,104 @@
 id: gpu-multi-output-design_20260405231400Z
-title: "Research: GPU multi-render-target pipeline design"
+title: 'Research: GPU multi-render-target pipeline design'
 type: research
 status: pending
 created: '2026-04-06'
-updated: '2026-04-06'
+updated: '2026-04-05'
 spec:
-  summary: |
-    Investigate and document architecture for sharing a single GPU compute
+  summary: 'Investigate and document architecture for sharing a single GPU compute
+
     result across multiple render targets (viewport + scopes) without CPU
+
     readback or chain re-execution. Produces design doc with API surface,
+
     WebGPU constraints, and implementation plan.
-  context: |
-    Currently the preview worker runs the full pipeline for the viewport,
+
+    '
+  context: 'Currently the preview worker runs the full pipeline for the viewport,
+
     then processScope() re-runs the ENTIRE chain from scratch just to feed
+
     a scope filter. With GPU display mode, the computed result lives in a
+
     GPU buffer (lastOutputBuf) that persists between frames — but there is
+
     no mechanism to share that buffer with scope computation.
 
+
     DaVinci Resolve and similar tools display the image + multiple scopes
+
     simultaneously from a single render pass. We need the same: compute
+
     the chain once, then distribute the result to viewport blit + scope
+
     GPU shaders without CPU roundtrip.
 
+
     The user proposes a "ref" concept: a pipeline output that can be
+
     referenced as a source by multiple downstream consumers (scopes,
+
     additional viewports, thumbnails).
-  codebase_analysis: |
-    GpuHandlerV2 (gpu-handler-v2.ts):
-    - executeAndDisplay() chains compute shaders with ping-pong buffers,
-      blits final result to single canvas via appendBlitPass()
-    - lastOutputBuf persists GPU output buffer between frames
-    - Buffer is storage,read in blit shader — CAN be reused for multiple
-      blit passes without modification
-    - displayOnly() already re-blits without recompute (viewport pan/zoom)
-    - Single canvasCtx per handler — multiple targets need multiple contexts
-      or a restructured blit approach
 
-    v2-preview-worker.ts:
-    - processScope() creates a FRESH pipeline, re-applies entire filter
-      chain, appends scope filter, renders to PNG via CPU
-    - No GPU path for scopes — always CPU readback
-    - No mechanism to share GPU buffer from processChain() to processScope()
-
-    Graph (graph.rs):
-    - inject_gpu_result() caches by node_id — downstream nodes don't share
-    - gpu_plan() returns shaders + source pixels for host dispatch
-    - collect_gpu_chain() walks backward collecting GPU-capable nodes
-
-    ScopeNode (scope.rs):
-    - compute() requests full upstream image via &[f32] CPU data
-    - Cannot consume GPU buffer directly
-    - Scopes are analysis ops — could be implemented as GPU compute shaders
-      that read from the same storage buffer
-
-    WebGPU constraints:
-    - One GPUCanvasContext per canvas element (cannot share)
-    - Storage buffers CAN be bound to multiple passes in one command encoder
-    - Multiple render passes to different textures in one submit is valid
-    - OffscreenCanvas can be created dynamically for additional targets
+    '
+  codebase_analysis: "GpuHandlerV2 (gpu-handler-v2.ts):\n- executeAndDisplay() chains compute shaders with ping-pong buffers,\n\
+    \  blits final result to single canvas via appendBlitPass()\n- lastOutputBuf persists GPU output buffer between frames\n\
+    - Buffer is storage,read in blit shader — CAN be reused for multiple\n  blit passes without modification\n- displayOnly()\
+    \ already re-blits without recompute (viewport pan/zoom)\n- Single canvasCtx per handler — multiple targets need multiple\
+    \ contexts\n  or a restructured blit approach\n\nv2-preview-worker.ts:\n- processScope() creates a FRESH pipeline, re-applies\
+    \ entire filter\n  chain, appends scope filter, renders to PNG via CPU\n- No GPU path for scopes — always CPU readback\n\
+    - No mechanism to share GPU buffer from processChain() to processScope()\n\nGraph (graph.rs):\n- inject_gpu_result() caches\
+    \ by node_id — downstream nodes don't share\n- gpu_plan() returns shaders + source pixels for host dispatch\n- collect_gpu_chain()\
+    \ walks backward collecting GPU-capable nodes\n\nScopeNode (scope.rs):\n- compute() requests full upstream image via &[f32]\
+    \ CPU data\n- Cannot consume GPU buffer directly\n- Scopes are analysis ops — could be implemented as GPU compute shaders\n\
+    \  that read from the same storage buffer\n\nWebGPU constraints:\n- One GPUCanvasContext per canvas element (cannot share)\n\
+    - Storage buffers CAN be bound to multiple passes in one command encoder\n- Multiple render passes to different textures\
+    \ in one submit is valid\n- OffscreenCanvas can be created dynamically for additional targets\n"
   acceptance_criteria:
-    - Design document covering multi-output GPU pipeline architecture
-    - API surface definition for output refs (Rust/WIT + JS)
-    - WebGPU feasibility analysis (buffer sharing, multi-canvas, limits)
-    - Migration path from current single-output to multi-output
-    - Performance model comparing current re-execution vs shared buffer
-    - Scope-as-GPU-shader feasibility (histogram/waveform as compute shaders)
-  out_of_scope: |
-    Implementation code. WIT changes. Shader code.
+  - Design document covering multi-output GPU pipeline architecture
+  - API surface definition for output refs (Rust/WIT + JS)
+  - WebGPU feasibility analysis (buffer sharing, multi-canvas, limits)
+  - Migration path from current single-output to multi-output
+  - Performance model comparing current re-execution vs shared buffer
+  - Scope-as-GPU-shader feasibility (histogram/waveform as compute shaders)
+  out_of_scope: 'Implementation code. WIT changes. Shader code.
+
     This track produces a design document only.
-  technical_notes: |
-    Key design questions to investigate:
 
-    1. Output Ref Model:
-       - How are refs created? (e.g., pipeline.markOutput(nodeId, "main"))
-       - How are refs consumed? (e.g., scope reads from ref instead of re-executing)
-       - Are refs GPU buffers, CPU buffers, or abstract handles?
-
-    2. Multi-Canvas Blit:
-       - Can one GPUDevice render to multiple OffscreenCanvas contexts?
-       - Performance: multiple appendBlitPass() vs one pass with MRT?
-       - Scope canvases: OffscreenCanvas created per scope panel?
-
-    3. GPU Scope Shaders:
-       - Histogram as GPU compute: read storage buffer, atomic histogram bins
-       - Waveform/parade as GPU compute: column-reduce brightness
-       - Vectorscope as GPU compute: HSL transform + scatter plot
-       - Can these run as additional passes AFTER the main chain in one submit?
-
-    4. Buffer Lifecycle:
-       - lastOutputBuf already persists — extend to named output map?
-       - When to invalidate? (chain change, param change, image change)
-       - Memory budget for multiple persistent buffers
-
-    5. WIT Surface:
-       - render-gpu-plan-multi(nodes: list<node-id>) -> list<gpu-plan>?
-       - Or: render-gpu-plan returns plan + ref handle for downstream?
-
-    6. Worker Protocol:
-       - Single processChain message returns viewport + scope results?
-       - Or: processChain returns, then processScope reads from shared state?
-
-    Output: .agent/kf/_reports/gpu-multi-output-design.md
+    '
+  technical_notes: "Key design questions to investigate:\n\n1. Output Ref Model:\n   - How are refs created? (e.g., pipeline.markOutput(nodeId,\
+    \ \"main\"))\n   - How are refs consumed? (e.g., scope reads from ref instead of re-executing)\n   - Are refs GPU buffers,\
+    \ CPU buffers, or abstract handles?\n\n2. Multi-Canvas Blit:\n   - Can one GPUDevice render to multiple OffscreenCanvas\
+    \ contexts?\n   - Performance: multiple appendBlitPass() vs one pass with MRT?\n   - Scope canvases: OffscreenCanvas created\
+    \ per scope panel?\n\n3. GPU Scope Shaders:\n   - Histogram as GPU compute: read storage buffer, atomic histogram bins\n\
+    \   - Waveform/parade as GPU compute: column-reduce brightness\n   - Vectorscope as GPU compute: HSL transform + scatter\
+    \ plot\n   - Can these run as additional passes AFTER the main chain in one submit?\n\n4. Buffer Lifecycle:\n   - lastOutputBuf\
+    \ already persists — extend to named output map?\n   - When to invalidate? (chain change, param change, image change)\n\
+    \   - Memory budget for multiple persistent buffers\n\n5. WIT Surface:\n   - render-gpu-plan-multi(nodes: list<node-id>)\
+    \ -> list<gpu-plan>?\n   - Or: render-gpu-plan returns plan + ref handle for downstream?\n\n6. Worker Protocol:\n   -\
+    \ Single processChain message returns viewport + scope results?\n   - Or: processChain returns, then processScope reads\
+    \ from shared state?\n\nOutput: .agent/kf/_reports/gpu-multi-output-design.md\n"
 plan:
-  - phase: WebGPU Feasibility
-    tasks:
-      - text: Document WebGPU constraints for multi-canvas rendering from shared buffer
-        done: false
-      - text: Prototype multi-blit from single storage buffer to 2 OffscreenCanvas (spike)
-        done: false
-      - text: Document buffer sharing rules (same device, cross-encoder, lifetime)
-        done: false
-  - phase: Architecture Design
-    tasks:
-      - text: Design output ref model (creation, consumption, invalidation)
-        done: false
-      - text: Design GPU scope shader architecture (histogram/waveform as compute)
-        done: false
-      - text: Design worker protocol for single-compute multi-output
-        done: false
-  - phase: Documentation
-    tasks:
-      - text: Write design document with diagrams to .agent/kf/_reports/
-        done: false
-      - text: Define migration path from current architecture to multi-output
-        done: false
+- phase: WebGPU Feasibility
+  tasks:
+  - text: Document WebGPU constraints for multi-canvas rendering from shared buffer
+    done: true
+  - text: Prototype multi-blit from single storage buffer to 2 OffscreenCanvas (spike)
+    done: true
+  - text: Document buffer sharing rules (same device, cross-encoder, lifetime)
+    done: true
+- phase: Architecture Design
+  tasks:
+  - text: Design output ref model (creation, consumption, invalidation)
+    done: true
+  - text: Design GPU scope shader architecture (histogram/waveform as compute)
+    done: true
+  - text: Design worker protocol for single-compute multi-output
+    done: true
+- phase: Documentation
+  tasks:
+  - text: Write design document with diagrams to .agent/kf/_reports/
+    done: true
+  - text: Define migration path from current architecture to multi-output
+    done: true
 extra: {}
