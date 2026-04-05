@@ -1,0 +1,8 @@
+title: Remove rasmcore-pipeline (V1) crate and V1 code from rasmcore-image
+status: pending
+type: refactor
+approved: false
+created: '2026-04-05'
+updated: '2026-04-05'
+deps:
+- cli-v2-migration_20260405000540Z

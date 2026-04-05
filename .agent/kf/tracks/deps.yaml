@@ -351,3 +351,10 @@ zero-warnings-enforce_20260404095800Z: []
 
 # WebGPU direct display surface — no deps (high conflict with gpu-shader-cache, pipeline-perf-tracing, canvas-display-p3)
 webgpu-display-surface_20260404160855Z: []
+
+# V1 pipeline migration chain
+cli-v2-migration_20260405000540Z:
+  - drop-v1-pipeline_20260404055000Z
+
+remove-v1-pipeline-crate_20260405000541Z:
+  - cli-v2-migration_20260405000540Z

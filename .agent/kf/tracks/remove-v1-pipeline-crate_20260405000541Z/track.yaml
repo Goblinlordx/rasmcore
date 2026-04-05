@@ -1,0 +1,92 @@
+id: remove-v1-pipeline-crate_20260405000541Z
+title: Remove rasmcore-pipeline (V1) crate and V1 code from rasmcore-image
+type: refactor
+status: pending
+created: 2026-04-05
+updated: 2026-04-05
+spec:
+  summary: |
+    Delete the rasmcore-pipeline (V1) crate entirely, remove V1 pipeline
+    infrastructure from rasmcore-image (domain/pipeline, domain/filters — 58 files),
+    and clean up workspace references. Only safe after CLI migrates to V2.
+  context: |
+    After cli-v2-migration completes, no crate in the workspace will depend
+    on rasmcore-pipeline (V1). The V1 pipeline code in rasmcore-image
+    (NodeGraph, dispatch, 56 GPU filter files) becomes dead code.
+
+    rasmcore-image will remain as a codec/utility crate — its codec
+    implementations (PNG, JPEG, WebP, etc.) are still used by V2 via
+    the codec registry. Only the V1 pipeline engine and V1 filter
+    implementations are removed.
+  codebase_analysis: |
+    Files to remove:
+    - crates/rasmcore-pipeline/ — entire V1 crate (lib.rs, cache.rs, gpu.rs, ml.rs, etc.)
+    - crates/rasmcore-image/src/domain/pipeline/ — V1 graph engine, dispatch, nodes
+    - crates/rasmcore-image/src/domain/filters/ — V1 filter implementations (56 files)
+    - crates/rasmcore-image/src/adapter/ — V1 WIT adapter (if not already removed)
+    - crates/rasmcore-image/src/bindings.rs — V1 WIT bindings (if not already removed)
+
+    Files to update:
+    - Cargo workspace members — remove rasmcore-pipeline
+    - crates/rasmcore-image/Cargo.toml — remove rasmcore-pipeline dep
+    - crates/rasmcore-image/src/lib.rs — remove domain/pipeline and domain/filters modules
+    - crates/rasmcore-ffi/ — update if it depends on V1 types
+
+    V1 GPU types (GpuCapable, BufferFormat, GpuOp) are used in 56 filter files —
+    all deleted together since these ARE the V1 filter implementations.
+
+    V1 ML types (MlExecutor, MlCapable) are dead code — deleted with the crate.
+  acceptance_criteria:
+    - rasmcore-pipeline crate removed from workspace
+    - V1 pipeline code removed from rasmcore-image
+    - rasmcore-image still compiles as a codec/utility library
+    - V2 WASM component still builds (cargo component build -p rasmcore-v2-wasm)
+    - V2 web UI still works end-to-end
+    - CLI still works (uses V2 only)
+    - No remaining imports of rasmcore_pipeline anywhere in workspace
+    - Workspace cargo build succeeds
+  out_of_scope: |
+    - Migrating V1 filter implementations to V2 (V2 already has its own 88 filters)
+    - Changing rasmcore-image's codec implementations
+    - Modifying V2 pipeline code
+  technical_notes: |
+    This is a large deletion track. The risk is accidentally removing
+    something still needed. Mitigation:
+
+    1. Before deleting, grep workspace for rasmcore_pipeline imports
+    2. Delete crate directory
+    3. Remove from workspace Cargo.toml
+    4. Fix compilation errors (if any remain)
+    5. Run full test suite
+
+    rasmcore-image's codec modules (domain/codecs/) stay — they implement
+    the V2 codec registry traits. Only domain/pipeline and domain/filters
+    are V1 pipeline infrastructure.
+plan:
+  - phase: Pre-deletion Audit
+    tasks:
+      - text: Grep entire workspace for rasmcore_pipeline imports — verify only rasmcore-image and rasmcore-ffi remain (CLI already migrated)
+        done: false
+      - text: Verify rasmcore-image codec modules do NOT depend on V1 pipeline types
+        done: false
+  - phase: Deletion
+    tasks:
+      - text: Remove crates/rasmcore-pipeline/ directory entirely
+        done: false
+      - text: Remove rasmcore-pipeline from workspace Cargo.toml members list
+        done: false
+      - text: Remove rasmcore-pipeline dependency from rasmcore-image Cargo.toml
+        done: false
+      - text: Delete crates/rasmcore-image/src/domain/pipeline/ (V1 graph engine, dispatch, nodes)
+        done: false
+      - text: Delete crates/rasmcore-image/src/domain/filters/ (V1 filter implementations, 56 files)
+        done: false
+      - text: Update rasmcore-image lib.rs to remove domain/pipeline and domain/filters module declarations
+        done: false
+  - phase: Cleanup and Verification
+    tasks:
+      - text: Fix any remaining compilation errors in rasmcore-image, rasmcore-ffi, or other crates
+        done: false
+      - text: Verify full workspace builds — cargo build, cargo component build -p rasmcore-v2-wasm, web UI build
+        done: false
+extra: {}
