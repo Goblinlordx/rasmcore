@@ -5,130 +5,163 @@ status: pending
 created: '2026-04-05'
 updated: '2026-04-05'
 spec:
-  summary: |
-    V2 filters that take f32 RGBA pixel input and produce scope visualization
+  summary: 'V2 filters that take f32 RGBA pixel input and produce scope visualization
+
     images — histogram, waveform, vectorscope, and parade. Each scope is a
+
     standard Filter that produces a fixed-size output image on a black background.
+
     GPU-accelerated via existing Histogram256 reduction infrastructure.
-  context: |
-    Professional editors (DaVinci Resolve, Capture One, Premiere) display live
+
+    '
+  context: 'Professional editors (DaVinci Resolve, Capture One, Premiere) display live
+
     video scopes alongside the image during grading. The four essential scopes:
 
+
     1. Histogram — per-channel (R/G/B/Luma) pixel value distribution as vertical bars
+
     2. Waveform — per-column brightness distribution (x=image column, y=brightness)
+
     3. Vectorscope — chrominance plotted on a color wheel (the "dots on black" view)
+
     4. Parade — R/G/B channels displayed as separate side-by-side waveforms
 
+
     These are analysis visualizations, not image transforms — they read pixels and
+
     produce a completely different output image showing the data distribution.
-  codebase_analysis: |
-    GPU reduction infrastructure (gpu_shaders/reduction.rs, 847 lines):
-    - ReductionKind::Histogram256 — 3-pass zero-atomic pattern already proven
-    - result_reader_wgsl() generates WGSL snippets for reading histogram bins
-    - Reduction buffers persist across multi-pass chains
 
-    Filter trait (ops.rs):
-    - compute(&self, input, width, height) -> Vec<f32> — same-size assumption
-    - BUT: nothing prevents returning a different-sized buffer as long as
-      the wrapping Node reports the correct output dimensions via info()
-    - Scope filters will use custom FilterNode wrappers that report fixed
-      output dimensions (e.g., 512x512) regardless of input size
-
-    Existing patterns:
-    - V1 histogram.rs (1,077 lines) — per-channel 256-bin computation
-    - gpu_shaders/analysis.rs — HISTOGRAM_COMPUTE WGSL shader
-    - AnalysisNode trait in staged.rs — typed non-pixel results (ScalarVec)
-    - No existing scope VISUALIZATION filters — this is new
+    '
+  codebase_analysis: "GPU reduction infrastructure (gpu_shaders/reduction.rs, 847 lines):\n- ReductionKind::Histogram256 —\
+    \ 3-pass zero-atomic pattern already proven\n- result_reader_wgsl() generates WGSL snippets for reading histogram bins\n\
+    - Reduction buffers persist across multi-pass chains\n\nFilter trait (ops.rs):\n- compute(&self, input, width, height)\
+    \ -> Vec<f32> — same-size assumption\n- BUT: nothing prevents returning a different-sized buffer as long as\n  the wrapping\
+    \ Node reports the correct output dimensions via info()\n- Scope filters will use custom FilterNode wrappers that report\
+    \ fixed\n  output dimensions (e.g., 512x512) regardless of input size\n\nExisting patterns:\n- V1 histogram.rs (1,077\
+    \ lines) — per-channel 256-bin computation\n- gpu_shaders/analysis.rs — HISTOGRAM_COMPUTE WGSL shader\n- AnalysisNode\
+    \ trait in staged.rs — typed non-pixel results (ScalarVec)\n- No existing scope VISUALIZATION filters — this is new\n"
   acceptance_criteria:
-    - Histogram filter produces RGBA f32 image showing R/G/B/Luma distribution
-    - Waveform filter produces image showing per-column brightness distribution
-    - Vectorscope filter produces image showing chrominance on color wheel
-    - Parade filter produces image showing R/G/B as separate waveforms
-    - All scopes work on any input resolution (output is fixed scope size)
-    - CPU implementation for all four scopes (required)
-    - GPU shader for histogram scope (leverages existing Histogram256 reduction)
-    - Scopes registered as V2 filters discoverable via listOperations()
-    - Output renders correctly at scope resolution (default 512x512 or configurable)
-  out_of_scope: |
-    Web UI display panel (separate track webui-scope-panel).
+  - Histogram filter produces RGBA f32 image showing R/G/B/Luma distribution
+  - Waveform filter produces image showing per-column brightness distribution
+  - Vectorscope filter produces image showing chrominance on color wheel
+  - Parade filter produces image showing R/G/B as separate waveforms
+  - All scopes work on any input resolution (output is fixed scope size)
+  - CPU implementation for all four scopes (required)
+  - GPU shader for histogram scope (leverages existing Histogram256 reduction)
+  - Scopes registered as V2 filters discoverable via listOperations()
+  - Output renders correctly at scope resolution (default 512x512 or configurable)
+  out_of_scope: 'Web UI display panel (separate track webui-scope-panel).
+
     CIE chromaticity diagram. False color overlay. Zebra stripes.
+
     Real-time GPU waveform/vectorscope (histogram GPU only for now).
-  technical_notes: |
-    Architecture: each scope is a V2 Filter with a custom Node wrapper that
+
+    '
+  technical_notes: 'Architecture: each scope is a V2 Filter with a custom Node wrapper that
+
     reports fixed output dimensions. The filter reads full input pixels and
+
     produces a scope visualization image.
 
+
     Scope output convention:
+
     - Black background (0,0,0,1)
+
     - Scope graphics drawn in appropriate colors (R/G/B channels, white for luma)
+
     - Alpha = 1.0 everywhere (opaque scope overlay)
+
     - Default size: 512x512 (configurable via scope_size param)
 
+
     Histogram:
+
     - 256 bins per channel, drawn as vertical bars
+
     - R channel in red, G in green, B in blue, optional Luma in white
+
     - Logarithmic scale option for better visualization of distribution tails
 
+
     Waveform:
+
     - X axis = image column (downsampled to scope width)
+
     - Y axis = pixel brightness (0=bottom, 1=top)
+
     - Each column plots all pixel brightnesses as dots
+
     - Green tint (traditional waveform monitor color)
 
+
     Vectorscope:
+
     - Polar plot: angle = hue, distance from center = saturation
+
     - Each pixel plotted as a dot at its chrominance position
+
     - Skin tone line indicator at ~123° (I-line)
+
     - Color targets at standard positions (R/G/B/Cy/Mg/Yl)
 
+
     Parade:
+
     - Three side-by-side waveforms (R/G/B)
+
     - Each channel gets 1/3 of scope width
+
     - Same per-column brightness distribution as waveform
 
+
     Registration: each scope registered with category "analysis",
+
     #[filter(name = "scope_histogram", category = "analysis")]
+
+    '
 plan:
-  - phase: Scope Infrastructure
-    tasks:
-      - text: Create ScopeNode wrapper that reports fixed output dimensions independent of input
-        done: false
-      - text: Add scope_size parameter support (default 512, configurable)
-        done: false
-      - text: Add scope rendering helpers (plot_dot, draw_line, fill_bar) operating on f32 RGBA buffer
-        done: false
-  - phase: Histogram Scope
-    tasks:
-      - text: Implement CPU histogram computation (256 bins per R/G/B/Luma channel)
-        done: false
-      - text: Render histogram bars on black background (R=red, G=green, B=blue, Luma=white)
-        done: false
-      - text: Add logarithmic scale option for distribution tails
-        done: false
-      - text: Register as scope_histogram filter with category analysis
-        done: false
-  - phase: Waveform and Parade
-    tasks:
-      - text: Implement waveform scope — per-column brightness distribution (green tint)
-        done: false
-      - text: Implement parade scope — R/G/B as three side-by-side waveforms
-        done: false
-      - text: Register scope_waveform and scope_parade filters
-        done: false
-  - phase: Vectorscope
-    tasks:
-      - text: Implement vectorscope — chrominance polar plot (dots on black)
-        done: false
-      - text: Add skin tone line indicator (~123 degrees) and color target markers
-        done: false
-      - text: Register scope_vectorscope filter
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Test all four scopes with solid color input (predictable output)
-        done: false
-      - text: Test with gradient image (histogram should be flat, waveform diagonal)
-        done: false
-      - text: Test scope_size parameter produces correct output dimensions
-        done: false
+- phase: Scope Infrastructure
+  tasks:
+  - text: Create ScopeNode wrapper that reports fixed output dimensions independent of input
+    done: true
+  - text: Add scope_size parameter support (default 512, configurable)
+    done: true
+  - text: Add scope rendering helpers (plot_dot, draw_line, fill_bar) operating on f32 RGBA buffer
+    done: true
+- phase: Histogram Scope
+  tasks:
+  - text: Implement CPU histogram computation (256 bins per R/G/B/Luma channel)
+    done: true
+  - text: Render histogram bars on black background (R=red, G=green, B=blue, Luma=white)
+    done: true
+  - text: Add logarithmic scale option for distribution tails
+    done: true
+  - text: Register as scope_histogram filter with category analysis
+    done: true
+- phase: Waveform and Parade
+  tasks:
+  - text: Implement waveform scope — per-column brightness distribution (green tint)
+    done: true
+  - text: Implement parade scope — R/G/B as three side-by-side waveforms
+    done: true
+  - text: Register scope_waveform and scope_parade filters
+    done: true
+- phase: Vectorscope
+  tasks:
+  - text: Implement vectorscope — chrominance polar plot (dots on black)
+    done: true
+  - text: Add skin tone line indicator (~123 degrees) and color target markers
+    done: true
+  - text: Register scope_vectorscope filter
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test all four scopes with solid color input (predictable output)
+    done: true
+  - text: Test with gradient image (histogram should be flat, waveform diagonal)
+    done: true
+  - text: Test scope_size parameter produces correct output dimensions
+    done: true
 extra: {}
