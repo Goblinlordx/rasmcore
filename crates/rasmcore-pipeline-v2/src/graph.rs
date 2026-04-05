@@ -187,7 +187,8 @@ impl Graph {
         let chain = self.collect_gpu_chain(node_id, info.width, info.height);
 
         match chain {
-            Some((source_id, shaders)) if !shaders.is_empty() => {
+            Some((source_id, shaders)) => {
+                // GPU chain found — source pixels + shaders (may be empty for passthrough)
                 let request = Rect::new(0, 0, info.width, info.height);
                 let input = self.request_region(source_id, request)?;
                 Ok(Some(GpuPlan {
@@ -197,7 +198,18 @@ impl Graph {
                     height: info.height,
                 }))
             }
-            _ => Ok(None),
+            None => {
+                // No GPU chain at all — return a passthrough plan with the node's
+                // pixels and an empty shader list. The host uploads and blits directly.
+                let request = Rect::new(0, 0, info.width, info.height);
+                let input = self.request_region(node_id, request)?;
+                Ok(Some(GpuPlan {
+                    shaders: vec![],
+                    input_pixels: input,
+                    width: info.width,
+                    height: info.height,
+                }))
+            }
         }
     }
 
