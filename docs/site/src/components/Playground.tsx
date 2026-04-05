@@ -63,12 +63,17 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
       if (seq !== renderSeq.current) return;
 
       if (afterCanvasRef.current) {
+        // Build param type map from descriptors so serialization uses correct types
+        const paramTypes: Record<string, string> = {};
+        for (const p of params) { paramTypes[p.name] = p.type; }
+
         await renderFilterToCanvas(
           afterCanvasRef.current,
           imgBytes,
           filterName,
           vals,
           referenceImageUrl,
+          paramTypes,
         );
       }
 

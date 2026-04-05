@@ -88,6 +88,7 @@ export async function renderFilterToCanvas(
   filterName: string,
   params: Record<string, number | boolean>,
   cacheKey: string,
+  paramTypes?: Record<string, string>,
 ): Promise<{ width: number; height: number }> {
   const t0 = performance.now();
 
@@ -105,7 +106,7 @@ export async function renderFilterToCanvas(
   }
   const tRead = performance.now();
 
-  const paramBuf = serializeParams(filterName, params);
+  const paramBuf = serializeParams(filterName, params, paramTypes);
   const filterId = pipe.applyFilter(nodeId, filterName, paramBuf);
   const tFilter = performance.now();
 
@@ -200,6 +201,7 @@ export async function renderFilterToCanvas(
 function serializeParams(
   _name: string,
   params: Record<string, number | boolean>,
+  paramTypes?: Record<string, string>,
 ): Uint8Array {
   const entries = Object.entries(params);
   if (entries.length === 0) return new Uint8Array(0);
@@ -208,16 +210,23 @@ function serializeParams(
   for (const [name, value] of entries) {
     buf.push(name.length);
     for (let i = 0; i < name.length; i++) buf.push(name.charCodeAt(i));
-    if (typeof value === 'boolean') {
+
+    // Use registry type info to pick correct serialization.
+    // Without type info, guess based on JS type (fragile — Number.isInteger(8.0) is true).
+    const ptype = paramTypes?.[name];
+    const isInt = ptype ? (ptype === 'U32' || ptype === 'I32' || ptype === 'u32' || ptype === 'i32') : false;
+    const isBool = typeof value === 'boolean' || ptype === 'Bool' || ptype === 'bool';
+
+    if (isBool) {
       buf.push(2);
       buf.push(value ? 1 : 0);
-    } else if (Number.isInteger(value)) {
-      buf.push(1);
+    } else if (isInt) {
+      buf.push(1); // u32
       const ab = new ArrayBuffer(4);
-      new DataView(ab).setUint32(0, value as number, true);
+      new DataView(ab).setUint32(0, Math.round(value as number), true);
       buf.push(...new Uint8Array(ab));
     } else {
-      buf.push(0);
+      buf.push(0); // f32
       const ab = new ArrayBuffer(4);
       new DataView(ab).setFloat32(0, value as number, true);
       buf.push(...new Uint8Array(ab));
