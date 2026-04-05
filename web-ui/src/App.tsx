@@ -15,7 +15,7 @@ import EffectStack from './components/EffectStack';
 import StatusBar from './components/StatusBar';
 import CodeModal from './components/CodeModal';
 
-const PREVIEW_DEBOUNCE_MS = 33; // ~30fps
+// No debounce — send immediately, single-slot queue handles backpressure
 
 export default function App() {
   const { operations, groups, writeFormats, loading } = useAppContext();
@@ -46,7 +46,7 @@ export default function App() {
   const [codeModalOpen, setCodeModalOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState('jpeg');
   const [exportQuality, setExportQuality] = useState(85);
-  const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   /** Whether the last viewport update came from proxy (true) or full-res (false) */
   const [showingProxy, setShowingProxy] = useState(false);
   /** Whether background warm is running */
@@ -198,12 +198,10 @@ export default function App() {
     [moveNode, applyFullChain],
   );
 
-  // Debounced preview — sends chain to preview worker (fast, ~1080p proxy)
+  // Send preview immediately — single-slot queue in usePreviewWorker drops
+  // stale requests automatically (latest params always win).
   const schedulePreview = useCallback(() => {
-    if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
-    previewTimerRef.current = setTimeout(() => {
-      preview.processChain(serializeChainRef.current());
-    }, PREVIEW_DEBOUNCE_MS);
+    preview.processChain(serializeChainRef.current());
   }, [preview]);
 
   const handleDownload = useCallback(
