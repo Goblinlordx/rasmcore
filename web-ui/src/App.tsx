@@ -62,27 +62,21 @@ export default function App() {
     preview.viewportCanvasRef.current = worker.previewCanvasRef.current;
   });
 
-  // Transfer OffscreenCanvases to preview worker for WebGPU direct display
+  // Transfer OffscreenCanvas to preview worker for WebGPU direct display
+  // Only the preview canvas — original stays on 2D path for now
   const webgpuInitRef = useRef(false);
   useEffect(() => {
     if (webgpuInitRef.current || !isWebGpuAvailable()) return;
-    const previewCanvas = worker.previewCanvasRef.current;
-    const originalCanvas = worker.originalCanvasRef.current;
-    if (!previewCanvas) return;
+    const canvas = worker.previewCanvasRef.current;
+    if (!canvas) return;
     try {
-      const hdr = isHdrDisplay();
-      const offscreen = previewCanvas.transferControlToOffscreen();
-      preview.setDisplayCanvas(offscreen, hdr);
-      // Transfer original canvas too — GPU blit for consistent display
-      if (originalCanvas) {
-        const origOffscreen = originalCanvas.transferControlToOffscreen();
-        preview.setOriginalDisplayCanvas(origOffscreen, hdr);
-      }
+      const offscreen = canvas.transferControlToOffscreen();
+      preview.setDisplayCanvas(offscreen, isHdrDisplay());
       webgpuInitRef.current = true;
     } catch {
       // transferControlToOffscreen failed — stay in 2D mode
     }
-  }, [preview, worker.previewCanvasRef, worker.originalCanvasRef]);
+  }, [preview, worker.previewCanvasRef]);
 
   // After proxy render completes — background warm disabled for now (perf)
   useEffect(() => {
@@ -121,16 +115,16 @@ export default function App() {
           const url = URL.createObjectURL(blob);
           const img = new Image();
           img.onload = () => {
-            // In display mode, both canvases are owned by the worker (WebGPU).
-            // The worker renders original + preview via GPU blit on load.
+            // Original canvas always uses 2D path (not transferred to worker)
+            const oc = worker.originalCanvasRef.current;
+            if (oc) {
+              oc.width = img.width;
+              oc.height = img.height;
+              getWideGamutContext(oc)?.drawImage(img, 0, 0);
+            }
+            // Preview canvas: only draw if NOT in display mode (worker owns it)
             if (!preview.displayMode) {
-              const oc = worker.originalCanvasRef.current;
               const pc = worker.previewCanvasRef.current;
-              if (oc) {
-                oc.width = img.width;
-                oc.height = img.height;
-                getWideGamutContext(oc)?.drawImage(img, 0, 0);
-              }
               if (pc) {
                 pc.width = img.width;
                 pc.height = img.height;
