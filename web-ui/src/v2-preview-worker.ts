@@ -1,47 +1,36 @@
 // @ts-nocheck
 /**
- * V2 preview worker — processes chains using the V2 fluent SDK (f32-native, fusion).
+ * V2 preview worker — processes chains using the V2 fluent SDK.
  *
- * Uses the V2 fluent Pipeline class for named method dispatch:
- *   pipe.brightness({amount: 0.5}) instead of pipe.applyFilter(node, 'brightness', bytes)
+ * Uses Source (decode once) and RenderTarget (GPU canvas blit) from the SDK.
+ * The worker is a thin message handler around the SDK API.
  */
 
 import { Pipeline } from '../sdk/v2/fluent/index';
 import { GpuHandlerV2, type GpuShader } from './gpu-handler-v2';
+import { RenderTarget } from '../../sdk/v2/lib/render-target';
 
 const PREVIEW_MAX = 720;
 
-/** Detect display-p3 OffscreenCanvas support (worker-safe, no document). */
-let _workerP3: boolean | null = null;
-function workerSupportsP3(): boolean {
-  if (_workerP3 !== null) return _workerP3;
-  try {
-    const oc = new OffscreenCanvas(1, 1);
-    const ctx = oc.getContext('2d', { colorSpace: 'display-p3' });
-    _workerP3 = ctx !== null;
-  } catch {
-    _workerP3 = false;
-  }
-  return _workerP3;
-}
-
-function workerPreferredColorSpace(): PredefinedColorSpace {
-  return workerSupportsP3() ? 'display-p3' : 'srgb';
-}
-
 let PipelineClass = null;
+let SourceClass = null;
 let LayerCacheClass = null;
-let layerCache = null; // Shared cross-pipeline content-addressed cache
-let previewBytes = null;
+let layerCache = null;
 let gpuHandler: GpuHandlerV2 | null = null;
-let displayMode = false; // true when OffscreenCanvas received and display configured
-let tracingEnabled = false; // opt-in pipeline tracing
+let displayMode = false;
+let tracingEnabled = false;
+
+// Source-based decode caching — decode once, reuse across processChain calls
+let currentSource = null; // WIT Source resource (holds decoded pixels)
+let previewBytes: Uint8Array | null = null; // raw bytes for fallback
+let fullWidth = 0;
+let fullHeight = 0;
 
 function snakeToCamel(s) {
   return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 }
 
-/** Serialize params to WIT binary format: [name_len, name_bytes, type_tag, value_bytes] */
+/** Serialize params to WIT binary format. */
 function buildParamBuf(params, paramValues) {
   const buf = [];
   if (!params) return new Uint8Array(0);
@@ -52,10 +41,10 @@ function buildParamBuf(params, paramValues) {
     buf.push(name.length);
     for (let i = 0; i < name.length; i++) buf.push(name.charCodeAt(i));
     if (p.type === 'toggle' || typeof val === 'boolean') {
-      buf.push(2); // bool
+      buf.push(2);
       buf.push(val ? 1 : 0);
     } else {
-      buf.push(0); // f32
+      buf.push(0);
       const ab = new ArrayBuffer(4);
       new DataView(ab).setFloat32(0, Number(val), true);
       buf.push(...new Uint8Array(ab));
@@ -64,21 +53,41 @@ function buildParamBuf(params, paramValues) {
   return new Uint8Array(buf);
 }
 
-/** Create a fluent Pipeline with layerCache + proxyScale wired via raw WIT resource. */
-function createPipeline(bytes, proxyScale?: number) {
+function buildConfig(params, paramValues) {
+  const config = {};
+  for (const p of params) {
+    const value = paramValues[p.name];
+    if (value === undefined || value === null) continue;
+    config[snakeToCamel(p.name)] = value;
+  }
+  return config;
+}
+
+/** Create a fluent Pipeline from a Source (decode cached) or raw bytes. */
+function createPipelineFromSource() {
   const rawPipe = new PipelineClass();
   if (layerCache && typeof rawPipe.setLayerCache === 'function') rawPipe.setLayerCache(layerCache);
-  if (proxyScale && proxyScale < 1.0 && typeof rawPipe.setProxyScale === 'function') rawPipe.setProxyScale(proxyScale);
   if (tracingEnabled && typeof rawPipe.setTracing === 'function') rawPipe.setTracing(true);
-  const node = rawPipe.read(bytes, undefined);
+
+  let node;
+  if (currentSource && typeof rawPipe.readSource === 'function') {
+    // Source path — no re-decode, pixels cached in Source resource
+    node = rawPipe.readSource(currentSource);
+  } else if (previewBytes) {
+    // Fallback — decode from raw bytes
+    node = rawPipe.read(previewBytes, undefined);
+  } else {
+    return null;
+  }
+
   const pipe = Object.create(Pipeline.prototype);
   pipe._pipe = rawPipe;
   pipe._node = node;
   return pipe;
 }
 
-/** Collect trace events from the raw pipeline and format for logging. */
-function collectTrace(rawPipe): { name: string; ms: number; detail?: string }[] | null {
+/** Collect trace events. */
+function collectTrace(rawPipe) {
   if (!tracingEnabled || !rawPipe || typeof rawPipe.takeTrace !== 'function') return null;
   try {
     const events = rawPipe.takeTrace();
@@ -88,13 +97,10 @@ function collectTrace(rawPipe): { name: string; ms: number; detail?: string }[] 
       ms: e.durationUs / 1000,
       detail: e.detail || undefined,
     }));
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
-/** Log trace events to console for devtools. */
-function logTrace(trace: { name: string; ms: number; detail?: string }[] | null, totalMs: number) {
+function logTrace(trace, totalMs: number) {
   if (!trace) return;
   console.group(`[v2-preview] Trace (${totalMs}ms total)`);
   for (const e of trace) {
@@ -104,15 +110,17 @@ function logTrace(trace: { name: string; ms: number; detail?: string }[] | null,
   console.groupEnd();
 }
 
+// ─── Init ──────────────────────────────────────────────────────────────────
+
 async function initSDK() {
   try {
     const sdk = await import('../sdk/v2/rasmcore-v2-image.js');
     PipelineClass = sdk.pipelineV2.ImagePipelineV2;
+    SourceClass = sdk.pipelineV2.Source;
     LayerCacheClass = sdk.pipelineV2.LayerCache;
 
-    // Create shared layer cache for cross-pipeline content-addressed caching
     if (LayerCacheClass) {
-      layerCache = new LayerCacheClass(64); // 64 MB — preview images are small
+      layerCache = new LayerCacheClass(64);
       console.log('[v2-preview] Layer cache created (64 MB)');
     }
 
@@ -126,34 +134,28 @@ async function initSDK() {
   }
 }
 
-// ─── Config building ────────────────────────────────────────────────────────
-
-function buildConfig(params, paramValues) {
-  const config = {};
-  for (const p of params) {
-    const value = paramValues[p.name];
-    if (value === undefined || value === null) continue;
-    config[snakeToCamel(p.name)] = value;
-  }
-  return config;
-}
-
-// ─── Load ───────────────────────────────────────────────────────────────────
-
-let fullWidth = 0;
-let fullHeight = 0;
+// ─── Load ──────────────────────────────────────────────────────────────────
 
 async function loadImage(bytes) {
   const fullBytes = new Uint8Array(bytes);
   let info = { width: 0, height: 0 };
 
   try {
-    const pipe = createPipeline(fullBytes);
-    info = { width: pipe.info.width, height: pipe.info.height };
+    // Create Source — decodes once, cached for all future processChain calls
+    if (SourceClass) {
+      currentSource = new SourceClass(fullBytes, undefined);
+      const srcInfo = currentSource.info();
+      info = { width: srcInfo.width, height: srcInfo.height };
+    } else {
+      // Fallback — no Source class available
+      const pipe = createPipelineFromSource();
+      if (pipe) info = { width: pipe.info.width, height: pipe.info.height };
+    }
+
     fullWidth = info.width;
     fullHeight = info.height;
-    previewBytes = fullBytes;
-    console.log(`[v2-preview] Loaded: ${fullWidth}x${fullHeight} (full-res, GPU display)`);
+    previewBytes = fullBytes; // keep for fallback
+    console.log(`[v2-preview] Loaded: ${fullWidth}x${fullHeight} (Source cached)`);
   } catch (e: any) {
     previewBytes = fullBytes;
     const detail = e?.payload ? JSON.stringify(e.payload, null, 2) : e?.message || String(e);
@@ -161,53 +163,29 @@ async function loadImage(bytes) {
   }
 
   self.postMessage({ type: 'loaded', info, previewWidth: fullWidth, previewHeight: fullHeight });
-
-  // Render source to original display canvas (GPU blit, no filters)
   renderOriginalSource();
 }
 
-/** Compute proxy scale factor based on full image dimensions and PREVIEW_MAX */
-function computeProxyScale(): number {
-  const maxDim = Math.max(fullWidth, fullHeight);
-  if (maxDim <= PREVIEW_MAX) return 1.0;
-  return PREVIEW_MAX / maxDim;
-}
-
-/** Downscale image bytes via OffscreenCanvas for preview. Returns PNG bytes at proxy resolution. */
-async function downscaleBytes(bytes: Uint8Array, scale: number): Promise<Uint8Array> {
-  const blob = new Blob([bytes]);
-  const bmp = await createImageBitmap(blob);
-  const w = Math.round(bmp.width * scale);
-  const h = Math.round(bmp.height * scale);
-  const oc = new OffscreenCanvas(w, h);
-  const colorSpace = workerPreferredColorSpace();
-  const ctx = (colorSpace === 'display-p3'
-    ? oc.getContext('2d', { colorSpace })
-    : oc.getContext('2d')) ?? oc.getContext('2d');
-  if (!ctx) { bmp.close(); return bytes; } // fallback: return original bytes
-  ctx.drawImage(bmp, 0, 0, w, h);
-  bmp.close();
-  const outBlob = await oc.convertToBlob({ type: 'image/png' });
-  return new Uint8Array(await outBlob.arrayBuffer());
-}
-
-// ─── Process ────────────────────────────────────────────────────────────────
+// ─── Process ───────────────────────────────────────────────────────────────
 
 async function processChain(chain) {
-  if (!previewBytes) {
+  if (!previewBytes && !currentSource) {
     self.postMessage({ type: 'error', message: 'No image loaded' });
     return;
   }
 
   const t0 = performance.now();
   try {
-    // previewBytes are already downscaled at load time — no proxyScale needed
-    let pipe = createPipeline(previewBytes);
+    let pipe = createPipelineFromSource();
+    if (!pipe) {
+      self.postMessage({ type: 'error', message: 'Failed to create pipeline' });
+      return;
+    }
 
+    // Apply filter chain
     for (const step of chain) {
       const method = snakeToCamel(step.name);
       if (typeof pipe[method] !== 'function') {
-        // Fluent SDK missing method — fall back to raw applyFilter
         const raw = pipe._pipe;
         if (raw && typeof raw.applyFilter === 'function') {
           const paramBuf = buildParamBuf(step.params, step.paramValues);
@@ -228,7 +206,7 @@ async function processChain(chain) {
       }
     }
 
-    // GPU dispatch — access raw WIT resource via pipe._pipe (private but accessible at runtime)
+    // GPU dispatch
     const raw = pipe._pipe;
     const sinkNode = pipe._node;
     let gpuDisplayed = false;
@@ -247,39 +225,25 @@ async function processChain(chain) {
             extraBuffers: s.extraBuffers.map(b => new Uint8Array(b)),
           }));
 
-          // Pre-compile shaders (O(1) if already cached)
           await gpuHandler.prepare(ops);
 
           if (displayMode && gpuHandler.hasDisplay) {
-            // Direct display path — compute + blit, no CPU readback
             const err = await gpuHandler.executeAndDisplay(
-              ops,
-              new Float32Array(gpuPlan.inputPixels),
-              gpuPlan.width,
-              gpuPlan.height,
+              ops, new Float32Array(gpuPlan.inputPixels), gpuPlan.width, gpuPlan.height,
             );
-            if (!err) {
-              gpuDisplayed = true;
-            }
+            if (!err) gpuDisplayed = true;
           } else {
-            // Legacy path — readback to CPU for PNG encode
             const result = await gpuHandler.execute(
-              ops,
-              new Float32Array(gpuPlan.inputPixels),
-              gpuPlan.width,
-              gpuPlan.height,
+              ops, new Float32Array(gpuPlan.inputPixels), gpuPlan.width, gpuPlan.height,
             );
             if ('ok' in result) {
               raw.injectGpuResult(sinkNode, Array.from(result.ok));
             }
           }
         }
-      } catch (_) {
-        // GPU failed — CPU fallback via write() below
-      }
+      } catch (_) { /* GPU failed — CPU fallback */ }
     }
 
-    // If display mode handled rendering, send timing only (no PNG)
     if (gpuDisplayed) {
       const totalMs = Math.round(performance.now() - t0);
       const trace = collectTrace(raw);
@@ -287,53 +251,33 @@ async function processChain(chain) {
       if (layerCache) {
         const s = layerCache.stats();
         console.log(`[v2-preview] ${totalMs}ms (display) | cache: ${s.hits} hits, ${s.misses} misses, ${s.entries} entries`);
-      } else {
-        console.log(`[v2-preview] ${totalMs}ms (display)`);
       }
       self.postMessage({ type: 'displayed', totalMs, proxyMax: PREVIEW_MAX, trace });
       return;
     }
 
-    // CPU-only or fallback: if display mode is active, upload and blit
+    // CPU fallback — display mode
     if (displayMode && gpuHandler?.hasDisplay) {
       try {
-        const raw2 = pipe._pipe;
-        const node2 = pipe._node;
-        if (raw2 && typeof raw2.render === 'function') {
-          // render() returns pixel-buffer (list<f32>) — JCO lifts as Float32Array
-          const pixels = raw2.render(node2);
+        if (raw && typeof raw.render === 'function') {
+          const pixels = raw.render(sinkNode);
           if (pixels && pixels.length > 0) {
-            const info2 = raw2.nodeInfo(node2);
-            const w = info2.width;
-            const h = info2.height;
-            const expected = w * h * 4;
+            const info2 = raw.nodeInfo(sinkNode);
             const f32 = pixels instanceof Float32Array ? pixels : new Float32Array(pixels);
-            console.log(`[v2-preview] display: ${w}x${h}, pixels=${f32.length} floats (expected ${expected}), type=${pixels.constructor.name}`);
-            gpuHandler.displayFromCpu(f32, w, h);
+            gpuHandler.displayFromCpu(f32, info2.width, info2.height);
             const totalMs = Math.round(performance.now() - t0);
-            console.log(`[v2-preview] ${totalMs}ms (cpu→display)`);
             self.postMessage({ type: 'displayed', totalMs, proxyMax: PREVIEW_MAX });
             return;
           }
         }
-      } catch (_) {
-        // Fall through to PNG path
-      }
+      } catch (_) { /* fall through to PNG */ }
     }
 
-    // PNG fallback path (no display canvas, or display failed)
+    // PNG fallback
     const output = pipe.write('png');
     const totalMs = Math.round(performance.now() - t0);
     const trace = collectTrace(pipe._pipe);
     logTrace(trace, totalMs);
-
-    if (layerCache) {
-      const s = layerCache.stats();
-      console.log(`[v2-preview] ${totalMs}ms | cache: ${s.hits} hits, ${s.misses} misses, ${s.entries} entries`);
-    } else {
-      console.log(`[v2-preview] ${totalMs}ms`);
-    }
-
     const buf = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength);
     self.postMessage({ type: 'result', png: buf, totalMs, proxyMax: PREVIEW_MAX, trace }, [buf]);
   } catch (e: any) {
@@ -366,7 +310,6 @@ async function initOriginalDisplay(canvas: OffscreenCanvas, hdr: boolean) {
   try {
     await gpuHandler.setOriginalCanvas(canvas, hdr);
     console.log(`[v2-preview] Original display enabled (HDR: ${hdr})`);
-    // If image already loaded, render source immediately
     renderOriginalSource();
   } catch (e: any) {
     console.warn('[v2-preview] Original display init failed:', e?.message);
@@ -375,9 +318,11 @@ async function initOriginalDisplay(canvas: OffscreenCanvas, hdr: boolean) {
 
 function renderOriginalSource() {
   if (!gpuHandler || !gpuHandler.hasOriginalDisplay) return;
-  if (!previewBytes || !PipelineClass) return;
+  if (!PipelineClass) return;
+  if (!currentSource && !previewBytes) return;
   try {
-    const pipe = createPipeline(previewBytes);
+    const pipe = createPipelineFromSource();
+    if (!pipe) return;
     const raw = pipe._pipe;
     if (!raw || typeof raw.render !== 'function') return;
     const pixels = raw.render(pipe._node);
@@ -398,7 +343,6 @@ function handleViewport(data: any) {
   );
   gpuHandler.displayOnly();
 
-  // Also update original display with same viewport
   if (gpuHandler.hasOriginalDisplay) {
     gpuHandler.resizeOriginalDisplay(data.canvasWidth, data.canvasHeight);
     gpuHandler.updateOriginalViewport(
