@@ -3,38 +3,47 @@ title: Fix LayerCache leak — add cleanup cycle to web-ui workers
 type: bug
 status: pending
 created: 2026-04-06
-updated: 2026-04-06
+updated: '2026-04-05'
 spec:
-  summary: |
-    cleanup_unreferenced() exists in LayerCache but is never called from
+  summary: 'cleanup_unreferenced() exists in LayerCache but is never called from
+
     web-ui workers. Old image filter results accumulate indefinitely.
+
     Add reset/cleanup cycle around processChain.
-  context: |
-    LayerCache (layer_cache.rs) caches f32 pixel results keyed by content
+
+    '
+  context: 'LayerCache (layer_cache.rs) caches f32 pixel results keyed by content
+
     hash. It has cleanup_unreferenced() (line 209) and reset_references()
+
     (line 202) but these are never called from v2-preview-worker.ts or
+
     v2-pipeline-worker.ts. Old image data persists across image loads,
+
     growing up to 1GB.
+
+    '
   acceptance_criteria:
-    - Worker calls reset_references before processChain
-    - Worker calls cleanup_unreferenced after processChain
-    - Loading a new image releases old image filter results from cache
-    - Cache stats show entries being evicted after image change
-  out_of_scope: |
-    Changing LayerCache internals or eviction algorithm
+  - Worker calls reset_references before processChain
+  - Worker calls cleanup_unreferenced after processChain
+  - Loading a new image releases old image filter results from cache
+  - Cache stats show entries being evicted after image change
+  out_of_scope: 'Changing LayerCache internals or eviction algorithm
+
+    '
 plan:
-  - phase: WASM Adapter
-    tasks:
-      - text: Expose reset_references and cleanup_unreferenced on pipeline WIT resource (or verify already exposed)
-        done: false
-      - text: Call finalize_layer_cache (reset + cleanup) after write/render in PipelineResource
-        done: false
-  - phase: Worker Integration
-    tasks:
-      - text: Call layer cache cleanup after each processChain in v2-preview-worker
-        done: false
-      - text: Call layer cache cleanup on image load (clear old image results)
-        done: false
-      - text: Verify cache stats show eviction after image change
-        done: false
+- phase: WASM Adapter
+  tasks:
+  - text: Expose reset_references and cleanup_unreferenced on pipeline WIT resource (or verify already exposed)
+    done: true
+  - text: Call finalize_layer_cache (reset + cleanup) after write/render in PipelineResource
+    done: true
+- phase: Worker Integration
+  tasks:
+  - text: Call layer cache cleanup after each processChain in v2-preview-worker
+    done: true
+  - text: Call layer cache cleanup on image load (clear old image results)
+    done: true
+  - text: Verify cache stats show eviction after image change
+    done: true
 extra: {}
