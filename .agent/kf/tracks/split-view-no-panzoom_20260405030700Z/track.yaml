@@ -1,47 +1,60 @@
 id: split-view-no-panzoom_20260405030700Z
-title: "Disable pan/zoom in split view — fit-to-viewport only"
+title: Disable pan/zoom in split view — fit-to-viewport only
 type: chore
 status: pending
 created: 2026-04-05
-updated: 2026-04-05
+updated: '2026-04-05'
 spec:
-  summary: |
-    Split view should show both canvases at fit-to-viewport with no pan/zoom
+  summary: 'Split view should show both canvases at fit-to-viewport with no pan/zoom
+
     interaction. Only the divider slides left/right for before/after comparison.
-  context: |
-    Split view is for comparing original vs processed at the same position.
+
+    '
+  context: 'Split view is for comparing original vs processed at the same position.
+
     Pan/zoom in split view creates confusing interaction — the divider position
+
     does not correspond to the same image region on both sides when zoomed/panned,
+
     and the visual result looks wrong.
 
+
     Current/Original tabs can keep pan/zoom. Split view should lock to fit.
+
+    '
   acceptance_criteria:
-    - Split view renders both canvases at fit-to-viewport zoom
-    - No pan/zoom interaction in split view (wheel, drag, pinch all disabled)
-    - Divider drag still works for left/right reveal
-    - Switching from zoomed Current view to Split resets to fit
-    - Switching back from Split to Current restores previous zoom/pan state
-  out_of_scope: |
-    - Synchronized pan/zoom in split view (possible future enhancement)
+  - Split view renders both canvases at fit-to-viewport zoom
+  - No pan/zoom interaction in split view (wheel, drag, pinch all disabled)
+  - Divider drag still works for left/right reveal
+  - Switching from zoomed Current view to Split resets to fit
+  - Switching back from Split to Current restores previous zoom/pan state
+  out_of_scope: '- Synchronized pan/zoom in split view (possible future enhancement)
+
     - Vertical split mode
-  technical_notes: |
-    In Canvas.tsx, when viewMode is split:
+
+    '
+  technical_notes: 'In Canvas.tsx, when viewMode is split:
+
     - Disable transform.handlers on the viewport div
+
     - Force zoom to fitZoom, pan to 0,0
+
     - Save/restore zoom state when entering/leaving split mode
+
+    '
 plan:
-  - phase: "Implementation"
-    tasks:
-      - text: "Disable pan/zoom handlers when viewMode is split"
-        done: false
-      - text: "Force fit-to-viewport zoom with zero pan in split mode"
-        done: false
-      - text: "Save zoom/pan state before entering split, restore on exit"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Test split view shows fit-to-viewport with working divider"
-        done: false
-      - text: "Test zoom/pan state preserved when toggling through modes"
-        done: false
+- phase: Implementation
+  tasks:
+  - text: Disable pan/zoom handlers when viewMode is split
+    done: true
+  - text: Force fit-to-viewport zoom with zero pan in split mode
+    done: true
+  - text: Save zoom/pan state before entering split, restore on exit
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test split view shows fit-to-viewport with working divider
+    done: true
+  - text: Test zoom/pan state preserved when toggling through modes
+    done: true
 extra: {}
