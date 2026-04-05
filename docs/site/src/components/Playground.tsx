@@ -76,7 +76,10 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
       if (seq !== renderSeq.current) return;
       setStatus('error');
       console.error('[playground]', e);
-      setError(e instanceof Error ? e.message : JSON.stringify(e, null, 2));
+      // jco wraps WIT errors as Error with .payload containing the actual data
+      const payload = (e as any)?.payload;
+      const msg = payload ? JSON.stringify(payload, null, 2) : (e instanceof Error ? e.message : JSON.stringify(e, null, 2));
+      setError(msg);
     }
   }, [filterName, loadRefImage]);
 
