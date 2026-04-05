@@ -450,6 +450,25 @@ static OPREG_VECTORSCOPE: OperationRegistration = OperationRegistration {
 };
 inventory::submit!(&OPREG_VECTORSCOPE);
 
+/// Force-link all scope filter registrations.
+///
+/// Call this from the WASM crate to prevent the linker from dropping
+/// the `inventory::submit!` statics. In native builds, `inventory`
+/// uses linker sections that survive automatically; in WASM, statics
+/// in sub-modules can be stripped as dead code.
+pub fn ensure_linked() {
+    // Reference each static to prevent dead-code elimination.
+    // The actual values don't matter — just the references.
+    let _ = &REG_HISTOGRAM;
+    let _ = &OPREG_HISTOGRAM;
+    let _ = &REG_WAVEFORM;
+    let _ = &OPREG_WAVEFORM;
+    let _ = &REG_PARADE;
+    let _ = &OPREG_PARADE;
+    let _ = &REG_VECTORSCOPE;
+    let _ = &OPREG_VECTORSCOPE;
+}
+
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

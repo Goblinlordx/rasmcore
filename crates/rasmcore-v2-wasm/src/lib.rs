@@ -10,8 +10,11 @@
 // Without these, the linker drops unused modules and their inventory::submit! entries.
 #[allow(unused_imports)]
 use rasmcore_pipeline_v2::filters as _v2_filters;
-#[allow(unused_imports)]
-use rasmcore_pipeline_v2::filters::scope as _v2_scope;
+
+// Scope filters use manual inventory::submit! (not the V2Filter macro) because they
+// need a custom ScopeNode. The WASM linker strips these statics unless referenced.
+#[used]
+static _SCOPE_LINK: fn() = rasmcore_pipeline_v2::filters::scope::ensure_linked;
 #[allow(unused_imports)]
 use rasmcore_codecs_v2 as _v2_codecs;
 
@@ -334,6 +337,7 @@ impl wit::GuestSource for SourceResource {
                         height: 1,
                         color_space: ColorSpace::Srgb,
                     },
+                    buffer_pool: Rc::new(RefCell::new(v2::BufferPool::new())),
                 }
             })
     }
