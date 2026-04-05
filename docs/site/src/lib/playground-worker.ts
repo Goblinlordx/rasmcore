@@ -1,16 +1,13 @@
 /**
  * Playground Web Worker — runs WASM pipeline off the main thread.
  *
- * The jco-generated SDK uses bare specifiers (@bytecodealliance/preview2-shim/*).
- * Workers don't inherit the page's import map. We patch globalThis to provide
- * the shim modules before the SDK's static imports execute.
- *
- * Strategy: load the SDK via dynamic import with webpackIgnore so it bypasses
- * the bundler and loads from the public folder at runtime. Before that, we
- * pre-register the preview2-shim modules by importing them from absolute paths.
+ * All imports use dynamic import() with webpackIgnore to load from
+ * the public folder at runtime. The Makefile rewrites bare specifiers
+ * in the SDK JS to absolute paths so they resolve in worker context.
  */
 
 // @ts-nocheck
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 
 let PipelineClass = null;
 let sourceClass = null;
@@ -22,7 +19,7 @@ let queued = null;
 
 async function initWasm() {
   try {
-    // The SDK is in the public folder — load at runtime, not through bundler
+    // webpackIgnore: load from public/ at runtime, not bundled
     const sdk = await import(/* webpackIgnore: true */ '/sdk/v2/rasmcore-v2-image.js');
     PipelineClass = sdk.pipelineV2.ImagePipelineV2;
     sourceClass = sdk.pipelineV2.Source;
@@ -36,8 +33,8 @@ async function initGpu() {
   if (gpuHandler) return true;
   try {
     const mod = await import(/* webpackIgnore: true */ '/sdk/v2/lib/gpu-handler.js');
-    const GpuHandlerV2 = mod.GpuHandlerV2;
-    if (GpuHandlerV2.isAvailable()) {
+    if (mod.GpuHandlerV2.isAvailable()) {
+      gpuHandler = new mod.GpuHandlerV2();
       gpuHandler = new GpuHandlerV2();
       return true;
     }
@@ -119,6 +116,7 @@ async function doRender(data) {
     const filterId = pipe.applyFilter(nodeId, filterName, paramBuf);
     const info = pipe.nodeInfo(filterId);
 
+    // Try GPU path
     let gpuRendered = false;
     if (gpuHandler?.hasDisplay && typeof pipe.renderGpuPlan === 'function') {
       try {
@@ -159,6 +157,7 @@ async function doRender(data) {
     }
 
     const totalMs = Math.round(performance.now() - t0);
+    console.log(`[playground-worker] ${filterName}: ${totalMs}ms (${gpuRendered ? 'gpu' : 'cpu'}) ${info.width}x${info.height}`);
     self.postMessage({ type: 'displayed', width: info.width, height: info.height, totalMs });
   } catch (e) {
     const msg = e?.payload ? JSON.stringify(e.payload, null, 2) : (e?.message || String(e));
