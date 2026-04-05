@@ -67,6 +67,14 @@ export function usePreviewWorker() {
       if (type === 'loaded') {
         processingRef.current = false;
         setState((s) => ({ ...s, processing: false }));
+        // Drain queue — a processChain may have been queued while loading
+        if (queuedChainRef.current && workerRef.current) {
+          const next = queuedChainRef.current;
+          queuedChainRef.current = null;
+          processingRef.current = true;
+          setState((s) => ({ ...s, processing: true }));
+          workerRef.current.postMessage({ type: 'process', chain: next });
+        }
         return;
       }
 
