@@ -1,8 +1,7 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import type { ParamDescriptor } from '@/lib/types';
-import { renderFilterToCanvas, isLoaded, loadWasm } from '@/lib/wasm-loader';
 import { ParamControls } from './ParamControls';
 import { LiveCodeExample } from './LiveCodeExample';
 
@@ -36,68 +35,124 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
     return initial;
   });
 
-  const refImageBytes = useRef<Uint8Array | null>(null);
   const afterCanvasRef = useRef<HTMLCanvasElement>(null);
-  const renderSeq = useRef(0);
+  const workerRef = useRef<Worker | null>(null);
+  const readyRef = useRef(false);
+  const imageLoadedRef = useRef(false);
+  const imageBytesRef = useRef<ArrayBuffer | null>(null);
+  const displayTransferredRef = useRef(false);
+
+  // Initialize worker on mount
+  useEffect(() => {
+    const w = new Worker(new URL('../lib/playground-worker.ts', import.meta.url), { type: 'module' });
+    workerRef.current = w;
+    w.postMessage({ type: 'init' });
+
+    w.onmessage = (e: MessageEvent) => {
+      const { type: msgType } = e.data;
+
+      if (msgType === 'ready') {
+        readyRef.current = true;
+        return;
+      }
+
+      if (msgType === 'displayed') {
+        setStaticUrl('');
+        setHasResult(true);
+        setStatus('ready');
+        setError('');
+        return;
+      }
+
+      if (msgType === 'result') {
+        // CPU fallback: received ImageData from worker
+        const canvas = afterCanvasRef.current;
+        if (canvas) {
+          const { width, height, imageData } = e.data;
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            const u8 = new Uint8ClampedArray(imageData);
+            ctx.putImageData(new ImageData(u8, width, height), 0, 0);
+          }
+        }
+        setStaticUrl('');
+        setHasResult(true);
+        setStatus('ready');
+        setError('');
+        return;
+      }
+
+      if (msgType === 'error') {
+        setStatus('error');
+        setError(e.data.message);
+      }
+    };
+
+    return () => w.terminate();
+  }, []);
+
+  // Transfer OffscreenCanvas to worker for GPU display
+  useEffect(() => {
+    if (displayTransferredRef.current) return;
+    const canvas = afterCanvasRef.current;
+    const w = workerRef.current;
+    if (!canvas || !w || !readyRef.current) return;
+    try {
+      const offscreen = canvas.transferControlToOffscreen();
+      w.postMessage({ type: 'set-display', canvas: offscreen, hdr: false }, [offscreen]);
+      displayTransferredRef.current = true;
+    } catch {
+      // transferControlToOffscreen not supported — worker will use CPU fallback
+    }
+  });
 
   const loadRefImage = useCallback(async () => {
-    if (refImageBytes.current) return refImageBytes.current;
+    if (imageBytesRef.current) return imageBytesRef.current;
     const resp = await fetch(referenceImageUrl);
     const ab = await resp.arrayBuffer();
-    refImageBytes.current = new Uint8Array(ab);
-    return refImageBytes.current;
+    imageBytesRef.current = ab;
+    return ab;
   }, [referenceImageUrl]);
 
-  // Render directly to canvas — GPU when available, 2D fallback
   const doRender = useCallback(async (vals: Record<string, number | boolean>) => {
-    const seq = ++renderSeq.current;
-    try {
-      if (!isLoaded()) {
-        setStatus('loading-wasm');
-        await loadWasm();
-      }
+    const w = workerRef.current;
+    if (!w) return;
 
-      setStatus('rendering');
-      const imgBytes = await loadRefImage();
-
-      if (seq !== renderSeq.current) return;
-
-      if (afterCanvasRef.current) {
-        // Build param type map from descriptors so serialization uses correct types
-        const paramTypes: Record<string, string> = {};
-        for (const p of params) { paramTypes[p.name] = p.type; }
-
-        await renderFilterToCanvas(
-          afterCanvasRef.current,
-          imgBytes,
-          filterName,
-          vals,
-          referenceImageUrl,
-          paramTypes,
-        );
-      }
-
-      setStaticUrl('');
-      setHasResult(true);
-      setStatus('ready');
-      setError('');
-    } catch (e) {
-      if (seq !== renderSeq.current) return;
-      setStatus('error');
-      console.error('[playground]', e);
-      const payload = (e as any)?.payload;
-      const msg = payload ? JSON.stringify(payload, null, 2) : (e instanceof Error ? e.message : JSON.stringify(e, null, 2));
-      setError(msg);
+    if (!readyRef.current) {
+      setStatus('loading-wasm');
+      // Wait for ready
+      await new Promise<void>((resolve) => {
+        const check = () => {
+          if (readyRef.current) { resolve(); return; }
+          setTimeout(check, 50);
+        };
+        check();
+      });
     }
-  }, [filterName, loadRefImage, referenceImageUrl]);
+
+    setStatus('rendering');
+    const imageBytes = await loadRefImage();
+
+    // Build param type map
+    const paramTypes: Record<string, string> = {};
+    for (const p of params) { paramTypes[p.name] = p.type; }
+
+    // Send to worker — single-slot queue handles stale requests
+    w.postMessage({
+      type: 'render',
+      imageBytes,
+      filterName,
+      params: vals,
+      cacheKey: referenceImageUrl,
+      paramTypes,
+    });
+  }, [filterName, loadRefImage, referenceImageUrl, params]);
 
   const onParamChange = useCallback((newValues: Record<string, number | boolean>) => {
-    const t0 = performance.now();
     setValues(newValues);
-    // No debounce — renderSeq handles stale results. Fire immediately.
-    doRender(newValues).then(() => {
-      console.log(`[playground] e2e: slider→visible=${(performance.now() - t0).toFixed(0)}ms`);
-    });
+    doRender(newValues);
   }, [doRender]);
 
   const [activated, setActivated] = useState(false);
@@ -144,14 +199,12 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={referenceImageUrl} alt="Before" draggable={false} style={{ display: 'block', maxWidth: '100%', pointerEvents: 'none' }} />
 
-          {/* Canvas always mounted — GPU binds once, survives across renders */}
           <canvas ref={afterCanvasRef} style={{
             position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
             objectFit: 'cover', pointerEvents: 'none',
             clipPath: `inset(0 0 0 ${splitPos}%)`,
             display: staticUrl ? 'none' : 'block',
           }} />
-          {/* Static SSG image shown until first live render */}
           {staticUrl && (
             /* eslint-disable-next-line @next/next/no-img-element */
             <img src={staticUrl} alt="After" draggable={false} style={{

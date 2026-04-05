@@ -3,77 +3,80 @@ title: Move docs playground WASM execution to Web Worker
 type: bug
 status: pending
 created: '2026-04-06'
-updated: '2026-04-06'
+updated: '2026-04-05'
 spec:
-  summary: |
-    The docs playground runs WASM pipeline synchronously on the main thread.
+  summary: 'The docs playground runs WASM pipeline synchronously on the main thread.
+
     Expensive filters (NLM Denoise, bilateral) block the UI for seconds.
+
     Move execution to a Web Worker with single-slot queue.
-  context: |
-    The web-ui app correctly uses v2-preview-worker.ts (dedicated Web Worker)
+
+    '
+  context: 'The web-ui app correctly uses v2-preview-worker.ts (dedicated Web Worker)
+
     for all pipeline execution. But the docs site playground
+
     (docs/site/src/components/Playground.tsx) calls renderFilterToCanvas()
+
     which runs pipe.read(), pipe.applyFilter(), pipe.render() directly on
+
     the main thread via docs/site/src/lib/wasm-loader.ts.
 
+
     For fast filters (brightness, contrast) this is barely noticeable (~20ms).
+
     For expensive spatial filters (NLM Denoise, bilateral, gaussian blur with
+
     large radius) this blocks the main thread for 500ms-2s+, freezing slider
+
     interactions completely.
-  codebase_analysis: |
-    - docs/site/src/lib/wasm-loader.ts: renderFilterToCanvas() is async but
-      the WASM calls (pipe.read, pipe.applyFilter, pipe.render) are synchronous
-      and block the calling thread.
-    - docs/site/src/components/Playground.tsx: onParamChange calls doRender()
-      which calls renderFilterToCanvas() on the main thread.
-    - web-ui/src/v2-preview-worker.ts: existing pattern for worker-based
-      pipeline execution with single-slot queue and GPU display.
-    - The GPU path (renderGpuPlan + executeAndDisplay) is also called on the
-      main thread in the docs playground, but GPU dispatch is async so it
-      doesn't block as badly. The CPU fallback (pipe.render) is the killer.
+
+    '
+  codebase_analysis: "- docs/site/src/lib/wasm-loader.ts: renderFilterToCanvas() is async but\n  the WASM calls (pipe.read,\
+    \ pipe.applyFilter, pipe.render) are synchronous\n  and block the calling thread.\n- docs/site/src/components/Playground.tsx:\
+    \ onParamChange calls doRender()\n  which calls renderFilterToCanvas() on the main thread.\n- web-ui/src/v2-preview-worker.ts:\
+    \ existing pattern for worker-based\n  pipeline execution with single-slot queue and GPU display.\n- The GPU path (renderGpuPlan\
+    \ + executeAndDisplay) is also called on the\n  main thread in the docs playground, but GPU dispatch is async so it\n\
+    \  doesn't block as badly. The CPU fallback (pipe.render) is the killer.\n"
   acceptance_criteria:
-    - All WASM pipeline execution in docs playground runs in a Web Worker
-    - Slider interactions never freeze (main thread stays responsive)
-    - Single-slot queue ensures latest params always win (stale results dropped)
-    - GPU display path works from the worker (OffscreenCanvas transfer)
-    - Source caching still works (Source objects persist in worker)
-    - Rendering status indicator shown while worker processes
-  out_of_scope: |
-    Changing the web-ui app workers. Changing the WASM module itself.
+  - All WASM pipeline execution in docs playground runs in a Web Worker
+  - Slider interactions never freeze (main thread stays responsive)
+  - Single-slot queue ensures latest params always win (stale results dropped)
+  - GPU display path works from the worker (OffscreenCanvas transfer)
+  - Source caching still works (Source objects persist in worker)
+  - Rendering status indicator shown while worker processes
+  out_of_scope: 'Changing the web-ui app workers. Changing the WASM module itself.
+
     Adding debounce (single-slot queue is sufficient).
-  technical_notes: |
-    Approach:
-    1. Create docs/site/src/lib/playground-worker.ts with the same pattern as
-       v2-preview-worker.ts but simplified for the docs use case (single filter,
-       no chain, no layer cache).
-    2. Worker handles: init (load WASM), load-image (decode + cache Source),
-       render (apply filter + GPU display or CPU readback).
-    3. Playground.tsx transfers OffscreenCanvas to worker on mount.
-    4. Single-slot queue: if worker is busy, replace queued params (latest wins).
-    5. Worker posts back: displayed (GPU path) or result (PNG/ImageData for 2D).
-    6. Remove direct WASM calls from wasm-loader.ts renderFilterToCanvas —
-       replace with worker postMessage.
+
+    '
+  technical_notes: "Approach:\n1. Create docs/site/src/lib/playground-worker.ts with the same pattern as\n   v2-preview-worker.ts\
+    \ but simplified for the docs use case (single filter,\n   no chain, no layer cache).\n2. Worker handles: init (load WASM),\
+    \ load-image (decode + cache Source),\n   render (apply filter + GPU display or CPU readback).\n3. Playground.tsx transfers\
+    \ OffscreenCanvas to worker on mount.\n4. Single-slot queue: if worker is busy, replace queued params (latest wins).\n\
+    5. Worker posts back: displayed (GPU path) or result (PNG/ImageData for 2D).\n6. Remove direct WASM calls from wasm-loader.ts\
+    \ renderFilterToCanvas —\n   replace with worker postMessage.\n"
 plan:
-  - phase: Worker Implementation
-    tasks:
-      - text: Create playground-worker.ts with WASM init, source caching, and render loop
-        done: false
-      - text: Implement single-slot queue (latest params always win)
-        done: false
-      - text: GPU display path via OffscreenCanvas transfer
-        done: false
-      - text: CPU fallback path (render f32, post ImageData back to main thread)
-        done: false
-  - phase: UI Integration
-    tasks:
-      - text: Update Playground.tsx to use worker instead of direct WASM calls
-        done: false
-      - text: Transfer OffscreenCanvas to worker on mount
-        done: false
-      - text: Show rendering status indicator while worker processes
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Test NLM Denoise slider does not freeze UI
-        done: false
+- phase: Worker Implementation
+  tasks:
+  - text: Create playground-worker.ts with WASM init, source caching, and render loop
+    done: true
+  - text: Implement single-slot queue (latest params always win)
+    done: true
+  - text: GPU display path via OffscreenCanvas transfer
+    done: true
+  - text: CPU fallback path (render f32, post ImageData back to main thread)
+    done: true
+- phase: UI Integration
+  tasks:
+  - text: Update Playground.tsx to use worker instead of direct WASM calls
+    done: true
+  - text: Transfer OffscreenCanvas to worker on mount
+    done: true
+  - text: Show rendering status indicator while worker processes
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test NLM Denoise slider does not freeze UI
+    done: true
 extra: {}

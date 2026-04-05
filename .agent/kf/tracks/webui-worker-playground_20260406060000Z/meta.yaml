@@ -1,5 +1,5 @@
 title: Move docs playground WASM execution to Web Worker
-status: pending
+status: completed
 type: bug
 approved: false
 created: '2026-04-05'
