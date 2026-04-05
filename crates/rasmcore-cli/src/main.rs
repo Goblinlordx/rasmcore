@@ -1,4 +1,4 @@
-//! rcim — graph-based image processing CLI.
+//! rcim — graph-based image processing CLI (V2 pipeline).
 //!
 //! Builds a pipeline DAG from left-to-right arguments:
 //!   rcim -i photo.jpg -blur radius=5 -sharpen amount=1.0 -o out.png
@@ -11,12 +11,13 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::process;
 
-use rasmcore_image::domain::pipeline::dispatch;
-use rasmcore_image::domain::pipeline::graph::NodeGraph;
-use rasmcore_image::domain::pipeline::nodes::{sink, source};
+use rasmcore_pipeline_v2::graph::Graph;
+use rasmcore_pipeline_v2::node::NodeInfo;
+use rasmcore_pipeline_v2::registry::{
+    create_filter_node, decode_via_registry, encode_via_registry,
+    registered_filter_registrations, ParamMap,
+};
 
-#[cfg(feature = "gpu")]
-mod gpu_executor;
 #[cfg(feature = "gpu")]
 mod gpu_executor_v2;
 
@@ -135,34 +136,105 @@ fn parse_args(args: &[String]) -> Result<Vec<CliCommand>, String> {
     Ok(commands)
 }
 
+// ─── V2 Source Node ────────────────────────────────────────────────────────
+
+/// Source node that holds decoded f32 pixel data for the V2 graph.
+struct SourceNode {
+    pixels: Vec<f32>,
+    info: NodeInfo,
+}
+
+impl rasmcore_pipeline_v2::node::Node for SourceNode {
+    fn info(&self) -> NodeInfo {
+        self.info.clone()
+    }
+
+    fn compute(
+        &self,
+        request: rasmcore_pipeline_v2::Rect,
+        _upstream: &mut dyn rasmcore_pipeline_v2::node::Upstream,
+    ) -> Result<Vec<f32>, rasmcore_pipeline_v2::node::PipelineError> {
+        let w = self.info.width as usize;
+        let rw = request.width as usize;
+        let rh = request.height as usize;
+        let rx = request.x as usize;
+        let ry = request.y as usize;
+
+        if rx == 0 && ry == 0 && rw == w && rh == self.info.height as usize {
+            return Ok(self.pixels.clone());
+        }
+
+        let mut out = Vec::with_capacity(rw * rh * 4);
+        for row in 0..rh {
+            let src = ((ry + row) * w + rx) * 4;
+            out.extend_from_slice(&self.pixels[src..src + rw * 4]);
+        }
+        Ok(out)
+    }
+
+    fn upstream_ids(&self) -> Vec<u32> {
+        vec![]
+    }
+}
+
+// ─── Param Conversion ──────────────────────────────────────────────────────
+
+/// Convert CLI string params (key=value) to V2 ParamMap with typed values.
+fn to_param_map(params: &HashMap<String, String>) -> ParamMap {
+    let mut pm = ParamMap::new();
+    for (key, val) in params {
+        // Try f32 first
+        if let Ok(f) = val.parse::<f32>() {
+            pm.floats.insert(key.clone(), f);
+        } else if val == "true" || val == "false" {
+            pm.bools.insert(key.clone(), val == "true");
+        } else {
+            pm.strings.insert(key.clone(), val.clone());
+        }
+    }
+    pm
+}
+
 // ─── Graph Builder ──────────────────────────────────────────────────────────
 
 fn build_and_execute(
     commands: Vec<CliCommand>,
-    gpu_executor: Option<std::rc::Rc<dyn rasmcore_pipeline::GpuExecutor>>,
+    #[cfg(feature = "gpu")] gpu_executor: Option<std::rc::Rc<dyn rasmcore_pipeline_v2::gpu::GpuExecutor>>,
 ) -> Result<(), String> {
-    let mut graph = NodeGraph::new(64 * 1024 * 1024); // 64MB spatial cache
+    let mut graph = Graph::new(64 * 1024 * 1024); // 64MB spatial cache
+
+    #[cfg(feature = "gpu")]
     if let Some(executor) = gpu_executor {
         graph.set_gpu_executor(executor);
     }
+
     let mut active_node: Option<u32> = None;
     let mut refs: HashMap<String, u32> = HashMap::new();
 
     // Get filter metadata for positional param resolution
-    let filter_meta = dispatch::list_filters();
-    let meta_by_name: HashMap<&str, &dispatch::FilterMeta> =
-        filter_meta.iter().map(|m| (m.name, m)).collect();
+    let filter_regs = registered_filter_registrations();
+    let meta_by_name: HashMap<&str, _> = filter_regs.iter().map(|r| (r.name, *r)).collect();
 
     for cmd in &commands {
         match cmd {
             CliCommand::Input(path) => {
                 let bytes =
                     std::fs::read(path).map_err(|e| format!("Failed to read {path}: {e}"))?;
-                let node = source::SourceNode::new(bytes)
+                let decoded = decode_via_registry(&bytes)
+                    .ok_or_else(|| format!("Unsupported image format: {path}"))?
                     .map_err(|e| format!("Failed to decode {path}: {e}"))?;
-                let id = graph.add_node(Box::new(node));
+
+                let info = NodeInfo {
+                    width: decoded.width,
+                    height: decoded.height,
+                    color_space: decoded.color_space,
+                };
+                let id = graph.add_node(Box::new(SourceNode {
+                    pixels: decoded.pixels,
+                    info,
+                }));
                 active_node = Some(id);
-                eprintln!("  [read] {path} → node {id}");
+                eprintln!("  [read] {path} → node {id} ({}x{})", decoded.width, decoded.height);
             }
 
             CliCommand::Filter {
@@ -180,27 +252,20 @@ fn build_and_execute(
                 let mut resolved_params = params.clone();
                 if let Some(pos_val) = positional {
                     if let Some(meta) = meta_by_name.get(name.as_str()) {
-                        if let Some(&(first_param, _)) = meta.params.first() {
+                        if let Some(first_param) = meta.params.first() {
                             resolved_params
-                                .entry(first_param.to_string())
+                                .entry(first_param.name.to_string())
                                 .or_insert_with(|| pos_val.clone());
                         }
                     }
                 }
 
-                // Resolve references: if a param value matches a ref name, it stays
-                // as a string — the dispatch function doesn't handle node refs.
-                // For composite-style ops, we'd need special handling.
-                // For now, node-ref params are handled by the caller.
-
-                let (node, gpu) = dispatch::dispatch_filter(name, upstream, info, &resolved_params)
-                    .map_err(|e| format!("Filter -{name}: {e}"))?;
+                let pm = to_param_map(&resolved_params);
+                let node = create_filter_node(name, upstream, info, &pm)
+                    .ok_or_else(|| format!("Unknown filter: {name}"))?;
                 let id = graph.add_node(node);
-                if let Some(gpu_node) = gpu {
-                    graph.register_gpu(id, gpu_node);
-                }
                 active_node = Some(id);
-                eprintln!("  [{name}] → node {id}{}", if graph.has_gpu(id) { " (GPU)" } else { "" });
+                eprintln!("  [{name}] → node {id}");
             }
 
             CliCommand::Ref(name) => {
@@ -223,8 +288,20 @@ fn build_and_execute(
                 };
 
                 eprintln!("  [write] node {node} → {path} ({format})");
-                let bytes = sink::write(&mut graph, node, format, None, None)
+
+                // Execute the graph to get f32 pixels
+                let pixels = graph
+                    .request_full(node)
+                    .map_err(|e| format!("Pipeline execution failed: {e}"))?;
+                let info = graph
+                    .node_info(node)
+                    .map_err(|e| format!("Failed to get node info: {e}"))?;
+
+                // Encode via V2 codec registry
+                let bytes = encode_via_registry(format, &pixels, info.width, info.height, &ParamMap::new())
+                    .ok_or_else(|| format!("Unsupported output format: {format}"))?
                     .map_err(|e| format!("Failed to encode {format}: {e}"))?;
+
                 std::fs::write(path, &bytes).map_err(|e| format!("Failed to write {path}: {e}"))?;
                 eprintln!("  [done] {} bytes written", bytes.len());
             }
@@ -273,10 +350,11 @@ EXAMPLES:
 }
 
 fn print_filters() {
-    let filters = dispatch::list_filters();
-    let mut by_category: HashMap<&str, Vec<&dispatch::FilterMeta>> = HashMap::new();
-    for f in &filters {
-        by_category.entry(f.category).or_default().push(f);
+    let regs = registered_filter_registrations();
+    let mut by_category: HashMap<&str, Vec<_>> = HashMap::new();
+    for r in &regs {
+        let cat = if r.category.is_empty() { "uncategorized" } else { r.category };
+        by_category.entry(cat).or_default().push(*r);
     }
 
     let mut categories: Vec<&&str> = by_category.keys().collect();
@@ -285,17 +363,17 @@ fn print_filters() {
     for cat in categories {
         eprintln!("\n[{cat}]");
         let mut ops = by_category[cat].clone();
-        ops.sort_by_key(|f| f.name);
-        for f in ops {
-            let params: Vec<String> = f
+        ops.sort_by_key(|r| r.name);
+        for r in ops {
+            let params: Vec<String> = r
                 .params
                 .iter()
-                .map(|(name, ty)| format!("{name}:{ty}"))
+                .map(|p| format!("{}:{:?}", p.name, p.value_type))
                 .collect();
             if params.is_empty() {
-                eprintln!("  -{}", f.name);
+                eprintln!("  -{}", r.name);
             } else {
-                eprintln!("  -{} {}", f.name, params.join(" "));
+                eprintln!("  -{} {}", r.name, params.join(" "));
             }
         }
     }
@@ -313,12 +391,12 @@ fn main() {
 
     // GPU initialization
     #[cfg(feature = "gpu")]
-    let gpu_executor: Option<std::rc::Rc<dyn rasmcore_pipeline::GpuExecutor>> = {
+    let gpu_executor: Option<std::rc::Rc<dyn rasmcore_pipeline_v2::gpu::GpuExecutor>> = {
         let force_gpu = args.iter().any(|a| a == "--gpu");
         let no_gpu = args.iter().any(|a| a == "--no-gpu");
 
         if !no_gpu {
-            match gpu_executor::WgpuExecutor::try_new() {
+            match gpu_executor_v2::WgpuExecutorV2::try_new() {
                 Ok(exec) => {
                     eprintln!("GPU: {} (ready)", exec.adapter_name());
                     Some(std::rc::Rc::new(exec))
@@ -338,9 +416,6 @@ fn main() {
         }
     };
 
-    #[cfg(not(feature = "gpu"))]
-    let gpu_executor: Option<std::rc::Rc<dyn rasmcore_pipeline::GpuExecutor>> = None;
-
     let commands = match parse_args(&args) {
         Ok(cmds) => cmds,
         Err(e) => {
@@ -349,23 +424,14 @@ fn main() {
         }
     };
 
-    // Pre-flight: check refs are defined before use
-    let mut defined_refs: Vec<String> = Vec::new();
-    for cmd in &commands {
-        match cmd {
-            CliCommand::Ref(name) => defined_refs.push(name.clone()),
-            CliCommand::Filter { params, .. } => {
-                for _val in params.values() {
-                    // If the value looks like a ref name (no digits, no dots, no slashes),
-                    // check it's defined. But don't error here — it might be a literal string.
-                    // Full validation would need the filter's param type info.
-                }
-            }
-            _ => {}
-        }
+    #[cfg(feature = "gpu")]
+    if let Err(e) = build_and_execute(commands, gpu_executor) {
+        eprintln!("Error: {e}");
+        process::exit(1);
     }
 
-    if let Err(e) = build_and_execute(commands, gpu_executor) {
+    #[cfg(not(feature = "gpu"))]
+    if let Err(e) = build_and_execute(commands) {
         eprintln!("Error: {e}");
         process::exit(1);
     }

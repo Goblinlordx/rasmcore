@@ -2710,8 +2710,6 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "pollster",
- "rasmcore-image",
- "rasmcore-pipeline",
  "rasmcore-pipeline-v2",
  "wgpu",
 ]
