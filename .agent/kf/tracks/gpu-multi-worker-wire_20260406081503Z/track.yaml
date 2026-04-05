@@ -1,0 +1,112 @@
+id: gpu-multi-worker-wire_20260406081503Z
+title: Wire multi-output GPU pipeline in preview worker
+type: feature
+status: pending
+created: '2026-04-06'
+updated: '2026-04-06'
+spec:
+  summary: |
+    Replace processChain + processScope with single execute() path in the
+    preview worker. Builds DAG with ref/branch/addDisplay, executes once,
+    all displays update from shared GPU computation.
+  context: |
+    Currently the preview worker has two separate code paths:
+    - processChain() — runs the filter chain and displays the viewport
+    - processScope() — re-runs the entire chain, appends scope filter, PNG
+
+    With the multi-output infrastructure (graph refs, multi-display handler,
+    multi-GPU plan), these merge into one: build the DAG with refs and
+    branches, attach display targets, execute once.
+
+    Even without GPU scope shaders, the chain is computed only once.
+    Scopes read from the cached ref result (CPU readback from the shared
+    GPU buffer, or from the layer cache). This eliminates the 3x chain
+    re-execution that currently dominates scope render time.
+  codebase_analysis: |
+    v2-preview-worker.ts:
+    - processChain() builds pipeline, applies chain, GPU dispatch or CPU
+    - processScope() builds fresh pipeline, re-applies entire chain (!),
+      appends scope filter, renders to PNG
+    - Both called separately from main thread (App.tsx schedulePreview)
+
+    usePreviewWorker.ts:
+    - processChain(chain) and processScope(chain, scopeName) as separate
+    - scopeCanvasRef for scope display
+
+    App.tsx:
+    - schedulePreview calls both processChain and processScope
+    - handleScopeChange triggers processScope independently
+
+    New flow:
+    - Single processMulti(chain, scopes[]) message
+    - Worker builds DAG: chain → ref("main") → branch per scope
+    - addDisplay for viewport + each scope canvas
+    - execute() → all compute + all blits in one submit
+    - Scope canvases transferred as OffscreenCanvas to worker
+  acceptance_criteria:
+    - processMulti(chain, scopeNames, displayTargets) replaces dual calls
+    - Single chain execution serves viewport + all scopes
+    - Scope canvases registered as display targets in GpuHandler
+    - GPU path uses executeMulti — one submit for compute + all blits
+    - CPU fallback path still works (scopes read from cached chain result)
+    - schedulePreview sends one message instead of two
+    - Scope panel updates at same rate as viewport (not delayed)
+    - No regression in viewport display quality or timing
+  out_of_scope: |
+    GPU scope shaders (histogram/waveform as WGSL compute).
+    That is a future optimization on top of this infrastructure.
+  technical_notes: |
+    Worker message protocol:
+      { type: 'process-multi',
+        chain: Step[],
+        scopes: string[],           // ["scope_histogram", "scope_waveform"]
+        displayTargets: string[] }  // ["viewport", "histogram", "waveform"]
+
+    Worker builds DAG:
+      let pipe = createPipeline(bytes)
+      for step in chain: pipe = pipe[method](config)
+      pipe = pipe.ref("main")
+      for scope in scopes:
+        pipe = pipe.branch("main")[scope]()
+
+    Display registration:
+      Scope canvases transferred via init-scope-display message
+      (same pattern as init-display for viewport canvas)
+
+    CPU fallback:
+      If no GPU, execute chain once via CPU, cache result.
+      Then run each scope filter reading from cached upstream.
+      Still only one chain execution — scopes read from cache.
+
+    App.tsx simplification:
+      schedulePreview() sends one process-multi message.
+      handleScopeChange() sends process-multi with updated scope list.
+      No separate processScope call needed.
+plan:
+  - phase: Worker Protocol
+    tasks:
+      - text: Add process-multi message type to v2-preview-worker
+        done: false
+      - text: Build DAG with ref/branch for viewport + scopes
+        done: false
+      - text: GPU path uses executeMulti for single-submit rendering
+        done: false
+      - text: CPU fallback path computes chain once, scopes read from cache
+        done: false
+  - phase: Scope Display Targets
+    tasks:
+      - text: Add init-scope-display message to transfer scope OffscreenCanvases
+        done: false
+      - text: Register scope canvases as display targets in GpuHandler
+        done: false
+      - text: Scope panel creates and transfers OffscreenCanvas per scope tab
+        done: false
+  - phase: App Integration
+    tasks:
+      - text: Replace processChain + processScope with single processMulti call
+        done: false
+      - text: schedulePreview sends one process-multi message
+        done: false
+      - text: Verify scope panel updates at viewport rate (not delayed)
+        done: false
+extra: {}
