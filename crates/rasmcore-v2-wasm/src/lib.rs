@@ -30,7 +30,6 @@ use rasmcore_pipeline_v2::{
     create_filter_node,
     hash::{content_hash, source_hash},
 };
-#[cfg(target_arch = "wasm32")]
 use rasmcore_pipeline_v2::ColorSpace;
 
 // ─── Error conversion ───────────────────────────────────────────────────────
@@ -500,7 +499,6 @@ fn scale_spatial_params(filter_name: &str, params: &ParamMap, scale: f32) -> Par
 ///
 /// Format: repeated [name_len:u8, name_bytes, type:u8, value_bytes]
 ///   type 0 = f32 (4 bytes), type 1 = u32 (4 bytes), type 2 = bool (1 byte)
-#[cfg(target_arch = "wasm32")]
 fn deserialize_params(buf: &[u8]) -> ParamMap {
     let mut map = ParamMap::new();
     let mut i = 0;
