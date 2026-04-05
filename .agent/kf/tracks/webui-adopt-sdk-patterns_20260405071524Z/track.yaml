@@ -1,0 +1,110 @@
+id: webui-adopt-sdk-patterns_20260405071524Z
+title: Refactor web-ui and demo to use SDK Source + RenderTarget
+type: refactor
+status: pending
+created: 2026-04-05
+updated: 2026-04-05
+spec:
+  summary: |
+    Refactor web-ui preview worker and demo to use the SDK Source object
+    (decode once) and RenderTarget (GPU canvas blit) instead of manually
+    wiring renderGpuPlan/injectGpuResult/GpuHandlerV2 dispatch.
+  context: |
+    The SDK now provides Source (decode once, reference by ID) and
+    RenderTarget + writeRenderTarget() (GPU-to-canvas with 2D fallback).
+    The web-ui preview worker still uses the old manual pattern:
+    1. createPipeline(bytes) — re-decodes every processChain call
+    2. renderGpuPlan() — manually extracts shader chain
+    3. gpuHandler.executeAndDisplay() — manual GPU dispatch
+    4. injectGpuResult() — manual cache injection
+
+    This should be simplified to:
+    1. new Source(bytes) — decode once on image load
+    2. pipe.readSource(source).filter(...).writeRenderTarget(target)
+
+    The demo app should follow the same pattern as a reference
+    implementation for SDK consumers.
+  codebase_analysis: |
+    web-ui/src/v2-preview-worker.ts (~300 lines):
+    - createPipeline(bytes) called per processChain — re-decodes each time
+    - Manual GPU dispatch: renderGpuPlan + execute/executeAndDisplay + injectGpuResult
+    - displayMode flag and init-display message for OffscreenCanvas
+    - Manual viewport message handling for pan/zoom re-blit
+    - Tracing and layer cache wired manually
+
+    web-ui/src/hooks/usePreviewWorker.ts:
+    - Creates worker, handles init/load/process/result/displayed messages
+    - setDisplayCanvas() and sendViewport() for GPU display
+
+    web-ui/src/hooks/useWorker.ts:
+    - Full-res pipeline worker (v2-pipeline-worker.ts)
+    - Similar manual pattern
+
+    demo/ directory:
+    - Separate demo app, simpler than web-ui
+    - Uses same worker pattern
+
+    SDK now provides (sdk/v2/):
+    - Source resource (WIT + Rust) — decode once
+    - RenderTarget class — GPU canvas with fallback
+    - writeRenderTarget() Pipeline extension
+    - GpuHandlerV2 in sdk/v2/lib/ (canonical location)
+  acceptance_criteria:
+    - Preview worker uses Source object for image loading (decode once)
+    - Preview worker uses writeRenderTarget for GPU canvas display
+    - Manual renderGpuPlan/injectGpuResult dispatch removed from worker
+    - GpuHandlerV2 imported from sdk/v2/lib/ not web-ui/src/
+    - Demo updated to use Source + RenderTarget pattern
+    - Pan/zoom still works (RenderTarget viewport updates)
+    - 2D canvas fallback preserved for non-WebGPU browsers
+    - PNG export path (write) still works alongside canvas render
+    - No regression in preview performance
+  out_of_scope: |
+    - Changing the worker/main-thread architecture
+    - Removing the worker entirely (consumer choice)
+    - Adding new UI features
+  technical_notes: |
+    The refactor simplifies the worker from ~300 lines of manual GPU
+    dispatch to the SDK pattern. The worker becomes a thin message
+    handler that forwards to the SDK.
+
+    Key change in processChain:
+    Before: createPipeline(bytes) → build chain → renderGpuPlan() →
+            gpuHandler.execute() → injectGpuResult() → write('png')
+    After:  pipe.readSource(source) → build chain → writeRenderTarget(target)
+
+    The Source is created once on 'load' message and reused across
+    processChain calls. The RenderTarget is created once on
+    'init-display' message.
+
+    Pan/zoom: RenderTarget.writeGpu already handles viewport. The worker
+    forwards viewport messages to target.gpuHandler.updateViewport() +
+    target.gpuHandler.displayOnly().
+plan:
+  - phase: Preview Worker Refactor
+    tasks:
+      - text: Create Source on image load instead of storing raw bytes — decode once, reuse across processChain calls
+        done: false
+      - text: Create RenderTarget on init-display message instead of manually calling gpuHandler.setDisplayCanvas
+        done: false
+      - text: Replace manual GPU dispatch in processChain with pipe.readSource(source).chain(...).writeRenderTarget(target)
+        done: false
+      - text: Keep PNG export path for non-display result messages using pipe.readSource(source).chain(...).write(format)
+        done: false
+      - text: Update viewport handling to use RenderTarget internal gpuHandler for displayOnly re-blit
+        done: false
+  - phase: Demo Update
+    tasks:
+      - text: Update demo worker or main-thread code to use Source + RenderTarget pattern
+        done: false
+      - text: Demo serves as reference implementation for SDK consumers
+        done: false
+  - phase: Cleanup and Verification
+    tasks:
+      - text: Remove duplicated GpuHandlerV2 import from web-ui — use sdk/v2/lib/ canonical copy
+        done: false
+      - text: Verify preview renders correctly with GPU display path
+        done: false
+      - text: Verify 2D fallback works when WebGPU unavailable
+        done: false
+extra: {}

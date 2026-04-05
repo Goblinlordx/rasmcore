@@ -367,3 +367,6 @@ sdk-canvas-render_20260405041105Z: []
 
 # SDK source object — no deps (foundational)
 sdk-source-object_20260405044044Z: []
+
+# Web-UI SDK pattern adoption — no deps (Source + RenderTarget already on main)
+webui-adopt-sdk-patterns_20260405071524Z: []
