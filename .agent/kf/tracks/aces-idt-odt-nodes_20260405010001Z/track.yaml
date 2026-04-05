@@ -1,0 +1,136 @@
+id: aces-idt-odt-nodes_20260405010001Z
+title: "ACES IDT/ODT pipeline nodes for color-managed grading"
+type: feature
+status: pending
+created: 2026-04-05
+updated: 2026-04-05
+spec:
+  summary: |
+    Add aces_idt and aces_odt as standard pipeline filter nodes that convert
+    between source color spaces and ACEScct working space. Application layer
+    inserts them at pipeline boundaries. All existing point-op filters become
+    perceptually correct in ACEScct with zero formula changes.
+  context: |
+    The V2 pipeline operates in linear sRGB (f32). Point-op adjustments
+    (brightness, contrast, levels, curves) applied in linear space produce
+    perceptually non-uniform results — dark areas are affected much more
+    than light areas. This is why brightness looks different from GIMP.
+
+    Professional tools solve this by grading in a log/perceptual space:
+    - DaVinci Resolve uses ACEScct (logarithmic with film toe)
+    - Lightroom uses multiplicative EV stops with perceptual curves
+    - Nuke accepts the limitation (compositing needs linear)
+
+    ACES defines IDT (Input Device Transform) and ODT (Output Display
+    Transform) as the standard way to convert between device color spaces
+    and the ACES working space. ACEScct is the recommended grading space.
+
+    These should be regular pipeline nodes — not special pipeline behavior.
+    The application/UI layer decides when to insert them. This keeps the
+    pipeline engine simple and composable.
+  codebase_analysis: |
+    Existing ACES infrastructure:
+    - crates/rasmcore-pipeline-v2/src/aces.rs — AP0/AP1 primaries, matrix math
+    - crates/rasmcore-pipeline-v2/src/color_math.rs — acescct_to_linear(),
+      linear_to_acescct(), srgb_to_linear(), linear_to_srgb() all implemented
+    - crates/rasmcore-pipeline-v2/src/color_space.rs — ColorSpace enum includes
+      AcesCct, AcesCg, Srgb, Linear, etc.
+    - color_math::convert_color_space() already handles Srgb->Linear->ACEScct
+      and reverse conversions via matrix + transfer functions
+
+    What is needed:
+    - Two new filter nodes (aces_idt, aces_odt) that call convert_color_space()
+    - These are point ops — per-pixel color space conversion
+    - They should declare analytic_expression() if possible (for fusion)
+      but ACEScct transfer is not a simple PointOpExpr (it is per-channel
+      but uses a piecewise function). They can return None and still be
+      efficient as non-fused nodes.
+    - NodeInfo.color_space must be updated by these nodes so downstream
+      nodes know the current working space
+
+    The application layer (web UI, SDK) inserts:
+    - aces_idt after read() when user enables ACES mode
+    - aces_odt before write() or display
+    - Optionally: cct_to_cg / cg_to_cct around spatial ops
+
+    Filter categories and fusion:
+    - Point ops (brightness, contrast, etc.) need no changes in ACEScct
+    - Spatial ops (blur, sharpen) technically need linear, but the visual
+      difference is subtle for small radii. App layer can optionally wrap
+      them with cct-to-cg/cg-to-cct nodes for correctness.
+  acceptance_criteria:
+    - aces_idt node converts from source color space to ACEScct
+    - aces_odt node converts from ACEScct to target color space
+    - Both registered as V2 filters with proper params (source/target color space)
+    - Brightness adjustment in ACEScct produces perceptually uniform results
+    - Pipeline with IDT + brightness + ODT matches DaVinci Resolve behavior
+    - Round-trip IDT then ODT with no filters produces pixel-near-identical output
+    - No changes to existing filter math — they work as-is in ACEScct
+    - NodeInfo.color_space correctly reflects ACEScct after IDT
+  out_of_scope: |
+    - Auto-insertion of cct-to-cg around spatial ops (app-layer decision)
+    - ACES compliance certification or Academy Logo Program
+    - RRT (Reference Rendering Transform) — the ODT is simplified for now
+    - HDR output transforms (PQ/HLG) — future extension
+    - Changes to any existing filter formulas
+  technical_notes: |
+    Implementation approach:
+
+    1. Create AcesIdt filter:
+       - Param: source_space (enum: srgb, rec709, etc.)
+       - compute(): call convert_color_space(pixels, source, ACEScct)
+       - analytic_expression(): return None (piecewise transfer not expressible
+         as PointOpExpr, but thats ok — its a boundary node, not fused)
+       - NodeInfo output: color_space = ACEScct
+
+    2. Create AcesOdt filter:
+       - Param: target_space (enum: srgb, rec709, display_p3, etc.)
+       - compute(): call convert_color_space(pixels, ACEScct, target)
+       - analytic_expression(): return None
+       - NodeInfo output: color_space = target
+
+    3. Optional convenience nodes:
+       - aces_cct_to_cg: ACEScct -> ACEScg (for spatial ops)
+       - aces_cg_to_cct: ACEScg -> ACEScct (back to grading space)
+
+    The color_math::convert_color_space() function already handles the
+    full conversion chain: source -> Linear sRGB -> (matrix) -> target.
+    The IDT/ODT nodes are thin wrappers around this.
+
+    GPU shader: The ACEScct transfer function is simple enough for WGSL:
+      if (v < 0.0078125) { log2(v) * ... } else { ... }
+    These nodes should also provide gpu_shader() for GPU acceleration.
+plan:
+  - phase: "Core Nodes"
+    tasks:
+      - text: "Create AcesIdt filter with source_space param and convert_color_space compute"
+        done: false
+      - text: "Create AcesOdt filter with target_space param and convert_color_space compute"
+        done: false
+      - text: "Register both as V2 filters with proper param annotations"
+        done: false
+      - text: "Ensure NodeInfo.color_space is updated by both nodes"
+        done: false
+  - phase: "Convenience Nodes"
+    tasks:
+      - text: "Create aces_cct_to_cg convenience filter (ACEScct to ACEScg)"
+        done: false
+      - text: "Create aces_cg_to_cct convenience filter (ACEScg to ACEScct)"
+        done: false
+  - phase: "Testing"
+    tasks:
+      - text: "Test IDT+ODT roundtrip produces near-identical output (within f32 precision)"
+        done: false
+      - text: "Test brightness in ACEScct is perceptually uniform (compare dark vs light shift)"
+        done: false
+      - text: "Test IDT from sRGB, Rec709, and Display-P3 sources"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Verify param-manifest.json includes aces_idt and aces_odt"
+        done: false
+      - text: "WASM component build clean"
+        done: false
+      - text: "Visual comparison of brightness +0.1 in linear vs ACEScct against GIMP reference"
+        done: false
+extra: {}
