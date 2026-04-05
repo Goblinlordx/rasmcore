@@ -186,6 +186,11 @@ export function usePreviewWorker() {
     }
   }, []);
 
+  /** Resize the OffscreenCanvas from the worker (for display mode). */
+  const resizeCanvas = useCallback((width: number, height: number) => {
+    workerRef.current?.postMessage({ type: 'resize-canvas', width, height });
+  }, []);
+
   /** Forward viewport state to worker for shader-based pan/zoom. */
   const sendViewport = useCallback((
     panX: number, panY: number, zoom: number,
@@ -210,6 +215,7 @@ export function usePreviewWorker() {
     loadImage,
     processChain,
     setDisplayCanvas,
+    resizeCanvas,
     sendViewport,
   };
 }

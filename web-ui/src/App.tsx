@@ -122,9 +122,14 @@ export default function App() {
               getWideGamutContext(oc)?.drawImage(img, 0, 0);
             }
             if (pc) {
-              pc.width = img.width;
-              pc.height = img.height;
-              getWideGamutContext(pc)?.drawImage(img, 0, 0);
+              if (preview.displayMode) {
+                // Canvas is owned by worker — resize via message
+                preview.resizeCanvas(img.width, img.height);
+              } else {
+                pc.width = img.width;
+                pc.height = img.height;
+                getWideGamutContext(pc)?.drawImage(img, 0, 0);
+              }
             }
             URL.revokeObjectURL(url);
           };

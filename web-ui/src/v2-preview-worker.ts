@@ -353,6 +353,11 @@ async function initDisplay(canvas: OffscreenCanvas, hdr: boolean) {
   }
 }
 
+function handleResizeCanvas(width: number, height: number) {
+  if (!gpuHandler || !displayMode) return;
+  gpuHandler.resizeDisplay(width, height);
+}
+
 function handleViewport(data: any) {
   if (!gpuHandler || !displayMode) return;
   gpuHandler.updateViewport(
@@ -380,6 +385,9 @@ self.onmessage = (e) => {
       break;
     case 'process':
       processChain(e.data.chain);
+      break;
+    case 'resize-canvas':
+      handleResizeCanvas(e.data.width, e.data.height);
       break;
     case 'viewport':
       handleViewport(e.data);

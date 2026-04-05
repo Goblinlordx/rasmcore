@@ -56,6 +56,7 @@ export class GpuHandlerV2 {
   private available = true;
 
   // Display surface state
+  private displayCanvas: OffscreenCanvas | null = null;
   private canvasCtx: GPUCanvasContext | null = null;
   private blitPipeline: GPURenderPipeline | null = null;
   private blitBindGroupLayout: GPUBindGroupLayout | null = null;
@@ -279,6 +280,7 @@ export class GpuHandlerV2 {
   async setDisplayCanvas(canvas: OffscreenCanvas, hdr: boolean): Promise<void> {
     await this.ensureDevice();
     const device = this.device!;
+    this.displayCanvas = canvas;
 
     const ctx = canvas.getContext('webgpu') as GPUCanvasContext;
     const format: GPUTextureFormat = 'rgba16float';
@@ -327,6 +329,13 @@ export class GpuHandlerV2 {
   /** Whether a display canvas has been configured. */
   get hasDisplay(): boolean {
     return this.canvasCtx !== null && this.blitPipeline !== null;
+  }
+
+  /** Resize the OffscreenCanvas from the worker thread. */
+  resizeDisplay(width: number, height: number): void {
+    if (!this.displayCanvas) return;
+    this.displayCanvas.width = width;
+    this.displayCanvas.height = height;
   }
 
   /**
@@ -555,6 +564,7 @@ export class GpuHandlerV2 {
     this.shaderCache.clear();
     if (this.lastOutputBuf) { this.lastOutputBuf.destroy(); this.lastOutputBuf = null; }
     if (this.viewportBuf) { this.viewportBuf.destroy(); this.viewportBuf = null; }
+    this.displayCanvas = null;
     this.canvasCtx = null;
     this.blitPipeline = null;
     this.blitBindGroupLayout = null;
