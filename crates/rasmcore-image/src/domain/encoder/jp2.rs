@@ -186,6 +186,7 @@ inventory::submit! {
         mime: "image/jp2",
         extensions: &["jp2", "j2k"],
         fn_name: "encode_jp2",
+        encode_fn: None,
     }
 }
 

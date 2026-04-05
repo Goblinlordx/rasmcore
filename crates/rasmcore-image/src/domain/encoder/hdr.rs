@@ -111,6 +111,7 @@ inventory::submit! {
         mime: "image/vnd.radiance",
         extensions: &["hdr"],
         fn_name: "encode_hdr",
+        encode_fn: None,
     }
 }
 

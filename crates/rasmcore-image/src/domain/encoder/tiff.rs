@@ -230,6 +230,7 @@ inventory::submit! {
         mime: "image/tiff",
         extensions: &["tiff", "tif"],
         fn_name: "encode_tiff",
+        encode_fn: None,
     }
 }
 

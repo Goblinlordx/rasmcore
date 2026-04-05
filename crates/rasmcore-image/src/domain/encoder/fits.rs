@@ -42,5 +42,6 @@ inventory::submit! {
         mime: "image/fits",
         extensions: &["fits", "fit"],
         fn_name: "encode_fits",
+        encode_fn: None,
     }
 }

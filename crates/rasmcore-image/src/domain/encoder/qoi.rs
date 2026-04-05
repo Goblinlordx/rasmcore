@@ -20,5 +20,6 @@ inventory::submit! {
         mime: "image/qoi",
         extensions: &["qoi"],
         fn_name: "encode_qoi",
+        encode_fn: None,
     }
 }

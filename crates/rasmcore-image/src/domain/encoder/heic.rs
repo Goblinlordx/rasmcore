@@ -202,6 +202,7 @@ inventory::submit! {
         mime: "image/heic",
         extensions: &["heic", "heif"],
         fn_name: "encode_heic",
+        encode_fn: None,
     }
 }
 

@@ -75,6 +75,7 @@ inventory::submit! {
         mime: "image/x-icon",
         extensions: &["ico"],
         fn_name: "encode_ico",
+        encode_fn: None,
     }
 }
 

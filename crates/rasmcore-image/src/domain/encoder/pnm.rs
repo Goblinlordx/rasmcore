@@ -18,5 +18,6 @@ inventory::submit! {
         mime: "image/x-portable-anymap",
         extensions: &["pnm", "ppm", "pgm", "pbm"],
         fn_name: "encode_pnm",
+        encode_fn: None,
     }
 }

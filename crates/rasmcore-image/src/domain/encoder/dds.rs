@@ -128,6 +128,7 @@ inventory::submit! {
         mime: "image/vnd-ms.dds",
         extensions: &["dds"],
         fn_name: "encode_dds",
+        encode_fn: None,
     }
 }
 

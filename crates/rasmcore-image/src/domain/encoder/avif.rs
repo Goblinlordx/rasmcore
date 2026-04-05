@@ -45,6 +45,7 @@ inventory::submit! {
         mime: "image/avif",
         extensions: &["avif"],
         fn_name: "encode_avif",
+        encode_fn: None,
     }
 }
 

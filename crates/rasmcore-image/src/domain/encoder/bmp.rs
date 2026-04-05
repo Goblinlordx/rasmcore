@@ -24,6 +24,7 @@ inventory::submit! {
         mime: "image/bmp",
         extensions: &["bmp"],
         fn_name: "encode_bmp",
+        encode_fn: None,
     }
 }
 

@@ -202,6 +202,7 @@ inventory::submit! {
         mime: "image/gif",
         extensions: &["gif"],
         fn_name: "encode_gif",
+        encode_fn: None,
     }
 }
 

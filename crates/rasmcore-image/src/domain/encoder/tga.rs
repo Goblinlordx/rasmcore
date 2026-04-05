@@ -18,5 +18,6 @@ inventory::submit! {
         mime: "image/x-tga",
         extensions: &["tga"],
         fn_name: "encode_tga",
+        encode_fn: None,
     }
 }

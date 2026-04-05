@@ -114,6 +114,7 @@ inventory::submit! {
         mime: "image/x-exr",
         extensions: &["exr"],
         fn_name: "encode_exr",
+        encode_fn: None,
     }
 }
 

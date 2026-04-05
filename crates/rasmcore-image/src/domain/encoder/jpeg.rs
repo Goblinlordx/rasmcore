@@ -163,6 +163,7 @@ inventory::submit! {
         mime: "image/jpeg",
         extensions: &["jpg", "jpeg"],
         fn_name: "encode_jpeg",
+        encode_fn: None,
     }
 }
 

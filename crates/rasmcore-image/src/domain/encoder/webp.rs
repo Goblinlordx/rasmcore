@@ -62,6 +62,7 @@ inventory::submit! {
         mime: "image/webp",
         extensions: &["webp"],
         fn_name: "encode_webp",
+        encode_fn: None,
     }
 }
 

@@ -552,6 +552,7 @@ inventory::submit! {
         mime: "image/png",
         extensions: &["png"],
         fn_name: "encode_png",
+        encode_fn: Some(|pixels, info| encode(pixels, info, &PngEncodeConfig::default())),
     }
 }
 
