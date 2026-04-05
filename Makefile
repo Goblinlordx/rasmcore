@@ -20,9 +20,13 @@ DOCS_OUT          := docs/out/index.html
 $(DOCS_NODE_MODULES): $(DOCS_SITE)/package.json
 	cd $(DOCS_SITE) && npm install --silent
 
-## Dump registry JSON (only if binary changed)
-$(DOCS_REGISTRY): crates/rasmcore-pipeline-v2/src/registry.rs
-	cargo run --bin dump_registry -p rasmcore-v2-wasm 2>/dev/null > $@
+## Dump registry JSON (rebuild if any pipeline-v2 or codecs-v2 source changed)
+V2_SOURCES := $(shell find crates/rasmcore-pipeline-v2/src -name '*.rs') \
+              $(shell find crates/rasmcore-codecs-v2/src -name '*.rs' 2>/dev/null)
+$(DOCS_REGISTRY): $(V2_SOURCES)
+	@rm -f $@
+	cargo run --bin dump_registry -p rasmcore-v2-wasm > $@
+	@test -s $@ || (echo "ERROR: dump_registry produced empty output" && rm -f $@ && exit 1)
 
 ## Render example images (only if binary changed)
 $(DOCS_EXAMPLES): crates/rasmcore-v2-wasm/src/bin/render_examples.rs
@@ -59,10 +63,12 @@ docs-serve: docs
 docs-dev: $(DOCS_NODE_MODULES) $(DOCS_REGISTRY) docs-copy-examples $(DOCS_SDK)
 	cd $(DOCS_SITE) && npm run dev
 
-## Clean docs build artifacts
+## Clean docs build artifacts (including cached registry/examples)
 docs-clean:
 	rm -rf $(DOCS_SITE)/.next $(DOCS_SITE)/out $(DOCS_SITE)/node_modules docs/out
 	rm -f $(DOCS_SITE)/next-env.d.ts
+	rm -f $(DOCS_REGISTRY)
+	rm -rf /tmp/docs-examples
 
 # ─── Web UI ──────────────────────────────────────────────────────────────────
 
