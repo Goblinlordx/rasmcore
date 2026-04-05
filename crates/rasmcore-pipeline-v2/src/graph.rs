@@ -61,10 +61,34 @@ pub struct Graph {
 
 impl Graph {
     /// Create a new graph with the given cache budget (bytes).
+    /// Uses the thread-local spatial cache pool to avoid allocation churn.
     pub fn new(cache_budget: usize) -> Self {
+        // Try to get a pooled cache; fall back to fresh allocation
+        let cache = if cache_budget == 16 * 1024 * 1024 {
+            // Default budget — use pool
+            crate::cache::acquire_pooled_cache()
+        } else {
+            SpatialCache::new(cache_budget)
+        };
         Self {
             nodes: Vec::new(),
-            cache: SpatialCache::new(cache_budget),
+            cache,
+            content_hashes: Vec::new(),
+            layer_cache: None,
+            gpu_executor: None,
+            demand_strategy: DemandStrategy::default(),
+            aces_strict: false,
+            optimized: false,
+            tracing: false,
+            trace: PipelineTrace::new(),
+        }
+    }
+
+    /// Create a graph with a pre-allocated spatial cache (e.g. from a pool).
+    pub fn with_cache(cache: SpatialCache) -> Self {
+        Self {
+            nodes: Vec::new(),
+            cache,
             content_hashes: Vec::new(),
             layer_cache: None,
             gpu_executor: None,
@@ -567,6 +591,17 @@ fn crop_f32(data: &[f32], src_rect: Rect, dst_rect: Rect) -> Vec<f32> {
         out.extend_from_slice(&data[src_off..src_off + dw * 4]);
     }
     out
+}
+
+impl Drop for Graph {
+    fn drop(&mut self) {
+        // Return spatial cache to the pool for reuse.
+        // Swap with a zero-budget dummy to take ownership of the allocated cache.
+        let cache = std::mem::replace(&mut self.cache, SpatialCache::new(0));
+        if cache.usage_bytes() > 0 || cache.budget_bytes() > 0 {
+            crate::cache::release_pooled_cache(cache);
+        }
+    }
 }
 
 #[cfg(test)]

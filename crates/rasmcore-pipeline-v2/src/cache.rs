@@ -108,4 +108,73 @@ impl SpatialCache {
     pub fn usage_bytes(&self) -> usize {
         self.current_bytes
     }
+
+    /// Budget capacity in bytes.
+    pub fn budget_bytes(&self) -> usize {
+        self.budget_bytes
+    }
+}
+
+// ─── Spatial Cache Pool ────────────────────────────────────────────────────
+
+use std::cell::RefCell;
+
+/// Pool of reusable SpatialCache instances.
+///
+/// Avoids allocating HashMap/Vec on every pipeline creation. The pool
+/// auto-sizes to the peak concurrent demand — if 4 pipelines run
+/// concurrently, the pool grows to hold 4 caches. Released caches
+/// are cleared and returned to the pool.
+pub struct SpatialCachePool {
+    available: Vec<SpatialCache>,
+    budget_bytes: usize,
+}
+
+impl SpatialCachePool {
+    /// Create a pool that produces caches with the given budget.
+    pub fn new(budget_bytes: usize) -> Self {
+        Self {
+            available: Vec::new(),
+            budget_bytes,
+        }
+    }
+
+    /// Acquire a cache from the pool (or create a new one).
+    /// The cache is cleared but its internal allocations are reused.
+    pub fn acquire(&mut self) -> SpatialCache {
+        if let Some(mut cache) = self.available.pop() {
+            cache.clear();
+            cache
+        } else {
+            SpatialCache::new(self.budget_bytes)
+        }
+    }
+
+    /// Return a cache to the pool for reuse.
+    pub fn release(&mut self, cache: SpatialCache) {
+        self.available.push(cache);
+    }
+
+    /// Number of caches currently in the pool (idle).
+    pub fn idle_count(&self) -> usize {
+        self.available.len()
+    }
+}
+
+thread_local! {
+    /// Global thread-local spatial cache pool.
+    /// Default budget: 16 MB (matches Graph::new default).
+    static CACHE_POOL: RefCell<SpatialCachePool> = RefCell::new(
+        SpatialCachePool::new(16 * 1024 * 1024)
+    );
+}
+
+/// Acquire a spatial cache from the thread-local pool.
+pub fn acquire_pooled_cache() -> SpatialCache {
+    CACHE_POOL.with(|pool| pool.borrow_mut().acquire())
+}
+
+/// Return a spatial cache to the thread-local pool.
+pub fn release_pooled_cache(cache: SpatialCache) {
+    CACHE_POOL.with(|pool| pool.borrow_mut().release(cache));
 }

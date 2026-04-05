@@ -51,7 +51,7 @@ pub use color_space::ColorSpace;
 pub use gpu::{GpuError, GpuExecutor};
 pub use graph::{Graph, GpuPlan};
 pub use demand::{DemandStrategy, DemandHint};
-pub use cache::SpatialCache;
+pub use cache::{SpatialCache, SpatialCachePool};
 pub use hash::{content_hash, source_hash};
 pub use layer_cache::{LayerCache, CacheQuality, CacheStats};
 
