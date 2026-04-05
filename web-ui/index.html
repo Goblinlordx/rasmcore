@@ -79,6 +79,19 @@
     .panel-section-body.collapsed { display: none; }
     .panel-scroll { flex: 1; overflow-y: auto; }
 
+    /* ─── Scope Panel ─── */
+    .scope-panel { border-top: 1px solid #2a2a4a; }
+    .scope-header { padding: 6px 10px; cursor: pointer; font-size: 0.7rem; color: #999; user-select: none; }
+    .scope-header:hover { color: #ccc; }
+    .scope-header-label { font-weight: 500; }
+    .scope-tabs { display: flex; gap: 0; border-bottom: 1px solid #1a1a3a; }
+    .scope-tab { flex: 1; padding: 4px 0; font-size: 0.6rem; text-align: center; background: none; border: none; color: #666; cursor: pointer; border-bottom: 2px solid transparent; }
+    .scope-tab:hover { color: #aaa; }
+    .scope-tab.active { color: #8b5cf6; border-bottom-color: #8b5cf6; }
+    .scope-canvas-wrap { padding: 4px; background: #000; }
+    .scope-canvas { display: block; width: 100%; aspect-ratio: 1; background: #000; image-rendering: pixelated; }
+    .scope-empty { padding: 20px; text-align: center; font-size: 0.65rem; color: #444; }
+
     /* ─── Layer Cards ─── */
     .layer-card { background: #12122a; border: 1px solid #2a2a4a; border-radius: 6px; margin: 4px 8px; transition: border-color 0.2s; }
     .layer-card.active { border-color: #8b5cf6; }

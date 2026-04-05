@@ -27,6 +27,8 @@ export function usePreviewWorker() {
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   /** External viewport canvas — proxy results draw here for main display */
   const viewportCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  /** Canvas for scope visualization output */
+  const scopeCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const pendingLoadRef = useRef<ArrayBuffer | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const queuedChainRef = useRef<any[] | null>(null); // single-slot queue
@@ -149,6 +151,24 @@ export function usePreviewWorker() {
         return;
       }
 
+      // Scope result — draw to scope canvas (independent of main preview)
+      if (type === 'scope-result') {
+        const blob = new Blob([e.data.png], { type: 'image/png' });
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+          const canvas = scopeCanvasRef.current;
+          if (canvas) {
+            canvas.width = img.width;
+            canvas.height = img.height;
+            canvas.getContext('2d')?.drawImage(img, 0, 0);
+          }
+          URL.revokeObjectURL(url);
+        };
+        img.src = url;
+        return;
+      }
+
       if (type === 'error') {
         processingRef.current = false;
         setState((s) => ({ ...s, processing: false }));
@@ -190,6 +210,16 @@ export function usePreviewWorker() {
       processingRef.current = true;
       setState((s) => ({ ...s, processing: true }));
       workerRef.current.postMessage({ type: 'process', chain });
+    },
+    [],
+  );
+
+  /** Send a scope render request (independent of main preview queue). */
+  const processScope = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (chain: any[], scopeName: string) => {
+      if (!workerRef.current || !readyRef.current) return;
+      workerRef.current.postMessage({ type: 'process-scope', chain, scopeName });
     },
     [],
   );
@@ -243,9 +273,11 @@ export function usePreviewWorker() {
     ...state,
     previewCanvasRef,
     viewportCanvasRef,
+    scopeCanvasRef,
     onProxyCompleteRef,
     loadImage,
     processChain,
+    processScope,
     setDisplayCanvas,
     setOriginalDisplayCanvas,
     resizeCanvas,

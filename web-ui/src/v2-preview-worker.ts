@@ -354,6 +354,62 @@ function handleViewport(data: any) {
   }
 }
 
+// ─── Scope Rendering ──────────────────────────────────────────────────────
+
+async function processScope(chain: any[], scopeName: string) {
+  if (!previewBytes && !currentSource) {
+    return; // no image loaded
+  }
+
+  const t0 = performance.now();
+  try {
+    let pipe = createPipelineFromSource();
+    if (!pipe) return;
+
+    // Apply the user's filter chain first
+    for (const step of chain) {
+      const method = snakeToCamel(step.name);
+      if (typeof pipe[method] === 'function') {
+        if (!step.params || step.params.length === 0) {
+          pipe = pipe[method]();
+        } else {
+          const config = buildConfig(step.params, step.paramValues);
+          pipe = pipe[method](config);
+        }
+      } else {
+        // Fallback to raw applyFilter
+        const raw = pipe._pipe;
+        if (raw && typeof raw.applyFilter === 'function') {
+          const paramBuf = buildParamBuf(step.params, step.paramValues);
+          const node = raw.applyFilter(pipe._node, step.name, paramBuf);
+          pipe = Object.create(Pipeline.prototype);
+          pipe._pipe = raw;
+          pipe._node = node;
+        }
+      }
+    }
+
+    // Append scope filter (no params — uses defaults: 512x512)
+    const raw = pipe._pipe;
+    if (raw && typeof raw.applyFilter === 'function') {
+      const scopeNode = raw.applyFilter(pipe._node, scopeName, new Uint8Array(0));
+      pipe = Object.create(Pipeline.prototype);
+      pipe._pipe = raw;
+      pipe._node = scopeNode;
+    }
+
+    // Render scope to PNG (always CPU — scopes are small images)
+    const output = pipe.write('png');
+    const totalMs = Math.round(performance.now() - t0);
+    const buf = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength);
+    self.postMessage({ type: 'scope-result', png: buf, scopeName, totalMs }, [buf]);
+  } catch (e: any) {
+    const detail = e?.payload ? JSON.stringify(e.payload, null, 2) : e?.message || String(e);
+    console.warn(`[v2-preview] Scope ${scopeName} failed:`, detail);
+    // Don't send error — scope failure is non-critical
+  }
+}
+
 // ─── Message Handler ────────────────────────────────────────────────────────
 
 self.onmessage = (e) => {
@@ -379,6 +435,9 @@ self.onmessage = (e) => {
       break;
     case 'viewport':
       handleViewport(e.data);
+      break;
+    case 'process-scope':
+      processScope(e.data.chain, e.data.scopeName);
       break;
     case 'set-tracing':
       tracingEnabled = !!e.data.enabled;

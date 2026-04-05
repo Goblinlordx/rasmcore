@@ -13,6 +13,7 @@ import RightPanel from './components/RightPanel';
 import LayerPanel from './components/LayerPanel';
 import EffectStack from './components/EffectStack';
 import StatusBar from './components/StatusBar';
+import ScopePanel from './components/ScopePanel';
 import CodeModal from './components/CodeModal';
 
 // No debounce — send immediately, single-slot queue handles backpressure
@@ -112,7 +113,9 @@ export default function App() {
     // eslint-disable-next-line react-hooks/immutability
     worker.onLoadedRef.current = () => {
       // Trigger proxy render first (fast), then background warm follows via onProxyComplete
-      preview.processChain(serializeChainRef.current());
+      const chain = serializeChainRef.current();
+      preview.processChain(chain);
+      preview.processScope(chain, selectedScopeRef.current);
     };
   }, [worker, preview]);
 
@@ -166,7 +169,9 @@ export default function App() {
   // Apply chain via proxy first (fast ~1080p), then background warm follows automatically
   const applyFullChain = useCallback(() => {
     if (!activeLayer?.imageBytes) return;
-    preview.processChain(serializeChainRef.current());
+    const chain = serializeChainRef.current();
+    preview.processChain(chain);
+    preview.processScope(chain, selectedScopeRef.current);
   }, [activeLayer, preview]);
 
   const requestCompositeProcess = useCallback(() => {
@@ -212,10 +217,23 @@ export default function App() {
     [moveNode, applyFullChain],
   );
 
+  // Track selected scope for rendering
+  const selectedScopeRef = useRef('scope_histogram');
+  const handleScopeChange = useCallback((scope: string) => {
+    selectedScopeRef.current = scope;
+    // Trigger immediate scope render with current chain
+    if (activeLayer?.imageBytes) {
+      preview.processScope(serializeChainRef.current(), scope);
+    }
+  }, [preview, activeLayer]);
+
   // Send preview immediately — single-slot queue in usePreviewWorker drops
   // stale requests automatically (latest params always win).
   const schedulePreview = useCallback(() => {
-    preview.processChain(serializeChainRef.current());
+    const chain = serializeChainRef.current();
+    preview.processChain(chain);
+    // Also update scope
+    preview.processScope(chain, selectedScopeRef.current);
   }, [preview]);
 
   const handleDownload = useCallback(
@@ -295,6 +313,11 @@ export default function App() {
             onMoveNode={handleMoveNode}
             onParamChange={updateParam}
             onSchedulePreview={schedulePreview}
+          />
+          <ScopePanel
+            scopeCanvasRef={preview.scopeCanvasRef}
+            hasImage={layers.length > 0}
+            onScopeChange={handleScopeChange}
           />
         </RightPanel>
       </div>
