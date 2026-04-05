@@ -1,0 +1,99 @@
+id: filter-cost-docs_20260405231500Z
+title: Add algorithmic cost annotations to V2 filter doc generation
+type: feature
+status: pending
+created: 2026-04-05
+updated: 2026-04-05
+spec:
+  summary: |
+    Add a cost field to #[filter()] macro attribute and propagate it to
+    the OperationRegistration struct. Wire the doc generator to include
+    cost in .adoc output. Populate for all ~78 registered V2 filters.
+  context: |
+    Users (and hosts building UIs) need to understand the relative
+    computational cost of each filter. A simple per-filter complexity
+    annotation like "O(n)" or "O(n * r^2)" communicates whether a
+    filter is cheap (point op) or expensive (neighborhood search) and
+    how cost scales with parameters.
+
+    The #[filter()] macro already supports name, category, display_name,
+    and doc fields. Adding cost here makes it machine-readable from day
+    one (available in OperationRegistration for future UI/SDK use) while
+    this track only wires up the doc generator as the consumer.
+  codebase_analysis: |
+    Macro: crates/rasmcore-macros/src/lib.rs line 1088 — derive(V2Filter)
+    parses #[filter(name, category, display_name, doc)] and generates
+    an inventory::submit! block with OperationRegistration.
+
+    Registration struct: crates/rasmcore-pipeline-v2/src/registry.rs —
+    OperationRegistration has name, display_name, category, doc_path,
+    kind, capabilities, params. No cost field yet.
+
+    Doc generator: the op-docs-macro track (completed) generates .adoc
+    files from filter annotations. The doc_path field in #[filter(doc = "...")]
+    points to the output .adoc file.
+
+    Filter inventory (78 filters across 6 categories):
+    - 35 point ops: O(n) — brightness, contrast, gamma, exposure, etc.
+    - 12 separable spatial: O(n * r) — gaussian_blur, box_blur, sharpen, etc.
+    - 6 neighborhood: O(n * r^2) — bilateral, oil_paint, shadow_highlight, etc.
+    - 1 extreme: O(n * sr^2 * pr^2) — nlm_denoise
+    - ~24 others: O(n) to O(n * k * iter) — color ops, analysis, effects
+  acceptance_criteria:
+    - "#[filter()] macro accepts optional cost = \"...\" attribute"
+    - OperationRegistration struct has a cost field (empty string if not set)
+    - Doc generator includes cost in .adoc output when present
+    - All ~78 registered V2 filters have cost annotations populated
+    - Cost strings use consistent notation relative to n (pixel count) and filter params
+    - Existing tests pass unchanged
+  out_of_scope: |
+    - Param-manifest.json changes (future track)
+    - SDK/UI display of cost (future track — data is in registry for when needed)
+    - Runtime cost estimation or profiling
+    - Changing filter algorithms to reduce cost
+  technical_notes: |
+    Add cost as a string field rather than a structured enum — the notation
+    varies too much across filters (O(n), O(n * r), O(n * sr^2 * pr^2),
+    O(n * k * iter)) to fit a rigid schema. A human-readable string that
+    follows a consistent convention is most practical.
+
+    Convention for cost strings:
+    - n = pixel count (W * H)
+    - r = radius parameter
+    - k = kernel size or number of items
+    - Use parameter names from the filter struct (sr, pr, etc.)
+    - Examples: "O(n)", "O(n * r) separable", "O(n * r^2)", "O(n * sr^2 * pr^2)"
+
+    Implementation steps:
+    1. Add cost field to #[filter()] parsing in derive(V2Filter)
+    2. Add cost: &'static str to OperationRegistration
+    3. Wire doc generator to include cost in .adoc output
+    4. Add cost = "..." to all 78 filter registrations
+plan:
+  - phase: Infrastructure
+    tasks:
+      - text: Add cost field parsing to derive(V2Filter) macro in rasmcore-macros
+        done: false
+      - text: Add cost field to OperationRegistration struct in registry.rs
+        done: false
+      - text: Wire doc generator to include cost string in .adoc output
+        done: false
+  - phase: Populate Annotations
+    tasks:
+      - text: "Add cost annotations to adjustment filters (11 filters: brightness, contrast, gamma, exposure, invert, levels, posterize, sigmoidal_contrast, dodge, burn, solarize)"
+        done: false
+      - text: "Add cost annotations to spatial filters (7 filters: gaussian_blur, box_blur, sharpen, median, bilateral, motion_blur, high_pass)"
+        done: false
+      - text: "Add cost annotations to enhancement filters (16 filters: auto_level through retinex_msrcr)"
+        done: false
+      - text: "Add cost annotations to color, effect, grading, and analysis filters (~44 filters)"
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Verify all registered filters have non-empty cost annotations via dump_registry
+        done: false
+      - text: Verify .adoc docs include cost for annotated filters
+        done: false
+      - text: Verify cargo check and WASM component build clean
+        done: false
+extra: {}

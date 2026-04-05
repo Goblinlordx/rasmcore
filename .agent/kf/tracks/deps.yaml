@@ -379,3 +379,6 @@ cpu-pingpong-buffers_20260405082500Z: []
 
 # Memory leak research — no deps
 research-memory-leak-caches_20260405224300Z: []
+
+# Filter cost docs — no deps
+filter-cost-docs_20260405231500Z: []
