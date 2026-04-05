@@ -491,19 +491,24 @@ pub fn compose_cluts(outer: &Clut3D, inner: &Clut3D) -> Clut3D {
 pub struct FusedPointOpNode {
     upstream: u32,
     info: NodeInfo,
+    #[allow(dead_code)]
     expr: PointOpExpr,
     /// Pre-compiled WGSL shader (cached on creation).
     gpu_shader_src: String,
+    /// Pre-built f32 LUT (cached on creation — avoids rebuilding on every compute).
+    lut: F32Lut,
 }
 
 impl FusedPointOpNode {
     pub fn new(upstream: u32, info: NodeInfo, expr: PointOpExpr) -> Self {
         let gpu_shader_src = lower_to_wgsl_shader(&expr);
+        let lut = lower_to_f32_lut(&expr);
         Self {
             upstream,
             info,
             expr,
             gpu_shader_src,
+            lut,
         }
     }
 }
@@ -519,12 +524,11 @@ impl Node for FusedPointOpNode {
         upstream: &mut dyn Upstream,
     ) -> Result<Vec<f32>, PipelineError> {
         let input = upstream.request(self.upstream, request)?;
-        let lut = lower_to_f32_lut(&self.expr);
         let mut output = input;
         for pixel in output.chunks_exact_mut(4) {
-            pixel[0] = lut.apply(pixel[0]);
-            pixel[1] = lut.apply(pixel[1]);
-            pixel[2] = lut.apply(pixel[2]);
+            pixel[0] = self.lut.apply(pixel[0]);
+            pixel[1] = self.lut.apply(pixel[1]);
+            pixel[2] = self.lut.apply(pixel[2]);
             // alpha unchanged
         }
         Ok(output)
