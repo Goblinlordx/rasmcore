@@ -218,8 +218,7 @@ export class GpuHandlerV2 {
         this.flushDeferred();
         device.queue.submit([encoder.finish()]);
 
-        this.deferDestroy(paramBuf);
-        extras.forEach(b => this.deferDestroy(b));
+        // paramBuf and extras GC'd when unreferenced
         [readBuf, writeBuf] = [writeBuf, readBuf];
       }
 
@@ -494,8 +493,7 @@ export class GpuHandlerV2 {
         );
         pass.end();
 
-        this.deferDestroy(paramBuf);
-        extras.forEach(b => this.deferDestroy(b));
+        // paramBuf and extras GC'd when unreferenced
         [readBuf, writeBuf] = [writeBuf, readBuf];
       }
 
@@ -503,19 +501,16 @@ export class GpuHandlerV2 {
       this.appendBlitPass(encoder, readBuf);
 
       // Flush previous frame's deferred destroys before submitting new work
-      this.flushDeferred();
       device.queue.submit([encoder.finish()]);
 
       // Defer destruction of previous frame's output buffer
-      if (this.lastOutputBuf && this.lastOutputBuf !== readBuf) {
-        this.deferDestroy(this.lastOutputBuf);
-      }
+      // Previous output buffer GC'd when lastOutputBuf reference changes
       this.lastOutputBuf = readBuf;
       this.lastImageWidth = width;
       this.lastImageHeight = height;
 
       // Defer destruction of the other ping-pong buffer
-      if (writeBuf !== readBuf) this.deferDestroy(writeBuf);
+      // writeBuf GC'd when unreferenced
 
       return null; // success
     } catch (e) {
@@ -555,11 +550,10 @@ export class GpuHandlerV2 {
     const encoder = this.device.createCommandEncoder();
     this.appendBlitPass(encoder, buf);
 
-    this.flushDeferred();
     this.device.queue.submit([encoder.finish()]);
 
     // Defer destruction of previous frame's buffer
-    if (this.lastOutputBuf) this.deferDestroy(this.lastOutputBuf);
+    // Previous output buffer GC'd when lastOutputBuf reference changes
     this.lastOutputBuf = buf;
     this.lastImageWidth = width;
     this.lastImageHeight = height;
