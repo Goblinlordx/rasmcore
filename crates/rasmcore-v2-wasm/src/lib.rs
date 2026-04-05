@@ -11,6 +11,8 @@
 #[allow(unused_imports)]
 use rasmcore_pipeline_v2::filters as _v2_filters;
 #[allow(unused_imports)]
+use rasmcore_pipeline_v2::filters::scope as _v2_scope;
+#[allow(unused_imports)]
 use rasmcore_codecs_v2 as _v2_codecs;
 
 #[cfg(target_arch = "wasm32")]
@@ -862,4 +864,5 @@ mod tests {
             "should have at least one cache hit from unchanged upstream filter"
         );
     }
+
 }
