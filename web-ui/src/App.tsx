@@ -214,6 +214,17 @@ export default function App() {
     [layers.length, worker],
   );
 
+  const handleViewportChange = useCallback(
+    (panX: number, panY: number, zoom: number, cw: number, ch: number) => {
+      preview.sendViewport(
+        panX, panY, zoom, cw, ch,
+        worker.imageInfo?.width ?? 0, worker.imageInfo?.height ?? 0,
+        isHdrDisplay() ? 1 : 0,
+      );
+    },
+    [preview, worker.imageInfo?.width, worker.imageInfo?.height],
+  );
+
   if (loading) {
     return <div style={{ color: '#888', padding: 20 }}>Loading SDK...</div>;
   }
@@ -241,13 +252,7 @@ export default function App() {
           imageHeight={worker.imageInfo?.height ?? 0}
           onAddLayer={handleAddLayer}
           displayMode={preview.displayMode}
-          onViewportChange={useCallback((panX: number, panY: number, zoom: number, cw: number, ch: number) => {
-            preview.sendViewport(
-              panX, panY, zoom, cw, ch,
-              worker.imageInfo?.width ?? 0, worker.imageInfo?.height ?? 0,
-              isHdrDisplay() ? 1 : 0,
-            );
-          }, [preview, worker.imageInfo?.width, worker.imageInfo?.height])}
+          onViewportChange={handleViewportChange}
         />
         <RightPanel>
           <LayerPanel
