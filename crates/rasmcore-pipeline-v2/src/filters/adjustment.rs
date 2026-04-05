@@ -134,10 +134,10 @@ impl Filter for Exposure {
         let offset = self.offset;
         let mut out = input.to_vec();
         for pixel in out.chunks_exact_mut(4) {
-            for c in &mut pixel[..3] {
-                let v = (*c + offset) * multiplier;
-                *c = v.max(0.0).powf(inv_gamma);
-            }
+            // Explicit per-channel for auto-vectorization of multiply-add
+            pixel[0] = ((pixel[0] + offset) * multiplier).max(0.0).powf(inv_gamma);
+            pixel[1] = ((pixel[1] + offset) * multiplier).max(0.0).powf(inv_gamma);
+            pixel[2] = ((pixel[2] + offset) * multiplier).max(0.0).powf(inv_gamma);
         }
         Ok(out)
     }
@@ -212,10 +212,9 @@ impl Filter for Levels {
         let black = self.black;
         let mut out = input.to_vec();
         for pixel in out.chunks_exact_mut(4) {
-            for c in &mut pixel[..3] {
-                let v = (*c - black) / range;
-                *c = v.max(0.0).powf(inv_gamma);
-            }
+            pixel[0] = ((pixel[0] - black) / range).max(0.0).powf(inv_gamma);
+            pixel[1] = ((pixel[1] - black) / range).max(0.0).powf(inv_gamma);
+            pixel[2] = ((pixel[2] - black) / range).max(0.0).powf(inv_gamma);
         }
         Ok(out)
     }
@@ -255,9 +254,9 @@ impl Filter for Posterize {
         let inv = 1.0 / (n - 1.0).max(1.0);
         let mut out = input.to_vec();
         for pixel in out.chunks_exact_mut(4) {
-            for c in &mut pixel[..3] {
-                *c = (*c * n).floor().min(n - 1.0) * inv;
-            }
+            pixel[0] = (pixel[0] * n).floor().min(n - 1.0) * inv;
+            pixel[1] = (pixel[1] * n).floor().min(n - 1.0) * inv;
+            pixel[2] = (pixel[2] * n).floor().min(n - 1.0) * inv;
         }
         Ok(out)
     }
@@ -303,9 +302,9 @@ impl Filter for SigmoidalContrast {
         let sharpen = self.sharpen;
         let mut out = input.to_vec();
         for pixel in out.chunks_exact_mut(4) {
-            for c in &mut pixel[..3] {
-                *c = sigmoidal(*c, a, b, sharpen);
-            }
+            pixel[0] = sigmoidal(pixel[0], a, b, sharpen);
+            pixel[1] = sigmoidal(pixel[1], a, b, sharpen);
+            pixel[2] = sigmoidal(pixel[2], a, b, sharpen);
         }
         Ok(out)
     }
@@ -422,9 +421,9 @@ impl Filter for Dodge {
         let divisor = (1.0 - self.amount).max(1e-6);
         let mut out = input.to_vec();
         for pixel in out.chunks_exact_mut(4) {
-            for c in &mut pixel[..3] {
-                *c /= divisor;
-            }
+            pixel[0] /= divisor;
+            pixel[1] /= divisor;
+            pixel[2] /= divisor;
         }
         Ok(out)
     }
@@ -454,9 +453,9 @@ impl Filter for Burn {
         let amt = self.amount.max(1e-6);
         let mut out = input.to_vec();
         for pixel in out.chunks_exact_mut(4) {
-            for c in &mut pixel[..3] {
-                *c = 1.0 - (1.0 - *c) / amt;
-            }
+            pixel[0] = 1.0 - (1.0 - pixel[0]) / amt;
+            pixel[1] = 1.0 - (1.0 - pixel[1]) / amt;
+            pixel[2] = 1.0 - (1.0 - pixel[2]) / amt;
         }
         Ok(out)
     }
@@ -492,11 +491,9 @@ impl Filter for Solarize {
         let thresh = self.threshold;
         let mut out = input.to_vec();
         for pixel in out.chunks_exact_mut(4) {
-            for c in &mut pixel[..3] {
-                if *c > thresh {
-                    *c = 1.0 - *c;
-                }
-            }
+            if pixel[0] > thresh { pixel[0] = 1.0 - pixel[0]; }
+            if pixel[1] > thresh { pixel[1] = 1.0 - pixel[1]; }
+            if pixel[2] > thresh { pixel[2] = 1.0 - pixel[2]; }
         }
         Ok(out)
     }
