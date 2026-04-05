@@ -1,6 +1,6 @@
 title: Drop V1 pipeline from WASM build and web UI
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-04-04'
-updated: '2026-04-04'
+updated: '2026-04-05'

@@ -154,25 +154,25 @@ plan:
 - phase: Build Script and SDK Cleanup
   tasks:
   - text: Remove scripts/generate-fluent-sdk.cjs (V1 SDK generator)
-    done: false
+    done: true
   - text: Remove scripts/generate-ts-sdk.sh (V1 TS types)
-    done: false
+    done: true
   - text: Remove sdk/typescript/src/rcimage.ts (V1 fluent SDK)
-    done: false
+    done: true
   - text: Remove rasmcore-gpu-shaders from workspace
-    done: false
+    done: true
   - text: Update validate.sh if it references V1 build steps
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: cargo build succeeds for workspace
-    done: false
+    done: true
   - text: cargo component build -p rasmcore-v2-wasm succeeds
-    done: false
+    done: true
   - text: build-v2-webui.sh succeeds end-to-end
-    done: false
+    done: true
   - text: Web UI loads, operations appear, filters work
-    done: false
+    done: true
   - text: V2 tests pass (domain tests, codec parity)
-    done: false
+    done: true
 extra: {}
