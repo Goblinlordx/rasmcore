@@ -1,128 +1,122 @@
 id: sdk-canvas-render_20260405041105Z
-title: Stateful canvas render target for V2 fluent SDK
+title: RenderTarget object and writeRenderTarget() for V2 fluent SDK
 type: feature
 status: pending
 created: 2026-04-05
 updated: 2026-04-05
 spec:
   summary: |
-    Add setCanvas() and render() to the V2 fluent SDK Pipeline class.
-    Consumers bind a canvas once, then call render() after each chain
-    change to GPU-blit directly to the canvas. Falls back to 2D canvas
-    when WebGPU is unavailable. write() for file output stays separate.
+    Add createRenderTarget(canvas, opts?) and Pipeline.writeRenderTarget(target)
+    to the V2 fluent SDK. The RenderTarget is a separate stateful object that
+    owns the GPU context and shader cache. The Pipeline stays stateless —
+    writeRenderTarget() is a write method like write(format), but outputs
+    to a canvas instead of returning bytes.
   context: |
-    The V2 pipeline currently supports write(format) for encoded byte output.
-    For interactive applications (editors, previews, playgrounds), consumers
-    need to render pipeline results directly to a canvas element without
-    the encode-decode roundtrip.
+    The V2 pipeline supports write(format) for encoded byte output. For
+    interactive applications, consumers need to render directly to a canvas
+    without encode-decode overhead. The GPU-to-canvas blit infrastructure
+    (GpuHandlerV2, display-blit.wgsl) was built this session but lives in
+    web-ui internals. This track exposes it as a clean SDK API.
 
-    This session built GpuHandlerV2 with executeAndDisplay() and the full
-    WebGPU direct-to-canvas blit pipeline. That infrastructure lives in
-    the web-ui source. This track exposes it through the SDK so any
-    consumer can use it — not just our web UI.
-
-    The consumer chooses their execution model:
-    - Main thread: pass a canvas element, SDK gets WebGPU context on it
-    - Worker: consumer transfers OffscreenCanvas themselves, passes it in
-    - No GPU: SDK falls back to 2D canvas drawImage with CPU-rendered pixels
+    Key design: the RenderTarget is a separate object, not pipeline state.
+    This keeps the pipeline stateless (build chain, produce output) while
+    the render target manages GPU lifecycle independently. Multiple
+    pipelines can write to the same target. The target caches the GPU
+    device, shader pipelines, and blit pipeline across writes.
   codebase_analysis: |
     GpuHandlerV2 (web-ui/src/gpu-handler-v2.ts):
     - setDisplayCanvas(canvas, hdr) — configure rgba16float + tone mapping
     - executeAndDisplay(ops, input, w, h) — compute + blit, zero readback
-    - displayOnly() — re-blit with viewport update, no recompute
     - displayFromCpu(pixels, w, h) — upload CPU f32 + blit (fallback)
     - prepare(shaders) — pre-compile shader cache
+    - Already handles full GPU lifecycle internally
 
     V2 fluent SDK generator (scripts/generate-v2-fluent-sdk.mjs):
-    - Generates Pipeline class with chainable filter methods from registry
-    - write(format) method calls raw WIT write()
-    - No extension mechanism for hand-written methods currently
+    - Generates Pipeline class from registry metadata
+    - No extension mechanism for hand-written methods
 
-    WIT pipeline interface (wit/v2/pipeline.wit):
-    - render-gpu-plan(node) -> shaders + input pixels
-    - inject-gpu-result(node, pixels) -> cache result
+    WIT pipeline (wit/v2/pipeline.wit):
+    - render-gpu-plan(node) -> shaders + f32 input pixels
     - render(node) -> f32 pixels (CPU path)
   acceptance_criteria:
-    - Pipeline.setCanvas(canvas, opts?) binds a persistent render target
-    - Pipeline.setCanvas(offscreenCanvas, opts?) works for worker usage
-    - Pipeline.render() executes the chain and displays on the bound canvas
-    - GPU path uses WebGPU direct blit when available (no CPU readback)
-    - CPU fallback uses 2D canvas drawImage when WebGPU unavailable
-    - Canvas dimensions set to image dimensions automatically
+    - createRenderTarget(canvas, opts?) returns a RenderTarget object
+    - createRenderTarget(offscreenCanvas, opts?) works for worker usage
+    - Pipeline.writeRenderTarget(target) renders chain result to the target canvas
+    - GPU path uses WebGPU direct blit when available (zero CPU readback)
+    - 2D fallback uses putImageData when WebGPU unavailable
+    - Canvas dimensions set to image dimensions automatically on each write
     - opts.hdr enables extended tone mapping on HDR displays
-    - GpuHandlerV2 and blit shader bundled into SDK (not external dependency)
-    - write(format) continues to work independently for file output
-    - Shader cache persists across render() calls (incremental is fast)
+    - RenderTarget caches GPU device and shader pipelines across writes
+    - target.destroy() cleans up GPU resources
+    - write(format) continues to work independently
     - SDK generator has extension mechanism for hand-written methods
   out_of_scope: |
-    - Pan/zoom viewport control (consumer manages CSS or calls updateViewport)
-    - Automatic worker creation (consumer chooses execution model)
-    - Video/animation frame loop (consumer calls render() in their own rAF)
-    - HDR output file encoding (separate concern from display)
+    - Pan/zoom viewport (consumer manages separately)
+    - Automatic worker creation
+    - Video/animation frame loops
   technical_notes: |
-    Implementation approach:
-
     1. SDK generator extension mechanism:
-       - Add a sdk/v2/fluent/extensions/ directory for hand-written .ts files
-       - Generator reads extensions and merges them into the Pipeline class
-       - Each extension file exports methods to add to Pipeline.prototype
+       - sdk/v2/fluent/extensions/ directory for hand-written .ts files
+       - Generator merges extensions into the Pipeline class output
+       - Each extension exports functions added to Pipeline.prototype
 
-    2. Canvas render extension (sdk/v2/fluent/extensions/canvas.ts):
-       - Imports GpuHandlerV2 (moved from web-ui/src/ to sdk/v2/lib/)
-       - setCanvas(canvas, opts): detect WebGPU, create handler or 2D fallback
-       - render(): get GPU plan or CPU pixels, dispatch to bound canvas
-       - Caches GPUDevice, shader pipelines, blit pipeline across renders
+    2. RenderTarget class (sdk/v2/lib/render-target.ts):
+       - Constructor: detect WebGPU, create GpuHandlerV2 or store 2D context
+       - write(gpuPlan, width, height): dispatch shaders + blit (GPU path)
+       - writeCpu(pixels, width, height): f32 -> ImageData -> putImageData (fallback)
+       - destroy(): clean up GPU resources
 
-    3. GpuHandlerV2 relocation:
-       - Move from web-ui/src/gpu-handler-v2.ts to sdk/v2/lib/gpu-handler.ts
-       - web-ui imports from the new location (re-export or path update)
-       - Blit shader (display-blit.wgsl) moves alongside
+    3. writeRenderTarget extension (sdk/v2/fluent/extensions/canvas.ts):
+       - Gets GPU plan from pipeline (renderGpuPlan)
+       - If GPU plan exists + target has GPU: target.write(plan)
+       - If no GPU plan or no GPU: get f32 pixels via render(), target.writeCpu()
 
-    4. Fallback path:
-       - When WebGPU unavailable, setCanvas stores 2D context
-       - render() calls pipeline render(node) for f32 pixels
-       - Quantize f32 to Uint8ClampedArray, create ImageData, putImageData
+    4. GpuHandlerV2 + blit shader:
+       - Move to sdk/v2/lib/ so SDK bundles them
+       - web-ui re-imports from sdk location
 
     Consumer usage:
+      import { Pipeline, createRenderTarget } from '@rasmcore/sdk';
+
+      const target = createRenderTarget(canvas, { hdr: true });
       const pipe = new Pipeline();
-      pipe.read(imageBytes);
-      pipe.setCanvas(document.getElementById('preview'));
-      pipe.brightness({ amount: 0.3 });
-      pipe.render();  // GPU blit to canvas
 
-      // Slider change...
-      pipe.brightness({ amount: 0.7 });
-      pipe.render();  // re-render, cached shaders
+      pipe.read(bytes).brightness({ amount: 0.3 }).writeRenderTarget(target);
 
-      // File export (independent)
-      const png = pipe.write('png');
+      // Later — new params, same target (GPU state cached)
+      pipe.read(bytes).brightness({ amount: 0.7 }).writeRenderTarget(target);
+
+      // File export — separate concern
+      const png = pipe.read(bytes).brightness({ amount: 0.7 }).write('png');
+
+      target.destroy();
 plan:
   - phase: SDK Extension Mechanism
     tasks:
-      - text: Add extensions/ directory support to generate-v2-fluent-sdk.mjs — scan for .ts files and merge exported methods into generated Pipeline class
+      - text: Add extensions/ directory support to generate-v2-fluent-sdk.mjs — merge hand-written methods into generated Pipeline class
         done: false
-      - text: Define extension interface — each file exports an object with method implementations that receive the raw pipeline resource as context
+      - text: Define extension interface — each file exports methods receiving raw pipeline resource as context
         done: false
-  - phase: GPU Handler Relocation
+  - phase: RenderTarget and GPU Relocation
     tasks:
-      - text: Move GpuHandlerV2 from web-ui/src/gpu-handler-v2.ts to sdk/v2/lib/gpu-handler.ts
+      - text: Move GpuHandlerV2 and display-blit.wgsl from web-ui to sdk/v2/lib/
         done: false
-      - text: Move display-blit.wgsl from web-ui/src/shaders/ to sdk/v2/lib/shaders/
+      - text: Update web-ui imports to use new SDK location
         done: false
-      - text: Update web-ui imports to use the new SDK location
+      - text: Implement RenderTarget class with WebGPU init, write(), writeCpu(), destroy()
         done: false
-  - phase: Canvas Render Implementation
+  - phase: writeRenderTarget Implementation
     tasks:
-      - text: Implement setCanvas(target, opts?) — detect WebGPU, init GpuHandlerV2 or 2D fallback, cache context
+      - text: Implement writeRenderTarget(target) extension — get GPU plan or CPU pixels, dispatch to target
         done: false
-      - text: Implement render() — get GPU plan or CPU pixels, dispatch to bound canvas target
+      - text: Implement 2D fallback in RenderTarget.writeCpu() — f32 quantize to ImageData, putImageData
         done: false
-      - text: Implement 2D fallback — f32 quantize to ImageData, putImageData on 2D canvas
+      - text: Handle canvas sizing — set canvas width/height to image dimensions on each write
         done: false
   - phase: Verification
     tasks:
-      - text: Test setCanvas + render with WebGPU canvas in browser
+      - text: Test createRenderTarget + writeRenderTarget with WebGPU canvas
         done: false
-      - text: Test fallback path with 2D canvas (disable WebGPU or use Firefox)
+      - text: Test 2D fallback path when WebGPU unavailable
         done: false
 extra: {}
