@@ -243,7 +243,7 @@ impl Filter for Levels {
 #[derive(Clone, rasmcore_macros::V2Filter)]
 #[filter(name = "posterize", category = "adjustment")]
 pub struct Posterize {
-    #[param(min = 2, max = 256, step = 1, default = 4)]
+    #[param(min = 2, max = 255, step = 1, default = 4)]
     pub levels: u8,
 }
 
