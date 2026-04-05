@@ -519,21 +519,12 @@ export class GpuHandlerV2 {
 
     const device = this.device!;
 
-    // Update image dimensions for viewport math — but don't resize the canvas
-    // or reset the viewport. The viewport handler manages canvas sizing.
-    // Only resize on first render (when canvas is still at default 300x150).
-    if (this.lastImageWidth === 0) {
-      this.resizeDisplay(width, height);
-      this.updateViewport(0, 0, 1, width, height, width, height, 0);
-    } else {
-      // Re-blit with current viewport but new image dimensions
-      this.updateViewport(
-        0, 0, 1,
-        this.displayCanvas?.width ?? width,
-        this.displayCanvas?.height ?? height,
-        width, height, 0,
-      );
-    }
+    // Update viewport with current canvas dimensions and new image dimensions.
+    // Don't resize the canvas to image size — it should match the display container.
+    // The blit shader maps image → canvas via the viewport uniform.
+    const cw = this.displayCanvas?.width || width;
+    const ch = this.displayCanvas?.height || height;
+    this.updateViewport(0, 0, 1, cw, ch, width, height, 0);
 
     const pixelCount = width * height;
     const floatCount = pixelCount * 4;
@@ -667,17 +658,9 @@ export class GpuHandlerV2 {
   displayFromCpu(pixels: Float32Array, width: number, height: number): void {
     if (!this.device || !this.canvasCtx || !this.blitPipeline || !this.blitBindGroupLayout || !this.viewportBuf) return;
 
-    if (this.lastImageWidth === 0) {
-      this.resizeDisplay(width, height);
-      this.updateViewport(0, 0, 1, width, height, width, height, 0);
-    } else {
-      this.updateViewport(
-        0, 0, 1,
-        this.displayCanvas?.width ?? width,
-        this.displayCanvas?.height ?? height,
-        width, height, 0,
-      );
-    }
+    const cw = this.displayCanvas?.width || width;
+    const ch = this.displayCanvas?.height || height;
+    this.updateViewport(0, 0, 1, cw, ch, width, height, 0);
 
     const byteCount = pixels.byteLength;
     const buf = this.device.createBuffer({
