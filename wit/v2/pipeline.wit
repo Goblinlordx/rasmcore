@@ -254,6 +254,11 @@ interface pipeline-v2 {
         /// or write() calls use it instead of re-computing.
         inject-gpu-result: func(node: node-id, pixels: pixel-buffer);
 
+        // ─── Cache Management ───
+        /// Finalize layer cache — reset references and evict unreferenced entries.
+        /// Call after each render cycle to prevent stale entries from accumulating.
+        finalize-layer-cache: func();
+
         // ─── Tracing ───
         /// Enable or disable pipeline tracing.
         set-tracing: func(enabled: bool);

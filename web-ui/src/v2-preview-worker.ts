@@ -175,12 +175,14 @@ async function processChain(chain) {
   }
 
   const t0 = performance.now();
+  let pipeRaw: any = null; // track raw pipeline for cleanup in finally
   try {
     let pipe = createPipelineFromSource();
     if (!pipe) {
       self.postMessage({ type: 'error', message: 'Failed to create pipeline' });
       return;
     }
+    pipeRaw = pipe._pipe;
 
     // Apply filter chain
     for (const step of chain) {
@@ -284,6 +286,12 @@ async function processChain(chain) {
     const detail = e?.payload ? JSON.stringify(e.payload, null, 2) : e?.message || String(e);
     console.error('[v2-preview] Process failed:', detail);
     self.postMessage({ type: 'error', message: detail });
+  } finally {
+    // Finalize layer cache — evict unreferenced entries from previous render cycles.
+    // Without this, old image/filter results accumulate indefinitely.
+    if (pipeRaw && typeof pipeRaw.finalizeLayerCache === 'function') {
+      try { pipeRaw.finalizeLayerCache(); } catch { /* ignore */ }
+    }
   }
 }
 

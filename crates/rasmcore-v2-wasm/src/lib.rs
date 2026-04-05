@@ -284,6 +284,13 @@ impl PipelineResource {
     pub fn layer_cache_stats(&self) -> Option<v2::CacheStats> {
         self.layer_cache.borrow().as_ref().map(|lc| lc.borrow().stats())
     }
+
+    /// Finalize layer cache — reset references and clean up unreferenced entries.
+    /// Call after each render cycle to evict stale entries from previous images/chains.
+    pub fn finalize_layer_cache(&self) {
+        self.graph.borrow().reset_layer_cache_references();
+        self.graph.borrow().cleanup_layer_cache();
+    }
 }
 
 // ─── WIT Bindings ���──────────────────────────────────────────────────────────
@@ -566,6 +573,10 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
 
     fn inject_gpu_result(&self, node: u32, pixels: Vec<f32>) {
         self.graph.borrow_mut().inject_gpu_result(node, pixels);
+    }
+
+    fn finalize_layer_cache(&self) {
+        PipelineResource::finalize_layer_cache(self);
     }
 
     fn set_tracing(&self, enabled: bool) {
