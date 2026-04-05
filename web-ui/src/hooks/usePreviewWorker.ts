@@ -29,6 +29,8 @@ export function usePreviewWorker() {
   const onProxyCompleteRef = useRef<(() => void) | null>(null);
   /** OffscreenCanvas to transfer to worker for WebGPU display */
   const pendingDisplayCanvasRef = useRef<{ canvas: OffscreenCanvas; hdr: boolean } | null>(null);
+  /** Ref-tracked display mode for use inside onmessage handler (avoids stale closure) */
+  const displayModeRef = useRef(false);
 
   useEffect(() => {
     const w = new Worker(new URL('../v2-preview-worker.ts', import.meta.url), { type: 'module' });
@@ -48,6 +50,7 @@ export function usePreviewWorker() {
             { type: 'init-display', canvas, hdr },
             [canvas],
           );
+          displayModeRef.current = true;
           setState((s) => ({ ...s, displayMode: true }));
           pendingDisplayCanvasRef.current = null;
         }
@@ -99,15 +102,15 @@ export function usePreviewWorker() {
             sidebar.getContext('2d')?.drawImage(img, 0, 0);
           }
           // Draw to main viewport canvas (proxy display).
-          // DON'T resize the canvas — keep it at the dimensions set by the
-          // full-res worker or initial load. The pan/zoom transform depends on
-          // the canvas matching imageWidth/imageHeight. Instead, stretch the
-          // proxy image to fill the existing canvas size.
-          const viewport = viewportCanvasRef.current;
-          if (viewport && viewport.width > 0 && viewport.height > 0) {
-            const ctx = viewport.getContext('2d');
-            if (ctx) {
-              ctx.drawImage(img, 0, 0, viewport.width, viewport.height);
+          // Skip if in display mode — the canvas is owned by the worker's
+          // WebGPU context, so getContext('2d') would return null.
+          if (!displayModeRef.current) {
+            const viewport = viewportCanvasRef.current;
+            if (viewport && viewport.width > 0 && viewport.height > 0) {
+              const ctx = viewport.getContext('2d');
+              if (ctx) {
+                ctx.drawImage(img, 0, 0, viewport.width, viewport.height);
+              }
             }
           }
           URL.revokeObjectURL(url);

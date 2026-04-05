@@ -121,15 +121,12 @@ export default function App() {
               oc.height = img.height;
               getWideGamutContext(oc)?.drawImage(img, 0, 0);
             }
-            if (pc) {
-              if (preview.displayMode) {
-                // Canvas is owned by worker — resize via message
-                preview.resizeCanvas(img.width, img.height);
-              } else {
-                pc.width = img.width;
-                pc.height = img.height;
-                getWideGamutContext(pc)?.drawImage(img, 0, 0);
-              }
+            // In display mode the worker owns the preview canvas — don't touch it.
+            // The worker will draw on the first processChain() after load.
+            if (pc && !preview.displayMode) {
+              pc.width = img.width;
+              pc.height = img.height;
+              getWideGamutContext(pc)?.drawImage(img, 0, 0);
             }
             URL.revokeObjectURL(url);
           };

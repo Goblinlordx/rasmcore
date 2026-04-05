@@ -307,10 +307,12 @@ async function processChain(chain) {
         const raw2 = pipe._pipe;
         const node2 = pipe._node;
         if (raw2 && typeof raw2.render === 'function') {
-          const rendered = raw2.render(node2);
-          if (rendered) {
-            const f32 = new Float32Array(rendered.pixels);
-            gpuHandler.displayFromCpu(f32, rendered.width, rendered.height);
+          // render() returns Float32Array (pixel-buffer = list<f32> in WIT)
+          const pixels = raw2.render(node2);
+          if (pixels && pixels.length > 0) {
+            const info2 = raw2.nodeInfo(node2);
+            const f32 = pixels instanceof Float32Array ? pixels : new Float32Array(pixels);
+            gpuHandler.displayFromCpu(f32, info2.width, info2.height);
             const totalMs = Math.round(performance.now() - t0);
             console.log(`[v2-preview] ${totalMs}ms (cpu→display)`);
             self.postMessage({ type: 'displayed', totalMs, proxyMax: PREVIEW_MAX });
