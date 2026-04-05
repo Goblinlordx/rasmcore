@@ -1,5 +1,5 @@
 title: Refactor web-ui and demo to use SDK Source + RenderTarget
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-04-05'
