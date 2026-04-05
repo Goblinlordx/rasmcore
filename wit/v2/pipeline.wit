@@ -179,6 +179,20 @@ interface pipeline-v2 {
         set-cache-quality: func(quality: cache-quality);
     }
 
+    // ─── Source Resource ────────────────────────────────────────────────
+
+    /// Decoded image source — created once, reused across pipeline chains.
+    ///
+    /// Holds decoded f32 pixel data cached by an internal ID. Passing the
+    /// same source to read-source() skips re-decoding. The consumer controls
+    /// the source lifecycle.
+    resource source {
+        /// Create a source from encoded image bytes. Decodes immediately.
+        constructor(data: buffer, format-hint: option<string>);
+        /// Get the decoded image dimensions and color space.
+        info: func() -> node-info;
+    }
+
     /// The V2 pipeline resource.
     resource image-pipeline-v2 {
         constructor();
@@ -190,8 +204,12 @@ interface pipeline-v2 {
         find-operation: func(name: string) -> option<operation-info>;
 
         // ─── Graph Management ───
-        /// Add a source node (decode from bytes).
+        /// Add a source node (decode from bytes). Convenience — creates an
+        /// ephemeral source internally. Use read-source for repeated access.
         read: func(data: buffer, config: option<read-config>) -> result<node-id, rasmcore-error>;
+        /// Add a source node from a pre-decoded Source object. Skips decode
+        /// on repeated calls — the Source caches its decoded pixels.
+        read-source: func(source: borrow<source>) -> result<node-id, rasmcore-error>;
         /// Get node output metadata.
         node-info: func(node: node-id) -> result<node-info, rasmcore-error>;
         /// Apply a named filter to a source node.

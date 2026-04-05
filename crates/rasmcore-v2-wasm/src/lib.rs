@@ -77,6 +77,51 @@ impl v2::Node for SourceNode {
     }
 }
 
+// ─── Source Resource ────────────────────────────────────────────────────────
+
+/// Decoded image source — created once, reused across pipeline chains.
+/// Holds decoded f32 pixel data. Passing the same source to read_source()
+/// skips re-decoding — the pixels are cloned from this cached copy.
+pub struct SourceResource {
+    pixels: Vec<f32>,
+    info: NodeInfo,
+}
+
+impl SourceResource {
+    pub fn new(data: &[u8], format_hint: Option<&str>) -> Result<Self, PipelineError> {
+        let decoded = if let Some(hint) = format_hint {
+            if let Some(result) = v2::decode_with_hint_via_registry(data, hint) {
+                let d = result?;
+                (d.pixels, d.width, d.height, d.color_space)
+            } else {
+                let d = rasmcore_codecs_v2::decode_with_hint(data, hint)
+                    .map_err(|e| PipelineError::ComputeError(format!("decode: {e}")))?;
+                (d.pixels, d.info.width, d.info.height, d.info.color_space)
+            }
+        } else if let Some(result) = v2::decode_via_registry(data) {
+            let d = result?;
+            (d.pixels, d.width, d.height, d.color_space)
+        } else {
+            let d = rasmcore_codecs_v2::decode(data)
+                .map_err(|e| PipelineError::ComputeError(format!("decode: {e}")))?;
+            (d.pixels, d.info.width, d.info.height, d.info.color_space)
+        };
+
+        Ok(Self {
+            pixels: decoded.0,
+            info: NodeInfo {
+                width: decoded.1,
+                height: decoded.2,
+                color_space: decoded.3,
+            },
+        })
+    }
+
+    pub fn info(&self) -> NodeInfo {
+        self.info.clone()
+    }
+}
+
 // ─── Pipeline Resource ──────────────────────────────────────────────────────
 
 /// V2 pipeline resource — wraps a V2 Graph exclusively.
@@ -145,6 +190,18 @@ impl PipelineResource {
 
         let id = self.graph.borrow_mut().add_node_with_hash(Box::new(source), src_hash);
         Ok(id)
+    }
+
+    /// Add a source node from a pre-decoded SourceResource.
+    /// No decoding — pixels are cloned from the cached source.
+    pub fn read_source(&self, source: &SourceResource) -> u32 {
+        let node = SourceNode {
+            pixels: source.pixels.clone(),
+            info: source.info.clone(),
+        };
+        // Use ZERO_HASH — the source identity is the SourceResource object,
+        // not a content hash. The consumer controls source lifecycle.
+        self.graph.borrow_mut().add_node(Box::new(node))
     }
 
     pub fn node_info(&self, node_id: u32) -> Result<NodeInfo, PipelineError> {
@@ -248,6 +305,47 @@ bindings::export!(Component with_types_in bindings);
 impl wit::Guest for Component {
     type ImagePipelineV2 = PipelineResource;
     type LayerCache = LayerCacheResource;
+    type Source = SourceResource;
+}
+
+#[cfg(target_arch = "wasm32")]
+impl wit::GuestSource for SourceResource {
+    fn new(data: Vec<u8>, format_hint: Option<String>) -> Self {
+        SourceResource::new(&data, format_hint.as_deref())
+            .unwrap_or_else(|e| {
+                // Return a 1x1 transparent pixel on decode failure
+                // (WIT constructors cannot return Result)
+                eprintln!("Source decode failed: {e}");
+                SourceResource {
+                    pixels: vec![0.0, 0.0, 0.0, 0.0],
+                    info: NodeInfo {
+                        width: 1,
+                        height: 1,
+                        color_space: ColorSpace::Srgb,
+                    },
+                }
+            })
+    }
+
+    fn info(&self) -> wit::NodeInfo {
+        let info = SourceResource::info(self);
+        wit::NodeInfo {
+            width: info.width,
+            height: info.height,
+            color_space: match info.color_space {
+                ColorSpace::Linear => wit::ColorSpace::Linear,
+                ColorSpace::Srgb => wit::ColorSpace::Srgb,
+                ColorSpace::AcesCg => wit::ColorSpace::AcesCg,
+                ColorSpace::AcesCct => wit::ColorSpace::AcesCct,
+                ColorSpace::AcesCc => wit::ColorSpace::AcesCc,
+                ColorSpace::Aces2065_1 => wit::ColorSpace::Aces2065,
+                ColorSpace::DisplayP3 => wit::ColorSpace::DisplayP3,
+                ColorSpace::Rec709 => wit::ColorSpace::Rec709,
+                ColorSpace::Rec2020 => wit::ColorSpace::Rec2020,
+                _ => wit::ColorSpace::Unknown,
+            },
+        }
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -334,6 +432,11 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
     fn read(&self, data: Vec<u8>, config: Option<wit::ReadConfig>) -> Result<u32, RasmcoreError> {
         let hint = config.as_ref().and_then(|c| c.format_hint.as_deref());
         PipelineResource::read(self, &data, hint).map_err(to_wit_error)
+    }
+
+    fn read_source(&self, source: wit::SourceBorrow<'_>) -> Result<u32, RasmcoreError> {
+        let source_res = source.get::<SourceResource>();
+        Ok(PipelineResource::read_source(self, source_res))
     }
 
     fn node_info(&self, node: u32) -> Result<wit::NodeInfo, RasmcoreError> {
