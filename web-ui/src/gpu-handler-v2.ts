@@ -396,9 +396,9 @@ export class GpuHandlerV2 {
     return this.origCtx !== null && this.blitPipeline !== null;
   }
 
-  /** Upload source pixels and blit to original canvas. Call on image load. */
-  storeAndDisplaySource(pixels: Float32Array, width: number, height: number): void {
-    if (!this.device || !this.origCtx || !this.blitPipeline || !this.blitBindGroupLayout || !this.origViewportBuf) return;
+  /** Upload source pixels for original view. Blit happens on next viewport update. */
+  storeSourcePixels(pixels: Float32Array, width: number, height: number): void {
+    if (!this.device) return;
     if (this.sourcePixelBuf) this.sourcePixelBuf.destroy();
     this.sourcePixelBuf = this.device.createBuffer({
       size: pixels.byteLength,
@@ -408,11 +408,12 @@ export class GpuHandlerV2 {
     this.sourceImageWidth = width;
     this.sourceImageHeight = height;
 
-    // Set initial viewport: fit source to canvas
-    const cw = this.origCanvas?.width || width;
-    const ch = this.origCanvas?.height || height;
-    this.updateOriginalViewport(0, 0, 1, cw, ch, 0);
-    this.blitOriginal();
+    // If original canvas is already sized by a viewport message, update viewport
+    // with correct image dimensions and blit immediately
+    if (this.origCtx && this.origCanvas && this.origCanvas.width > 1 && this.origViewportBuf) {
+      this.updateOriginalViewport(0, 0, 1, this.origCanvas.width, this.origCanvas.height, 0);
+      this.blitOriginal();
+    }
   }
 
   updateOriginalViewport(panX: number, panY: number, zoom: number, canvasWidth: number, canvasHeight: number, toneMode: number): void {
@@ -519,8 +520,13 @@ export class GpuHandlerV2 {
 
     const device = this.device!;
 
-    // Don't touch the viewport here — it's managed by handleViewport from the
-    // main thread. Just track image dimensions for the blit shader.
+    // Viewport is managed by handleViewport from the main thread.
+    // But if no viewport has been set yet (first render), set a default.
+    if (this.lastImageWidth === 0 && this.viewportBuf) {
+      const cw = this.displayCanvas?.width || width;
+      const ch = this.displayCanvas?.height || height;
+      this.updateViewport(0, 0, 1, cw, ch, width, height, 0);
+    }
 
     const pixelCount = width * height;
     const floatCount = pixelCount * 4;
@@ -653,6 +659,12 @@ export class GpuHandlerV2 {
    */
   displayFromCpu(pixels: Float32Array, width: number, height: number): void {
     if (!this.device || !this.canvasCtx || !this.blitPipeline || !this.blitBindGroupLayout || !this.viewportBuf) return;
+
+    if (this.lastImageWidth === 0) {
+      const cw = this.displayCanvas?.width || width;
+      const ch = this.displayCanvas?.height || height;
+      this.updateViewport(0, 0, 1, cw, ch, width, height, 0);
+    }
 
     const byteCount = pixels.byteLength;
     const buf = this.device.createBuffer({

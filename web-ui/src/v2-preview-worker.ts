@@ -381,7 +381,7 @@ function renderOriginalSource() {
     const raw = pipe._pipe;
     if (!raw || typeof raw.render !== 'function') return;
     const pixels = raw.render(pipe._node);
-    gpuHandler.storeAndDisplaySource(new Float32Array(pixels), pipe.info.width, pipe.info.height);
+    gpuHandler.storeSourcePixels(new Float32Array(pixels), pipe.info.width, pipe.info.height);
   } catch (e: any) {
     console.warn('[v2-preview] Original source render failed:', e?.message);
   }
