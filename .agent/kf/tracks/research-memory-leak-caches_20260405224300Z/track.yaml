@@ -1,40 +1,49 @@
 id: research-memory-leak-caches_20260405224300Z
-title: "Research: Memory leak audit of all cache systems"
+title: 'Research: Memory leak audit of all cache systems'
 type: research
 status: pending
 created: 2026-04-06
-updated: 2026-04-06
+updated: '2026-04-05'
 spec:
-  summary: |
-    Audit all cache and pool systems for unbounded growth. Document
+  summary: 'Audit all cache and pool systems for unbounded growth. Document
+
     leak vectors with file paths and line numbers. Produce a design
+
     doc with specific fixes for each leak.
-  context: |
-    User reports likely memory leak during interactive use. Multiple
+
+    '
+  context: 'User reports likely memory leak during interactive use. Multiple
+
     cache systems exist across Rust (SpatialCache, LayerCache,
+
     BufferPool, SpatialCachePool, GPU shader cache) and TypeScript
+
     (GpuHandlerV2.shaderCache, docs sourceCache). Several have no
+
     eviction policy or cleanup lifecycle.
+
+    '
   acceptance_criteria:
-    - Audit doc covering all cache systems with leak risk rating
-    - Specific file paths and line numbers for each leak vector
-    - Recommended fix for each (eviction policy, max size, cleanup trigger)
-    - Priority ordering based on likely memory impact
-  out_of_scope: |
-    Code changes (separate implementation tracks from findings)
+  - Audit doc covering all cache systems with leak risk rating
+  - Specific file paths and line numbers for each leak vector
+  - Recommended fix for each (eviction policy, max size, cleanup trigger)
+  - Priority ordering based on likely memory impact
+  out_of_scope: 'Code changes (separate implementation tracks from findings)
+
+    '
 plan:
-  - phase: Audit
-    tasks:
-      - text: Document SpatialCache, SpatialCachePool, LayerCache eviction behavior and growth bounds
-        done: false
-      - text: Document BufferPool lifecycle — verify cleanup on image change and Source destroy
-        done: false
-      - text: Document GPU shader caches (Rust WgpuExecutorV2 + TS GpuHandlerV2) growth behavior
-        done: false
-      - text: Document docs sourceCache and any other JS-side persistent state
-        done: false
-  - phase: Report
-    tasks:
-      - text: Produce design doc with prioritized leak vectors and recommended fixes
-        done: false
+- phase: Audit
+  tasks:
+  - text: Document SpatialCache, SpatialCachePool, LayerCache eviction behavior and growth bounds
+    done: true
+  - text: Document BufferPool lifecycle — verify cleanup on image change and Source destroy
+    done: true
+  - text: Document GPU shader caches (Rust WgpuExecutorV2 + TS GpuHandlerV2) growth behavior
+    done: true
+  - text: Document docs sourceCache and any other JS-side persistent state
+    done: true
+- phase: Report
+  tasks:
+  - text: Produce design doc with prioritized leak vectors and recommended fixes
+    done: true
 extra: {}
