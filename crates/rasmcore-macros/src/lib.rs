@@ -1094,6 +1094,7 @@ pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
     let mut filter_category = String::new();
     let mut display_name_override = String::new();
     let mut doc_path = String::new();
+    let mut cost = String::new();
 
     for attr in &input.attrs {
         if !attr.path().is_ident("filter") { continue; }
@@ -1106,6 +1107,7 @@ pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
                 "category" => filter_category = lit.value(),
                 "display_name" => display_name_override = lit.value(),
                 "doc" => doc_path = lit.value(),
+                "cost" => cost = lit.value(),
                 _ => {}
             }
             Ok(())
@@ -1253,7 +1255,7 @@ pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
         #[allow(non_upper_case_globals)]
         static #reg_ident: rasmcore_pipeline_v2::FilterFactoryRegistration = rasmcore_pipeline_v2::FilterFactoryRegistration {
             name: #filter_name, display_name: #display_name, category: #filter_category,
-            params: &#params_ident, doc_path: #doc_path,
+            params: &#params_ident, doc_path: #doc_path, cost: #cost,
             factory: |upstream, info, params| { #factory_body },
         };
         inventory::submit!(&#reg_ident);
@@ -1270,6 +1272,7 @@ pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
                 gpu: false, analytic: false, affine: false, clut: false,
             },
             doc_path: #doc_path,
+            cost: #cost,
         };
         inventory::submit!(&#opreg_ident);
     };

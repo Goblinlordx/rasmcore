@@ -35,8 +35,8 @@ fn main() {
     print!("{{\"filters\":[");
     for (i, f) in filters.iter().enumerate() {
         if i > 0 { print!(","); }
-        print!("{{\"name\":\"{}\",\"displayName\":\"{}\",\"category\":\"{}\",\"docPath\":\"{}\",\"params\":[",
-            f.name, f.display_name, f.category, json_escape(f.doc_path));
+        print!("{{\"name\":\"{}\",\"displayName\":\"{}\",\"category\":\"{}\",\"docPath\":\"{}\",\"cost\":\"{}\",\"params\":[",
+            f.name, f.display_name, f.category, json_escape(f.doc_path), json_escape(f.cost));
         for (j, p) in f.params.iter().enumerate() {
             if j > 0 { print!(","); }
             print!("{{\"name\":\"{}\",\"type\":\"{}\",\"min\":{},\"max\":{},\"step\":{},\"default\":{},\"hint\":{},\"description\":\"{}\"}}",

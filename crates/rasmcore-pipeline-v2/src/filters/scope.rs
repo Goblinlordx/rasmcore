@@ -389,6 +389,7 @@ static REG_HISTOGRAM: FilterFactoryRegistration = FilterFactoryRegistration {
     category: "analysis",
     params: &SCOPE_PARAMS,
     doc_path: "",
+    cost: "O(n + s^2)",
     factory: |upstream, info, params| make_scope_node(upstream, info, params, compute_histogram),
 };
 inventory::submit!(&REG_HISTOGRAM);
@@ -396,6 +397,7 @@ static OPREG_HISTOGRAM: OperationRegistration = OperationRegistration {
     name: "scope_histogram", display_name: "Histogram", category: "analysis",
     kind: OperationKind::Filter, params: &SCOPE_PARAMS, doc_path: "",
     capabilities: OperationCapabilities { gpu: false, analytic: false, affine: false, clut: false },
+    cost: "O(n + s^2)",
 };
 inventory::submit!(&OPREG_HISTOGRAM);
 
@@ -406,6 +408,7 @@ static REG_WAVEFORM: FilterFactoryRegistration = FilterFactoryRegistration {
     category: "analysis",
     params: &SCOPE_PARAMS,
     doc_path: "",
+    cost: "O(n + s^2)",
     factory: |upstream, info, params| make_scope_node(upstream, info, params, compute_waveform),
 };
 inventory::submit!(&REG_WAVEFORM);
@@ -413,6 +416,7 @@ static OPREG_WAVEFORM: OperationRegistration = OperationRegistration {
     name: "scope_waveform", display_name: "Waveform", category: "analysis",
     kind: OperationKind::Filter, params: &SCOPE_PARAMS, doc_path: "",
     capabilities: OperationCapabilities { gpu: false, analytic: false, affine: false, clut: false },
+    cost: "O(n + s^2)",
 };
 inventory::submit!(&OPREG_WAVEFORM);
 
@@ -423,6 +427,7 @@ static REG_PARADE: FilterFactoryRegistration = FilterFactoryRegistration {
     category: "analysis",
     params: &SCOPE_PARAMS,
     doc_path: "",
+    cost: "O(n + s^2)",
     factory: |upstream, info, params| make_scope_node(upstream, info, params, compute_parade),
 };
 inventory::submit!(&REG_PARADE);
@@ -430,6 +435,7 @@ static OPREG_PARADE: OperationRegistration = OperationRegistration {
     name: "scope_parade", display_name: "Parade", category: "analysis",
     kind: OperationKind::Filter, params: &SCOPE_PARAMS, doc_path: "",
     capabilities: OperationCapabilities { gpu: false, analytic: false, affine: false, clut: false },
+    cost: "O(n + s^2)",
 };
 inventory::submit!(&OPREG_PARADE);
 
@@ -440,6 +446,7 @@ static REG_VECTORSCOPE: FilterFactoryRegistration = FilterFactoryRegistration {
     category: "analysis",
     params: &SCOPE_PARAMS,
     doc_path: "",
+    cost: "O(n + s^2)",
     factory: |upstream, info, params| make_scope_node(upstream, info, params, compute_vectorscope),
 };
 inventory::submit!(&REG_VECTORSCOPE);
@@ -447,6 +454,7 @@ static OPREG_VECTORSCOPE: OperationRegistration = OperationRegistration {
     name: "scope_vectorscope", display_name: "Vectorscope", category: "analysis",
     kind: OperationKind::Filter, params: &SCOPE_PARAMS, doc_path: "",
     capabilities: OperationCapabilities { gpu: false, analytic: false, affine: false, clut: false },
+    cost: "O(n + s^2)",
 };
 inventory::submit!(&OPREG_VECTORSCOPE);
 

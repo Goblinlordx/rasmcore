@@ -154,6 +154,8 @@ pub struct OperationRegistration {
     pub capabilities: OperationCapabilities,
     /// Relative path to AsciiDoc documentation file. Empty = no docs.
     pub doc_path: &'static str,
+    /// Algorithmic cost relative to pixel count (e.g., "O(n)", "O(n * r)"). Empty = unspecified.
+    pub cost: &'static str,
 }
 
 inventory::collect!(&'static OperationRegistration);
@@ -304,6 +306,8 @@ pub struct FilterFactoryRegistration {
     pub params: &'static [ParamDescriptor],
     /// Relative path to AsciiDoc documentation file. Empty = no docs.
     pub doc_path: &'static str,
+    /// Algorithmic cost relative to pixel count (e.g., "O(n)", "O(n * r)"). Empty = unspecified.
+    pub cost: &'static str,
     /// Factory function that constructs the filter from dynamic params.
     pub factory: FilterFactory,
 }
@@ -318,6 +322,8 @@ macro_rules! filter_factory {
             display_name: "",
             category: "",
             params: &[],
+            doc_path: "",
+            cost: "",
             factory: $factory,
         }
     };
@@ -510,6 +516,7 @@ mod tests {
                 gpu: true, analytic: true, affine: false, clut: false,
             },
             doc_path: "",
+            cost: "",
         }
     }
 
@@ -552,6 +559,7 @@ mod tests {
                 gpu: false, analytic: false, affine: false, clut: false,
             },
             doc_path: "",
+            cost: "",
         }
     }
 
