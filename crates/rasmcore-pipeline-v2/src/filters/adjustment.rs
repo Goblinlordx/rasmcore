@@ -112,50 +112,41 @@ impl Filter for Gamma {
     }
 }
 
-/// Exposure adjustment — EV stops with offset and gamma.
+/// Exposure adjustment — pure EV stops.
 ///
-/// `output = ((input + offset) * 2^ev) ^ (1/gamma)`
+/// `output = input * 2^ev`
+///
+/// Professional-grade exposure control matching camera EV behavior:
+/// +1 EV doubles brightness, -1 EV halves it. No offset, no gamma —
+/// those are separate filters (Brightness for offset, Gamma for curve).
+/// ev=0 is exact identity. The expression `Mul(Input, Constant)` is
+/// trivially fusable with any other point op in the pipeline.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "exposure", category = "adjustment")]
+#[filter(name = "exposure", category = "adjustment", doc = "docs/operations/filters/adjustment/exposure.adoc")]
 pub struct Exposure {
+    /// Exposure value in stops. 0 = unchanged, +1 = 2x brighter, -1 = half.
     #[param(min = -10.0, max = 10.0, step = 0.1, default = 0.0)]
     pub ev: f32,
-    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0)]
-    pub offset: f32,
-    #[param(min = 0.1, max = 10.0, step = 0.1, default = 1.0)]
-    pub gamma_correction: f32,
 }
 
 impl Filter for Exposure {
     fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
         let _ = (width, height);
         let multiplier = 2.0f32.powf(self.ev);
-        let inv_gamma = 1.0 / self.gamma_correction;
-        let offset = self.offset;
         let mut out = input.to_vec();
         for pixel in out.chunks_exact_mut(4) {
-            // Explicit per-channel for auto-vectorization of multiply-add
-            pixel[0] = ((pixel[0] + offset) * multiplier).max(0.0).powf(inv_gamma);
-            pixel[1] = ((pixel[1] + offset) * multiplier).max(0.0).powf(inv_gamma);
-            pixel[2] = ((pixel[2] + offset) * multiplier).max(0.0).powf(inv_gamma);
+            pixel[0] *= multiplier;
+            pixel[1] *= multiplier;
+            pixel[2] *= multiplier;
         }
         Ok(out)
     }
 
     fn analytic_expression(&self) -> Option<PointOpExpr> {
         let multiplier = 2.0f32.powf(self.ev);
-        Some(PointOpExpr::Pow(
-            Box::new(PointOpExpr::Max(
-                Box::new(PointOpExpr::Mul(
-                    Box::new(PointOpExpr::Add(
-                        Box::new(PointOpExpr::Input),
-                        Box::new(PointOpExpr::Constant(self.offset)),
-                    )),
-                    Box::new(PointOpExpr::Constant(multiplier)),
-                )),
-                Box::new(PointOpExpr::Constant(0.0)),
-            )),
-            Box::new(PointOpExpr::Constant(1.0 / self.gamma_correction)),
+        Some(PointOpExpr::Mul(
+            Box::new(PointOpExpr::Input),
+            Box::new(PointOpExpr::Constant(multiplier)),
         ))
     }
 }
