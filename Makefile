@@ -28,9 +28,9 @@ $(DOCS_REGISTRY): $(V2_SOURCES)
 	cargo run --bin dump_registry -p rasmcore-v2-wasm > $@
 	@test -s $@ || (echo "ERROR: dump_registry produced empty output" && rm -f $@ && exit 1)
 
-## Render example images (only if binary changed)
-$(DOCS_EXAMPLES): crates/rasmcore-v2-wasm/src/bin/render_examples.rs
-	cargo run --bin render_examples -p rasmcore-v2-wasm --release 2>/dev/null
+## Render example images (rebuild if any V2 source changed)
+$(DOCS_EXAMPLES): $(V2_SOURCES)
+	cargo run --bin render_examples -p rasmcore-v2-wasm --release
 
 ## Copy SDK for live playground
 $(DOCS_SDK): sdk/typescript/v2-generated/rasmcore-v2-image.js $(DOCS_NODE_MODULES)
