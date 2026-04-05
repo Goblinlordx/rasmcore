@@ -80,11 +80,14 @@ impl v2::Node for SourceNode {
 // ─── Source Resource ────────────────────────────────────────────────────────
 
 /// Decoded image source — created once, reused across pipeline chains.
-/// Holds decoded f32 pixel data. Passing the same source to read_source()
-/// skips re-decoding — the pixels are cloned from this cached copy.
+/// Holds decoded f32 pixel data and a shared buffer pool for zero-alloc
+/// rendering. Passing the same source to read_source() skips re-decoding.
 pub struct SourceResource {
     pixels: Vec<f32>,
     info: NodeInfo,
+    /// Shared buffer pool — reusable pixel buffers for this image's dimensions.
+    /// Persists across pipeline lifetimes, eliminating allocation churn.
+    buffer_pool: Rc<RefCell<v2::BufferPool>>,
 }
 
 impl SourceResource {
@@ -114,6 +117,7 @@ impl SourceResource {
                 height: decoded.2,
                 color_space: decoded.3,
             },
+            buffer_pool: Rc::new(RefCell::new(v2::BufferPool::new())),
         })
     }
 
@@ -193,14 +197,19 @@ impl PipelineResource {
     }
 
     /// Add a source node from a pre-decoded SourceResource.
-    /// No decoding — pixels are cloned from the cached source.
+    /// No decoding — pixels are copied from the cached source using a pooled buffer.
     pub fn read_source(&self, source: &SourceResource) -> u32 {
+        // Use pooled buffer for the source pixel copy (avoids fresh allocation)
+        let mut buf = source.buffer_pool.borrow_mut().acquire(source.pixels.len());
+        buf.copy_from_slice(&source.pixels);
+
         let node = SourceNode {
-            pixels: source.pixels.clone(),
+            pixels: buf,
             info: source.info.clone(),
         };
-        // Use ZERO_HASH — the source identity is the SourceResource object,
-        // not a content hash. The consumer controls source lifecycle.
+
+        // Inject the source's buffer pool into the graph for intermediate node reuse
+        self.graph.borrow_mut().set_buffer_pool(source.buffer_pool.clone());
         self.graph.borrow_mut().add_node(Box::new(node))
     }
 

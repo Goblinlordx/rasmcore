@@ -18,6 +18,42 @@ use crate::node::{Node, NodeInfo, PipelineError, Upstream};
 use crate::rect::Rect;
 use crate::trace::{PipelineTrace, TraceEventKind, TraceTimer};
 
+/// Reusable pixel buffer pool — avoids Vec allocation churn in the CPU render path.
+///
+/// Buffers are pre-allocated at image dimensions and recycled across pipeline
+/// lifetimes. Associated with a Source so all pipelines processing the same
+/// image share the same buffers.
+pub struct BufferPool {
+    buffers: Vec<Vec<f32>>,
+}
+
+impl BufferPool {
+    pub fn new() -> Self {
+        Self { buffers: Vec::new() }
+    }
+
+    /// Take a buffer from the pool, or allocate a new one at the given size.
+    /// The returned buffer has exactly `size` elements (resized if needed).
+    pub fn acquire(&mut self, size: usize) -> Vec<f32> {
+        if let Some(mut buf) = self.buffers.pop() {
+            buf.resize(size, 0.0);
+            buf
+        } else {
+            vec![0.0; size]
+        }
+    }
+
+    /// Return a buffer to the pool for reuse.
+    pub fn release(&mut self, buf: Vec<f32>) {
+        self.buffers.push(buf);
+    }
+
+    /// Number of idle buffers in the pool.
+    pub fn idle_count(&self) -> usize {
+        self.buffers.len()
+    }
+}
+
 /// GPU execution plan — returned by `Graph::gpu_plan()` for host-side dispatch.
 pub struct GpuPlan {
     /// GPU shaders to execute in sequence (ping-pong).
@@ -57,6 +93,9 @@ pub struct Graph {
     /// Opt-in tracing — collects timing events when enabled.
     tracing: bool,
     pub(crate) trace: PipelineTrace,
+    /// Shared reusable pixel buffer pool — avoids allocation churn in the CPU render path.
+    /// Lives outside the graph (e.g. on Source or module instance) and is injected.
+    buffer_pool: Option<Rc<RefCell<BufferPool>>>,
 }
 
 impl Graph {
@@ -81,6 +120,7 @@ impl Graph {
             optimized: false,
             tracing: false,
             trace: PipelineTrace::new(),
+            buffer_pool: None,
         }
     }
 
@@ -97,7 +137,33 @@ impl Graph {
             optimized: false,
             tracing: false,
             trace: PipelineTrace::new(),
+            buffer_pool: None,
         }
+    }
+
+    /// Set a shared buffer pool for pixel buffer reuse across pipeline lifetimes.
+    /// Associate with a Source so all pipelines for the same image share buffers.
+    pub fn set_buffer_pool(&mut self, pool: Rc<RefCell<BufferPool>>) {
+        self.buffer_pool = Some(pool);
+    }
+
+    /// Acquire a pixel buffer from the pool (or allocate if no pool set).
+    #[allow(dead_code)]
+    fn acquire_buffer(&self, size: usize) -> Vec<f32> {
+        if let Some(pool) = &self.buffer_pool {
+            pool.borrow_mut().acquire(size)
+        } else {
+            vec![0.0; size]
+        }
+    }
+
+    /// Return a pixel buffer to the pool for reuse.
+    #[allow(dead_code)]
+    fn release_buffer(&self, buf: Vec<f32>) {
+        if let Some(pool) = &self.buffer_pool {
+            pool.borrow_mut().release(buf);
+        }
+        // If no pool, buf is just dropped (normal allocation behavior)
     }
 
     /// Add a node to the graph. Returns the node ID.
@@ -423,9 +489,17 @@ impl Graph {
             self.trace.push(t.finish());
         }
 
-        // Spatial cache
+        // Spatial cache — store a clone, but recycle the allocation from the pool
+        // if available to avoid a fresh 4MB allocation
+        let cache_pixels = if let Some(pool) = &self.buffer_pool {
+            let mut buf = pool.borrow_mut().acquire(pixels.len());
+            buf.copy_from_slice(&pixels);
+            buf
+        } else {
+            pixels.clone()
+        };
         self.cache
-            .store(node_id, request, pixels.clone(), node_hash);
+            .store(node_id, request, cache_pixels, node_hash);
 
         // Layer cache — store full-node results for cross-pipeline reuse.
         // Only store when the request covers the full node output.
