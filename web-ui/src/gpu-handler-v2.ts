@@ -337,11 +337,11 @@ export class GpuHandlerV2 {
   /** Height of the last rendered image (preview resolution). */
   get imageHeight(): number { return this.lastImageHeight; }
 
-  /** Resize the OffscreenCanvas from the worker thread. */
+  /** Resize the OffscreenCanvas from the worker thread (skip if unchanged — resize clears the canvas). */
   resizeDisplay(width: number, height: number): void {
     if (!this.displayCanvas) return;
-    this.displayCanvas.width = width;
-    this.displayCanvas.height = height;
+    if (this.displayCanvas.width !== width) this.displayCanvas.width = width;
+    if (this.displayCanvas.height !== height) this.displayCanvas.height = height;
   }
 
   /**
@@ -388,11 +388,7 @@ export class GpuHandlerV2 {
 
     const device = this.device!;
 
-    // Resize canvas to match image — may still be at HTML default (300x150)
-    if (this.displayCanvas) {
-      this.displayCanvas.width = width;
-      this.displayCanvas.height = height;
-    }
+    this.resizeDisplay(width, height);
     this.updateViewport(0, 0, 1, width, height, width, height, 0);
 
     const pixelCount = width * height;
@@ -529,15 +525,8 @@ export class GpuHandlerV2 {
   displayFromCpu(pixels: Float32Array, width: number, height: number): void {
     if (!this.device || !this.canvasCtx || !this.blitPipeline || !this.blitBindGroupLayout || !this.viewportBuf) return;
 
-    // Resize canvas to match image
-    if (this.displayCanvas) {
-      this.displayCanvas.width = width;
-      this.displayCanvas.height = height;
-    }
+    this.resizeDisplay(width, height);
     this.updateViewport(0, 0, 1, width, height, width, height, 0);
-
-    const expected = width * height * 4;
-    console.log(`[gpu] displayFromCpu: ${width}x${height}, canvas=${this.displayCanvas?.width}x${this.displayCanvas?.height}, pixels=${pixels.length}f32 (expect ${expected}), first4=[${pixels[0]?.toFixed(3)},${pixels[1]?.toFixed(3)},${pixels[2]?.toFixed(3)},${pixels[3]?.toFixed(3)}]`);
 
     const byteCount = pixels.byteLength;
     const buf = this.device.createBuffer({
