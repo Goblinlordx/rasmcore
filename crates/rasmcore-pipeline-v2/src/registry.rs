@@ -495,6 +495,7 @@ mod tests {
         step: Some(0.01),
         default: Some(0.0),
         hint: Some("slider"),
+        description: "",
         constraints: &[],
     }];
 
@@ -506,11 +507,9 @@ mod tests {
             kind: OperationKind::Filter,
             params: &TEST_BRIGHTNESS_PARAMS,
             capabilities: OperationCapabilities {
-                gpu: true,
-                analytic: true,
-                affine: false,
-                clut: false,
-                            },
+                gpu: true, analytic: true, affine: false, clut: false,
+            },
+            doc_path: "",
         }
     }
 
@@ -521,44 +520,24 @@ mod tests {
 
     static TEST_CROP_PARAMS: [ParamDescriptor; 4] = [
         ParamDescriptor {
-            name: "x",
-            value_type: ParamType::U32,
-            min: Some(0.0),
-            max: None,
-            step: Some(1.0),
-            default: Some(0.0),
-            hint: None,
-            constraints: &CONSTRAINT_MAX_W,
+            name: "x", value_type: ParamType::U32,
+            min: Some(0.0), max: None, step: Some(1.0), default: Some(0.0),
+            hint: None, description: "", constraints: &CONSTRAINT_MAX_W,
         },
         ParamDescriptor {
-            name: "y",
-            value_type: ParamType::U32,
-            min: Some(0.0),
-            max: None,
-            step: Some(1.0),
-            default: Some(0.0),
-            hint: None,
-            constraints: &CONSTRAINT_MAX_H,
+            name: "y", value_type: ParamType::U32,
+            min: Some(0.0), max: None, step: Some(1.0), default: Some(0.0),
+            hint: None, description: "", constraints: &CONSTRAINT_MAX_H,
         },
         ParamDescriptor {
-            name: "width",
-            value_type: ParamType::U32,
-            min: Some(1.0),
-            max: None,
-            step: Some(1.0),
-            default: Some(100.0),
-            hint: None,
-            constraints: &CONSTRAINT_MAX_W,
+            name: "width", value_type: ParamType::U32,
+            min: Some(1.0), max: None, step: Some(1.0), default: Some(100.0),
+            hint: None, description: "", constraints: &CONSTRAINT_MAX_W,
         },
         ParamDescriptor {
-            name: "height",
-            value_type: ParamType::U32,
-            min: Some(1.0),
-            max: None,
-            step: Some(1.0),
-            default: Some(100.0),
-            hint: None,
-            constraints: &CONSTRAINT_MAX_H,
+            name: "height", value_type: ParamType::U32,
+            min: Some(1.0), max: None, step: Some(1.0), default: Some(100.0),
+            hint: None, description: "", constraints: &CONSTRAINT_MAX_H,
         },
     ];
 
@@ -570,7 +549,9 @@ mod tests {
             kind: OperationKind::Transform,
             params: &TEST_CROP_PARAMS,
             capabilities: OperationCapabilities {
-                gpu: false, analytic: false, affine: false, clut: false,             },
+                gpu: false, analytic: false, affine: false, clut: false,
+            },
+            doc_path: "",
         }
     }
 
