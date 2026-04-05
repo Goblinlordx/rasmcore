@@ -149,17 +149,26 @@ export async function renderFilterToCanvas(
 
   const tGpu = performance.now();
 
-  // CPU fallback: render f32, quantize to u8, putImageData
+  // CPU fallback: render f32, display via GPU blit or 2D canvas
   if (!gpuRendered) {
     const pixels = pipe.render(filterId);
     const f32 = pixels instanceof Float32Array ? pixels : new Float32Array(pixels);
-    const len = f32.length;
-    const u8 = new Uint8ClampedArray(len);
-    for (let i = 0; i < len; i++) {
-      u8[i] = f32[i] * 255;
+
+    // If GPU handler owns the canvas (WebGPU context), use displayFromCpu
+    // — can't use getContext('2d') on a WebGPU canvas
+    if (gpuHandler?.hasDisplay && gpuBoundCanvas === canvas) {
+      gpuHandler.updateViewport(0, 0, 1.0, info.width, info.height, info.width, info.height, 0);
+      gpuHandler.displayFromCpu(f32, info.width, info.height);
+    } else {
+      // No GPU — pure 2D canvas fallback
+      const len = f32.length;
+      const u8 = new Uint8ClampedArray(len);
+      for (let i = 0; i < len; i++) {
+        u8[i] = f32[i] * 255;
+      }
+      const ctx = canvas.getContext('2d');
+      if (ctx) ctx.putImageData(new ImageData(u8, info.width, info.height), 0, 0);
     }
-    const ctx = canvas.getContext('2d');
-    if (ctx) ctx.putImageData(new ImageData(u8, info.width, info.height), 0, 0);
   }
 
   const tTotal = performance.now();
