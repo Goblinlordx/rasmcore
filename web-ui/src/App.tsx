@@ -63,21 +63,32 @@ export default function App() {
   });
 
   // Transfer OffscreenCanvases to preview worker for WebGPU direct display
-  const webgpuInitRef = useRef(false);
+  const webgpuPreviewInitRef = useRef(false);
+  const webgpuOriginalInitRef = useRef(false);
   useEffect(() => {
-    if (webgpuInitRef.current || !isWebGpuAvailable()) return;
-    const previewCanvas = worker.previewCanvasRef.current;
-    const originalCanvas = worker.originalCanvasRef.current;
-    if (!previewCanvas || !originalCanvas) return;
-    try {
-      const hdr = isHdrDisplay();
-      preview.setDisplayCanvas(previewCanvas.transferControlToOffscreen(), hdr);
-      preview.setOriginalDisplayCanvas(originalCanvas.transferControlToOffscreen(), hdr);
-      webgpuInitRef.current = true;
-    } catch {
-      // transferControlToOffscreen failed — stay in 2D mode
+    if (!isWebGpuAvailable()) return;
+    const hdr = isHdrDisplay();
+    // Transfer preview canvas (once)
+    if (!webgpuPreviewInitRef.current) {
+      const canvas = worker.previewCanvasRef.current;
+      if (canvas) {
+        try {
+          preview.setDisplayCanvas(canvas.transferControlToOffscreen(), hdr);
+          webgpuPreviewInitRef.current = true;
+        } catch { /* stay in 2D mode */ }
+      }
     }
-  }, [preview, worker.previewCanvasRef, worker.originalCanvasRef]);
+    // Transfer original canvas (once) — may not exist on first render
+    if (!webgpuOriginalInitRef.current) {
+      const canvas = worker.originalCanvasRef.current;
+      if (canvas) {
+        try {
+          preview.setOriginalDisplayCanvas(canvas.transferControlToOffscreen(), hdr);
+          webgpuOriginalInitRef.current = true;
+        } catch { /* stay in 2D mode */ }
+      }
+    }
+  });
 
   // After proxy render completes — background warm disabled for now (perf)
   useEffect(() => {
