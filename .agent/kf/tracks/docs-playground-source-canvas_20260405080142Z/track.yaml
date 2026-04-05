@@ -1,0 +1,38 @@
+id: docs-playground-source-canvas_20260405080142Z
+title: Docs playground adopts Source + canvas render
+type: chore
+status: pending
+created: 2026-04-05
+updated: 2026-04-05
+spec:
+  summary: |
+    Update docs playground to use Source (decode once) and render to
+    canvas instead of PNG-encode-per-slider-change.
+  context: |
+    The docs playground re-decodes image bytes on every parameter change
+    and produces PNG bytes displayed via Blob URL on an img element.
+    Source eliminates re-decode. Canvas render eliminates PNG encode.
+  acceptance_criteria:
+    - wasm-loader creates Source once per reference image
+    - Subsequent renders use readSource (no re-decode)
+    - Playground renders to canvas element instead of img via Blob
+    - Interactive parameter changes are visibly faster
+  out_of_scope: |
+    - GPU/WebGPU in docs playground (runs on main thread, canvas 2D is fine)
+    - Changing the playground UI layout
+plan:
+  - phase: Implementation
+    tasks:
+      - text: Add Source caching to wasm-loader — create Source on first render, reuse on subsequent calls
+        done: false
+      - text: Change renderFilter to return f32 pixels via render() instead of PNG via write()
+        done: false
+      - text: Update Playground.tsx to render to canvas via putImageData instead of img via Blob URL
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Verify playground renders correctly with canvas output
+        done: false
+      - text: Verify slider changes do not re-decode the image
+        done: false
+extra: {}
