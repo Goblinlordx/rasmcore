@@ -137,15 +137,17 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={referenceImageUrl} alt="Before" draggable={false} style={{ display: 'block', maxWidth: '100%', pointerEvents: 'none' }} />
 
-          {staticUrl ? (
+          {/* Canvas always mounted — GPU binds once, survives across renders */}
+          <canvas ref={afterCanvasRef} style={{
+            position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+            objectFit: 'cover', pointerEvents: 'none',
+            clipPath: `inset(0 0 0 ${splitPos}%)`,
+            display: staticUrl ? 'none' : 'block',
+          }} />
+          {/* Static SSG image shown until first live render */}
+          {staticUrl && (
             /* eslint-disable-next-line @next/next/no-img-element */
             <img src={staticUrl} alt="After" draggable={false} style={{
-              position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-              objectFit: 'cover', pointerEvents: 'none',
-              clipPath: `inset(0 0 0 ${splitPos}%)`,
-            }} />
-          ) : (
-            <canvas ref={afterCanvasRef} style={{
               position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
               objectFit: 'cover', pointerEvents: 'none',
               clipPath: `inset(0 0 0 ${splitPos}%)`,

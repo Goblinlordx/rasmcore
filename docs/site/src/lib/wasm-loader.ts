@@ -21,6 +21,7 @@ const sourceCache = new Map<string, any>();
 // Persistent GPU handler for canvas rendering (shared across all playgrounds)
 let gpuHandler: InstanceType<typeof GpuHandlerV2> | null = null;
 let gpuInitAttempted = false;
+let gpuBoundCanvas: HTMLCanvasElement | null = null;
 
 export function isLoaded(): boolean {
   return pipelineClass !== null;
@@ -120,9 +121,10 @@ export async function renderFilterToCanvas(
     try {
       const plan = pipe.renderGpuPlan(filterId);
       if (plan) {
-        // Configure GPU canvas if not already done
-        if (!gpuHandler.hasDisplay) {
+        // Configure GPU canvas — rebind if canvas element changed
+        if (!gpuHandler.hasDisplay || gpuBoundCanvas !== canvas) {
           await gpuHandler.setDisplayCanvas(canvas as unknown as OffscreenCanvas, false);
+          gpuBoundCanvas = canvas;
         }
         gpuHandler.updateViewport(0, 0, 1.0, info.width, info.height, info.width, info.height, 0);
 
