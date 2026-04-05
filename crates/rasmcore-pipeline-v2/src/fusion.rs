@@ -307,12 +307,12 @@ fn apply_expr(v: f32) -> f32 {{
   return {expr_wgsl};
 }}
 
-@compute @workgroup_size(256, 1, 1)
+@compute @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {{
-  let idx = gid.x;
-  if (idx >= params.width * params.height) {{
+  if (gid.x >= params.width || gid.y >= params.height) {{
     return;
   }}
+  let idx = gid.x + gid.y * params.width;
   let pixel = input[idx];
   output[idx] = vec4<f32>(
     apply_expr(pixel.x),
@@ -537,7 +537,7 @@ impl Node for FusedPointOpNode {
         Some(GpuShader {
             body: self.gpu_shader_src.clone(),
             entry_point: "main",
-            workgroup_size: [256, 1, 1],
+            workgroup_size: [16, 16, 1],
             params,
             extra_buffers: vec![],
             reduction_buffers: vec![],
