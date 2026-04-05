@@ -38,7 +38,6 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
 
   const refImageBytes = useRef<Uint8Array | null>(null);
   const afterCanvasRef = useRef<HTMLCanvasElement>(null);
-  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const renderSeq = useRef(0);
 
   const loadRefImage = useCallback(async () => {
@@ -87,21 +86,13 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
     }
   }, [filterName, loadRefImage, referenceImageUrl]);
 
-  const sliderEventTime = useRef(0);
-
   const onParamChange = useCallback((newValues: Record<string, number | boolean>) => {
-    sliderEventTime.current = performance.now();
+    const t0 = performance.now();
     setValues(newValues);
-    if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    debounceTimer.current = setTimeout(() => {
-      const debounceMs = performance.now() - sliderEventTime.current;
-      const renderStart = performance.now();
-      doRender(newValues).then(() => {
-        const renderMs = performance.now() - renderStart;
-        const totalMs = performance.now() - sliderEventTime.current;
-        console.log(`[playground] e2e: slider→visible=${totalMs.toFixed(0)}ms (debounce=${debounceMs.toFixed(0)}ms render=${renderMs.toFixed(0)}ms)`);
-      });
-    }, 100);
+    // No debounce — renderSeq handles stale results. Fire immediately.
+    doRender(newValues).then(() => {
+      console.log(`[playground] e2e: slider→visible=${(performance.now() - t0).toFixed(0)}ms`);
+    });
   }, [doRender]);
 
   const [activated, setActivated] = useState(false);
