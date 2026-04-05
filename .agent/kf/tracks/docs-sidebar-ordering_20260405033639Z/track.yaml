@@ -3,69 +3,100 @@ title: Docs sidebar section ordering with manual pages first
 type: chore
 status: pending
 created: 2026-04-05
-updated: 2026-04-05
+updated: '2026-04-05'
 spec:
-  summary: |
-    Render manual page sections before filter categories in the docs sidebar.
+  summary: 'Render manual page sections before filter categories in the docs sidebar.
+
     Add section-order attribute to .adoc pages so sections can be prioritized.
+
     Getting Started appears as the first page in the sidebar.
-  context: |
-    Currently the sidebar renders filter categories first (alphabetical),
+
+    '
+  context: 'Currently the sidebar renders filter categories first (alphabetical),
+
     then encoders, then manual page sections (alphabetical). Getting Started
+
     is in the Guides section which sorts last. It should be the first thing
+
     a user sees in the navigation.
-  codebase_analysis: |
-    Sidebar.tsx (docs/site/src/components/Sidebar.tsx):
+
+    '
+  codebase_analysis: 'Sidebar.tsx (docs/site/src/components/Sidebar.tsx):
+
     - Line 57: filter categories rendered first, sorted alphabetically
+
     - Line 86: encoders section
+
     - Line 104: manual page sections rendered last, sorted alphabetically
+
     - Pages within sections sorted by :order: attribute
 
+
     pages.ts (docs/site/src/lib/pages.ts):
+
     - Parses :section: (default Guides) and :order: (default 99) from .adoc
+
     - No section-level ordering support
 
+
     types.ts (docs/site/src/lib/types.ts):
+
     - ManualPage interface has title, section, order, slug, content
+
     - No sectionOrder field
 
+
     getting-started.adoc:
+
     - Has :section: Guides and :order: 1
+
     - Content is correct, just positioned wrong in sidebar
+
+    '
   acceptance_criteria:
-    - Manual page sections render before filter categories in sidebar
-    - Sections support a section-order attribute for priority ordering
-    - Getting Started page appears as the first item in the sidebar
-    - Filter categories still sort alphabetically after manual sections
-    - Existing page ordering within sections preserved
-  out_of_scope: |
-    - Filter category ordering (stays alphabetical)
+  - Manual page sections render before filter categories in sidebar
+  - Sections support a section-order attribute for priority ordering
+  - Getting Started page appears as the first item in the sidebar
+  - Filter categories still sort alphabetically after manual sections
+  - Existing page ordering within sections preserved
+  out_of_scope: '- Filter category ordering (stays alphabetical)
+
     - Sidebar redesign or collapsible sections
+
     - New documentation content
-  technical_notes: |
-    Three files to change:
+
+    '
+  technical_notes: 'Three files to change:
+
     1. pages.ts - parse :section-order: attribute (default 50)
+
     2. types.ts - add sectionOrder field to ManualPage
+
     3. Sidebar.tsx - render manual sections first, sorted by min sectionOrder
+
     4. getting-started.adoc - add :section-order: 1
 
+
     The section order is the minimum sectionOrder across all pages in that
+
     section. This allows a single page to pull its whole section up.
+
+    '
 plan:
-  - phase: Implementation
-    tasks:
-      - text: Add sectionOrder field to ManualPage interface in types.ts
-        done: false
-      - text: Parse section-order attribute in pages.ts (default 50)
-        done: false
-      - text: Move manual page sections above filter categories in Sidebar.tsx
-        done: false
-      - text: Sort manual sections by min sectionOrder instead of alphabetically
-        done: false
-      - text: Set section-order 1 on getting-started.adoc
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Verify Getting Started appears first in sidebar with make docs-dev
-        done: false
+- phase: Implementation
+  tasks:
+  - text: Add sectionOrder field to ManualPage interface in types.ts
+    done: true
+  - text: Parse section-order attribute in pages.ts (default 50)
+    done: true
+  - text: Move manual page sections above filter categories in Sidebar.tsx
+    done: true
+  - text: Sort manual sections by min sectionOrder instead of alphabetically
+    done: true
+  - text: Set section-order 1 on getting-started.adoc
+    done: true
+- phase: Verification
+  tasks:
+  - text: Verify Getting Started appears first in sidebar with make docs-dev
+    done: true
 extra: {}
