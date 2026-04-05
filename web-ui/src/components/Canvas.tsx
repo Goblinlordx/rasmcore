@@ -44,12 +44,17 @@ export default function Canvas({
     (containerRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
     transform.gestureRef(el);
   }, [containerRef, transform.gestureRef]);
-  // In display mode, canvas fills the viewport — shader handles pan/zoom
-  const canvasStyle = hasImage
-    ? (displayMode
-        ? { position: 'absolute' as const, left: 0, top: 0, width: containerSize.width, height: containerSize.height }
-        : computeTransformCSS(transform.state, containerSize, imageWidth, imageHeight))
+  // Display mode: preview canvas fills viewport (shader handles pan/zoom).
+  // Original canvas always uses CSS transform (never stretched).
+  const displayCanvasStyle = hasImage
+    ? { position: 'absolute' as const, left: 0, top: 0, width: containerSize.width, height: containerSize.height }
     : undefined;
+  const transformCanvasStyle = hasImage
+    ? computeTransformCSS(transform.state, containerSize, imageWidth, imageHeight)
+    : undefined;
+  // Preview uses display mode style when available, original always uses transform
+  const previewStyle = displayMode ? displayCanvasStyle : transformCanvasStyle;
+  const originalStyle = transformCanvasStyle;
 
   // Forward viewport changes to worker for shader-based pan/zoom
   useEffect(() => {
@@ -160,7 +165,7 @@ export default function Canvas({
           ref={previewCanvasRef}
           id="preview-canvas"
           style={{
-            ...canvasStyle,
+            ...previewStyle,
             display: hasImage && (showPreview || showSplit) ? 'block' : 'none',
             clipPath: showSplit ? `inset(0 0 0 ${splitPos}%)` : undefined,
           }}
@@ -169,7 +174,7 @@ export default function Canvas({
           ref={originalCanvasRef}
           id="original-canvas"
           style={{
-            ...canvasStyle,
+            ...originalStyle,
             display: hasImage && (showOriginal || showSplit) ? 'block' : 'none',
             clipPath: showSplit ? `inset(0 ${100 - splitPos}% 0 0)` : undefined,
           }}
@@ -180,7 +185,7 @@ export default function Canvas({
           <div
             ref={splitContainerRef}
             style={{
-              ...canvasStyle,
+              ...originalStyle,
               pointerEvents: 'none',
             }}
           >
