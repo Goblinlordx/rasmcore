@@ -373,3 +373,6 @@ webui-adopt-sdk-patterns_20260405071524Z: []
 
 # Docs playground Source + canvas — no deps
 docs-playground-source-canvas_20260405080142Z: []
+
+# CPU ping-pong buffers — no deps
+cpu-pingpong-buffers_20260405082500Z: []

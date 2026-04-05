@@ -1,0 +1,109 @@
+id: cpu-pingpong-buffers_20260405082500Z
+title: Pre-allocated ping-pong buffers for CPU graph execution
+type: feature
+status: pending
+created: 2026-04-05
+updated: 2026-04-05
+spec:
+  summary: |
+    Pre-allocate two f32 pixel buffers at image dimensions and reuse them
+    across node compute calls (ping-pong pattern). Eliminates per-node
+    Vec allocation in the CPU render path — the primary bottleneck for
+    interactive rendering in WASM (12ms of 15ms total is allocation).
+  context: |
+    Timing shows brightness on 640x427 takes ~15ms total, with ~12ms in
+    render (graph execution). The actual math is <1ms. The 12ms is WASM
+    linear memory allocation: SourceNode.compute() clones 4.4MB, filter
+    compute allocates 4.4MB output, cache.store() clones another 4.4MB.
+    Three 4.4MB allocations per render = 13MB churn per slider change.
+
+    The GPU handler already uses ping-pong buffers. The CPU path should
+    do the same: pre-allocate two buffers at the image size, alternate
+    between them as input/output for each node.
+  codebase_analysis: |
+    Current CPU execution (graph.rs request_region):
+    - SourceNode.compute() -> self.pixels.clone() (4.4MB alloc)
+    - FusedPointOpNode.compute() -> allocates output Vec (4.4MB alloc)
+    - cache.store() -> pixels.clone() (4.4MB alloc)
+
+    Node trait (node.rs):
+    - compute(&self, request, upstream) -> Result<Vec<f32>>
+    - Every node allocates and returns a fresh Vec
+
+    FusedPointOpNode (fusion.rs):
+    - compute() allocates output, loops over pixels, returns owned Vec
+    - Could write into a pre-allocated buffer instead
+
+    SourceNode (rasmcore-v2-wasm/src/lib.rs):
+    - compute() clones self.pixels
+    - Could memcpy into a pre-allocated buffer instead
+  acceptance_criteria:
+    - Graph pre-allocates two f32 buffers sized to image dimensions
+    - Node compute uses ping-pong buffers instead of allocating per call
+    - SourceNode writes into buffer instead of cloning
+    - Spatial cache stores without cloning (takes buffer ownership or Rc)
+    - Render time for brightness 640x427 drops from ~12ms to <3ms
+    - Buffer pool resizes only when image dimensions change
+    - No regression in correctness for multi-node chains
+  out_of_scope: |
+    - GPU buffer pooling (already exists)
+    - Spatial filter overlap handling (needs separate treatment)
+    - Tiled execution (different buffer sizing)
+  technical_notes: |
+    Approach:
+
+    1. Add BufferPool to Graph:
+       - Two Vec<f32> buffers (A and B), pre-allocated
+       - resize(width, height) grows them if needed, never shrinks
+       - acquire_pair() returns (&[f32], &mut [f32]) for read/write
+
+    2. Change Node::compute signature (or add compute_into):
+       - compute_into(&self, request, upstream, output: &mut [f32])
+       - Default impl: call compute() and copy into output (backwards compat)
+       - Optimized nodes override to write directly into output
+
+    3. Update request_region:
+       - For chain execution, use ping-pong from BufferPool
+       - Final result: return reference or clone only at the boundary
+
+    4. SourceNode optimization:
+       - compute_into: memcpy from self.pixels into output buffer
+       - No allocation, just a copy
+
+    5. FusedPointOpNode optimization:
+       - compute_into: read from input buffer, write to output buffer
+       - The LUT-based fast path already loops pixel-by-pixel — just
+         change destination from a new Vec to the output slice
+
+    Alternative simpler approach:
+    - Keep compute() -> Vec<f32> but reuse allocations via a buffer cache
+    - Graph holds a Vec<Vec<f32>> of reusable buffers
+    - Before compute, pop a buffer from cache (or allocate if empty)
+    - After compute, push used buffers back
+    - Simpler than changing the Node trait, still eliminates alloc churn
+plan:
+  - phase: Buffer Pool
+    tasks:
+      - text: Add BufferPool struct to graph.rs with two pre-allocated Vec<f32> and resize/acquire methods
+        done: false
+      - text: Graph holds BufferPool, resizes on first request_full based on image dimensions
+        done: false
+  - phase: Execution Path
+    tasks:
+      - text: Update request_region to use pooled buffers for intermediate results instead of fresh allocations
+        done: false
+      - text: SourceNode.compute writes into pre-allocated buffer via memcpy instead of clone
+        done: false
+      - text: FusedPointOpNode.compute writes into pre-allocated buffer instead of allocating
+        done: false
+      - text: Spatial cache store takes ownership of buffer (no clone) or uses Rc sharing
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Benchmark brightness 640x427 — verify render drops from ~12ms to <3ms
+        done: false
+      - text: Test multi-node chains (brightness + contrast + blur) produce correct output
+        done: false
+      - text: Test image size change (load different image) triggers buffer resize
+        done: false
+extra: {}
