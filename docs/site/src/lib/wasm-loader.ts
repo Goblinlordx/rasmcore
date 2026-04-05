@@ -85,6 +85,7 @@ export async function renderFilterToPixels(
   const tWasm = performance.now();
 
   const pipe = new PipelineClass();
+  if (typeof pipe.setTracing === 'function') pipe.setTracing(true);
   const tPipe = performance.now();
 
   // Use Source (decode cached) or fall back to read(bytes)
@@ -108,6 +109,20 @@ export async function renderFilterToPixels(
   const tRender = performance.now();
 
   const info = pipe.nodeInfo(filterId);
+
+  // Collect WASM-side trace events for detailed breakdown
+  if (typeof pipe.takeTrace === 'function') {
+    try {
+      const trace = pipe.takeTrace();
+      if (trace && trace.length > 0) {
+        const parts = trace.map((e: any) =>
+          `${e.kind}:${e.name}=${(e.durationUs / 1000).toFixed(1)}ms${e.detail ? ` (${e.detail})` : ''}`
+        );
+        console.log(`[playground] WASM trace: ${parts.join(' | ')}`);
+      }
+    } catch { /* ignore */ }
+  }
+
   const f32 = pixels instanceof Float32Array ? pixels : new Float32Array(pixels);
   const tTotal = performance.now();
 
