@@ -523,13 +523,15 @@ export class GpuHandlerV2 {
   displayFromCpu(pixels: Float32Array, width: number, height: number): void {
     if (!this.device || !this.canvasCtx || !this.blitPipeline || !this.blitBindGroupLayout || !this.viewportBuf) return;
 
-    // Resize canvas to match image — the OffscreenCanvas may still be at
-    // the HTML default (300x150) if never explicitly sized.
+    // Resize canvas to match image
     if (this.displayCanvas) {
       this.displayCanvas.width = width;
       this.displayCanvas.height = height;
     }
     this.updateViewport(0, 0, 1, width, height, width, height, 0);
+
+    const expected = width * height * 4;
+    console.log(`[gpu] displayFromCpu: ${width}x${height}, canvas=${this.displayCanvas?.width}x${this.displayCanvas?.height}, pixels=${pixels.length}f32 (expect ${expected}), first4=[${pixels[0]?.toFixed(3)},${pixels[1]?.toFixed(3)},${pixels[2]?.toFixed(3)},${pixels[3]?.toFixed(3)}]`);
 
     const byteCount = pixels.byteLength;
     const buf = this.device.createBuffer({
