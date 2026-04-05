@@ -1,0 +1,36 @@
+id: fix-spatial-cache-eviction_20260405231438Z
+title: Fix SpatialCache FIFO index corruption bug
+type: bug
+status: pending
+created: 2026-04-06
+updated: 2026-04-06
+spec:
+  summary: |
+    SpatialCache FIFO eviction uses entries.remove() which shifts indices,
+    but the order Vec retains stale indices. This can skip entries (leak)
+    or panic on out-of-bounds access. Replace with clear-on-overflow.
+  context: |
+    cache.rs lines 74-81: order stores (node_id, entry_index) tuples.
+    After entries.remove(idx), all subsequent entries shift down but
+    order still has the old indices. Next eviction reads wrong data.
+  acceptance_criteria:
+    - Eviction correctly frees entries when budget exceeded
+    - No index corruption after multiple eviction cycles
+    - No panic on repeated store/evict cycles
+    - Unit test covering store-until-overflow-then-verify
+  out_of_scope: |
+    LRU or other advanced eviction policies
+plan:
+  - phase: Fix
+    tasks:
+      - text: Replace FIFO remove-by-index with clear-all-on-overflow strategy (simpler, correct)
+        done: false
+      - text: When budget exceeded, clear entire cache and store the new entry fresh
+        done: false
+  - phase: Test
+    tasks:
+      - text: Add unit test that stores entries until budget overflows, verifies no panic
+        done: false
+      - text: Verify current_bytes tracks correctly after clear + re-store
+        done: false
+extra: {}

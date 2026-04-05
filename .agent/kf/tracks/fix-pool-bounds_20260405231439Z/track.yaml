@@ -1,0 +1,37 @@
+id: fix-pool-bounds_20260405231439Z
+title: Add max size bounds to BufferPool and SpatialCachePool
+type: bug
+status: pending
+created: 2026-04-06
+updated: 2026-04-06
+spec:
+  summary: |
+    BufferPool and SpatialCachePool grow unbounded. Add max_idle limits
+    and shrink oversized buffers on release.
+  context: |
+    BufferPool (graph.rs lines 26-55) has no max size. Buffers retain
+    peak capacity forever. SpatialCachePool (cache.rs lines 128-181)
+    grows to peak concurrent pipeline count and never shrinks.
+  acceptance_criteria:
+    - BufferPool has max_idle (default 4) — excess buffers dropped on release
+    - Buffers with capacity > 2x requested size are shrunk on release
+    - SpatialCachePool has max_idle (default 2) — excess caches dropped
+    - Pool sizes stay bounded during repeated image processing
+  out_of_scope: |
+    Changing buffer allocation strategy or pooling architecture
+plan:
+  - phase: BufferPool Bounds
+    tasks:
+      - text: Add max_idle field to BufferPool (default 4)
+        done: false
+      - text: In release(), drop buffer instead of pooling if pool already at max_idle
+        done: false
+      - text: In release(), call shrink_to_fit if buffer capacity > 2x len
+        done: false
+  - phase: SpatialCachePool Bounds
+    tasks:
+      - text: Add max_idle field to SpatialCachePool (default 2)
+        done: false
+      - text: In release(), drop cache instead of pooling if pool already at max_idle
+        done: false
+extra: {}

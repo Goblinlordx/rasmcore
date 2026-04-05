@@ -1,0 +1,6 @@
+title: Fix LayerCache leak — add cleanup cycle to web-ui workers
+status: pending
+type: bug
+approved: false
+created: '2026-04-05'
+updated: '2026-04-05'
