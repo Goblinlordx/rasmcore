@@ -656,12 +656,11 @@ fn fuse_analytical_chains(graph: &mut Graph) {
             current = up;
         }
 
-        if chain.len() < 2 {
-            continue;
-        }
+        // Even single-node chains get fused — this gives them a GPU shader
+        // (FusedPointOpNode emits WGSL) and the LUT-based CPU fast path.
 
         // Compose expressions: chain is [outermost, ..., innermost]
-        // We need to compose outer(inner(v))
+        // For single-node chains, the expression is used as-is.
         let exprs: Vec<PointOpExpr> = chain
             .iter()
             .filter_map(|&id| graph.get_node(id as u32).analytic_expression())
