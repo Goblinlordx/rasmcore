@@ -3,99 +3,143 @@ title: Migrate CLI from V1 NodeGraph to V2 pipeline
 type: refactor
 status: pending
 created: 2026-04-05
-updated: 2026-04-05
+updated: '2026-04-05'
 spec:
-  summary: |
-    Rewrite rcim CLI (crates/rasmcore-cli/src/main.rs, ~370 lines) to use
+  summary: 'Rewrite rcim CLI (crates/rasmcore-cli/src/main.rs, ~370 lines) to use
+
     V2 Graph, V2 filter registry, V2 codec read/write, and V2 GPU executor.
+
     After this migration, rasmcore-cli no longer depends on rasmcore-pipeline (V1)
-    or rasmcore-image's V1 NodeGraph.
-  context: |
-    The CLI currently uses V1 infrastructure:
+
+    or rasmcore-image''s V1 NodeGraph.
+
+    '
+  context: 'The CLI currently uses V1 infrastructure:
+
     - rasmcore_image::domain::pipeline::graph::NodeGraph for graph building
+
     - rasmcore_image::domain::pipeline::dispatch::dispatch_filter() for filter instantiation
+
     - rasmcore_image::domain::pipeline::nodes::sink::write() for output encoding
+
     - rasmcore_pipeline::GpuExecutor (V1 trait) via gpu_executor.rs
 
+
     V2 has complete equivalents:
+
     - rasmcore_pipeline_v2::graph::Graph — graph engine
+
     - rasmcore_pipeline_v2 filter registry (88 filters via inventory)
+
     - rasmcore_pipeline_v2 codec registry (all formats via inventory)
+
     - rasmcore_pipeline_v2::gpu::GpuExecutor (V2 trait) via gpu_executor_v2.rs
 
+
     The web UI already uses V2 exclusively. This track migrates the last
+
     remaining V1 consumer (CLI) so the V1 crate can be removed.
-  codebase_analysis: |
-    CLI main.rs (372 lines):
+
+    '
+  codebase_analysis: 'CLI main.rs (372 lines):
+
     - Lines 14-16: imports from rasmcore_image::domain::pipeline (V1)
+
     - Line 142: accepts V1 GpuExecutor
+
     - Line 144: creates V1 NodeGraph
+
     - Line 152: uses V1 dispatch::list_filters() for metadata
+
     - Line 196: V1 dispatch::dispatch_filter() creates filter nodes
+
     - Line 226: V1 sink::write() encodes output
 
+
     V2 equivalents available:
+
     - rasmcore_pipeline_v2::Graph::new() replaces NodeGraph::new()
+
     - V2 filter registry (inventory-based) replaces dispatch::list_filters()
+
     - V2 FilterNode::new() replaces dispatch_filter()
+
     - V2 graph.request_full() + codec write replaces sink::write()
+
     - gpu_executor_v2.rs already exists alongside gpu_executor.rs
 
+
     The CLI also has bench-pipeline binary which already uses V2 Graph.
+
     This proves V2 is viable for CLI workloads.
+
+    '
   acceptance_criteria:
-    - CLI builds and runs using only V2 pipeline types
-    - All existing filter names work via V2 filter registry
-    - Input/output codec support matches V1 (PNG, JPEG, WebP, GIF, etc.)
-    - GPU acceleration works via V2 GpuExecutor
-    - CLI help and --list-filters output unchanged
-    - rasmcore-cli Cargo.toml no longer depends on rasmcore-pipeline (V1)
-    - Existing CLI test cases pass (if any)
-  out_of_scope: |
-    - Removing rasmcore-pipeline (V1) crate (separate track)
+  - CLI builds and runs using only V2 pipeline types
+  - All existing filter names work via V2 filter registry
+  - Input/output codec support matches V1 (PNG, JPEG, WebP, GIF, etc.)
+  - GPU acceleration works via V2 GpuExecutor
+  - CLI help and --list-filters output unchanged
+  - rasmcore-cli Cargo.toml no longer depends on rasmcore-pipeline (V1)
+  - Existing CLI test cases pass (if any)
+  out_of_scope: '- Removing rasmcore-pipeline (V1) crate (separate track)
+
     - Removing V1 code from rasmcore-image (separate track)
+
     - Adding new CLI features
+
     - Changing CLI argument syntax
-  technical_notes: |
-    Migration approach:
+
+    '
+  technical_notes: 'Migration approach:
+
     1. Replace NodeGraph with V2 Graph
+
     2. Replace dispatch_filter() with V2 registry lookup + FilterNode::new()
+
     3. Replace sink::write() with V2 graph.request_full() + codec encode
+
     4. Replace V1 GpuExecutor with V2 GpuExecutor (gpu_executor_v2.rs)
+
     5. Delete V1 gpu_executor.rs after migration
+
     6. Update Cargo.toml to remove rasmcore-pipeline dep
 
+
     The bench-pipeline binary already demonstrates V2 Graph usage in the
+
     same crate — use it as a reference for the migration pattern.
+
+    '
 plan:
-  - phase: V2 Graph Migration
-    tasks:
-      - text: Replace NodeGraph import with rasmcore_pipeline_v2::graph::Graph in main.rs
-        done: false
-      - text: Replace dispatch::list_filters() with V2 inventory-based filter registry listing
-        done: false
-      - text: Replace dispatch::dispatch_filter() with V2 FilterNode construction using registry lookup
-        done: false
-      - text: Replace sink::write() with V2 graph.request_full() + V2 codec encoder
-        done: false
-  - phase: GPU and Source/Sink Migration
-    tasks:
-      - text: Replace V1 GpuExecutor usage with V2 GpuExecutor (switch from gpu_executor.rs to gpu_executor_v2.rs)
-        done: false
-      - text: Replace V1 SourceNode with V2 source node (read image bytes into V2 graph)
-        done: false
-      - text: Delete V1 gpu_executor.rs (no longer needed after CLI migrates)
-        done: false
-      - text: Update Cargo.toml — remove rasmcore-pipeline dependency, keep rasmcore-pipeline-v2
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Verify --list-filters output includes all V2 registered filters
-        done: false
-      - text: Test CLI end-to-end — input JPEG, apply brightness + blur, output PNG
-        done: false
-      - text: Test GPU path — verify GPU executor initializes and dispatches
-        done: false
-      - text: Verify cargo build succeeds without rasmcore-pipeline in CLI deps
-        done: false
+- phase: V2 Graph Migration
+  tasks:
+  - text: Replace NodeGraph import with rasmcore_pipeline_v2::graph::Graph in main.rs
+    done: true
+  - text: Replace dispatch::list_filters() with V2 inventory-based filter registry listing
+    done: true
+  - text: Replace dispatch::dispatch_filter() with V2 FilterNode construction using registry lookup
+    done: true
+  - text: Replace sink::write() with V2 graph.request_full() + V2 codec encoder
+    done: true
+- phase: GPU and Source/Sink Migration
+  tasks:
+  - text: Replace V1 GpuExecutor usage with V2 GpuExecutor (switch from gpu_executor.rs to gpu_executor_v2.rs)
+    done: true
+  - text: Replace V1 SourceNode with V2 source node (read image bytes into V2 graph)
+    done: true
+  - text: Delete V1 gpu_executor.rs (no longer needed after CLI migrates)
+    done: true
+  - text: Update Cargo.toml — remove rasmcore-pipeline dependency, keep rasmcore-pipeline-v2
+    done: true
+- phase: Verification
+  tasks:
+  - text: Verify --list-filters output includes all V2 registered filters
+    done: true
+  - text: Test CLI end-to-end — input JPEG, apply brightness + blur, output PNG
+    done: true
+  - text: Test GPU path — verify GPU executor initializes and dispatches
+    done: true
+  - text: Verify cargo build succeeds without rasmcore-pipeline in CLI deps
+    done: true
 extra: {}

@@ -1,5 +1,5 @@
 title: Migrate CLI from V1 NodeGraph to V2 pipeline
-status: pending
+status: completed
 type: refactor
 approved: false
 created: '2026-04-05'
