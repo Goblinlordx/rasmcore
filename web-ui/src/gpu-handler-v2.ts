@@ -381,6 +381,12 @@ export class GpuHandlerV2 {
     catch (e) { return { tag: 'not-available', val: (e as Error).message }; }
 
     const device = this.device!;
+
+    // Ensure viewport uniforms are set (may be first render)
+    const cw = this.displayCanvas?.width || width;
+    const ch = this.displayCanvas?.height || height;
+    this.updateViewport(0, 0, 1, cw, ch, width, height, 0);
+
     const pixelCount = width * height;
     const floatCount = pixelCount * 4;
     const byteCount = floatCount * 4;
@@ -514,6 +520,11 @@ export class GpuHandlerV2 {
    */
   displayFromCpu(pixels: Float32Array, width: number, height: number): void {
     if (!this.device || !this.canvasCtx || !this.blitPipeline || !this.blitBindGroupLayout || !this.viewportBuf) return;
+
+    // Ensure viewport uniforms are set (may be first render)
+    const cw = this.displayCanvas?.width || width;
+    const ch = this.displayCanvas?.height || height;
+    this.updateViewport(0, 0, 1, cw, ch, width, height, 0);
 
     const byteCount = pixels.byteLength;
     const buf = this.device.createBuffer({
