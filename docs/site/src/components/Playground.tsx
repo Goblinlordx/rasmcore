@@ -75,7 +75,15 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
     } catch (e) {
       if (seq !== renderSeq.current) return;
       setStatus('error');
-      setError(e instanceof Error ? e.message : String(e));
+      // WIT errors from jco are plain objects { tag, val } or { payload: { tag, val } }
+      const msg = e instanceof Error
+        ? e.message
+        : (e as any)?.payload
+          ? JSON.stringify((e as any).payload)
+          : (e as any)?.tag
+            ? `${(e as any).tag}: ${(e as any).val ?? ''}`
+            : JSON.stringify(e);
+      setError(msg);
     }
   }, [filterName, loadRefImage]);
 
