@@ -1,0 +1,112 @@
+id: sdk-source-object_20260405044044Z
+title: Source object for SDK — decode once, reference by ID
+type: feature
+status: pending
+created: 2026-04-05
+updated: 2026-04-05
+spec:
+  summary: |
+    Add a Source object to the V2 SDK that wraps input bytes with an internal
+    UUID. pipeline.read(source) decodes on first call, caches by source ID,
+    and skips decode on subsequent calls. The consumer controls source lifecycle.
+  context: |
+    Currently pipeline.read(bytes) re-decodes the full image every time it
+    is called, even when the same bytes are passed repeatedly (e.g. slider
+    adjustments). There is no way to say "this is the same input as before."
+
+    The Source object solves this by giving the consumer explicit control
+    over source identity. A Source is created once with the bytes, gets an
+    internal UUID, and the pipeline caches decoded f32 pixels against that
+    UUID. No hashing of the bytes is needed — identity is the UUID.
+
+    This is a prerequisite for efficient render target usage where only
+    filter params change between renders, not the source image.
+  codebase_analysis: |
+    Current read() path (crates/rasmcore-v2-wasm/src/lib.rs:114-148):
+    - Computes source_hash(data) via blake3 on full bytes
+    - Decodes bytes to f32 pixels (always, no cache check)
+    - Creates SourceNode with pixels
+    - Adds to graph with hash
+
+    Layer cache (crates/rasmcore-pipeline-v2/src/layer_cache.rs):
+    - Keyed by ContentHash (u128)
+    - get(hash) and store(hash, pixels, w, h) API
+    - Currently only checked for downstream nodes, not source decode
+
+    WIT interface (wit/v2/pipeline.wit):
+    - read(data, format-hint) -> node-id
+    - No concept of a reusable source handle
+  acceptance_criteria:
+    - Source object created with bytes and an internal UUID
+    - pipeline.read(source) decodes on first call only
+    - Subsequent read(source) with same Source skips decode, returns cached node
+    - Source identity is UUID — no byte hashing needed
+    - Different Source objects with identical bytes are treated as different sources
+    - Source.destroy() or going out of scope releases cached decoded pixels
+    - WIT interface extended with source resource type
+    - SDK exposes Source class in TypeScript fluent API
+  out_of_scope: |
+    - Content-addressed deduplication (same bytes = same source)
+    - GPU buffer caching per source (future optimization on RenderTarget)
+    - Streaming/lazy decode
+  technical_notes: |
+    Implementation layers:
+
+    1. WIT: Add source resource type
+       resource source {
+         constructor(data: list<u8>, format-hint: option<string>);
+       }
+       read now accepts source reference instead of raw bytes
+
+    2. Rust WASM adapter:
+       - SourceResource holds: uuid, decoded Option<(Vec<f32>, NodeInfo)>
+       - First read(source): decode, cache in SourceResource, add to graph
+       - Subsequent read(source): reuse cached pixels, add new graph node
+
+    3. TypeScript SDK:
+       - Source class wraps the WIT resource
+       - pipeline.read(source) chains off the source reference
+       - source is reusable across multiple pipeline chains
+
+    Consumer usage:
+      const source = new Source(imageBytes);
+
+      // First — decodes
+      pipe.read(source).brightness({ amount: 0.3 }).write('png');
+
+      // Second — instant, no decode
+      pipe.read(source).brightness({ amount: 0.7 }).writeRenderTarget(target);
+
+      // New image — new source
+      const source2 = new Source(otherBytes);
+      pipe.read(source2).sepia().write('png');
+plan:
+  - phase: WIT and Rust Foundation
+    tasks:
+      - text: Add source resource type to wit/v2/pipeline.wit with constructor(data, format-hint)
+        done: false
+      - text: Implement SourceResource in WASM adapter — holds UUID, decoded pixels cache
+        done: false
+      - text: Add read-source(source) method to pipeline WIT that accepts source resource
+        done: false
+      - text: First read-source call decodes and caches in SourceResource, subsequent calls reuse
+        done: false
+  - phase: Pipeline Integration
+    tasks:
+      - text: Update graph node creation to accept pre-decoded pixels from SourceResource
+        done: false
+      - text: Keep existing read(bytes) as convenience that creates an ephemeral source internally
+        done: false
+  - phase: SDK Generation
+    tasks:
+      - text: Update generate-v2-fluent-sdk.mjs to emit Source class wrapping WIT resource
+        done: false
+      - text: Update Pipeline.read() to accept Source object or raw bytes (overloaded)
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test first read(source) decodes, second read(source) skips decode
+        done: false
+      - text: Test two Source objects with same bytes are independent
+        done: false
+extra: {}

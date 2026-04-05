@@ -364,3 +364,6 @@ docs-sidebar-ordering_20260405033639Z: []
 
 # SDK canvas render — no deps (GpuHandlerV2 already exists on main)
 sdk-canvas-render_20260405041105Z: []
+
+# SDK source object — no deps (foundational)
+sdk-source-object_20260405044044Z: []
