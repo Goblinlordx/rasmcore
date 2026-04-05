@@ -382,10 +382,12 @@ export class GpuHandlerV2 {
 
     const device = this.device!;
 
-    // Ensure viewport uniforms are set (may be first render)
-    const cw = this.displayCanvas?.width || width;
-    const ch = this.displayCanvas?.height || height;
-    this.updateViewport(0, 0, 1, cw, ch, width, height, 0);
+    // Resize canvas to match image — may still be at HTML default (300x150)
+    if (this.displayCanvas) {
+      this.displayCanvas.width = width;
+      this.displayCanvas.height = height;
+    }
+    this.updateViewport(0, 0, 1, width, height, width, height, 0);
 
     const pixelCount = width * height;
     const floatCount = pixelCount * 4;
@@ -521,10 +523,13 @@ export class GpuHandlerV2 {
   displayFromCpu(pixels: Float32Array, width: number, height: number): void {
     if (!this.device || !this.canvasCtx || !this.blitPipeline || !this.blitBindGroupLayout || !this.viewportBuf) return;
 
-    // Ensure viewport uniforms are set (may be first render)
-    const cw = this.displayCanvas?.width || width;
-    const ch = this.displayCanvas?.height || height;
-    this.updateViewport(0, 0, 1, cw, ch, width, height, 0);
+    // Resize canvas to match image — the OffscreenCanvas may still be at
+    // the HTML default (300x150) if never explicitly sized.
+    if (this.displayCanvas) {
+      this.displayCanvas.width = width;
+      this.displayCanvas.height = height;
+    }
+    this.updateViewport(0, 0, 1, width, height, width, height, 0);
 
     const byteCount = pixels.byteLength;
     const buf = this.device.createBuffer({
