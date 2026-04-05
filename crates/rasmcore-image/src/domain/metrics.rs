@@ -55,7 +55,6 @@ fn validate_pair(
 }
 
 /// Mean Absolute Error — average per-sample absolute difference.
-#[rasmcore_macros::register_metric(name = "mae")]
 pub fn mae(a: &[u8], info_a: &ImageInfo, b: &[u8], info_b: &ImageInfo) -> Result<f64, ImageError> {
     let (sa, sb, _) = validate_pair(a, info_a, b, info_b)?;
     if sa.is_empty() {
@@ -70,7 +69,6 @@ pub fn mae(a: &[u8], info_a: &ImageInfo, b: &[u8], info_b: &ImageInfo) -> Result
 }
 
 /// Root Mean Squared Error.
-#[rasmcore_macros::register_metric(name = "rmse")]
 pub fn rmse(a: &[u8], info_a: &ImageInfo, b: &[u8], info_b: &ImageInfo) -> Result<f64, ImageError> {
     let (sa, sb, _) = validate_pair(a, info_a, b, info_b)?;
     if sa.is_empty() {
@@ -91,7 +89,6 @@ pub fn rmse(a: &[u8], info_a: &ImageInfo, b: &[u8], info_b: &ImageInfo) -> Resul
 /// Peak Signal-to-Noise Ratio in dB (8-bit, MAX=255).
 ///
 /// Returns `f64::INFINITY` for identical images.
-#[rasmcore_macros::register_metric(name = "psnr")]
 pub fn psnr(a: &[u8], info_a: &ImageInfo, b: &[u8], info_b: &ImageInfo) -> Result<f64, ImageError> {
     let (sa, sb, _) = validate_pair(a, info_a, b, info_b)?;
     if sa.is_empty() {
@@ -119,7 +116,6 @@ pub fn psnr(a: &[u8], info_a: &ImageInfo, b: &[u8], info_b: &ImageInfo) -> Resul
 ///
 /// Returns a value in \[−1, 1\]; typically in \[0, 1\] for natural images.
 /// Identical images return exactly 1.0.
-#[rasmcore_macros::register_metric(name = "ssim")]
 pub fn ssim(a: &[u8], info_a: &ImageInfo, b: &[u8], info_b: &ImageInfo) -> Result<f64, ImageError> {
     let (sa, sb, channels) = validate_pair(a, info_a, b, info_b)?;
     let w = info_a.width as usize;
@@ -232,7 +228,6 @@ fn ssim_channel(a: &[f64], b: &[f64], w: usize, h: usize) -> f64 {
 /// Euclidean distance in Lab space. Returns the mean across all pixels.
 ///
 /// Both images must be RGB8 or RGBA8 (alpha ignored).
-#[rasmcore_macros::register_metric(name = "delta_e_cie76")]
 pub fn delta_e_cie76(
     a: &[u8],
     info_a: &ImageInfo,

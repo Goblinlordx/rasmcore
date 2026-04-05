@@ -7,6 +7,5 @@ edition = "2021"
 crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
-rasmcore-image = { path = "../rasmcore-image" }
-rasmcore-pipeline = { path = "../rasmcore-pipeline" }
+rasmcore-pipeline-v2 = { path = "../rasmcore-pipeline-v2" }
 serde_json = "1"

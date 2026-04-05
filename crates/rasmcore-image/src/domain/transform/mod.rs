@@ -587,16 +587,8 @@ mod tests {
         let after_gamma = point_ops::gamma(&pixels, &info, 2.2).unwrap();
         assert_eq!(after_gamma.len(), pixels.len());
 
-        // 3. Apply brightness +0.1 (16-bit auto-dispatch)
-        let after_bright = {
-            use crate::domain::filters;
-            {
-                let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
-                let mut u = |_: rasmcore_pipeline::Rect| Ok(after_gamma.clone());
-                filters::brightness(r, &mut u, &info, &filters::BrightnessParams { amount: 0.1 })
-                    .unwrap()
-            }
-        };
+        // 3. Use gamma output directly (brightness filter removed with V1 pipeline)
+        let after_bright = after_gamma;
 
         // 4. Resize to 16x16 (fast_image_resize U16x3)
         let resized = resize(&after_bright, &info, 16, 16, ResizeFilter::Lanczos3).unwrap();

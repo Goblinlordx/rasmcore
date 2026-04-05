@@ -96,12 +96,12 @@ pub fn is_lut_format(format: &str) -> bool {
 /// auto-generated from encoder config structs at build time.
 /// For fine-grained control, use per-format encode functions directly.
 pub fn encode(
-    pixels: &[u8],
-    info: &ImageInfo,
-    format: &str,
-    quality: Option<u8>,
+    _pixels: &[u8],
+    _info: &ImageInfo,
+    _format: &str,
+    _quality: Option<u8>,
 ) -> Result<Vec<u8>, ImageError> {
-    generated_encode_dispatch!(pixels, info, format, quality)
+    Err(ImageError::UnsupportedFormat("V1 encoder removed — use V2 codec registry".into()))
 }
 
 /// Embed an ICC color profile into encoded image data.

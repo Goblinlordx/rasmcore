@@ -1,16 +1,23 @@
 #![allow(private_interfaces)]
 
-//! rasmcore-ffi — C shared library wrapping the rasmcore pipeline API.
+//! rasmcore-ffi — C shared library wrapping the V2 rasmcore pipeline API.
 //!
 //! Produces a `.so` / `.dylib` / `.dll` with a flat C ABI. Every `extern "C"`
 //! function is wrapped in `catch_unwind` so panics never cross the FFI boundary.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::panic;
+use std::cell::RefCell;
 use std::rc::Rc;
+
+use rasmcore_pipeline_v2::graph::Graph;
+use rasmcore_pipeline_v2::node::{Node, NodeInfo, PipelineError, Upstream};
+use rasmcore_pipeline_v2::registry::{
+    create_filter_node, decode_via_registry, encode_via_registry, ParamMap,
+};
+use rasmcore_pipeline_v2::Rect;
 
 // ---------------------------------------------------------------------------
 // Thread-local error storage
@@ -45,12 +52,51 @@ where
 }
 
 /// Return a pointer to the last error message (NUL-terminated, UTF-8).
-///
-/// The pointer is valid until the next call to any `rasmcore_*` function on
-/// the same thread.
 #[no_mangle]
 pub extern "C" fn rasmcore_last_error() -> *const c_char {
     LAST_ERROR.with(|e| e.borrow().as_ptr())
+}
+
+// ---------------------------------------------------------------------------
+// V2 Source Node
+// ---------------------------------------------------------------------------
+
+struct SourceNode {
+    pixels: Vec<f32>,
+    info: NodeInfo,
+}
+
+impl Node for SourceNode {
+    fn info(&self) -> NodeInfo {
+        self.info.clone()
+    }
+
+    fn compute(
+        &self,
+        request: Rect,
+        _upstream: &mut dyn Upstream,
+    ) -> Result<Vec<f32>, PipelineError> {
+        let w = self.info.width as usize;
+        let rw = request.width as usize;
+        let rh = request.height as usize;
+        let rx = request.x as usize;
+        let ry = request.y as usize;
+
+        if rx == 0 && ry == 0 && rw == w && rh == self.info.height as usize {
+            return Ok(self.pixels.clone());
+        }
+
+        let mut out = Vec::with_capacity(rw * rh * 4);
+        for row in 0..rh {
+            let src = ((ry + row) * w + rx) * 4;
+            out.extend_from_slice(&self.pixels[src..src + rw * 4]);
+        }
+        Ok(out)
+    }
+
+    fn upstream_ids(&self) -> Vec<u32> {
+        vec![]
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -58,8 +104,8 @@ pub extern "C" fn rasmcore_last_error() -> *const c_char {
 // ---------------------------------------------------------------------------
 
 struct PipelineState {
-    graph: rasmcore_image::domain::pipeline::graph::NodeGraph,
-    layer_cache: Option<Rc<RefCell<rasmcore_pipeline::LayerCache>>>,
+    graph: Graph,
+    layer_cache: Option<Rc<RefCell<rasmcore_pipeline_v2::LayerCache>>>,
 }
 
 /// Create a new pipeline with `cache_budget_mb` megabytes of spatial cache.
@@ -68,7 +114,7 @@ pub extern "C" fn rasmcore_pipeline_new(cache_budget_mb: u32) -> *mut PipelineSt
     catch_err(std::ptr::null_mut(), || {
         let budget = cache_budget_mb as usize * 1024 * 1024;
         let state = PipelineState {
-            graph: rasmcore_image::domain::pipeline::graph::NodeGraph::new(budget),
+            graph: Graph::new(budget),
             layer_cache: None,
         };
         Ok(Box::into_raw(Box::new(state)))
@@ -89,14 +135,14 @@ pub extern "C" fn rasmcore_pipeline_free(pipe: *mut PipelineState) {
 // Layer cache (cross-pipeline persistence)
 // ---------------------------------------------------------------------------
 
-type LayerCacheHandle = Rc<RefCell<rasmcore_pipeline::LayerCache>>;
+type LayerCacheHandle = Rc<RefCell<rasmcore_pipeline_v2::LayerCache>>;
 
 /// Create a shared layer cache with `budget_mb` megabytes.
 #[no_mangle]
 pub extern "C" fn rasmcore_layer_cache_new(budget_mb: u32) -> *mut LayerCacheHandle {
     catch_err(std::ptr::null_mut(), || {
         let budget = budget_mb as usize * 1024 * 1024;
-        let lc = Rc::new(RefCell::new(rasmcore_pipeline::LayerCache::new(budget)));
+        let lc = Rc::new(RefCell::new(rasmcore_pipeline_v2::LayerCache::new(budget)));
         Ok(Box::into_raw(Box::new(lc)))
     })
 }
@@ -111,8 +157,7 @@ pub extern "C" fn rasmcore_layer_cache_free(cache: *mut LayerCacheHandle) {
     }
 }
 
-/// Attach a shared layer cache to a pipeline. The pipeline's node graph is
-/// recreated with the cache, using a 4 MB default spatial cache budget.
+/// Attach a shared layer cache to a pipeline.
 #[no_mangle]
 pub extern "C" fn rasmcore_pipeline_set_cache(
     pipe: *mut PipelineState,
@@ -124,10 +169,7 @@ pub extern "C" fn rasmcore_pipeline_set_cache(
     let pipe = unsafe { &mut *pipe };
     let cache = unsafe { &*cache };
     pipe.layer_cache = Some(Rc::clone(cache));
-    pipe.graph = rasmcore_image::domain::pipeline::graph::NodeGraph::with_layer_cache(
-        4 * 1024 * 1024,
-        Rc::clone(cache),
-    );
+    pipe.graph.set_layer_cache(Rc::clone(cache));
 }
 
 // ---------------------------------------------------------------------------
@@ -145,11 +187,18 @@ pub extern "C" fn rasmcore_read(pipe: *mut PipelineState, data: *const u8, len: 
         }
         let pipe = unsafe { &mut *pipe };
         let bytes = unsafe { std::slice::from_raw_parts(data, len) };
-        let source_hash = rasmcore_pipeline::compute_source_hash(bytes);
-        let node =
-            rasmcore_image::domain::pipeline::nodes::source::SourceNode::new(bytes.to_vec())
-                .map_err(|e| e.to_string())?;
-        Ok(pipe.graph.add_node_with_hash(Box::new(node), source_hash))
+        let decoded = decode_via_registry(bytes)
+            .ok_or_else(|| "unsupported image format".to_string())?
+            .map_err(|e| e.to_string())?;
+        let info = NodeInfo {
+            width: decoded.width,
+            height: decoded.height,
+            color_space: decoded.color_space,
+        };
+        Ok(pipe.graph.add_node(Box::new(SourceNode {
+            pixels: decoded.pixels,
+            info,
+        })))
     })
 }
 
@@ -167,11 +216,37 @@ pub extern "C" fn rasmcore_read_file(pipe: *mut PipelineState, path: *const c_ch
             .to_str()
             .map_err(|e| e.to_string())?;
         let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
-        let source_hash = rasmcore_pipeline::compute_source_hash(&bytes);
-        let node = rasmcore_image::domain::pipeline::nodes::source::SourceNode::new(bytes)
+        let decoded = decode_via_registry(&bytes)
+            .ok_or_else(|| format!("unsupported image format: {path}"))?
             .map_err(|e| e.to_string())?;
-        Ok(pipe.graph.add_node_with_hash(Box::new(node), source_hash))
+        let info = NodeInfo {
+            width: decoded.width,
+            height: decoded.height,
+            color_space: decoded.color_space,
+        };
+        Ok(pipe.graph.add_node(Box::new(SourceNode {
+            pixels: decoded.pixels,
+            info,
+        })))
     })
+}
+
+// ---------------------------------------------------------------------------
+// Param conversion (JSON → ParamMap)
+// ---------------------------------------------------------------------------
+
+fn json_to_param_map(params: &HashMap<String, String>) -> ParamMap {
+    let mut pm = ParamMap::new();
+    for (key, val) in params {
+        if let Ok(f) = val.parse::<f32>() {
+            pm.floats.insert(key.clone(), f);
+        } else if val == "true" || val == "false" {
+            pm.bools.insert(key.clone(), val == "true");
+        } else {
+            pm.strings.insert(key.clone(), val.clone());
+        }
+    }
+    pm
 }
 
 // ---------------------------------------------------------------------------
@@ -181,9 +256,7 @@ pub extern "C" fn rasmcore_read_file(pipe: *mut PipelineState, path: *const c_ch
 /// Apply a filter to a source node, returning the new node id.
 ///
 /// `name` is the filter name (e.g. "blur", "brightness", "sepia").
-/// `params_json` is a JSON object whose keys are parameter names and values
-/// are strings, e.g. `{"radius": "5", "sigma": "1.5"}`. Pass NULL or `"{}"`
-/// for defaults.
+/// `params_json` is a JSON object with string values. Pass NULL or `"{}"` for defaults.
 ///
 /// Returns `UINT32_MAX` on error.
 #[no_mangle]
@@ -202,7 +275,6 @@ pub extern "C" fn rasmcore_filter(
             .to_str()
             .map_err(|e| e.to_string())?;
 
-        // Parse JSON params into HashMap<String, String>
         let params: HashMap<String, String> = if params_json.is_null() {
             HashMap::new()
         } else {
@@ -212,7 +284,6 @@ pub extern "C" fn rasmcore_filter(
             if json_str.is_empty() || json_str == "{}" {
                 HashMap::new()
             } else {
-                // Parse JSON object — values are coerced to strings
                 let val: serde_json::Value =
                     serde_json::from_str(json_str).map_err(|e| e.to_string())?;
                 match val {
@@ -232,14 +303,10 @@ pub extern "C" fn rasmcore_filter(
         };
 
         let info = pipe.graph.node_info(source).map_err(|e| e.to_string())?;
-        let (node, gpu) =
-            rasmcore_image::domain::pipeline::dispatch::dispatch_filter(name, source, info, &params)
-                .map_err(|e| e.to_string())?;
-        let id = pipe.graph.add_node(node);
-        if let Some(gpu_node) = gpu {
-            pipe.graph.register_gpu(id, gpu_node);
-        }
-        Ok(id)
+        let pm = json_to_param_map(&params);
+        let node = create_filter_node(name, source, info, &pm)
+            .ok_or_else(|| format!("unknown filter: {name}"))?;
+        Ok(pipe.graph.add_node(node))
     })
 }
 
@@ -250,8 +317,8 @@ pub extern "C" fn rasmcore_filter(
 /// Encode the result of `node` into `format` (e.g. "png", "jpeg", "webp").
 ///
 /// `quality` is 1-100 for lossy formats; pass 0 for default.
-/// On success, returns a heap-allocated buffer and writes its length to
-/// `*out_len`. Free the buffer with `rasmcore_buffer_free()`.
+/// On success, returns a heap-allocated buffer and writes its length to `*out_len`.
+/// Free the buffer with `rasmcore_buffer_free()`.
 ///
 /// Returns NULL on error.
 #[no_mangle]
@@ -270,22 +337,20 @@ pub extern "C" fn rasmcore_write(
         let format = unsafe { CStr::from_ptr(format) }
             .to_str()
             .map_err(|e| e.to_string())?;
-        let quality = if quality > 0 {
-            Some(quality as u8)
-        } else {
-            None
-        };
 
-        let output = rasmcore_image::domain::pipeline::nodes::sink::write(
-            &mut pipe.graph,
-            node,
-            format,
-            quality,
-            None,
-        )
-        .map_err(|e| e.to_string())?;
+        // Execute graph
+        let pixels = pipe.graph.request_full(node).map_err(|e| e.to_string())?;
+        let info = pipe.graph.node_info(node).map_err(|e| e.to_string())?;
 
-        pipe.graph.finalize_layer_cache();
+        // Build params (quality if specified)
+        let mut params = ParamMap::new();
+        if quality > 0 {
+            params.floats.insert("quality".into(), quality as f32);
+        }
+
+        let output = encode_via_registry(format, &pixels, info.width, info.height, &params)
+            .ok_or_else(|| format!("unsupported format: {format}"))?
+            .map_err(|e| e.to_string())?;
 
         if !out_len.is_null() {
             unsafe {
@@ -301,8 +366,7 @@ pub extern "C" fn rasmcore_write(
 
 /// Encode and write the result of `node` to a file.
 ///
-/// Format is inferred from the file extension. `quality` is 1-100; pass 0
-/// for default. Returns 0 on success, -1 on error.
+/// Format is inferred from the file extension. Returns 0 on success, -1 on error.
 #[no_mangle]
 pub extern "C" fn rasmcore_write_file(
     pipe: *mut PipelineState,
@@ -322,22 +386,19 @@ pub extern "C" fn rasmcore_write_file(
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("png");
-        let quality = if quality > 0 {
-            Some(quality as u8)
-        } else {
-            None
-        };
 
-        let output = rasmcore_image::domain::pipeline::nodes::sink::write(
-            &mut pipe.graph,
-            node,
-            format,
-            quality,
-            None,
-        )
-        .map_err(|e| e.to_string())?;
+        let pixels = pipe.graph.request_full(node).map_err(|e| e.to_string())?;
+        let info = pipe.graph.node_info(node).map_err(|e| e.to_string())?;
 
-        pipe.graph.finalize_layer_cache();
+        let mut params = ParamMap::new();
+        if quality > 0 {
+            params.floats.insert("quality".into(), quality as f32);
+        }
+
+        let output = encode_via_registry(format, &pixels, info.width, info.height, &params)
+            .ok_or_else(|| format!("unsupported format: {format}"))?
+            .map_err(|e| e.to_string())?;
+
         std::fs::write(path_str, &output).map_err(|e| e.to_string())?;
         Ok(0)
     })
@@ -349,116 +410,6 @@ pub extern "C" fn rasmcore_buffer_free(buf: *mut u8, len: usize) {
     if !buf.is_null() && len > 0 {
         unsafe {
             drop(Vec::from_raw_parts(buf, len, len));
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// GPU executor
-// ---------------------------------------------------------------------------
-
-/// Callback signature for GPU compute execution.
-///
-/// The host provides this function to execute GPU compute shaders.
-/// `ops_json` is a JSON array of GpuOp descriptors. `input` is the pixel
-/// buffer (RGBA u8). On success, write output pixels to `*out_ptr` and
-/// length to `*out_len`, return 0. On error, return -1.
-pub type GpuExecuteCallback = extern "C" fn(
-    ops_json: *const c_char,
-    input: *const u8,
-    input_len: usize,
-    width: u32,
-    height: u32,
-    out_ptr: *mut *mut u8,
-    out_len: *mut usize,
-    user_data: *mut std::ffi::c_void,
-) -> i32;
-
-struct FfiGpuExecutor {
-    callback: GpuExecuteCallback,
-    user_data: *mut std::ffi::c_void,
-    max_buffer_size: usize,
-}
-
-impl rasmcore_pipeline::GpuExecutor for FfiGpuExecutor {
-    fn execute_with_format(
-        &self,
-        ops: &[rasmcore_pipeline::GpuOp],
-        input: &[u8],
-        width: u32,
-        height: u32,
-        _buffer_format: rasmcore_pipeline::BufferFormat,
-    ) -> Result<Vec<u8>, rasmcore_pipeline::GpuError> {
-        let ops_json =
-            serde_json::to_string(ops).map_err(|e| rasmcore_pipeline::GpuError::Other(e.to_string()))?;
-        let ops_cstr = CString::new(ops_json).unwrap();
-        let mut out_ptr: *mut u8 = std::ptr::null_mut();
-        let mut out_len: usize = 0;
-
-        let ret = (self.callback)(
-            ops_cstr.as_ptr(),
-            input.as_ptr(),
-            input.len(),
-            width,
-            height,
-            &mut out_ptr,
-            &mut out_len,
-            self.user_data,
-        );
-
-        if ret != 0 {
-            return Err(rasmcore_pipeline::GpuError::Other(
-                "GPU callback returned error".into(),
-            ));
-        }
-        if out_ptr.is_null() || out_len == 0 {
-            return Err(rasmcore_pipeline::GpuError::Other(
-                "GPU callback returned null output".into(),
-            ));
-        }
-        let output = unsafe { Vec::from_raw_parts(out_ptr, out_len, out_len) };
-        Ok(output)
-    }
-
-    fn max_buffer_size(&self) -> usize {
-        self.max_buffer_size
-    }
-}
-
-/// Register a GPU executor callback for hardware-accelerated processing.
-///
-/// `callback` is called when the pipeline encounters GPU-capable operations.
-/// `user_data` is passed through to the callback (can be NULL).
-/// `max_buffer_bytes` is the maximum GPU buffer size (0 = 256MB default).
-///
-/// Call with `callback = NULL` to disable GPU acceleration.
-#[no_mangle]
-pub extern "C" fn rasmcore_set_gpu_executor(
-    pipe: *mut PipelineState,
-    callback: Option<GpuExecuteCallback>,
-    user_data: *mut std::ffi::c_void,
-    max_buffer_bytes: usize,
-) {
-    if pipe.is_null() {
-        return;
-    }
-    let pipe = unsafe { &mut *pipe };
-    match callback {
-        Some(cb) => {
-            let max = if max_buffer_bytes == 0 {
-                256 * 1024 * 1024
-            } else {
-                max_buffer_bytes
-            };
-            let executor = FfiGpuExecutor {
-                callback: cb,
-                user_data,
-                max_buffer_size: max,
-            };
-            pipe.graph.set_gpu_executor(Rc::new(executor));
-        }
-        None => {
-            // Disable GPU — no API to unset, but passing a null callback is the signal
         }
     }
 }
@@ -480,11 +431,10 @@ pub extern "C" fn rasmcore_node_info_json(pipe: *mut PipelineState, node: u32) -
         let pipe = unsafe { &*pipe };
         let info = pipe.graph.node_info(node).map_err(|e| e.to_string())?;
         let json = format!(
-            r#"{{"width":{},"height":{},"format":"{:?}","colorSpace":"{:?}"}}"#,
-            info.width, info.height, info.format, info.color_space
+            r#"{{"width":{},"height":{},"colorSpace":"{:?}"}}"#,
+            info.width, info.height, info.color_space
         );
         let cstr = CString::new(json).map_err(|e| e.to_string())?;
-        // Store in thread-local to keep the pointer alive until next call
         LAST_ERROR.with(|e| {
             *e.borrow_mut() = cstr;
         });

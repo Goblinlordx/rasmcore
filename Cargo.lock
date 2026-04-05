@@ -2892,8 +2892,7 @@ dependencies = [
 name = "rasmcore-ffi"
 version = "0.1.0"
 dependencies = [
- "rasmcore-image",
- "rasmcore-pipeline",
+ "rasmcore-pipeline-v2",
  "serde_json",
 ]
 
@@ -3028,7 +3027,6 @@ dependencies = [
  "rasmcore-jpeg",
  "rasmcore-kernel",
  "rasmcore-macros",
- "rasmcore-pipeline",
  "rasmcore-pipeline-v2",
  "rasmcore-pnm",
  "rasmcore-qoi",
@@ -3087,15 +3085,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "rasmcore-pipeline"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "serde",
- "serde_json",
 ]
 
 [[package]]

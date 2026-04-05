@@ -67,6 +67,21 @@ fn main() {
         let empty = r#"{"filters":[],"generators":[],"compositors":[],"mappers":[]}"#;
         std::fs::write(out_dir.join("param-manifest.json"), empty).unwrap();
         std::fs::write(out_dir.join("param-manifest.hash"), "0000000000000000").unwrap();
+        std::fs::write(
+            out_dir.join("generated_pipeline_write_adapter.rs"),
+            "macro_rules! generated_pipeline_write_methods { () => {} }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            out_dir.join("generated_encoder_adapter.rs"),
+            "macro_rules! generated_encoder_methods { () => {} }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            out_dir.join("generated_encode_dispatch.rs"),
+            "macro_rules! generated_encode_dispatch { ($p:expr, $i:expr, $f:expr, $q:expr) => { Err(crate::domain::error::ImageError::UnsupportedFormat(\"no encoders\".into())) }; }\n",
+        )
+        .unwrap();
         return;
     }
 
