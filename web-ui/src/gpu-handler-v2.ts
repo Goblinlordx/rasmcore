@@ -55,7 +55,7 @@ export class GpuHandlerV2 {
   private initPromise: Promise<void> | null = null;
   private available = true;
 
-  // Display surface state
+  // Display surface state (preview / processed view)
   private displayCanvas: OffscreenCanvas | null = null;
   private canvasCtx: GPUCanvasContext | null = null;
   private blitPipeline: GPURenderPipeline | null = null;
@@ -64,6 +64,14 @@ export class GpuHandlerV2 {
   private lastOutputBuf: GPUBuffer | null = null;
   private lastImageWidth = 0;
   private lastImageHeight = 0;
+
+  // Original view display surface (second canvas, same device + blit pipeline)
+  private origCanvas: OffscreenCanvas | null = null;
+  private origCtx: GPUCanvasContext | null = null;
+  private origViewportBuf: GPUBuffer | null = null;
+  private sourcePixelBuf: GPUBuffer | null = null;
+  private sourceImageWidth = 0;
+  private sourceImageHeight = 0;
   /** Buffers queued for deferred destruction — destroyed on next submit, not immediately. */
   private pendingDestroy: GPUBuffer[] = [];
 
@@ -338,6 +346,115 @@ export class GpuHandlerV2 {
       size: VIEWPORT_BYTE_SIZE,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
+  }
+
+  // ─── Original View Display ──────────────────────────────────────────────
+
+  /** Configure a second WebGPU canvas for the original/before view. */
+  async setOriginalCanvas(canvas: OffscreenCanvas, hdr: boolean): Promise<void> {
+    await this.ensureDevice();
+    const device = this.device!;
+    this.origCanvas = canvas;
+    const ctx = canvas.getContext('webgpu') as GPUCanvasContext;
+    ctx.configure({
+      device,
+      format: 'rgba16float',
+      alphaMode: 'premultiplied',
+      toneMapping: { mode: hdr ? 'extended' : 'standard' },
+    });
+    this.origCtx = ctx;
+
+    // Ensure blit pipeline exists (may already be created by setDisplayCanvas)
+    if (!this.blitBindGroupLayout) {
+      this.blitBindGroupLayout = device.createBindGroupLayout({
+        entries: [
+          { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+          { binding: 1, visibility: GPUShaderStage.FRAGMENT | GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+        ],
+      });
+      const shaderModule = device.createShaderModule({ code: BLIT_SHADER });
+      this.blitPipeline = device.createRenderPipeline({
+        layout: device.createPipelineLayout({ bindGroupLayouts: [this.blitBindGroupLayout] }),
+        vertex: { module: shaderModule, entryPoint: 'vs_main' },
+        fragment: {
+          module: shaderModule, entryPoint: 'fs_main',
+          targets: [{ format: 'rgba16float' as GPUTextureFormat, blend: {
+            color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+          }}],
+        },
+        primitive: { topology: 'triangle-list' },
+      });
+    }
+    this.origViewportBuf = device.createBuffer({
+      size: VIEWPORT_BYTE_SIZE,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+  }
+
+  get hasOriginalDisplay(): boolean {
+    return this.origCtx !== null && this.blitPipeline !== null;
+  }
+
+  /** Upload source pixels and blit to original canvas. Call on image load. */
+  storeAndDisplaySource(pixels: Float32Array, width: number, height: number): void {
+    if (!this.device || !this.origCtx || !this.blitPipeline || !this.blitBindGroupLayout || !this.origViewportBuf) return;
+    if (this.sourcePixelBuf) this.sourcePixelBuf.destroy();
+    this.sourcePixelBuf = this.device.createBuffer({
+      size: pixels.byteLength,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.sourcePixelBuf, 0, pixels);
+    this.sourceImageWidth = width;
+    this.sourceImageHeight = height;
+
+    // Set initial viewport: fit source to canvas
+    const cw = this.origCanvas?.width || width;
+    const ch = this.origCanvas?.height || height;
+    this.updateOriginalViewport(0, 0, 1, cw, ch, 0);
+    this.blitOriginal();
+  }
+
+  updateOriginalViewport(panX: number, panY: number, zoom: number, canvasWidth: number, canvasHeight: number, toneMode: number): void {
+    if (!this.device || !this.origViewportBuf) return;
+    const data = new ArrayBuffer(VIEWPORT_BYTE_SIZE);
+    const f = new Float32Array(data, 0, 7);
+    const u = new Uint32Array(data, 28, 1);
+    f[0] = canvasWidth; f[1] = canvasHeight;
+    f[2] = this.sourceImageWidth; f[3] = this.sourceImageHeight;
+    f[4] = panX; f[5] = panY; f[6] = zoom;
+    u[0] = toneMode;
+    this.device.queue.writeBuffer(this.origViewportBuf, 0, data);
+  }
+
+  resizeOriginalDisplay(width: number, height: number): void {
+    if (!this.origCanvas) return;
+    if (this.origCanvas.width !== width) this.origCanvas.width = width;
+    if (this.origCanvas.height !== height) this.origCanvas.height = height;
+  }
+
+  blitOriginal(): void {
+    if (!this.device || !this.origCtx || !this.blitPipeline || !this.blitBindGroupLayout || !this.origViewportBuf || !this.sourcePixelBuf) return;
+    const bindGroup = this.device.createBindGroup({
+      layout: this.blitBindGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer: this.sourcePixelBuf } },
+        { binding: 1, resource: { buffer: this.origViewportBuf } },
+      ],
+    });
+    const encoder = this.device.createCommandEncoder();
+    const pass = encoder.beginRenderPass({
+      colorAttachments: [{
+        view: this.origCtx.getCurrentTexture().createView(),
+        clearValue: { r: 0, g: 0, b: 0, a: 0 },
+        loadOp: 'clear', storeOp: 'store',
+      }],
+    });
+    pass.setPipeline(this.blitPipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.draw(3);
+    pass.end();
+    this.device.queue.submit([encoder.finish()]);
   }
 
   /** Whether a display canvas has been configured. */
