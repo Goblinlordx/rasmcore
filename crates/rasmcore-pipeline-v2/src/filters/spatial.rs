@@ -12,6 +12,35 @@ use crate::ops::{Filter, GpuFilter};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/// Weighted 4-channel accumulation — structured for auto-vectorization.
+///
+/// LLVM sees this as a `f32x4` load + fused multiply-add per call.
+/// All spatial filter inner loops delegate here for consistent SIMD codegen.
+#[inline(always)]
+fn accum4(sum: &mut [f32; 4], src: &[f32], weight: f32) {
+    sum[0] += weight * src[0];
+    sum[1] += weight * src[1];
+    sum[2] += weight * src[2];
+    sum[3] += weight * src[3];
+}
+
+/// Unweighted 4-channel accumulation (weight = 1.0).
+#[inline(always)]
+fn accum4_unit(sum: &mut [f32; 4], src: &[f32]) {
+    sum[0] += src[0];
+    sum[1] += src[1];
+    sum[2] += src[2];
+    sum[3] += src[3];
+}
+
+/// Weighted 3-channel accumulation (for filters that skip alpha).
+#[inline(always)]
+fn accum3(sum: &mut [f32; 3], src: &[f32], weight: f32) {
+    sum[0] += weight * src[0];
+    sum[1] += weight * src[1];
+    sum[2] += weight * src[2];
+}
+
 /// Reflect-boundary coordinate clamping.
 #[inline]
 fn clamp_coord(v: i32, size: usize) -> usize {
@@ -77,10 +106,7 @@ impl Filter for GaussianBlur {
                 for (kx, &kw) in kernel.iter().enumerate() {
                     let sx = clamp_coord(x as i32 + kx as i32 - r as i32, w);
                     let idx = row_base + sx * 4;
-                    sum[0] += kw * input[idx];
-                    sum[1] += kw * input[idx + 1];
-                    sum[2] += kw * input[idx + 2];
-                    sum[3] += kw * input[idx + 3];
+                    accum4(&mut sum, &input[idx..], kw);
                 }
                 let out_idx = row_base + x * 4;
                 tmp[out_idx..out_idx + 4].copy_from_slice(&sum);
@@ -91,10 +117,7 @@ impl Filter for GaussianBlur {
                 for (kx, &kw) in kernel.iter().enumerate() {
                     let sx = clamp_coord(x as i32 + kx as i32 - r as i32, w);
                     let idx = row_base + sx * 4;
-                    sum[0] += kw * input[idx];
-                    sum[1] += kw * input[idx + 1];
-                    sum[2] += kw * input[idx + 2];
-                    sum[3] += kw * input[idx + 3];
+                    accum4(&mut sum, &input[idx..], kw);
                 }
                 let out_idx = row_base + x * 4;
                 tmp[out_idx..out_idx + 4].copy_from_slice(&sum);
@@ -109,10 +132,7 @@ impl Filter for GaussianBlur {
                 let base = row_base + (x - r) * 4;
                 for (ki, &kw) in kernel.iter().enumerate() {
                     let idx = base + ki * 4;
-                    sum[0] += kw * input[idx];
-                    sum[1] += kw * input[idx + 1];
-                    sum[2] += kw * input[idx + 2];
-                    sum[3] += kw * input[idx + 3];
+                    accum4(&mut sum, &input[idx..], kw);
                 }
                 let out_idx = row_base + x * 4;
                 tmp[out_idx..out_idx + 4].copy_from_slice(&sum);
@@ -130,10 +150,7 @@ impl Filter for GaussianBlur {
                 for (ky, &kw) in kernel.iter().enumerate() {
                     let sy = clamp_coord(y as i32 + ky as i32 - r as i32, h);
                     let idx = sy * stride + x * 4;
-                    sum[0] += kw * tmp[idx];
-                    sum[1] += kw * tmp[idx + 1];
-                    sum[2] += kw * tmp[idx + 2];
-                    sum[3] += kw * tmp[idx + 3];
+                    accum4(&mut sum, &tmp[idx..], kw);
                 }
                 let out_idx = y * stride + x * 4;
                 out[out_idx..out_idx + 4].copy_from_slice(&sum);
@@ -146,10 +163,7 @@ impl Filter for GaussianBlur {
                 for (ky, &kw) in kernel.iter().enumerate() {
                     let sy = clamp_coord(y as i32 + ky as i32 - r as i32, h);
                     let idx = sy * stride + x * 4;
-                    sum[0] += kw * tmp[idx];
-                    sum[1] += kw * tmp[idx + 1];
-                    sum[2] += kw * tmp[idx + 2];
-                    sum[3] += kw * tmp[idx + 3];
+                    accum4(&mut sum, &tmp[idx..], kw);
                 }
                 let out_idx = y * stride + x * 4;
                 out[out_idx..out_idx + 4].copy_from_slice(&sum);
@@ -166,10 +180,7 @@ impl Filter for GaussianBlur {
                 let base_row = (y - r) * stride;
                 for (ki, &kw) in kernel.iter().enumerate() {
                     let idx = base_row + ki * stride + px_offset;
-                    sum[0] += kw * tmp[idx];
-                    sum[1] += kw * tmp[idx + 1];
-                    sum[2] += kw * tmp[idx + 2];
-                    sum[3] += kw * tmp[idx + 3];
+                    accum4(&mut sum, &tmp[idx..], kw);
                 }
                 let out_idx = y * stride + x * 4;
                 out[out_idx..out_idx + 4].copy_from_slice(&sum);
@@ -215,9 +226,7 @@ impl Filter for BoxBlur {
                 for dx in -r..=r {
                     let sx = clamp_coord(x as i32 + dx, w);
                     let idx = (y * w + sx) * 4;
-                    for c in 0..4 {
-                        sum[c] += input[idx + c];
-                    }
+                    accum4_unit(&mut sum, &input[idx..]);
                 }
                 let out_idx = (y * w + x) * 4;
                 for c in 0..4 {
@@ -234,9 +243,7 @@ impl Filter for BoxBlur {
                 for dy in -r..=r {
                     let sy = clamp_coord(y as i32 + dy, h);
                     let idx = (sy * w + x) * 4;
-                    for c in 0..4 {
-                        sum[c] += tmp[idx + c];
-                    }
+                    accum4_unit(&mut sum, &tmp[idx..]);
                 }
                 let out_idx = (y * w + x) * 4;
                 for c in 0..4 {
@@ -365,15 +372,14 @@ impl Filter for Convolve {
                         let sy = clamp_coord(y as i32 + ky as i32 - rh as i32, h);
                         let k = self.kernel[ky * kw + kx];
                         let idx = (sy * w + sx) * 4;
-                        for c in 0..4 {
-                            sum[c] += k * input[idx + c];
-                        }
+                        accum4(&mut sum, &input[idx..], k);
                     }
                 }
                 let out_idx = (y * w + x) * 4;
-                for c in 0..4 {
-                    out[out_idx + c] = sum[c] * inv_div;
-                }
+                out[out_idx] = sum[0] * inv_div;
+                out[out_idx + 1] = sum[1] * inv_div;
+                out[out_idx + 2] = sum[2] * inv_div;
+                out[out_idx + 3] = sum[3] * inv_div;
             }
         }
 
@@ -430,17 +436,15 @@ impl Filter for Bilateral {
                         let wc = (color_dist2 * sc2).exp();
 
                         let weight = ws * wc;
-                        for c in 0..3 {
-                            sum[c] += weight * input[idx + c];
-                        }
+                        accum3(&mut sum, &input[idx..], weight);
                         weight_sum += weight;
                     }
                 }
 
                 let inv_w = if weight_sum > 1e-10 { 1.0 / weight_sum } else { 0.0 };
-                for c in 0..3 {
-                    out[center_idx + c] = sum[c] * inv_w;
-                }
+                out[center_idx] = sum[0] * inv_w;
+                out[center_idx + 1] = sum[1] * inv_w;
+                out[center_idx + 2] = sum[2] * inv_w;
                 out[center_idx + 3] = input[center_idx + 3]; // alpha
             }
         }
@@ -483,14 +487,13 @@ impl Filter for MotionBlur {
                     let sx = clamp_coord((x as f32 + t * dx).round() as i32, w);
                     let sy = clamp_coord((y as f32 + t * dy).round() as i32, h);
                     let idx = (sy * w + sx) * 4;
-                    for c in 0..4 {
-                        sum[c] += input[idx + c];
-                    }
+                    accum4_unit(&mut sum, &input[idx..]);
                 }
                 let out_idx = (y * w + x) * 4;
-                for c in 0..4 {
-                    out[out_idx + c] = sum[c] * inv_steps;
-                }
+                out[out_idx] = sum[0] * inv_steps;
+                out[out_idx + 1] = sum[1] * inv_steps;
+                out[out_idx + 2] = sum[2] * inv_steps;
+                out[out_idx + 3] = sum[3] * inv_steps;
             }
         }
 
