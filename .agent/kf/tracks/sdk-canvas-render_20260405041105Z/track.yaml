@@ -3,120 +3,127 @@ title: RenderTarget object and writeRenderTarget() for V2 fluent SDK
 type: feature
 status: pending
 created: 2026-04-05
-updated: 2026-04-05
+updated: '2026-04-05'
 spec:
-  summary: |
-    Add createRenderTarget(canvas, opts?) and Pipeline.writeRenderTarget(target)
+  summary: 'Add createRenderTarget(canvas, opts?) and Pipeline.writeRenderTarget(target)
+
     to the V2 fluent SDK. The RenderTarget is a separate stateful object that
+
     owns the GPU context and shader cache. The Pipeline stays stateless —
+
     writeRenderTarget() is a write method like write(format), but outputs
+
     to a canvas instead of returning bytes.
-  context: |
-    The V2 pipeline supports write(format) for encoded byte output. For
+
+    '
+  context: 'The V2 pipeline supports write(format) for encoded byte output. For
+
     interactive applications, consumers need to render directly to a canvas
+
     without encode-decode overhead. The GPU-to-canvas blit infrastructure
+
     (GpuHandlerV2, display-blit.wgsl) was built this session but lives in
+
     web-ui internals. This track exposes it as a clean SDK API.
 
+
     Key design: the RenderTarget is a separate object, not pipeline state.
+
     This keeps the pipeline stateless (build chain, produce output) while
+
     the render target manages GPU lifecycle independently. Multiple
+
     pipelines can write to the same target. The target caches the GPU
+
     device, shader pipelines, and blit pipeline across writes.
-  codebase_analysis: |
-    GpuHandlerV2 (web-ui/src/gpu-handler-v2.ts):
+
+    '
+  codebase_analysis: 'GpuHandlerV2 (web-ui/src/gpu-handler-v2.ts):
+
     - setDisplayCanvas(canvas, hdr) — configure rgba16float + tone mapping
+
     - executeAndDisplay(ops, input, w, h) — compute + blit, zero readback
+
     - displayFromCpu(pixels, w, h) — upload CPU f32 + blit (fallback)
+
     - prepare(shaders) — pre-compile shader cache
+
     - Already handles full GPU lifecycle internally
 
+
     V2 fluent SDK generator (scripts/generate-v2-fluent-sdk.mjs):
+
     - Generates Pipeline class from registry metadata
+
     - No extension mechanism for hand-written methods
 
+
     WIT pipeline (wit/v2/pipeline.wit):
+
     - render-gpu-plan(node) -> shaders + f32 input pixels
+
     - render(node) -> f32 pixels (CPU path)
+
+    '
   acceptance_criteria:
-    - createRenderTarget(canvas, opts?) returns a RenderTarget object
-    - createRenderTarget(offscreenCanvas, opts?) works for worker usage
-    - Pipeline.writeRenderTarget(target) renders chain result to the target canvas
-    - GPU path uses WebGPU direct blit when available (zero CPU readback)
-    - 2D fallback uses putImageData when WebGPU unavailable
-    - Canvas dimensions set to image dimensions automatically on each write
-    - opts.hdr enables extended tone mapping on HDR displays
-    - RenderTarget caches GPU device and shader pipelines across writes
-    - target.destroy() cleans up GPU resources
-    - write(format) continues to work independently
-    - SDK generator has extension mechanism for hand-written methods
-  out_of_scope: |
-    - Pan/zoom viewport (consumer manages separately)
+  - createRenderTarget(canvas, opts?) returns a RenderTarget object
+  - createRenderTarget(offscreenCanvas, opts?) works for worker usage
+  - Pipeline.writeRenderTarget(target) renders chain result to the target canvas
+  - GPU path uses WebGPU direct blit when available (zero CPU readback)
+  - 2D fallback uses putImageData when WebGPU unavailable
+  - Canvas dimensions set to image dimensions automatically on each write
+  - opts.hdr enables extended tone mapping on HDR displays
+  - RenderTarget caches GPU device and shader pipelines across writes
+  - target.destroy() cleans up GPU resources
+  - write(format) continues to work independently
+  - SDK generator has extension mechanism for hand-written methods
+  out_of_scope: '- Pan/zoom viewport (consumer manages separately)
+
     - Automatic worker creation
+
     - Video/animation frame loops
-  technical_notes: |
-    1. SDK generator extension mechanism:
-       - sdk/v2/fluent/extensions/ directory for hand-written .ts files
-       - Generator merges extensions into the Pipeline class output
-       - Each extension exports functions added to Pipeline.prototype
 
-    2. RenderTarget class (sdk/v2/lib/render-target.ts):
-       - Constructor: detect WebGPU, create GpuHandlerV2 or store 2D context
-       - write(gpuPlan, width, height): dispatch shaders + blit (GPU path)
-       - writeCpu(pixels, width, height): f32 -> ImageData -> putImageData (fallback)
-       - destroy(): clean up GPU resources
-
-    3. writeRenderTarget extension (sdk/v2/fluent/extensions/canvas.ts):
-       - Gets GPU plan from pipeline (renderGpuPlan)
-       - If GPU plan exists + target has GPU: target.write(plan)
-       - If no GPU plan or no GPU: get f32 pixels via render(), target.writeCpu()
-
-    4. GpuHandlerV2 + blit shader:
-       - Move to sdk/v2/lib/ so SDK bundles them
-       - web-ui re-imports from sdk location
-
-    Consumer usage:
-      import { Pipeline, createRenderTarget } from '@rasmcore/sdk';
-
-      const target = createRenderTarget(canvas, { hdr: true });
-      const pipe = new Pipeline();
-
-      pipe.read(bytes).brightness({ amount: 0.3 }).writeRenderTarget(target);
-
-      // Later — new params, same target (GPU state cached)
-      pipe.read(bytes).brightness({ amount: 0.7 }).writeRenderTarget(target);
-
-      // File export — separate concern
-      const png = pipe.read(bytes).brightness({ amount: 0.7 }).write('png');
-
-      target.destroy();
+    '
+  technical_notes: "1. SDK generator extension mechanism:\n   - sdk/v2/fluent/extensions/ directory for hand-written .ts files\n\
+    \   - Generator merges extensions into the Pipeline class output\n   - Each extension exports functions added to Pipeline.prototype\n\
+    \n2. RenderTarget class (sdk/v2/lib/render-target.ts):\n   - Constructor: detect WebGPU, create GpuHandlerV2 or store\
+    \ 2D context\n   - write(gpuPlan, width, height): dispatch shaders + blit (GPU path)\n   - writeCpu(pixels, width, height):\
+    \ f32 -> ImageData -> putImageData (fallback)\n   - destroy(): clean up GPU resources\n\n3. writeRenderTarget extension\
+    \ (sdk/v2/fluent/extensions/canvas.ts):\n   - Gets GPU plan from pipeline (renderGpuPlan)\n   - If GPU plan exists + target\
+    \ has GPU: target.write(plan)\n   - If no GPU plan or no GPU: get f32 pixels via render(), target.writeCpu()\n\n4. GpuHandlerV2\
+    \ + blit shader:\n   - Move to sdk/v2/lib/ so SDK bundles them\n   - web-ui re-imports from sdk location\n\nConsumer usage:\n\
+    \  import { Pipeline, createRenderTarget } from '@rasmcore/sdk';\n\n  const target = createRenderTarget(canvas, { hdr:\
+    \ true });\n  const pipe = new Pipeline();\n\n  pipe.read(bytes).brightness({ amount: 0.3 }).writeRenderTarget(target);\n\
+    \n  // Later — new params, same target (GPU state cached)\n  pipe.read(bytes).brightness({ amount: 0.7 }).writeRenderTarget(target);\n\
+    \n  // File export — separate concern\n  const png = pipe.read(bytes).brightness({ amount: 0.7 }).write('png');\n\n  target.destroy();\n"
 plan:
-  - phase: SDK Extension Mechanism
-    tasks:
-      - text: Add extensions/ directory support to generate-v2-fluent-sdk.mjs — merge hand-written methods into generated Pipeline class
-        done: false
-      - text: Define extension interface — each file exports methods receiving raw pipeline resource as context
-        done: false
-  - phase: RenderTarget and GPU Relocation
-    tasks:
-      - text: Move GpuHandlerV2 and display-blit.wgsl from web-ui to sdk/v2/lib/
-        done: false
-      - text: Update web-ui imports to use new SDK location
-        done: false
-      - text: Implement RenderTarget class with WebGPU init, write(), writeCpu(), destroy()
-        done: false
-  - phase: writeRenderTarget Implementation
-    tasks:
-      - text: Implement writeRenderTarget(target) extension — get GPU plan or CPU pixels, dispatch to target
-        done: false
-      - text: Implement 2D fallback in RenderTarget.writeCpu() — f32 quantize to ImageData, putImageData
-        done: false
-      - text: Handle canvas sizing — set canvas width/height to image dimensions on each write
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Test createRenderTarget + writeRenderTarget with WebGPU canvas
-        done: false
-      - text: Test 2D fallback path when WebGPU unavailable
-        done: false
+- phase: SDK Extension Mechanism
+  tasks:
+  - text: Add extensions/ directory support to generate-v2-fluent-sdk.mjs — merge hand-written methods into generated Pipeline
+      class
+    done: true
+  - text: Define extension interface — each file exports methods receiving raw pipeline resource as context
+    done: true
+- phase: RenderTarget and GPU Relocation
+  tasks:
+  - text: Move GpuHandlerV2 and display-blit.wgsl from web-ui to sdk/v2/lib/
+    done: true
+  - text: Update web-ui imports to use new SDK location
+    done: true
+  - text: Implement RenderTarget class with WebGPU init, write(), writeCpu(), destroy()
+    done: true
+- phase: writeRenderTarget Implementation
+  tasks:
+  - text: Implement writeRenderTarget(target) extension — get GPU plan or CPU pixels, dispatch to target
+    done: true
+  - text: Implement 2D fallback in RenderTarget.writeCpu() — f32 quantize to ImageData, putImageData
+    done: true
+  - text: Handle canvas sizing — set canvas width/height to image dimensions on each write
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test createRenderTarget + writeRenderTarget with WebGPU canvas
+    done: true
+  - text: Test 2D fallback path when WebGPU unavailable
+    done: true
 extra: {}
