@@ -370,10 +370,18 @@ function handleResizeCanvas(width: number, height: number) {
 
 function handleViewport(data: any) {
   if (!gpuHandler || !displayMode) return;
+  // Use the ACTUAL rendered image dimensions (preview resolution), not the
+  // full-res dimensions the main thread sends. The pixel buffer in the GPU
+  // handler has preview-resolution data — using full-res dimensions would
+  // cause a stride mismatch (staggered lines).
+  const imgW = gpuHandler.imageWidth || data.imageWidth;
+  const imgH = gpuHandler.imageHeight || data.imageHeight;
+  // Resize canvas to container for sharp display
+  gpuHandler.resizeDisplay(data.canvasWidth, data.canvasHeight);
   gpuHandler.updateViewport(
     data.panX, data.panY, data.zoom,
     data.canvasWidth, data.canvasHeight,
-    data.imageWidth, data.imageHeight,
+    imgW, imgH,
     data.toneMode ?? 0,
   );
   gpuHandler.displayOnly();

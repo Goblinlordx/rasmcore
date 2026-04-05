@@ -331,6 +331,12 @@ export class GpuHandlerV2 {
     return this.canvasCtx !== null && this.blitPipeline !== null;
   }
 
+  /** Width of the last rendered image (preview resolution). */
+  get imageWidth(): number { return this.lastImageWidth; }
+
+  /** Height of the last rendered image (preview resolution). */
+  get imageHeight(): number { return this.lastImageHeight; }
+
   /** Resize the OffscreenCanvas from the worker thread. */
   resizeDisplay(width: number, height: number): void {
     if (!this.displayCanvas) return;
