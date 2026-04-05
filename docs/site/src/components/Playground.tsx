@@ -24,14 +24,12 @@ function renderToCanvas(canvas: HTMLCanvasElement, result: RenderResult) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
-  const pixelCount = width * height;
-  const u8 = new Uint8ClampedArray(pixelCount * 4);
-  for (let i = 0; i < pixelCount; i++) {
-    const si = i * 4;
-    u8[si] = Math.round(Math.max(0, Math.min(1, pixels[si])) * 255);
-    u8[si + 1] = Math.round(Math.max(0, Math.min(1, pixels[si + 1])) * 255);
-    u8[si + 2] = Math.round(Math.max(0, Math.min(1, pixels[si + 2])) * 255);
-    u8[si + 3] = Math.round(Math.max(0, Math.min(1, pixels[si + 3])) * 255);
+  // Fast f32→u8 quantize: multiply by 255, write directly into Uint8ClampedArray.
+  // Uint8ClampedArray auto-clamps to [0,255] and rounds — no Math.round/max/min needed.
+  const len = pixels.length;
+  const u8 = new Uint8ClampedArray(len);
+  for (let i = 0; i < len; i++) {
+    u8[i] = pixels[i] * 255;
   }
   const tQ = performance.now();
   ctx.putImageData(new ImageData(u8, width, height), 0, 0);

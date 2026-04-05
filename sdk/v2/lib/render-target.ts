@@ -105,14 +105,11 @@ export class RenderTarget {
     }
     if (!this.ctx2d) return;
 
-    const pixelCount = width * height;
-    const u8 = new Uint8ClampedArray(pixelCount * 4);
-    for (let i = 0; i < pixelCount; i++) {
-      const si = i * 4;
-      u8[si] = Math.round(Math.max(0, Math.min(1, pixels[si])) * 255);
-      u8[si + 1] = Math.round(Math.max(0, Math.min(1, pixels[si + 1])) * 255);
-      u8[si + 2] = Math.round(Math.max(0, Math.min(1, pixels[si + 2])) * 255);
-      u8[si + 3] = Math.round(Math.max(0, Math.min(1, pixels[si + 3])) * 255);
+    // Uint8ClampedArray auto-clamps to [0,255] — no Math.round/max/min needed
+    const len = width * height * 4;
+    const u8 = new Uint8ClampedArray(len);
+    for (let i = 0; i < len; i++) {
+      u8[i] = pixels[i] * 255;
     }
     const imageData = new ImageData(u8, width, height);
     this.ctx2d.putImageData(imageData, 0, 0);
