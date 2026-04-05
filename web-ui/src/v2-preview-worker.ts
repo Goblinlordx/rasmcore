@@ -187,7 +187,11 @@ async function downscaleBytes(bytes: Uint8Array, scale: number): Promise<Uint8Ar
   const w = Math.round(bmp.width * scale);
   const h = Math.round(bmp.height * scale);
   const oc = new OffscreenCanvas(w, h);
-  const ctx = oc.getContext('2d', { colorSpace: workerPreferredColorSpace() })!;
+  const colorSpace = workerPreferredColorSpace();
+  const ctx = (colorSpace === 'display-p3'
+    ? oc.getContext('2d', { colorSpace })
+    : oc.getContext('2d')) ?? oc.getContext('2d');
+  if (!ctx) { bmp.close(); return bytes; } // fallback: return original bytes
   ctx.drawImage(bmp, 0, 0, w, h);
   bmp.close();
   const outBlob = await oc.convertToBlob({ type: 'image/png' });

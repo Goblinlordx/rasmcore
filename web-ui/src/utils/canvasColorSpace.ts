@@ -24,23 +24,25 @@ export function supportsDisplayP3Canvas(): boolean {
   return _supportsP3;
 }
 
-/** The color space to use for canvas contexts — 'display-p3' if supported, otherwise 'srgb'. */
-export type CanvasColorSpaceName = 'display-p3' | 'srgb';
-
-/** Returns the best available canvas color space for the current browser. */
-export function preferredCanvasColorSpace(): CanvasColorSpaceName {
-  return supportsDisplayP3Canvas() ? 'display-p3' : 'srgb';
-}
-
 /**
- * Get a 2D canvas context with the preferred wide-gamut color space.
- * Falls back to sRGB if display-p3 is not supported.
+ * Get a 2D canvas context with the best available color space.
+ *
+ * - If the browser supports display-p3, uses `{ colorSpace: 'display-p3' }`.
+ * - Otherwise, calls `getContext('2d')` with NO options — passing
+ *   `{ colorSpace: 'srgb' }` can return null in browsers that don't
+ *   recognize the colorSpace option at all.
+ * - If the preferred call returns null (e.g., context already exists with
+ *   different attributes), falls back to plain `getContext('2d')`.
  */
 export function getWideGamutContext(
   canvas: HTMLCanvasElement | OffscreenCanvas,
 ): CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null {
-  const colorSpace = preferredCanvasColorSpace();
-  return canvas.getContext('2d', { colorSpace }) as
+  if (supportsDisplayP3Canvas()) {
+    const ctx = canvas.getContext('2d', { colorSpace: 'display-p3' });
+    if (ctx) return ctx as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+  }
+  // Fallback: plain getContext with no options — maximum browser compatibility
+  return canvas.getContext('2d') as
     | CanvasRenderingContext2D
     | OffscreenCanvasRenderingContext2D
     | null;
