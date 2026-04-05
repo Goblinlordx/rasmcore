@@ -63,14 +63,36 @@ Quantization is transparent: `store()` quantizes, `get()` promotes back to f32.
 
 ## ACES Color Pipeline
 
-rasmcore V2 includes Academy Color Encoding System (ACES) support:
+rasmcore V2 includes Academy Color Encoding System (ACES) support via standard pipeline nodes.
 
-- **Color space tracking**: Per-node color space metadata (ACEScg, ACEScc, sRGB, etc.)
-- **Auto-conversion**: The graph inserts color space conversion nodes automatically
-- **RRT + ODT**: Reference Rendering Transform and Output Device Transforms
-- **Compliance audit**: Nodes can be tagged with compliance level (Compliant, Log, NonCompliant, Unknown)
+### Working Spaces
 
-The ACES pipeline operates in linear light (ACEScg) for processing, with IDTs (Input Device Transforms) at ingest and RRT+ODT at output.
+| Space | Encoding | Use Case |
+|-------|----------|----------|
+| **Linear sRGB** | Linear (gamma 1.0) | Default. Blur, composite, resize — physically correct |
+| **ACEScct** | Logarithmic + toe | Grading. Brightness, contrast, curves — perceptually uniform |
+| **ACEScg** | Linear (AP1 primaries) | CG rendering, VFX compositing |
+
+### IDT / ODT Nodes
+
+ACES color management is implemented as regular pipeline filter nodes, not special pipeline behavior:
+
+- **`aces_idt`** — Input Device Transform. Converts from source color space (sRGB, Rec.709, etc.) to ACEScct. Added after `read()`.
+- **`aces_odt`** — Output Display Transform. Converts from ACEScct to output color space. Added before `write()` or display.
+
+The application/UI layer decides when to insert these nodes. The pipeline engine stays simple.
+
+### Why ACEScct for Grading
+
+Point-op adjustments (brightness, contrast, levels, curves) in linear light produce perceptually non-uniform results — dark areas are affected much more than light areas. This is because human vision is logarithmic, not linear.
+
+In ACEScct (logarithmic encoding), a simple `pixel + offset` IS perceptually uniform — it matches how DaVinci Resolve and professional grading tools behave. All existing point-op filters work correctly in ACEScct with zero formula changes.
+
+Spatial operations (blur, sharpen) need linear light for physical correctness. The app layer can wrap them with `aces_cct_to_cg` / `aces_cg_to_cct` conversion nodes.
+
+### Color Space Tracking
+
+Each node carries `NodeInfo.color_space` metadata. The IDT/ODT nodes update this field so downstream nodes know the current working space.
 
 ---
 
@@ -136,7 +158,127 @@ libvips pioneered the demand-driven pipeline model in C. rasmcore takes the same
 
 **Level 1 — Pipeline resource.** A `pipeline` WIT resource that owns a node graph. The host builds a chain via method calls, execution happens inside the component on `write()`. Only the final encoded output crosses the WASM boundary.
 
-**Level 2 — Stateless compute kernels.** Individual functions that take pixels in and return pixels out. A host can dispatch these to multiple WASM instances for parallelism.
+**Level 2 — GPU plan dispatch.** The pipeline emits execution plans (`gpu-plan`) containing WGSL shader source and input pixels. The host executes these plans on actual GPU hardware and decides where the output goes — canvas, file, video encoder, or nowhere. The WASM component never sees the output.
+
+**Level 3 (future) — Stateless compute kernels.** Individual functions that take pixels in and return pixels out. A host can dispatch these to multiple WASM instances for parallelism.
+
+---
+
+## GPU Display Surface
+
+The GPU display surface eliminates the traditional CPU round-trip for real-time preview rendering. Instead of encoding pixels to PNG and drawing to a 2D canvas, the host renders GPU compute output directly to a WebGPU canvas.
+
+### Three Rendering Paths
+
+**Path A — GPU compute + direct blit (fastest, primary):**
+
+```
+WASM: renderGpuPlan(sinkNode)  → returns shaders + input pixels (a recipe, not output)
+Host: upload input → GPU storage buffer
+      execute compute shaders (ping-pong buffers A↔B)
+      blit render pass: read final buffer → fullscreen triangle → canvas texture
+      single command buffer submission (compute + render together)
+      → pixels never leave GPU
+```
+
+**Path B — CPU compute + GPU upload (fallback for non-GPU filters):**
+
+```
+WASM: render(sinkNode)  → returns f32 pixel buffer
+Host: upload f32 array → GPU storage buffer
+      blit render pass → canvas texture
+      → one CPU→GPU copy
+```
+
+**Path C — PNG encode (legacy, no WebGPU):**
+
+```
+WASM: pipe.write('png')  → returns encoded PNG bytes
+Host: Blob → Image → 2D canvas.drawImage()
+      → two copies + encode/decode overhead
+```
+
+### How It Works
+
+The WASM component is a **planner**, not an executor. When the host calls `renderGpuPlan()`, the pipeline walks its node graph, collects the chain of fusable GPU shaders, and returns a plan:
+
+```wit
+record gpu-plan {
+    shaders: list<gpu-shader>,    // WGSL source + workgroup config
+    input-pixels: pixel-buffer,   // f32 data entering the shader chain
+    width: u32,
+    height: u32,
+}
+```
+
+The host takes this plan and executes it however it wants. In the browser, `GpuHandlerV2.executeAndDisplay()` runs all compute shaders and appends a blit render pass in a single command submission. The blit shader (`display-blit.wgsl`) reads from the same storage buffer the compute shaders wrote to — no copy, no transfer.
+
+The pipeline never writes to a GPU buffer. The compute shaders already write to storage buffers (that's how compute shaders work). The blit shader just reads from that same buffer and writes to the canvas texture.
+
+### Canvas Configuration
+
+The display canvas uses `rgba16float` format with configurable tone mapping:
+
+- **Standard mode**: clamps to [0, 1] — SDR display
+- **Extended mode**: passes through values > 1.0 — HDR display on capable monitors
+
+Pan/zoom is handled in the blit shader via a `Viewport` uniform buffer (canvas dimensions, image dimensions, pan offset, zoom factor). CSS transforms are not used — the shader handles coordinate mapping directly.
+
+### Flicker Prevention
+
+Setting `canvas.width` or `canvas.height` clears the canvas (browser spec). During rapid slider changes, this caused visible flashes. Fix: `resizeDisplay()` skips if dimensions haven't changed.
+
+### Host Portability
+
+The `gpu-plan` is pure data — WGSL strings, f32 arrays, workgroup dimensions. Any host that can parse WGSL and dispatch compute shaders can use it:
+
+| Host | GPU Backend | Notes |
+|------|------------|-------|
+| Browser (WebGPU) | Vulkan/Metal/DX12 via browser | Current implementation |
+| wgpu (Rust native) | Vulkan/Metal/DX12 direct | Same WGSL shaders |
+| Metal (Swift) | WGSL→MSL via naga | Shader logic unchanged |
+| Vulkan (C++) | WGSL→SPIR-V via naga/tint | Shader logic unchanged |
+
+---
+
+## Data Transfer Efficiency
+
+### Current: Two Copies at Boundary
+
+```
+WASM linear memory → JS heap (jco copies list<f32>) → GPU buffer (writeBuffer)
+```
+
+For preview resolution (720px): ~8 MB — negligible.
+For 4K: ~126 MB — noticeable but happens once per pipeline execution.
+
+After upload, the entire filter chain + display stays GPU-side with zero copies.
+
+### Future: Shared Memory (wasi-threads / WASI 0.3)
+
+With `SharedArrayBuffer`, the host could read directly from WASM linear memory:
+
+```
+WASM linear memory ←→ Float32Array view (zero copy) → GPU buffer (one copy)
+```
+
+One copy instead of two. The remaining CPU→GPU copy is unavoidable without `wasi-gfx`.
+
+### Future: Host-Side Codec Offload
+
+The architecture naturally supports moving decode/encode out of WASM entirely:
+
+```
+// Instead of WASM decoding:
+Host decodes (hardware decoder) → GPU buffer → compute shaders → display
+
+// Instead of WASM encoding:
+Compute output → host reads GPU buffer → host encodes (hardware encoder)
+```
+
+The pipeline becomes a pure computation graph planner. The host owns all I/O. The WASM component emits execution plans and never touches pixel bytes.
+
+This is enabled by `read-pixels` (host provides pre-decoded pixels) and host-side access to the gpu-plan output buffer. No special WASM features needed — just a WIT interface extension.
 
 ---
 
