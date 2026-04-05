@@ -11,7 +11,7 @@ use crate::ops::{Filter, PointOpExpr};
 ///
 /// `output = input + amount` (clamped to [0, 1] only at encode boundary).
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "brightness", category = "adjustment", doc = "docs/operations/filters/adjustment/brightness.adoc")]
+#[filter(name = "brightness", category = "adjustment", cost = "O(n)", doc = "docs/operations/filters/adjustment/brightness.adoc")]
 pub struct Brightness {
     /// Additive offset applied to each RGB channel.
     #[param(min = -1.0, max = 1.0, step = 0.02, default = 0.0)]
@@ -43,7 +43,7 @@ impl Filter for Brightness {
 ///
 /// `output = (input - 0.5) * factor + 0.5`
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "contrast", category = "adjustment", doc = "docs/operations/filters/adjustment/contrast.adoc")]
+#[filter(name = "contrast", category = "adjustment", cost = "O(n)", doc = "docs/operations/filters/adjustment/contrast.adoc")]
 pub struct Contrast {
     /// Contrast multiplier. Positive increases contrast, negative decreases.
     #[param(min = -1.0, max = 1.0, step = 0.02, default = 0.0)]
@@ -82,7 +82,7 @@ impl Filter for Contrast {
 ///
 /// `output = input ^ (1/gamma)` for gamma > 0.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "gamma", category = "adjustment")]
+#[filter(name = "gamma", category = "adjustment", cost = "O(n)")]
 pub struct Gamma {
     #[param(min = 0.1, max = 10.0, step = 0.1, default = 1.0)]
     pub gamma: f32,
@@ -122,7 +122,7 @@ impl Filter for Gamma {
 /// ev=0 is exact identity. The expression `Mul(Input, Constant)` is
 /// trivially fusable with any other point op in the pipeline.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "exposure", category = "adjustment", doc = "docs/operations/filters/adjustment/exposure.adoc")]
+#[filter(name = "exposure", category = "adjustment", cost = "O(n)", doc = "docs/operations/filters/adjustment/exposure.adoc")]
 pub struct Exposure {
     /// Exposure value in stops. 0 = unchanged, +1 = 2x brighter, -1 = half.
     #[param(min = -10.0, max = 10.0, step = 0.1, default = 0.0)]
@@ -155,7 +155,7 @@ impl Filter for Exposure {
 ///
 /// `output = 1.0 - input`
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "invert", category = "adjustment")]
+#[filter(name = "invert", category = "adjustment", cost = "O(n)")]
 pub struct Invert;
 
 impl Filter for Invert {
@@ -182,7 +182,7 @@ impl Filter for Invert {
 ///
 /// `output = ((input - black) / (white - black)) ^ (1/gamma)`
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "levels", category = "adjustment")]
+#[filter(name = "levels", category = "adjustment", cost = "O(n)")]
 pub struct Levels {
     /// Black point [0, 1]
     #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)]
@@ -232,7 +232,7 @@ impl Filter for Levels {
 ///
 /// `output = floor(input * levels) / (levels - 1)`
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "posterize", category = "adjustment")]
+#[filter(name = "posterize", category = "adjustment", cost = "O(n)")]
 pub struct Posterize {
     #[param(min = 2, max = 255, step = 1, default = 4)]
     pub levels: u8,
@@ -273,7 +273,7 @@ impl Filter for Posterize {
 /// Uses the sigmoidal transfer function for more natural contrast
 /// than linear multiplication.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "sigmoidal_contrast", category = "adjustment")]
+#[filter(name = "sigmoidal_contrast", category = "adjustment", cost = "O(n)")]
 pub struct SigmoidalContrast {
     #[param(min = 0.0, max = 20.0, step = 0.5, default = 3.0)]
     pub strength: f32,
@@ -400,7 +400,7 @@ fn sigmoidal(v: f32, strength: f32, midpoint: f32, sharpen: bool) -> f32 {
 ///
 /// `output = input / (1 - amount)` (simplified dodge)
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "dodge", category = "adjustment")]
+#[filter(name = "dodge", category = "adjustment", cost = "O(n)")]
 pub struct Dodge {
     #[param(min = 0.0, max = 1.0, step = 0.05, default = 0.5)]
     pub amount: f32,
@@ -432,7 +432,7 @@ impl Filter for Dodge {
 ///
 /// `output = 1 - (1 - input) / amount`
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "burn", category = "adjustment")]
+#[filter(name = "burn", category = "adjustment", cost = "O(n)")]
 pub struct Burn {
     #[param(min = 0.0, max = 2.0, step = 0.05, default = 0.5)]
     pub amount: f32,
@@ -470,7 +470,7 @@ impl Filter for Burn {
 ///
 /// `output = if input > threshold { 1.0 - input } else { input }`
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "solarize", category = "adjustment")]
+#[filter(name = "solarize", category = "adjustment", cost = "O(n)")]
 pub struct Solarize {
     #[param(min = 0.0, max = 1.0, step = 0.05, default = 0.5)]
     pub threshold: f32,

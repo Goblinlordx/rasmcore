@@ -54,6 +54,7 @@ macro_rules! v2_decoder {
                     gpu: false, analytic: false, affine: false, clut: false,
                 },
                 doc_path: "",
+                cost: "",
             }
         }
     };
@@ -102,6 +103,7 @@ macro_rules! v2_f32_decoder {
                     gpu: false, analytic: false, affine: false, clut: false,
                 },
                 doc_path: "",
+                cost: "",
             }
         }
     };

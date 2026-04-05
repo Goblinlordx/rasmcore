@@ -635,7 +635,7 @@ impl ClutOp for ApplyHaldLut {
 /// Reinhard global tone mapping: `out = v / (1 + v)`.
 /// Maps HDR [0, ∞) to [0, 1).
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "tonemap_reinhard", category = "grading")]
+#[filter(name = "tonemap_reinhard", category = "grading", cost = "O(n)")]
 pub struct TonemapReinhard;
 
 impl Filter for TonemapReinhard {
@@ -660,7 +660,7 @@ impl ClutOp for TonemapReinhard {
 
 /// Drago logarithmic tone mapping.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "tonemap_drago", category = "grading")]
+#[filter(name = "tonemap_drago", category = "grading", cost = "O(n)")]
 pub struct TonemapDrago {
     /// Maximum luminance in scene (default 1.0 for SDR).
     #[param(min = 0.0, max = 100.0, default = 1.0)]
@@ -708,7 +708,7 @@ impl ClutOp for TonemapDrago {
 ///
 /// Formula: `out = (x*(a*x+b)) / (x*(c*x+d) + e)`
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "tonemap_filmic", category = "grading")]
+#[filter(name = "tonemap_filmic", category = "grading", cost = "O(n)")]
 pub struct TonemapFilmic {
     #[param(min = 0.0, max = 10.0, default = 2.51)]
     pub a: f32,
@@ -756,7 +756,7 @@ impl ClutOp for TonemapFilmic {
 
 /// Film grain simulation — position-dependent, NOT CLUT-compatible.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "film_grain_grading", category = "grading")]
+#[filter(name = "film_grain_grading", category = "grading", cost = "O(n)")]
 pub struct FilmGrain {
     /// Grain amount (0.0 = none, 1.0 = heavy).
     #[param(min = 0.0, max = 1.0, default = 0.1)]

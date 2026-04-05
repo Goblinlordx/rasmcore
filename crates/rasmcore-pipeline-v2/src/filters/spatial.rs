@@ -78,7 +78,7 @@ fn gaussian_kernel_1d(radius: f32) -> Vec<f32> {
 
 /// Gaussian blur — separable convolution on f32 data.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "gaussian_blur", category = "spatial", doc = "docs/operations/filters/spatial/gaussian_blur.adoc")]
+#[filter(name = "gaussian_blur", category = "spatial", cost = "O(n * r) separable", doc = "docs/operations/filters/spatial/gaussian_blur.adoc")]
 pub struct GaussianBlur {
     /// Blur radius in pixels. Larger values produce stronger blur.
     #[param(min = 0.0, max = 100.0, default = 1.0)]
@@ -201,7 +201,7 @@ impl GaussianBlur {
 
 /// Box blur — running average within radius. O(1) per pixel.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "box_blur", category = "spatial")]
+#[filter(name = "box_blur", category = "spatial", cost = "O(n * r) separable")]
 pub struct BoxBlur {
     #[param(min = 0, max = 100, default = 1)]
     pub radius: u32,
@@ -266,7 +266,7 @@ impl Filter for BoxBlur {
 ///
 /// `output = input + amount * (input - blur(input, radius))`
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "sharpen", category = "spatial")]
+#[filter(name = "sharpen", category = "spatial", cost = "O(n * r) via gaussian_blur")]
 pub struct Sharpen {
     #[param(min = 0.0, max = 100.0, default = 1.0)]
     pub radius: f32,
@@ -298,7 +298,7 @@ impl Filter for Sharpen {
 ///
 /// Effective for salt-and-pepper noise removal while preserving edges.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "median", category = "spatial")]
+#[filter(name = "median", category = "spatial", cost = "O(n * r^2 * log r)")]
 pub struct Median {
     #[param(min = 0, max = 50, default = 1)]
     pub radius: u32,
@@ -393,7 +393,7 @@ impl Filter for Convolve {
 ///
 /// Weights pixels by both spatial distance and color similarity.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "bilateral", category = "spatial")]
+#[filter(name = "bilateral", category = "spatial", cost = "O(n * d^2)")]
 pub struct Bilateral {
     #[param(min = 1, max = 50, default = 5)]
     pub diameter: u32,
@@ -457,7 +457,7 @@ impl Filter for Bilateral {
 
 /// Motion blur — linear directional blur.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "motion_blur", category = "spatial")]
+#[filter(name = "motion_blur", category = "spatial", cost = "O(n * length)")]
 pub struct MotionBlur {
     #[param(min = 0.0, max = 360.0, default = 0.0)]
     pub angle: f32,  // degrees
@@ -507,7 +507,7 @@ impl Filter for MotionBlur {
 ///
 /// `output = (input - blur(input)) + 0.5`
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "high_pass", category = "spatial")]
+#[filter(name = "high_pass", category = "spatial", cost = "O(n * r) via gaussian_blur")]
 pub struct HighPass {
     #[param(min = 0.0, max = 100.0, default = 3.0)]
     pub radius: f32,

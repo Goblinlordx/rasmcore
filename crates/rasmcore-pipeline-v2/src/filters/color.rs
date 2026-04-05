@@ -181,7 +181,7 @@ pub trait ClutOp {
 
 /// Hue rotation in HSL space.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "hue_rotate", category = "color")]
+#[filter(name = "hue_rotate", category = "color", cost = "O(n)")]
 pub struct HueRotate {
     /// Rotation in degrees (0-360).
     #[param(min = 0.0, max = 360.0, default = 0.0)]
@@ -217,7 +217,7 @@ impl ClutOp for HueRotate {
 
 /// Saturation adjustment in HSL space.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "saturate", category = "color")]
+#[filter(name = "saturate", category = "color", cost = "O(n)")]
 pub struct Saturate {
     /// Factor: 0=grayscale, 1=unchanged, 2=double.
     #[param(min = 0.0, max = 3.0, default = 1.0)]
@@ -286,7 +286,7 @@ impl ClutOp for ChannelMixer {
 /// Vibrance — perceptually-weighted saturation boost.
 /// Boosts less-saturated colors more than already-saturated ones.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "vibrance", category = "color")]
+#[filter(name = "vibrance", category = "color", cost = "O(n)")]
 pub struct Vibrance {
     /// Amount: -100 to 100.
     #[param(min = -100.0, max = 100.0, default = 0.0)]
@@ -339,7 +339,7 @@ impl ClutOp for Vibrance {
 
 /// Sepia tone — warm brownish tint via standard matrix blend.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "sepia", category = "color")]
+#[filter(name = "sepia", category = "color", cost = "O(n)")]
 pub struct Sepia {
     /// Intensity: 0=none, 1=full sepia.
     #[param(min = 0.0, max = 1.0, default = 1.0)]
@@ -379,7 +379,7 @@ impl ClutOp for Sepia {
 
 /// Colorize — tint image with a target color using W3C luma blend.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "colorize", category = "color")]
+#[filter(name = "colorize", category = "color", cost = "O(n)")]
 pub struct Colorize {
     /// Target color RGB [0,1].
     #[param(min = 0.0, max = 1.0, default = 1.0)]
@@ -424,7 +424,7 @@ impl ClutOp for Colorize {
 
 /// Modulate — combined brightness/saturation/hue in HSL space.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "modulate", category = "color")]
+#[filter(name = "modulate", category = "color", cost = "O(n)")]
 pub struct Modulate {
     /// Brightness factor (1.0=unchanged, 0=black, 2=double).
     #[param(min = 0.0, max = 3.0, default = 1.0)]
@@ -476,7 +476,7 @@ impl ClutOp for Modulate {
 
 /// Photo filter — color overlay with optional luminosity preservation.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "photo_filter", category = "color")]
+#[filter(name = "photo_filter", category = "color", cost = "O(n)")]
 pub struct PhotoFilter {
     /// Filter color RGB [0,1].
     #[param(min = 0.0, max = 1.0, default = 1.0)]
@@ -552,7 +552,7 @@ impl ClutOp for PhotoFilter {
 
 /// Selective color — adjust pixels matching a hue range in HSL space.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "selective_color", category = "color")]
+#[filter(name = "selective_color", category = "color", cost = "O(n)")]
 pub struct SelectiveColor {
     /// Target hue center (0-360).
     #[param(min = 0.0, max = 360.0, default = 0.0)]
@@ -641,7 +641,7 @@ impl ClutOp for SelectiveColor {
 
 /// White balance via color temperature (Kelvin).
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "white_balance_temperature", category = "color")]
+#[filter(name = "white_balance_temperature", category = "color", cost = "O(n)")]
 pub struct WhiteBalanceTemperature {
     /// Temperature in Kelvin (2000-12000). 6500 = daylight neutral.
     #[param(min = 2000.0, max = 12000.0, default = 6500.0)]
@@ -682,7 +682,7 @@ impl ClutOp for WhiteBalanceTemperature {
 
 /// Replace color — select pixels by HSL ranges and shift them.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "replace_color", category = "color")]
+#[filter(name = "replace_color", category = "color", cost = "O(n)")]
 pub struct ReplaceColor {
     /// Center hue (0-360).
     #[param(min = 0.0, max = 360.0, default = 0.0)]
@@ -759,7 +759,7 @@ impl ClutOp for ReplaceColor {
 
 /// Lab adjust — shift a* and b* channels in CIE Lab space.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "lab_adjust", category = "color")]
+#[filter(name = "lab_adjust", category = "color", cost = "O(n)")]
 pub struct LabAdjust {
     /// Green-red shift (-128 to 127).
     #[param(min = -128.0, max = 127.0, default = 0.0)]
@@ -803,7 +803,7 @@ impl ClutOp for LabAdjust {
 /// White balance via gray world assumption (automatic).
 /// Computes per-channel means and normalizes so all channels have equal mean.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "white_balance_gray_world", category = "color")]
+#[filter(name = "white_balance_gray_world", category = "color", cost = "O(n)")]
 pub struct WhiteBalanceGrayWorld;
 
 impl Filter for WhiteBalanceGrayWorld {
@@ -907,7 +907,7 @@ fn interpolate_gradient(stops: &[(f32, f32, f32, f32)], t: f32) -> (f32, f32, f3
 
 /// Median-cut color quantization (no dithering).
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "quantize", category = "color")]
+#[filter(name = "quantize", category = "color", cost = "O(n)")]
 pub struct Quantize {
     /// Max palette size (2-256).
     #[param(min = 2, max = 256, default = 16)]
@@ -930,7 +930,7 @@ impl Filter for Quantize {
 
 /// K-means color quantization.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "kmeans_quantize", category = "color")]
+#[filter(name = "kmeans_quantize", category = "color", cost = "O(n * k * iterations)")]
 pub struct KmeansQuantize {
     /// Number of clusters (2-256).
     #[param(min = 2, max = 256, default = 16)]
@@ -959,7 +959,7 @@ impl Filter for KmeansQuantize {
 
 /// Ordered dithering with Bayer matrix.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "dither_ordered", category = "color")]
+#[filter(name = "dither_ordered", category = "color", cost = "O(n)")]
 pub struct DitherOrdered {
     /// Max palette size (2-256).
     #[param(min = 2, max = 256, default = 16)]
@@ -996,7 +996,7 @@ impl Filter for DitherOrdered {
 
 /// Floyd-Steinberg error diffusion dithering.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "dither_floyd_steinberg", category = "color")]
+#[filter(name = "dither_floyd_steinberg", category = "color", cost = "O(n)")]
 pub struct DitherFloydSteinberg {
     /// Max palette size (2-256).
     #[param(min = 2, max = 256, default = 16)]
@@ -1250,7 +1250,7 @@ fn bayer_matrix(size: u32) -> Vec<f32> {
 
 /// Lab sharpen — unsharp mask on L channel only (preserves chrominance).
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "lab_sharpen", category = "color")]
+#[filter(name = "lab_sharpen", category = "color", cost = "O(n * radius) via gaussian_blur")]
 pub struct LabSharpen {
     /// Sharpening strength (0-10).
     #[param(min = 0.0, max = 10.0, default = 1.0)]
@@ -2280,7 +2280,7 @@ mod tests {
 /// filters (brightness, contrast, curves, etc.) then operate in ACEScct
 /// log space, producing perceptually uniform results.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "aces_idt", category = "color")]
+#[filter(name = "aces_idt", category = "color", cost = "O(n)")]
 pub struct AcesIdt {
     /// Source color space (0=sRGB, 1=Linear, 2=Rec709, 3=DisplayP3).
     #[param(min = 0.0, max = 3.0, step = 1.0, default = 0.0)]
@@ -2305,7 +2305,7 @@ impl Filter for AcesIdt {
 /// Insert before write() or display. Converts from the ACEScct grading
 /// space back to the target display/output color space.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "aces_odt", category = "color")]
+#[filter(name = "aces_odt", category = "color", cost = "O(n)")]
 pub struct AcesOdt {
     /// Target color space (0=sRGB, 1=Linear, 2=Rec709, 3=DisplayP3).
     #[param(min = 0.0, max = 3.0, step = 1.0, default = 0.0)]
@@ -2330,7 +2330,7 @@ impl Filter for AcesOdt {
 /// Converts from log grading space to linear AP1 for spatial operations
 /// (blur, sharpen) that need linear light for physical correctness.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "aces_cct_to_cg", category = "color")]
+#[filter(name = "aces_cct_to_cg", category = "color", cost = "O(n)")]
 pub struct AcesCctToCg;
 
 impl Filter for AcesCctToCg {
@@ -2349,7 +2349,7 @@ impl Filter for AcesCctToCg {
 ///
 /// Converts back from linear AP1 to log grading space after spatial operations.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "aces_cg_to_cct", category = "color")]
+#[filter(name = "aces_cg_to_cct", category = "color", cost = "O(n)")]
 pub struct AcesCgToCct;
 
 impl Filter for AcesCgToCct {

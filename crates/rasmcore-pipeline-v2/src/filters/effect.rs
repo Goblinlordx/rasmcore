@@ -41,7 +41,7 @@ fn luminance(r: f32, g: f32, b: f32) -> f32 {
 
 /// Gaussian noise — additive normally-distributed noise.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "gaussian_noise", category = "effect")]
+#[filter(name = "gaussian_noise", category = "effect", cost = "O(n)")]
 pub struct GaussianNoise {
     #[param(min = 0.0, max = 100.0, default = 10.0)]
     pub amount: f32,
@@ -79,7 +79,7 @@ impl Filter for GaussianNoise {
 
 /// Uniform noise — additive uniformly-distributed noise.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "uniform_noise", category = "effect")]
+#[filter(name = "uniform_noise", category = "effect", cost = "O(n)")]
 pub struct UniformNoise {
     #[param(min = 0.0, max = 255.0, default = 25.0)]
     pub range: f32,
@@ -108,7 +108,7 @@ impl Filter for UniformNoise {
 
 /// Salt-and-pepper noise — randomly replace pixels with black or white.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "salt_pepper_noise", category = "effect")]
+#[filter(name = "salt_pepper_noise", category = "effect", cost = "O(n)")]
 pub struct SaltPepperNoise {
     #[param(min = 0.0, max = 1.0, default = 0.05)]
     pub density: f32,
@@ -136,7 +136,7 @@ impl Filter for SaltPepperNoise {
 
 /// Poisson noise — signal-dependent noise (brighter regions get more).
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "poisson_noise", category = "effect")]
+#[filter(name = "poisson_noise", category = "effect", cost = "O(n)")]
 pub struct PoissonNoise {
     #[param(min = 0.1, max = 1000.0, default = 100.0)]
     pub scale: f32,
@@ -184,7 +184,7 @@ impl Filter for PoissonNoise {
 
 /// Film grain — photographic grain overlay with noise texture.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "film_grain", category = "effect")]
+#[filter(name = "film_grain", category = "effect", cost = "O(n)")]
 pub struct FilmGrain {
     #[param(min = 0.0, max = 1.0, default = 0.1)]
     pub amount: f32,
@@ -239,7 +239,7 @@ impl Filter for FilmGrain {
 
 /// Pixelate — block-grid mosaic with mean color per cell.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "pixelate", category = "effect")]
+#[filter(name = "pixelate", category = "effect", cost = "O(n)")]
 pub struct Pixelate {
     #[param(min = 1, max = 100, default = 8)]
     pub block_size: u32,
@@ -292,7 +292,7 @@ impl Filter for Pixelate {
 
 /// Halftone — CMYK-style dot pattern via sine-wave screening.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "halftone", category = "effect")]
+#[filter(name = "halftone", category = "effect", cost = "O(n)")]
 pub struct Halftone {
     #[param(min = 1.0, max = 50.0, default = 8.0)]
     pub dot_size: f32,
@@ -357,7 +357,7 @@ impl Filter for Halftone {
 
 /// Oil paint — neighborhood mode filter (most frequent intensity bin).
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "oil_paint", category = "effect")]
+#[filter(name = "oil_paint", category = "effect", cost = "O(n * radius^2)")]
 pub struct OilPaint {
     #[param(min = 1, max = 20, default = 4)]
     pub radius: u32,
@@ -424,7 +424,7 @@ impl Filter for OilPaint {
 ///
 /// `output = convolve(input, emboss_kernel) + 0.5`
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "emboss", category = "effect")]
+#[filter(name = "emboss", category = "effect", cost = "O(n)")]
 pub struct Emboss;
 
 impl Filter for Emboss {
@@ -462,7 +462,7 @@ impl Filter for Emboss {
 
 /// Charcoal — edge detection → blur → invert for pencil sketch effect.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "charcoal", category = "effect")]
+#[filter(name = "charcoal", category = "effect", cost = "O(n * radius) via gaussian_blur")]
 pub struct Charcoal {
     #[param(min = 0.0, max = 20.0, default = 1.0)]
     pub radius: f32,
@@ -527,7 +527,7 @@ impl Filter for Charcoal {
 
 /// Chromatic split — offset RGB channels independently.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "chromatic_split", category = "effect")]
+#[filter(name = "chromatic_split", category = "effect", cost = "O(n)")]
 pub struct ChromaticSplit {
     #[param(min = -100.0, max = 100.0, default = 0.0)]
     pub red_dx: f32,
@@ -579,7 +579,7 @@ impl Filter for ChromaticSplit {
 ///
 /// R channel shifts away from center, B channel shifts toward center.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "chromatic_aberration", category = "effect")]
+#[filter(name = "chromatic_aberration", category = "effect", cost = "O(n)")]
 pub struct ChromaticAberration {
     #[param(min = 0.0, max = 50.0, default = 5.0)]
     pub strength: f32,
@@ -630,7 +630,7 @@ impl Filter for ChromaticAberration {
 
 /// Glitch — horizontal scanline displacement with RGB channel offset.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "glitch", category = "effect")]
+#[filter(name = "glitch", category = "effect", cost = "O(n)")]
 pub struct Glitch {
     #[param(min = 0.0, max = 200.0, default = 20.0)]
     pub shift_amount: f32,
@@ -682,7 +682,7 @@ impl Filter for Glitch {
 
 /// Light leak — procedural warm-toned radial gradient with screen blend.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "light_leak", category = "effect")]
+#[filter(name = "light_leak", category = "effect", cost = "O(n)")]
 pub struct LightLeak {
     #[param(min = 0.0, max = 1.0, default = 0.5)]
     pub intensity: f32,
@@ -735,7 +735,7 @@ impl Filter for LightLeak {
 
 /// Mirror kaleidoscope — reflect/mirror segments around axis.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "mirror_kaleidoscope", category = "effect")]
+#[filter(name = "mirror_kaleidoscope", category = "effect", cost = "O(n)")]
 pub struct MirrorKaleidoscope {
     #[param(min = 2, max = 32, default = 4)]
     pub segments: u32,

@@ -66,6 +66,7 @@ macro_rules! v2_srgb_encoder {
                     gpu: false, analytic: false, affine: false, clut: false,
                 },
                 doc_path: "",
+                cost: "",
             }
         }
     };
@@ -118,6 +119,7 @@ macro_rules! v2_linear_encoder {
                     gpu: false, analytic: false, affine: false, clut: false,
                 },
                 doc_path: "",
+                cost: "",
             }
         }
     };
@@ -309,6 +311,7 @@ inventory::submit! {
             gpu: false, analytic: false, affine: false, clut: false,
         },
         doc_path: "",
+        cost: "",
     }
 }
 

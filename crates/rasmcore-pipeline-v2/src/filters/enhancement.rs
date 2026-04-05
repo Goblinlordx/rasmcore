@@ -41,7 +41,7 @@ fn clamp_coord(v: i32, size: usize) -> usize {
 ///
 /// Finds per-channel min/max across all pixels and linearly maps to [0, 1].
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "auto_level", category = "enhancement")]
+#[filter(name = "auto_level", category = "enhancement", cost = "O(n)")]
 pub struct AutoLevel;
 
 impl Filter for AutoLevel {
@@ -79,7 +79,7 @@ impl Filter for AutoLevel {
 ///
 /// Quantizes to 256 bins for CDF computation, then remaps.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "equalize", category = "enhancement")]
+#[filter(name = "equalize", category = "enhancement", cost = "O(n)")]
 pub struct Equalize;
 
 impl Filter for Equalize {
@@ -120,7 +120,7 @@ impl Filter for Equalize {
 
 /// Normalize — linear contrast stretch with 2% black / 1% white clipping.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "normalize", category = "enhancement")]
+#[filter(name = "normalize", category = "enhancement", cost = "O(n)")]
 pub struct Normalize {
     #[param(min = 0.0, max = 0.5, default = 0.02)]
     pub black_clip: f32,
@@ -188,7 +188,7 @@ impl Filter for Normalize {
 ///
 /// Extracts large-scale color/tone structure.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "frequency_low", category = "enhancement")]
+#[filter(name = "frequency_low", category = "enhancement", cost = "O(n * sigma) via gaussian_blur")]
 pub struct FrequencyLow {
     #[param(min = 0.0, max = 100.0, default = 3.0)]
     pub sigma: f32,
@@ -206,7 +206,7 @@ impl Filter for FrequencyLow {
 /// `output = (input - blur(input)) + 0.5`
 /// The 0.5 offset provides a neutral midpoint for compositing.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "frequency_high", category = "enhancement")]
+#[filter(name = "frequency_high", category = "enhancement", cost = "O(n * sigma) via gaussian_blur")]
 pub struct FrequencyHigh {
     #[param(min = 0.0, max = 100.0, default = 3.0)]
     pub sigma: f32,
@@ -238,7 +238,7 @@ impl Filter for FrequencyHigh {
 /// `w(l) = 4 * l * (1 - l)` where l is normalized luminance.
 /// `output = input + amount * (input - blur) * w(luminance)`
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "clarity", category = "enhancement")]
+#[filter(name = "clarity", category = "enhancement", cost = "O(n * radius) via gaussian_blur")]
 pub struct Clarity {
     #[param(min = -1.0, max = 1.0, default = 0.0)]
     pub amount: f32,
@@ -276,7 +276,7 @@ impl Filter for Clarity {
 /// 3. Transmission: `t(x) = 1 - omega * dark(I/A)`
 /// 4. Recover: `J = (I - A) / max(t, t_min) + A`
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "dehaze", category = "enhancement")]
+#[filter(name = "dehaze", category = "enhancement", cost = "O(n * r^2)")]
 pub struct Dehaze {
     #[param(min = 1, max = 50, default = 7)]
     pub patch_radius: u32,
@@ -381,7 +381,7 @@ impl Filter for Dehaze {
 ///
 /// Operates on luminance channel with bilinear interpolation between tiles.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "clahe", category = "enhancement")]
+#[filter(name = "clahe", category = "enhancement", cost = "O(n)")]
 pub struct Clahe {
     #[param(min = 1, max = 32, default = 8)]
     pub tile_grid: u32,
@@ -507,7 +507,7 @@ impl Filter for Clahe {
 ///
 /// Compares patches in search window, weights by similarity.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "nlm_denoise", category = "enhancement")]
+#[filter(name = "nlm_denoise", category = "enhancement", cost = "O(n * sr^2 * pr^2)")]
 pub struct NlmDenoise {
     #[param(min = 0.0, max = 1.0, default = 0.1)]
     pub h: f32,
@@ -590,7 +590,7 @@ impl Filter for NlmDenoise {
 /// `sigma < 1.0`: enhance fine detail (compress large gradients).
 /// `sigma > 1.0`: suppress fine detail (smoothing).
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "pyramid_detail_remap", category = "enhancement")]
+#[filter(name = "pyramid_detail_remap", category = "enhancement", cost = "O(n * levels * sigma)")]
 pub struct PyramidDetailRemap {
     #[param(min = 0.0, max = 5.0, default = 0.5)]
     pub sigma: f32,
@@ -699,7 +699,7 @@ impl Filter for PyramidDetailRemap {
 /// `R(x,y) = log(I(x,y)) - log(G * I(x,y))`
 /// Enhances local contrast by removing illumination estimate.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "retinex_ssr", category = "enhancement")]
+#[filter(name = "retinex_ssr", category = "enhancement", cost = "O(n * sigma) via gaussian_blur")]
 pub struct RetinexSsr {
     #[param(min = 0.0, max = 200.0, default = 80.0)]
     pub sigma: f32,
@@ -743,7 +743,7 @@ impl Filter for RetinexSsr {
 ///
 /// Averages SSR at three scales for better overall contrast.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "retinex_msr", category = "enhancement")]
+#[filter(name = "retinex_msr", category = "enhancement", cost = "O(3 * n * sigma) via gaussian_blur")]
 pub struct RetinexMsr {
     #[param(min = 0.0, max = 200.0, default = 15.0)]
     pub sigma_small: f32,
@@ -801,7 +801,7 @@ impl Filter for RetinexMsr {
 ///
 /// MSR + chromaticity-based gain for color preservation.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "retinex_msrcr", category = "enhancement")]
+#[filter(name = "retinex_msrcr", category = "enhancement", cost = "O(3 * n * sigma) via gaussian_blur")]
 pub struct RetinexMsrcr {
     #[param(min = 0.0, max = 200.0, default = 15.0)]
     pub sigma_small: f32,
@@ -890,7 +890,7 @@ impl Filter for RetinexMsrcr {
 /// Independently lighten shadows and darken highlights via soft-light blending
 /// on the luminance channel with compress-gated weight masks.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "shadow_highlight", category = "enhancement")]
+#[filter(name = "shadow_highlight", category = "enhancement", cost = "O(n * radius)")]
 pub struct ShadowHighlight {
     #[param(min = -100.0, max = 100.0, default = 0.0)]
     pub shadows: f32,
@@ -990,7 +990,7 @@ impl Filter for ShadowHighlight {
 
 /// Gaussian vignette — elliptical darkening with Gaussian blur transition.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "vignette", category = "enhancement")]
+#[filter(name = "vignette", category = "enhancement", cost = "O(n)")]
 pub struct Vignette {
     #[param(min = 0.0, max = 100.0, default = 10.0)]
     pub sigma: f32,
@@ -1054,7 +1054,7 @@ impl Filter for Vignette {
 ///
 /// `factor = 1.0 - strength * (dist / max_dist) ^ falloff`
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "vignette_powerlaw", category = "enhancement")]
+#[filter(name = "vignette_powerlaw", category = "enhancement", cost = "O(n)")]
 pub struct VignettePowerlaw {
     #[param(min = 0.0, max = 1.0, default = 0.5)]
     pub strength: f32,
