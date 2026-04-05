@@ -519,12 +519,8 @@ export class GpuHandlerV2 {
 
     const device = this.device!;
 
-    // Update viewport with current canvas dimensions and new image dimensions.
-    // Don't resize the canvas to image size — it should match the display container.
-    // The blit shader maps image → canvas via the viewport uniform.
-    const cw = this.displayCanvas?.width || width;
-    const ch = this.displayCanvas?.height || height;
-    this.updateViewport(0, 0, 1, cw, ch, width, height, 0);
+    // Don't touch the viewport here — it's managed by handleViewport from the
+    // main thread. Just track image dimensions for the blit shader.
 
     const pixelCount = width * height;
     const floatCount = pixelCount * 4;
@@ -657,10 +653,6 @@ export class GpuHandlerV2 {
    */
   displayFromCpu(pixels: Float32Array, width: number, height: number): void {
     if (!this.device || !this.canvasCtx || !this.blitPipeline || !this.blitBindGroupLayout || !this.viewportBuf) return;
-
-    const cw = this.displayCanvas?.width || width;
-    const ch = this.displayCanvas?.height || height;
-    this.updateViewport(0, 0, 1, cw, ch, width, height, 0);
 
     const byteCount = pixels.byteLength;
     const buf = this.device.createBuffer({
