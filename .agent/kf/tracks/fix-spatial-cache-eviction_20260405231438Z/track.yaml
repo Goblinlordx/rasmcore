@@ -3,62 +3,59 @@ title: Fix SpatialCache — LRU eviction with entry count + budget bounds
 type: bug
 status: pending
 created: 2026-04-06
-updated: 2026-04-06
+updated: '2026-04-05'
 spec:
-  summary: |
-    Fix SpatialCache FIFO index corruption bug and replace with LRU
+  summary: 'Fix SpatialCache FIFO index corruption bug and replace with LRU
+
     eviction bounded by both entry count (n * log2(n) where n = node
+
     count) and byte budget. Whichever limit is hit first triggers
+
     eviction of oldest entries.
-  context: |
-    cache.rs lines 74-81: FIFO eviction uses entries.remove() which
-    shifts indices, but order Vec retains stale indices. This can
-    skip entries (leak) or panic.
 
-    The replacement should be LRU with two eviction triggers:
-    1. Entry count limit: n * log2(n) where n = graph node count.
-       Keeps recent results warm, bounds total entries.
-    2. Budget overflow: byte size limit (existing 16MB default).
-       Evicts LRU entries until room for the new entry.
-
-    Budget must be sized so the working set (one result per active
-    node) fits without thrashing. If budget < node_count * image_size,
-    eviction happens mid-computation. The budget should accommodate
-    at least the working set before overflow triggers.
+    '
+  context: "cache.rs lines 74-81: FIFO eviction uses entries.remove() which\nshifts indices, but order Vec retains stale indices.\
+    \ This can\nskip entries (leak) or panic.\n\nThe replacement should be LRU with two eviction triggers:\n1. Entry count\
+    \ limit: n * log2(n) where n = graph node count.\n   Keeps recent results warm, bounds total entries.\n2. Budget overflow:\
+    \ byte size limit (existing 16MB default).\n   Evicts LRU entries until room for the new entry.\n\nBudget must be sized\
+    \ so the working set (one result per active\nnode) fits without thrashing. If budget < node_count * image_size,\neviction\
+    \ happens mid-computation. The budget should accommodate\nat least the working set before overflow triggers.\n"
   acceptance_criteria:
-    - Replace order Vec with proper LRU tracking (no stale indices)
-    - Evict oldest entries on entry count limit (n * log2(n))
-    - Evict oldest entries on byte budget overflow
-    - Whichever limit is hit first triggers eviction
-    - No panic on repeated store/evict cycles
-    - Working set (current pipeline nodes) fits without thrashing
-    - Unit tests for both eviction triggers
-  out_of_scope: |
-    Changing cache to use Rc/Arc shared buffers
+  - Replace order Vec with proper LRU tracking (no stale indices)
+  - Evict oldest entries on entry count limit (n * log2(n))
+  - Evict oldest entries on byte budget overflow
+  - Whichever limit is hit first triggers eviction
+  - No panic on repeated store/evict cycles
+  - Working set (current pipeline nodes) fits without thrashing
+  - Unit tests for both eviction triggers
+  out_of_scope: 'Changing cache to use Rc/Arc shared buffers
+
     Tiled sub-region cache optimization
+
+    '
 plan:
-  - phase: LRU Data Structure
-    tasks:
-      - text: Replace order Vec with a generation counter or linked-list LRU tracker that handles removal without index corruption
-        done: false
-      - text: Add max_entries field computed from node count (n * log2(n))
-        done: false
-      - text: Add set_node_count(n) method to update max_entries when graph changes
-        done: false
-  - phase: Dual Eviction
-    tasks:
-      - text: On store(), check entry count first — if at max_entries, evict LRU entry
-        done: false
-      - text: On store(), check byte budget — if would exceed, evict LRU entries until room
-        done: false
-      - text: Ensure budget is large enough for working set (warn if budget < node_count * tile_size)
-        done: false
-  - phase: Tests
-    tasks:
-      - text: Test entry count eviction — store n*log2(n)+1 entries, verify oldest evicted
-        done: false
-      - text: Test byte budget eviction — store large entries until budget, verify eviction
-        done: false
-      - text: Test dual trigger — both limits active, whichever hit first evicts
-        done: false
+- phase: LRU Data Structure
+  tasks:
+  - text: Replace order Vec with a generation counter or linked-list LRU tracker that handles removal without index corruption
+    done: true
+  - text: Add max_entries field computed from node count (n * log2(n))
+    done: true
+  - text: Add set_node_count(n) method to update max_entries when graph changes
+    done: true
+- phase: Dual Eviction
+  tasks:
+  - text: On store(), check entry count first — if at max_entries, evict LRU entry
+    done: true
+  - text: On store(), check byte budget — if would exceed, evict LRU entries until room
+    done: true
+  - text: Ensure budget is large enough for working set (warn if budget < node_count * tile_size)
+    done: true
+- phase: Tests
+  tasks:
+  - text: Test entry count eviction — store n*log2(n)+1 entries, verify oldest evicted
+    done: true
+  - text: Test byte budget eviction — store large entries until budget, verify eviction
+    done: true
+  - text: Test dual trigger — both limits active, whichever hit first evicts
+    done: true
 extra: {}
