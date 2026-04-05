@@ -207,6 +207,17 @@ export function usePreviewWorker() {
     }
   }, []);
 
+  /** Queue an OffscreenCanvas for the original view display. */
+  const setOriginalDisplayCanvas = useCallback((canvas: OffscreenCanvas, hdr: boolean) => {
+    if (readyRef.current && workerRef.current) {
+      workerRef.current.postMessage(
+        { type: 'init-original-display', canvas, hdr },
+        [canvas],
+      );
+    }
+    // No pending queue needed — original display can wait for next load
+  }, []);
+
   /** Resize the OffscreenCanvas from the worker (for display mode). */
   const resizeCanvas = useCallback((width: number, height: number) => {
     workerRef.current?.postMessage({ type: 'resize-canvas', width, height });
@@ -236,6 +247,7 @@ export function usePreviewWorker() {
     loadImage,
     processChain,
     setDisplayCanvas,
+    setOriginalDisplayCanvas,
     resizeCanvas,
     sendViewport,
   };

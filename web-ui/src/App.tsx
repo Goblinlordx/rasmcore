@@ -62,20 +62,27 @@ export default function App() {
     preview.viewportCanvasRef.current = worker.previewCanvasRef.current;
   });
 
-  // Transfer OffscreenCanvas to preview worker for WebGPU direct display
+  // Transfer OffscreenCanvases to preview worker for WebGPU direct display
   const webgpuInitRef = useRef(false);
   useEffect(() => {
     if (webgpuInitRef.current || !isWebGpuAvailable()) return;
-    const canvas = worker.previewCanvasRef.current;
-    if (!canvas) return;
+    const previewCanvas = worker.previewCanvasRef.current;
+    const originalCanvas = worker.originalCanvasRef.current;
+    if (!previewCanvas) return;
     try {
-      const offscreen = canvas.transferControlToOffscreen();
-      preview.setDisplayCanvas(offscreen, isHdrDisplay());
+      const hdr = isHdrDisplay();
+      const offscreen = previewCanvas.transferControlToOffscreen();
+      preview.setDisplayCanvas(offscreen, hdr);
+      // Transfer original canvas too — GPU blit for consistent display
+      if (originalCanvas) {
+        const origOffscreen = originalCanvas.transferControlToOffscreen();
+        preview.setOriginalDisplayCanvas(origOffscreen, hdr);
+      }
       webgpuInitRef.current = true;
     } catch {
       // transferControlToOffscreen failed — stay in 2D mode
     }
-  }, [preview, worker.previewCanvasRef]);
+  }, [preview, worker.previewCanvasRef, worker.originalCanvasRef]);
 
   // After proxy render completes — background warm disabled for now (perf)
   useEffect(() => {
@@ -114,19 +121,21 @@ export default function App() {
           const url = URL.createObjectURL(blob);
           const img = new Image();
           img.onload = () => {
-            const oc = worker.originalCanvasRef.current;
-            const pc = worker.previewCanvasRef.current;
-            if (oc) {
-              oc.width = img.width;
-              oc.height = img.height;
-              getWideGamutContext(oc)?.drawImage(img, 0, 0);
-            }
-            // In display mode the worker owns the preview canvas — don't touch it.
-            // The worker will draw on the first processChain() after load.
-            if (pc && !preview.displayMode) {
-              pc.width = img.width;
-              pc.height = img.height;
-              getWideGamutContext(pc)?.drawImage(img, 0, 0);
+            // In display mode, both canvases are owned by the worker (WebGPU).
+            // The worker renders original + preview via GPU blit on load.
+            if (!preview.displayMode) {
+              const oc = worker.originalCanvasRef.current;
+              const pc = worker.previewCanvasRef.current;
+              if (oc) {
+                oc.width = img.width;
+                oc.height = img.height;
+                getWideGamutContext(oc)?.drawImage(img, 0, 0);
+              }
+              if (pc) {
+                pc.width = img.width;
+                pc.height = img.height;
+                getWideGamutContext(pc)?.drawImage(img, 0, 0);
+              }
             }
             URL.revokeObjectURL(url);
           };

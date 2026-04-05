@@ -54,6 +54,10 @@ export default function Canvas({
   const transformCanvasStyle = hasImage
     ? computeTransformCSS(transform.state, containerSize, imageWidth, imageHeight)
     : undefined;
+  const showPreview = viewMode === 'current';
+  const showOriginal = viewMode === 'original';
+  const showSplit = viewMode === 'split';
+
   // Split mode: always fit-to-viewport with no pan
   const fitState = { zoom: transform.fitZoom, panX: 0, panY: 0 };
   const fitCanvasStyle = hasImage
@@ -62,7 +66,7 @@ export default function Canvas({
   // Preview uses display mode style when available, original always uses transform
   // Split mode forces fit-to-viewport for both canvases
   const previewStyle = showSplit ? fitCanvasStyle : (displayMode ? displayCanvasStyle : transformCanvasStyle);
-  const originalStyle = showSplit ? fitCanvasStyle : transformCanvasStyle;
+  const originalStyle = showSplit ? fitCanvasStyle : (displayMode ? displayCanvasStyle : transformCanvasStyle);
 
   // Forward viewport changes to worker for shader-based pan/zoom
   useEffect(() => {
@@ -114,10 +118,6 @@ export default function Canvas({
       document.removeEventListener('touchend', onEnd);
     };
   }, []);
-
-  const showPreview = viewMode === 'current';
-  const showOriginal = viewMode === 'original';
-  const showSplit = viewMode === 'split';
 
   return (
     <div

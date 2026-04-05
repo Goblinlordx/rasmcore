@@ -174,6 +174,9 @@ async function loadImage(bytes) {
   const pw = scale < 1 ? Math.round(fullWidth * scale) : fullWidth;
   const ph = scale < 1 ? Math.round(fullHeight * scale) : fullHeight;
   self.postMessage({ type: 'loaded', info, previewWidth: pw, previewHeight: ph });
+
+  // Render source to original display canvas (GPU blit, no filters)
+  renderOriginalSource();
 }
 
 /** Compute proxy scale factor based on full image dimensions and PREVIEW_MAX */
@@ -371,13 +374,34 @@ function handleResizeCanvas(width: number, height: number) {
   gpuHandler.resizeDisplay(width, height);
 }
 
+async function initOriginalDisplay(canvas: OffscreenCanvas, hdr: boolean) {
+  if (!gpuHandler) return;
+  try {
+    await gpuHandler.setOriginalCanvas(canvas, hdr);
+    console.log(`[v2-preview] Original display enabled (HDR: ${hdr})`);
+    // If image already loaded, render source immediately
+    renderOriginalSource();
+  } catch (e: any) {
+    console.warn('[v2-preview] Original display init failed:', e?.message);
+  }
+}
+
+function renderOriginalSource() {
+  if (!gpuHandler || !gpuHandler.hasOriginalDisplay) return;
+  if (!previewBytes || !PipelineClass) return;
+  try {
+    const pipe = createPipeline(previewBytes);
+    const raw = pipe._pipe;
+    if (!raw || typeof raw.render !== 'function') return;
+    const pixels = raw.render(pipe._node);
+    gpuHandler.storeAndDisplaySource(new Float32Array(pixels), pipe.info.width, pipe.info.height);
+  } catch (e: any) {
+    console.warn('[v2-preview] Original source render failed:', e?.message);
+  }
+}
+
 function handleViewport(data: any) {
   if (!gpuHandler || !displayMode) return;
-  // Always use the preview worker's own rendered dimensions for the pixel
-  // buffer stride. The main thread sends full-res imageWidth/imageHeight
-  // which would cause a stride mismatch. Pan/zoom math still works because
-  // the shader maps canvas→image space using whatever dimensions we provide —
-  // the image just happens to be at preview resolution.
   gpuHandler.resizeDisplay(data.canvasWidth, data.canvasHeight);
   gpuHandler.updateViewport(
     data.panX, data.panY, data.zoom,
@@ -386,6 +410,17 @@ function handleViewport(data: any) {
     data.toneMode ?? 0,
   );
   gpuHandler.displayOnly();
+
+  // Also update original display with same viewport
+  if (gpuHandler.hasOriginalDisplay) {
+    gpuHandler.resizeOriginalDisplay(data.canvasWidth, data.canvasHeight);
+    gpuHandler.updateOriginalViewport(
+      data.panX, data.panY, data.zoom,
+      data.canvasWidth, data.canvasHeight,
+      data.toneMode ?? 0,
+    );
+    gpuHandler.blitOriginal();
+  }
 }
 
 // ─── Message Handler ────────────────────────────────────────────────────────
@@ -398,6 +433,9 @@ self.onmessage = (e) => {
       break;
     case 'init-display':
       initDisplay(e.data.canvas, e.data.hdr ?? false);
+      break;
+    case 'init-original-display':
+      initOriginalDisplay(e.data.canvas, e.data.hdr ?? false);
       break;
     case 'load':
       loadImage(e.data.imageBytes);
