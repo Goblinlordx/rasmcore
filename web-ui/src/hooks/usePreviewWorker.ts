@@ -7,6 +7,9 @@ export interface PreviewState {
   proxyMs: number | null;
   /** Whether display mode is active (WebGPU direct rendering) */
   displayMode: boolean;
+  /** Preview image dimensions (what the pixel buffer actually contains) */
+  previewWidth: number;
+  previewHeight: number;
 }
 
 export function usePreviewWorker() {
@@ -18,6 +21,8 @@ export function usePreviewWorker() {
     processing: false,
     proxyMs: null,
     displayMode: false,
+    previewWidth: 0,
+    previewHeight: 0,
   });
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   /** External viewport canvas — proxy results draw here for main display */
@@ -66,7 +71,12 @@ export function usePreviewWorker() {
 
       if (type === 'loaded') {
         processingRef.current = false;
-        setState((s) => ({ ...s, processing: false }));
+        setState((s) => ({
+          ...s,
+          processing: false,
+          previewWidth: e.data.previewWidth ?? 0,
+          previewHeight: e.data.previewHeight ?? 0,
+        }));
         // Drain queue — a processChain may have been queued while loading
         if (queuedChainRef.current && workerRef.current) {
           const next = queuedChainRef.current;

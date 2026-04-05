@@ -218,9 +218,13 @@ export default function App() {
 
   const handleViewportChange = useCallback(
     (panX: number, panY: number, zoom: number, cw: number, ch: number) => {
+      // Send preview dimensions (what the pixel buffer actually contains),
+      // not full-res dimensions — the shader needs the buffer stride to match.
+      const imgW = preview.previewWidth || worker.imageInfo?.width || 0;
+      const imgH = preview.previewHeight || worker.imageInfo?.height || 0;
       preview.sendViewport(
         panX, panY, zoom, cw, ch,
-        worker.imageInfo?.width ?? 0, worker.imageInfo?.height ?? 0,
+        imgW, imgH,
         isHdrDisplay() ? 1 : 0,
       );
     },

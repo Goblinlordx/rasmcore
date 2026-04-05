@@ -170,7 +170,10 @@ async function loadImage(bytes) {
     console.error('[v2-preview] Load failed:', detail);
   }
 
-  self.postMessage({ type: 'loaded', info });
+  const scale = computeProxyScale();
+  const pw = scale < 1 ? Math.round(fullWidth * scale) : fullWidth;
+  const ph = scale < 1 ? Math.round(fullHeight * scale) : fullHeight;
+  self.postMessage({ type: 'loaded', info, previewWidth: pw, previewHeight: ph });
 }
 
 /** Compute proxy scale factor based on full image dimensions and PREVIEW_MAX */
@@ -370,18 +373,16 @@ function handleResizeCanvas(width: number, height: number) {
 
 function handleViewport(data: any) {
   if (!gpuHandler || !displayMode) return;
-  // Use the ACTUAL rendered image dimensions (preview resolution), not the
-  // full-res dimensions the main thread sends. The pixel buffer in the GPU
-  // handler has preview-resolution data — using full-res dimensions would
-  // cause a stride mismatch (staggered lines).
-  const imgW = gpuHandler.imageWidth || data.imageWidth;
-  const imgH = gpuHandler.imageHeight || data.imageHeight;
-  // Resize canvas to container for sharp display
+  // Always use the preview worker's own rendered dimensions for the pixel
+  // buffer stride. The main thread sends full-res imageWidth/imageHeight
+  // which would cause a stride mismatch. Pan/zoom math still works because
+  // the shader maps canvas→image space using whatever dimensions we provide —
+  // the image just happens to be at preview resolution.
   gpuHandler.resizeDisplay(data.canvasWidth, data.canvasHeight);
   gpuHandler.updateViewport(
     data.panX, data.panY, data.zoom,
     data.canvasWidth, data.canvasHeight,
-    imgW, imgH,
+    gpuHandler.imageWidth, gpuHandler.imageHeight,
     data.toneMode ?? 0,
   );
   gpuHandler.displayOnly();
