@@ -152,28 +152,15 @@ async function loadImage(bytes) {
     info = { width: pipe.info.width, height: pipe.info.height };
     fullWidth = info.width;
     fullHeight = info.height;
-
-    // Downscale source image for fast preview
-    const scale = computeProxyScale();
-    if (scale < 1.0) {
-      previewBytes = await downscaleBytes(fullBytes, scale);
-      const pw = Math.round(fullWidth * scale);
-      const ph = Math.round(fullHeight * scale);
-      console.log(`[v2-preview] Loaded: ${fullWidth}x${fullHeight} → preview ${pw}x${ph}`);
-    } else {
-      previewBytes = fullBytes;
-      console.log(`[v2-preview] Loaded: ${fullWidth}x${fullHeight} (no downscale needed)`);
-    }
+    previewBytes = fullBytes;
+    console.log(`[v2-preview] Loaded: ${fullWidth}x${fullHeight} (full-res, GPU display)`);
   } catch (e: any) {
     previewBytes = fullBytes;
     const detail = e?.payload ? JSON.stringify(e.payload, null, 2) : e?.message || String(e);
     console.error('[v2-preview] Load failed:', detail);
   }
 
-  const scale = computeProxyScale();
-  const pw = scale < 1 ? Math.round(fullWidth * scale) : fullWidth;
-  const ph = scale < 1 ? Math.round(fullHeight * scale) : fullHeight;
-  self.postMessage({ type: 'loaded', info, previewWidth: pw, previewHeight: ph });
+  self.postMessage({ type: 'loaded', info, previewWidth: fullWidth, previewHeight: fullHeight });
 
   // Render source to original display canvas (GPU blit, no filters)
   renderOriginalSource();
