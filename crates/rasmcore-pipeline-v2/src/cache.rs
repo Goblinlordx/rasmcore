@@ -205,6 +205,8 @@ use std::cell::RefCell;
 pub struct SpatialCachePool {
     available: Vec<SpatialCache>,
     budget_bytes: usize,
+    /// Maximum idle caches to keep. Excess are dropped on release.
+    max_idle: usize,
 }
 
 impl SpatialCachePool {
@@ -213,6 +215,7 @@ impl SpatialCachePool {
         Self {
             available: Vec::new(),
             budget_bytes,
+            max_idle: 2,
         }
     }
 
@@ -228,7 +231,11 @@ impl SpatialCachePool {
     }
 
     /// Return a cache to the pool for reuse.
+    /// Drops the cache if pool is already at max_idle.
     pub fn release(&mut self, cache: SpatialCache) {
+        if self.available.len() >= self.max_idle {
+            return; // drop — pool is full
+        }
         self.available.push(cache);
     }
 

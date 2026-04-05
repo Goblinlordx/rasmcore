@@ -25,11 +25,18 @@ use crate::trace::{PipelineTrace, TraceEventKind, TraceTimer};
 /// image share the same buffers.
 pub struct BufferPool {
     buffers: Vec<Vec<f32>>,
+    /// Maximum idle buffers to keep. Excess are dropped on release.
+    max_idle: usize,
 }
 
 impl BufferPool {
     pub fn new() -> Self {
-        Self { buffers: Vec::new() }
+        Self { buffers: Vec::new(), max_idle: 4 }
+    }
+
+    /// Create a pool with a custom max idle count.
+    pub fn with_max_idle(max_idle: usize) -> Self {
+        Self { buffers: Vec::new(), max_idle }
     }
 
     /// Take a buffer from the pool, or allocate a new one at the given size.
@@ -44,7 +51,15 @@ impl BufferPool {
     }
 
     /// Return a buffer to the pool for reuse.
+    /// Drops the buffer if pool is at max_idle, or if buffer capacity
+    /// is more than 2x its length (oversized from a previous larger image).
     pub fn release(&mut self, buf: Vec<f32>) {
+        if self.buffers.len() >= self.max_idle {
+            return; // drop — pool is full
+        }
+        if buf.capacity() > buf.len().max(1) * 2 {
+            return; // drop — oversized, not worth keeping
+        }
         self.buffers.push(buf);
     }
 
