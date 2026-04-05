@@ -1,4 +1,3 @@
-// @ts-nocheck — WebGPU types vary across TS configs; runtime-validated
 /**
  * V2 WebGPU handler — f32-only, no format dispatch.
  *
@@ -95,6 +94,11 @@ function hashSource(source: string): string {
     hash = Math.imul(hash, 0x01000193);
   }
   return (hash >>> 0).toString(16);
+}
+
+/** Write typed array data to a GPU buffer (type-safe across TS configs). */
+function queueWrite(queue: GPUQueue, buf: GPUBuffer, offset: number, data: ArrayBufferView): void {
+  queue.writeBuffer(buf, offset, data.buffer as ArrayBuffer, data.byteOffset, data.byteLength);
 }
 
 /**
@@ -209,7 +213,7 @@ export class GpuHandlerV2 {
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
       });
 
-      device.queue.writeBuffer(bufA, 0, input);
+      queueWrite(device.queue, bufA, 0, input);
       let readBuf = bufA;
       let writeBuf = bufB;
 
@@ -242,7 +246,7 @@ export class GpuHandlerV2 {
           size: paramSize,
           usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
-        device.queue.writeBuffer(paramBuf, 0, op.params);
+        queueWrite(device.queue, paramBuf, 0, op.params);
 
         // Extra buffers
         const extras: GPUBuffer[] = op.extraBuffers.map(data => {
@@ -250,7 +254,7 @@ export class GpuHandlerV2 {
             size: Math.max(4, data.byteLength),
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
           });
-          device.queue.writeBuffer(buf, 0, data);
+          queueWrite(device.queue, buf, 0, data);
           return buf;
         });
 
@@ -458,7 +462,7 @@ export class GpuHandlerV2 {
       size: pixels.byteLength,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(this.sourcePixelBuf, 0, pixels);
+    queueWrite(this.device!.queue, this.sourcePixelBuf, 0, pixels);
     this.sourceImageWidth = width;
     this.sourceImageHeight = height;
 
@@ -479,7 +483,7 @@ export class GpuHandlerV2 {
     f[2] = this.sourceImageWidth; f[3] = this.sourceImageHeight;
     f[4] = panX; f[5] = panY; f[6] = zoom;
     u[0] = toneMode;
-    this.device.queue.writeBuffer(this.origViewportBuf, 0, data);
+    queueWrite(this.device!.queue, this.origViewportBuf, 0, new Uint8Array(data));
   }
 
   resizeOriginalDisplay(width: number, height: number): void {
@@ -552,7 +556,7 @@ export class GpuHandlerV2 {
     f[5] = panY;
     f[6] = zoom;
     u[0] = toneMode;
-    this.device.queue.writeBuffer(this.viewportBuf, 0, data);
+    queueWrite(this.device!.queue, this.viewportBuf, 0, new Uint8Array(data));
   }
 
   /**
@@ -602,7 +606,7 @@ export class GpuHandlerV2 {
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
       });
 
-      device.queue.writeBuffer(bufA, 0, input);
+      queueWrite(device.queue, bufA, 0, input);
       let readBuf = bufA;
       let writeBuf = bufB;
 
@@ -637,14 +641,14 @@ export class GpuHandlerV2 {
           size: paramSize,
           usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
-        device.queue.writeBuffer(paramBuf, 0, op.params);
+        queueWrite(device.queue, paramBuf, 0, op.params);
 
         const extras: GPUBuffer[] = op.extraBuffers.map(data => {
           const buf = device.createBuffer({
             size: Math.max(4, data.byteLength),
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
           });
-          device.queue.writeBuffer(buf, 0, data);
+          queueWrite(device.queue, buf, 0, data);
           return buf;
         });
 
@@ -725,7 +729,7 @@ export class GpuHandlerV2 {
       size: byteCount,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(buf, 0, pixels);
+    queueWrite(this.device!.queue, buf, 0, pixels);
 
     const encoder = this.device.createCommandEncoder();
     this.appendBlitPass(encoder, buf);
