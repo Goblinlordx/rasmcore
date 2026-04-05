@@ -9,8 +9,61 @@
  * (auto-composed by the pipeline).
  */
 
-// @ts-ignore — bundler resolves raw WGSL import
-import BLIT_SHADER from './shaders/display-blit.wgsl?raw';
+// Blit shader inlined as string — avoids bundler-specific import syntax
+// (Vite uses ?raw, webpack needs raw-loader, Next.js needs config).
+// Canonical source: sdk/v2/lib/shaders/display-blit.wgsl
+const BLIT_SHADER = `
+struct Viewport {
+    canvas_width: f32,
+    canvas_height: f32,
+    image_width: f32,
+    image_height: f32,
+    pan_x: f32,
+    pan_y: f32,
+    zoom: f32,
+    tone_mode: u32,
+};
+
+@group(0) @binding(0) var<storage, read> pixels: array<vec4<f32>>;
+@group(0) @binding(1) var<uniform> vp: Viewport;
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) vi: u32) -> VertexOutput {
+    var out: VertexOutput;
+    let x = f32(i32(vi & 1u)) * 4.0 - 1.0;
+    let y = f32(i32(vi >> 1u)) * 4.0 - 1.0;
+    out.position = vec4<f32>(x, y, 0.0, 1.0);
+    out.uv = vec2<f32>((x + 1.0) * 0.5, (1.0 - y) * 0.5);
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let canvas_px = in.uv * vec2<f32>(vp.canvas_width, vp.canvas_height);
+    let center = vec2<f32>(vp.canvas_width, vp.canvas_height) * 0.5;
+    let img_center = vec2<f32>(vp.image_width, vp.image_height) * 0.5;
+    let img_px = (canvas_px - center) / vp.zoom + img_center + vec2<f32>(vp.pan_x, vp.pan_y);
+    let ix = i32(floor(img_px.x));
+    let iy = i32(floor(img_px.y));
+    let w = i32(vp.image_width);
+    let h = i32(vp.image_height);
+    if (ix < 0 || ix >= w || iy < 0 || iy >= h) {
+        return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    }
+    let idx = iy * w + ix;
+    var color = pixels[idx];
+    if (vp.tone_mode == 0u) {
+        color = clamp(color, vec4<f32>(0.0), vec4<f32>(1.0));
+    }
+    color = vec4<f32>(color.rgb * color.a, color.a);
+    return color;
+}
+`;
 
 export interface GpuShader {
   /** Complete WGSL source (io_f32 + body, already composed). */
