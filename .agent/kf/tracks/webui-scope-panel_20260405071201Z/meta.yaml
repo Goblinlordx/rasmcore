@@ -1,0 +1,8 @@
+title: 'Web UI: live scope panel with histogram, waveform, vectorscope, parade'
+status: pending
+type: feature
+approved: false
+created: '2026-04-05'
+updated: '2026-04-05'
+deps:
+- scope-render-filters_20260405071200Z

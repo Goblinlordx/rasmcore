@@ -1,0 +1,107 @@
+id: webui-scope-panel_20260405071201Z
+title: "Web UI: live scope panel with histogram, waveform, vectorscope, parade"
+type: feature
+status: pending
+created: '2026-04-05'
+updated: '2026-04-05'
+spec:
+  summary: |
+    React scope panel that renders live video scope visualizations during editing.
+    Runs scopes in the preview worker on each chain change. Tabbed UI with scope
+    selector. Dark background, professional styling matching DaVinci Resolve.
+  context: |
+    The scope render filters (scope-render-filters track) produce scope images as
+    V2 filter output. This track wires them into the web UI as a live panel that
+    updates whenever the image chain changes.
+
+    DaVinci Resolve displays scopes in a dedicated panel, usually docked below or
+    beside the viewport. Users can select which scope to view (histogram, waveform,
+    vectorscope, parade) or show multiple simultaneously.
+  codebase_analysis: |
+    Web UI architecture (web-ui/src/):
+    - React 19 with hooks, vanilla CSS in index.html
+    - Preview worker (v2-preview-worker.ts) processes chains at proxy resolution
+    - usePreviewWorker hook manages worker communication + single-slot queue
+    - Canvas component displays viewport with pan/zoom (display mode via WebGPU)
+    - RightPanel holds LayerPanel + EffectStack — scope panel would go here or below viewport
+    - StatusBar at bottom shows dims/timing/proxy indicator
+
+    Preview worker pattern:
+    - processChain(chain) sends chain to worker, gets PNG or WebGPU display result
+    - Scope rendering can piggyback: after processing main chain, also process
+      scope chain (append scope filter to chain copy) and return scope image
+
+    No existing scope/analysis UI components — entirely new.
+  acceptance_criteria:
+    - Scope panel visible in UI with tab selector (Histogram/Waveform/Vectorscope/Parade)
+    - Scope updates live on every chain change (param adjustment, filter add/remove)
+    - Scope renders at proxy resolution for speed (same as preview worker)
+    - Scope panel can be collapsed/hidden to save space
+    - Dark background matching professional grading tool aesthetic
+    - Scope panel does not block or slow down the main preview render
+    - Multiple scopes can be viewed simultaneously (optional grid layout)
+  out_of_scope: |
+    Scope filter implementation (separate track scope-render-filters).
+    GPU-accelerated scope rendering. CIE diagram. False color.
+    Detachable/floating scope window.
+  technical_notes: |
+    Architecture: the preview worker already processes the chain for the viewport.
+    For scope rendering, we append a scope filter to a copy of the chain and process
+    it separately. The scope result is a PNG image rendered into a <canvas> or <img>
+    in the scope panel.
+
+    Option A — Dedicated scope worker:
+    - Separate Web Worker just for scope rendering
+    - Pros: doesn't compete with preview worker for CPU time
+    - Cons: second WASM instance, more memory
+
+    Option B — Piggyback on preview worker:
+    - After main chain processes, send a second message with chain + scope filter
+    - Single-slot queue ensures only latest scope renders
+    - Pros: shares WASM instance and layer cache
+    - Cons: scope render competes with next preview render
+
+    Recommend Option B for simplicity — scope rendering is lightweight (the heavy
+    work is the chain itself which is already cached).
+
+    UI layout: scope panel as a new section in RightPanel, below EffectStack.
+    Collapsible with a header bar showing current scope name.
+    Canvas element sized to panel width, aspect ratio 1:1.
+
+    Message protocol extension:
+    - Main thread sends: {type: 'process-scope', chain, scopeName}
+    - Worker appends scope filter, renders, returns: {type: 'scope-result', png, scopeName}
+
+    Scope selector state stored in React component, persisted in localStorage.
+plan:
+  - phase: Scope Panel Component
+    tasks:
+      - text: Create ScopePanel React component with tab selector (Histogram/Waveform/Vectorscope/Parade)
+        done: false
+      - text: Add scope canvas element sized to panel width with 1:1 aspect ratio
+        done: false
+      - text: Add collapse/expand toggle with header showing active scope name
+        done: false
+      - text: Style with dark background and professional scope aesthetic
+        done: false
+  - phase: Worker Integration
+    tasks:
+      - text: Add process-scope message type to v2-preview-worker
+        done: false
+      - text: Worker appends scope filter to chain copy, renders scope image
+        done: false
+      - text: Add scope-result message handler in usePreviewWorker hook
+        done: false
+      - text: Trigger scope render on every chain change (after main preview)
+        done: false
+  - phase: UI Wiring and Polish
+    tasks:
+      - text: Mount ScopePanel in RightPanel below EffectStack
+        done: false
+      - text: Persist selected scope in localStorage
+        done: false
+      - text: Test live scope updates during slider interaction
+        done: false
+      - text: Test scope panel collapse/expand and tab switching
+        done: false
+extra: {}
