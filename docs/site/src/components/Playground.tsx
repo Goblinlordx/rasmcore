@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import type { ParamDescriptor } from '@/lib/types';
-import { renderFilterToPixels, isLoaded, loadWasm, type RenderResult } from '@/lib/wasm-loader';
+import { renderFilterToCanvas, isLoaded, loadWasm } from '@/lib/wasm-loader';
 import { ParamControls } from './ParamControls';
 import { LiveCodeExample } from './LiveCodeExample';
 
@@ -14,27 +14,6 @@ interface PlaygroundProps {
 }
 
 type Status = 'idle' | 'loading-wasm' | 'rendering' | 'ready' | 'error';
-
-/** Render f32 RGBA pixels to a canvas element. */
-function renderToCanvas(canvas: HTMLCanvasElement, result: RenderResult) {
-  const t0 = performance.now();
-  const { pixels, width, height } = result;
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-
-  // Fast f32→u8 quantize: multiply by 255, write directly into Uint8ClampedArray.
-  // Uint8ClampedArray auto-clamps to [0,255] and rounds — no Math.round/max/min needed.
-  const len = pixels.length;
-  const u8 = new Uint8ClampedArray(len);
-  for (let i = 0; i < len; i++) {
-    u8[i] = pixels[i] * 255;
-  }
-  const tQ = performance.now();
-  ctx.putImageData(new ImageData(u8, width, height), 0, 0);
-  console.log(`[playground] canvas: quantize=${(tQ - t0).toFixed(1)}ms put=${(performance.now() - tQ).toFixed(1)}ms ${width}x${height}`);
-}
 
 export function Playground({ filterName, params, referenceImageUrl, staticAfterUrl }: PlaygroundProps) {
   const [status, setStatus] = useState<Status>('idle');
@@ -70,7 +49,7 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
     return refImageBytes.current;
   }, [referenceImageUrl]);
 
-  // Render to canvas with Source caching (no re-decode, no PNG encode)
+  // Render directly to canvas — GPU when available, 2D fallback
   const doRender = useCallback(async (vals: Record<string, number | boolean>) => {
     const seq = ++renderSeq.current;
     try {
@@ -81,16 +60,20 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
 
       setStatus('rendering');
       const imgBytes = await loadRefImage();
-      const result = await renderFilterToPixels(imgBytes, filterName, vals, referenceImageUrl);
 
       if (seq !== renderSeq.current) return;
 
-      // Render f32 pixels directly to canvas — no PNG encode, no Blob
       if (afterCanvasRef.current) {
-        renderToCanvas(afterCanvasRef.current, result);
+        await renderFilterToCanvas(
+          afterCanvasRef.current,
+          imgBytes,
+          filterName,
+          vals,
+          referenceImageUrl,
+        );
       }
 
-      setStaticUrl(''); // Switch from static img to canvas
+      setStaticUrl('');
       setHasResult(true);
       setStatus('ready');
       setError('');
@@ -138,7 +121,6 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
         {status === 'error' && <span style={{ fontSize: '0.8rem', color: '#f85149' }}>Error: {error}</span>}
       </div>
 
-      {/* Split view */}
       {hasResult ? (
         <div
           ref={containerRef}
@@ -152,11 +134,9 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
           onMouseLeave={() => { dragging.current = false; }}
           onClick={e => { if (!activated) activate(); updateSplit(e.clientX); }}
         >
-          {/* Before — reference image */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={referenceImageUrl} alt="Before" draggable={false} style={{ display: 'block', maxWidth: '100%', pointerEvents: 'none' }} />
 
-          {/* After — canvas for live renders, static img as initial fallback */}
           {staticUrl ? (
             /* eslint-disable-next-line @next/next/no-img-element */
             <img src={staticUrl} alt="After" draggable={false} style={{
@@ -206,12 +186,10 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
         </div>
       )}
 
-      {/* Param controls */}
       {params.length > 0 && (
         <ParamControls params={params} values={values} onChange={onParamChange} />
       )}
 
-      {/* Live code example */}
       <LiveCodeExample name={filterName} values={values} />
     </div>
   );
