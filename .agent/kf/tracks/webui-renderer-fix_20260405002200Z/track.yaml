@@ -1,94 +1,87 @@
 id: webui-renderer-fix_20260405002200Z
-title: "Fix web UI renderer — invisible output + aspect ratio"
+title: Fix web UI renderer — invisible output + aspect ratio
 type: bug
 status: pending
 created: 2026-04-05
-updated: 2026-04-05
+updated: '2026-04-05'
 spec:
-  summary: |
-    Fix two rendering bugs: (1) processed output invisible because
+  summary: 'Fix two rendering bugs: (1) processed output invisible because
+
     getWideGamutContext passes colorSpace option that returns null in some
+
     browsers, (2) original image aspect ratio not preserved in canvas display.
-  context: |
-    The canvas-display-p3 track added getWideGamutContext() which passes
-    { colorSpace } to canvas.getContext('2d'). Even with the sRGB fallback,
+
+    '
+  context: 'The canvas-display-p3 track added getWideGamutContext() which passes
+
+    { colorSpace } to canvas.getContext(''2d''). Even with the sRGB fallback,
+
     some browsers do not recognize the colorSpace option at all and return
+
     null. The optional chaining (?.) silently skips drawing, leaving a
+
     blank canvas. The v2-preview-worker uses non-null assertion (!) which
+
     would crash instead.
 
+
     The aspect ratio issue manifests on the original/before canvas where
+
     the image appears stretched or not properly fitted to the viewport.
-  codebase_analysis: |
-    web-ui/src/utils/canvasColorSpace.ts:
-    - getWideGamutContext() always passes { colorSpace } even for sRGB fallback
-    - Some browsers return null when they see an unknown option object
-    - Fix: when P3 is not supported, call getContext('2d') with NO options
 
-    web-ui/src/hooks/useWorker.ts line 87:
-    - getWideGamutContext(canvas)?.drawImage(img, 0, 0) — silently fails
-    - Should fall back to plain canvas.getContext('2d') if wide-gamut fails
-
-    web-ui/src/App.tsx lines 105, 110:
-    - Same getWideGamutContext pattern for original + preview canvas
-
-    web-ui/src/v2-preview-worker.ts line 142:
-    - oc.getContext('2d', { colorSpace: workerPreferredColorSpace() })!
-    - Non-null assertion crashes if context is null
-
-    web-ui/src/components/Canvas.tsx + useCanvasTransform.ts:
-    - computeTransformCSS sets CSS width/height = imageW/imageH with
-      scale(zoom) transform — this is correct for aspect ratio
-    - But imageWidth/imageHeight props come from worker.imageInfo which
-      may be 0 before image loads, causing fitZoom to return 1
-    - Need to verify Canvas.tsx handles the 0-dimension case gracefully
+    '
+  codebase_analysis: "web-ui/src/utils/canvasColorSpace.ts:\n- getWideGamutContext() always passes { colorSpace } even for\
+    \ sRGB fallback\n- Some browsers return null when they see an unknown option object\n- Fix: when P3 is not supported,\
+    \ call getContext('2d') with NO options\n\nweb-ui/src/hooks/useWorker.ts line 87:\n- getWideGamutContext(canvas)?.drawImage(img,\
+    \ 0, 0) — silently fails\n- Should fall back to plain canvas.getContext('2d') if wide-gamut fails\n\nweb-ui/src/App.tsx\
+    \ lines 105, 110:\n- Same getWideGamutContext pattern for original + preview canvas\n\nweb-ui/src/v2-preview-worker.ts\
+    \ line 142:\n- oc.getContext('2d', { colorSpace: workerPreferredColorSpace() })!\n- Non-null assertion crashes if context\
+    \ is null\n\nweb-ui/src/components/Canvas.tsx + useCanvasTransform.ts:\n- computeTransformCSS sets CSS width/height =\
+    \ imageW/imageH with\n  scale(zoom) transform — this is correct for aspect ratio\n- But imageWidth/imageHeight props come\
+    \ from worker.imageInfo which\n  may be 0 before image loads, causing fitZoom to return 1\n- Need to verify Canvas.tsx\
+    \ handles the 0-dimension case gracefully\n"
   acceptance_criteria:
-    - Processed output is visible in all major browsers (Chrome, Firefox, Safari)
-    - getWideGamutContext falls back to plain getContext('2d') when colorSpace not supported
-    - v2-preview-worker does not crash on null context
-    - Original image maintains correct aspect ratio in viewport
-    - Split-view works correctly with both canvases
-    - No regression on browsers that DO support display-p3
-  out_of_scope: |
-    - WebGPU display surface (separate track)
-    - HDR extended range display
-    - New UI features or layout changes
-  technical_notes: |
-    Fix approach for invisible output:
-    1. In canvasColorSpace.ts getWideGamutContext(): when P3 is not supported,
-       call canvas.getContext('2d') with NO options (not { colorSpace: 'srgb' })
-    2. Add a secondary fallback: if the context is still null after the
-       preferred call, try plain canvas.getContext('2d')
-    3. In v2-preview-worker.ts: replace non-null assertion with fallback
+  - Processed output is visible in all major browsers (Chrome, Firefox, Safari)
+  - getWideGamutContext falls back to plain getContext('2d') when colorSpace not supported
+  - v2-preview-worker does not crash on null context
+  - Original image maintains correct aspect ratio in viewport
+  - Split-view works correctly with both canvases
+  - No regression on browsers that DO support display-p3
+  out_of_scope: '- WebGPU display surface (separate track)
 
-    Fix approach for aspect ratio:
-    1. Check Canvas.tsx for cases where imageWidth/imageHeight are 0
-    2. Verify fitZoom handles 0 dimensions (it does — returns 1)
-    3. Check if the issue is that canvas.width/height attributes aren't
-       being set to match the CSS dimensions
-    4. The CSS transform approach should preserve aspect ratio since
-       width/height are set to image dimensions and scale is uniform
+    - HDR extended range display
+
+    - New UI features or layout changes
+
+    '
+  technical_notes: "Fix approach for invisible output:\n1. In canvasColorSpace.ts getWideGamutContext(): when P3 is not supported,\n\
+    \   call canvas.getContext('2d') with NO options (not { colorSpace: 'srgb' })\n2. Add a secondary fallback: if the context\
+    \ is still null after the\n   preferred call, try plain canvas.getContext('2d')\n3. In v2-preview-worker.ts: replace non-null\
+    \ assertion with fallback\n\nFix approach for aspect ratio:\n1. Check Canvas.tsx for cases where imageWidth/imageHeight\
+    \ are 0\n2. Verify fitZoom handles 0 dimensions (it does — returns 1)\n3. Check if the issue is that canvas.width/height\
+    \ attributes aren't\n   being set to match the CSS dimensions\n4. The CSS transform approach should preserve aspect ratio\
+    \ since\n   width/height are set to image dimensions and scale is uniform\n"
 plan:
-  - phase: "Canvas Context Fix"
-    tasks:
-      - text: "Fix getWideGamutContext to call plain getContext('2d') when P3 not supported"
-        done: false
-      - text: "Add secondary fallback — if context is null, retry without options"
-        done: false
-      - text: "Fix v2-preview-worker non-null assertion on OffscreenCanvas context"
-        done: false
-  - phase: "Aspect Ratio Fix"
-    tasks:
-      - text: "Diagnose aspect ratio issue — check canvas attribute dimensions vs CSS dimensions"
-        done: false
-      - text: "Fix canvas sizing to preserve aspect ratio in all view modes"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Test processed output visibility in Chrome, Firefox, Safari"
-        done: false
-      - text: "Test original image aspect ratio with various image dimensions"
-        done: false
-      - text: "Test split-view with both canvases rendering correctly"
-        done: false
+- phase: Canvas Context Fix
+  tasks:
+  - text: Fix getWideGamutContext to call plain getContext('2d') when P3 not supported
+    done: true
+  - text: Add secondary fallback — if context is null, retry without options
+    done: true
+  - text: Fix v2-preview-worker non-null assertion on OffscreenCanvas context
+    done: true
+- phase: Aspect Ratio Fix
+  tasks:
+  - text: Diagnose aspect ratio issue — check canvas attribute dimensions vs CSS dimensions
+    done: true
+  - text: Fix canvas sizing to preserve aspect ratio in all view modes
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test processed output visibility in Chrome, Firefox, Safari
+    done: true
+  - text: Test original image aspect ratio with various image dimensions
+    done: true
+  - text: Test split-view with both canvases rendering correctly
+    done: true
 extra: {}
