@@ -197,10 +197,9 @@ impl Filter for CurvesMaster {
         let lut = build_curve_lut_f32(&self.points, 4096);
         let mut out = input.to_vec();
         for pixel in out.chunks_exact_mut(4) {
-            for c in &mut pixel[..3] {
-                let idx = (*c * 4095.0).round().clamp(0.0, 4095.0) as usize;
-                *c = lut[idx];
-            }
+            pixel[0] = lut[(pixel[0] * 4095.0).round().clamp(0.0, 4095.0) as usize];
+            pixel[1] = lut[(pixel[1] * 4095.0).round().clamp(0.0, 4095.0) as usize];
+            pixel[2] = lut[(pixel[2] * 4095.0).round().clamp(0.0, 4095.0) as usize];
         }
         Ok(out)
     }
@@ -643,9 +642,9 @@ impl Filter for TonemapReinhard {
     fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
         let mut out = input.to_vec();
         for pixel in out.chunks_exact_mut(4) {
-            for c in &mut pixel[..3] {
-                *c = *c / (1.0 + *c);
-            }
+            pixel[0] = pixel[0] / (1.0 + pixel[0]);
+            pixel[1] = pixel[1] / (1.0 + pixel[1]);
+            pixel[2] = pixel[2] / (1.0 + pixel[2]);
         }
         Ok(out)
     }
@@ -676,15 +675,13 @@ impl Filter for TonemapDrago {
         let log_max = (1.0 + self.l_max).ln();
         let bias_pow = (self.bias.ln() / 0.5f32.ln()).max(0.01);
         let mut out = input.to_vec();
+        let drago = |v: f32| -> f32 {
+            if v <= 0.0 { 0.0 } else { ((1.0 + v).ln() / log_max).powf(1.0 / bias_pow).clamp(0.0, 1.0) }
+        };
         for pixel in out.chunks_exact_mut(4) {
-            for c in &mut pixel[..3] {
-                if *c <= 0.0 {
-                    *c = 0.0;
-                } else {
-                    let mapped = (1.0 + *c).ln() / log_max;
-                    *c = mapped.powf(1.0 / bias_pow).clamp(0.0, 1.0);
-                }
-            }
+            pixel[0] = drago(pixel[0]);
+            pixel[1] = drago(pixel[1]);
+            pixel[2] = drago(pixel[2]);
         }
         Ok(out)
     }
@@ -728,13 +725,14 @@ pub struct TonemapFilmic {
 impl Filter for TonemapFilmic {
     fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
         let mut out = input.to_vec();
+        let (a, b, c, d, e) = (self.a, self.b, self.c, self.d, self.e);
+        let filmic = |x: f32| -> f32 {
+            (x * (a * x + b) / (x * (c * x + d) + e)).clamp(0.0, 1.0)
+        };
         for pixel in out.chunks_exact_mut(4) {
-            for c in &mut pixel[..3] {
-                let x = *c;
-                let num = x * (self.a * x + self.b);
-                let den = x * (self.c * x + self.d) + self.e;
-                *c = (num / den).clamp(0.0, 1.0);
-            }
+            pixel[0] = filmic(pixel[0]);
+            pixel[1] = filmic(pixel[1]);
+            pixel[2] = filmic(pixel[2]);
         }
         Ok(out)
     }

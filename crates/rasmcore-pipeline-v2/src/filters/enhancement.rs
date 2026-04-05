@@ -51,20 +51,25 @@ impl Filter for AutoLevel {
         let mut max = [f32::MIN; 3];
 
         for pixel in input.chunks_exact(4) {
-            for c in 0..3 {
-                min[c] = min[c].min(pixel[c]);
-                max[c] = max[c].max(pixel[c]);
-            }
+            min[0] = min[0].min(pixel[0]);
+            min[1] = min[1].min(pixel[1]);
+            min[2] = min[2].min(pixel[2]);
+            max[0] = max[0].max(pixel[0]);
+            max[1] = max[1].max(pixel[1]);
+            max[2] = max[2].max(pixel[2]);
         }
 
+        let range = [
+            (max[0] - min[0]).max(1e-10),
+            (max[1] - min[1]).max(1e-10),
+            (max[2] - min[2]).max(1e-10),
+        ];
+        let inv_range = [1.0 / range[0], 1.0 / range[1], 1.0 / range[2]];
         let mut out = input.to_vec();
         for pixel in out.chunks_exact_mut(4) {
-            for c in 0..3 {
-                let range = max[c] - min[c];
-                if range > 1e-10 {
-                    pixel[c] = (pixel[c] - min[c]) / range;
-                }
-            }
+            pixel[0] = (pixel[0] - min[0]) * inv_range[0];
+            pixel[1] = (pixel[1] - min[1]) * inv_range[1];
+            pixel[2] = (pixel[2] - min[2]) * inv_range[2];
         }
         Ok(out)
     }
@@ -250,11 +255,10 @@ impl Filter for Clarity {
 
         for (pixel, blurred_pixel) in out.chunks_exact_mut(4).zip(blurred.chunks_exact(4)) {
             let luma = luminance(pixel[0], pixel[1], pixel[2]).clamp(0.0, 1.0);
-            let weight = 4.0 * luma * (1.0 - luma); // midtone peak at 0.5
-            for c in 0..3 {
-                let detail = pixel[c] - blurred_pixel[c];
-                pixel[c] += amount * detail * weight;
-            }
+            let aw = amount * 4.0 * luma * (1.0 - luma); // midtone-weighted amount
+            pixel[0] += aw * (pixel[0] - blurred_pixel[0]);
+            pixel[1] += aw * (pixel[1] - blurred_pixel[1]);
+            pixel[2] += aw * (pixel[2] - blurred_pixel[2]);
         }
 
         Ok(out)

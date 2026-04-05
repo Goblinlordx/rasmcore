@@ -66,10 +66,12 @@ impl Filter for GaussianNoise {
         let mut out = input.to_vec();
 
         for pixel in out.chunks_exact_mut(4) {
-            for ch in &mut pixel[..3] {
-                let noise = mean + sigma * rng.next_gaussian();
-                *ch += noise * amount;
-            }
+            let n0 = (mean + sigma * rng.next_gaussian()) * amount;
+            let n1 = (mean + sigma * rng.next_gaussian()) * amount;
+            let n2 = (mean + sigma * rng.next_gaussian()) * amount;
+            pixel[0] += n0;
+            pixel[1] += n1;
+            pixel[2] += n2;
         }
         Ok(out)
     }
@@ -96,10 +98,9 @@ impl Filter for UniformNoise {
         let mut out = input.to_vec();
 
         for pixel in out.chunks_exact_mut(4) {
-            for ch in &mut pixel[..3] {
-                let noise = rng.next_f32_signed() * range;
-                *ch += noise;
-            }
+            pixel[0] += rng.next_f32_signed() * range;
+            pixel[1] += rng.next_f32_signed() * range;
+            pixel[2] += rng.next_f32_signed() * range;
         }
         Ok(out)
     }
