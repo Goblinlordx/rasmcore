@@ -142,15 +142,15 @@ plan:
 - phase: V1 WIT and Adapter Removal
   tasks:
   - text: Remove wit/image/ directory (V1 WIT interfaces)
-    done: false
+    done: true
   - text: Remove crates/rasmcore-image/src/adapter/ (V1 WIT adapters)
-    done: false
+    done: true
   - text: Remove crates/rasmcore-image/src/bindings.rs (V1 WIT bindings)
-    done: false
+    done: true
   - text: Remove component metadata from rasmcore-image Cargo.toml
-    done: false
+    done: true
   - text: Verify rasmcore-image still compiles as library (not WASM component)
-    done: false
+    done: true
 - phase: Build Script and SDK Cleanup
   tasks:
   - text: Remove scripts/generate-fluent-sdk.cjs (V1 SDK generator)

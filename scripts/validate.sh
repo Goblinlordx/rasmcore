@@ -72,54 +72,12 @@ else
   echo "  SKIP — fixtures not generated (run tests/fixtures/generate.sh)"
 fi
 
-echo "=== 5. WASM build ==="
-# Force build.rs to regenerate both filters.wit and pipeline.wit from templates
-touch wit/image/filters.wit.tmpl wit/image/pipeline.wit.tmpl 2>/dev/null || true
-cargo build -p rasmcore-image 2>&1 || true
-if cargo component build -p rasmcore-image 2>&1; then
+echo "=== 5. V2 WASM component build ==="
+if cargo component build -p rasmcore-v2-wasm 2>&1; then
   echo "  PASS"
 else
-  echo "  FAIL — WASM component build failed"
+  echo "  FAIL — V2 WASM component build failed"
   FAILED=1
-fi
-
-echo "=== 6. WASM integration tests ==="
-WASM_FILE="target/wasm32-wasip1/debug/rasmcore_image.wasm"
-if [ ! -f "$WASM_FILE" ]; then
-  WASM_FILE="target/wasm32-wasip1/release/rasmcore_image.wasm"
-fi
-if [ -f "$WASM_FILE" ] && [ -d "tests/fixtures/generated" ]; then
-  if cargo test -p wasm-integration --test wasm_parity 2>&1; then
-    echo "  PASS"
-  else
-    echo "  FAIL — WASM integration tests failed"
-    FAILED=1
-  fi
-else
-  echo "  SKIP — requires built .wasm and fixtures"
-fi
-
-echo "=== 7. TypeScript SDK tests ==="
-if command -v npx &>/dev/null && [ -f "package.json" ] && [ -d "tests/fixtures/generated" ]; then
-  # Generate SDK if not already present
-  if [ ! -f "sdk/typescript/generated/rasmcore-image.js" ]; then
-    if bash scripts/generate-ts-sdk.sh 2>&1; then
-      echo "  SDK generated"
-    else
-      echo "  FAIL — SDK generation failed"
-      FAILED=1
-    fi
-  fi
-  if [ -f "sdk/typescript/generated/rasmcore-image.js" ]; then
-    if node --test sdk/typescript/tests/ 2>&1; then
-      echo "  PASS"
-    else
-      echo "  FAIL — TypeScript SDK tests failed"
-      FAILED=1
-    fi
-  fi
-else
-  echo "  SKIP — requires npx, package.json, and fixtures"
 fi
 
 echo "=== 8. Demo build ==="
