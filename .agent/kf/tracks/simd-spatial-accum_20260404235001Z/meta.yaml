@@ -1,6 +1,6 @@
 title: SIMD f32x4 accumulation for V2 spatial filter inner loops
-status: pending
+status: completed
 type: chore
 approved: false
 created: '2026-04-04'
-updated: '2026-04-04'
+updated: '2026-04-05'
