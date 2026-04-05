@@ -264,6 +264,26 @@ ts += `  // ─── Discovery ────────────────
 }
 `;
 
+// ─── Extension Mechanism ─────────────────────────────────────────────────────
+// Scan sdk/v2/extensions/ for hand-written .ts files.
+// Each file is appended after the generated Pipeline class, giving it access
+// to Pipeline.prototype for adding methods like writeRenderTarget().
+
+const extensionsDir = join(projectRoot, 'sdk', 'v2', 'extensions');
+if (existsSync(extensionsDir)) {
+  const { readdirSync } = await import('fs');
+  const extFiles = readdirSync(extensionsDir)
+    .filter(f => f.endsWith('.ts'))
+    .sort();
+  for (const extFile of extFiles) {
+    const extContent = readFileSync(join(extensionsDir, extFile), 'utf8');
+    ts += `\n// ─── Extension: ${extFile} ────────────────────────────────────────\n`;
+    ts += extContent;
+    ts += '\n';
+    console.log(`  Extension merged: ${extFile}`);
+  }
+}
+
 // ─── Write output ───────────────────────────────────────────────────────────
 
 mkdirSync(outDir, { recursive: true });
