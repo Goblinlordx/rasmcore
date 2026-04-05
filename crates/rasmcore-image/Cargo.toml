@@ -15,7 +15,6 @@ base64 = "0.22"
 rasmcore-webp = { path = "../rasmcore-webp" }
 fast_image_resize = "5"
 moxcms = "0.8"
-wit-bindgen-rt = "0.41.0"
 png = "0.17"
 rasmcore-fits = { path = "../rasmcore-fits" }
 rasmcore-jpeg = { path = "../rasmcore-jpeg" }
@@ -84,13 +83,6 @@ harness = false
 rasmcore-codegen = { path = "../rasmcore-codegen" }
 syn = { version = "2", features = ["full", "parsing"] }
 naga = { version = "24", features = ["wgsl-in"] }
-
-[package.metadata.component]
-package = "rasmcore:image"
-target.path = "../../wit/image"
-
-[package.metadata.component.target.dependencies]
-"rasmcore:core" = { path = "../../wit/core" }
 
 [lints]
 workspace = true

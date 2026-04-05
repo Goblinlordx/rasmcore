@@ -3048,7 +3048,6 @@ dependencies = [
  "unicode-bidi",
  "unicode-linebreak",
  "wgpu",
- "wit-bindgen-rt",
  "xmp-writer",
  "zenjpeg",
 ]

@@ -1,0 +1,6 @@
+[     117ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=9b8d6b2e:20102
+[     721ms] [LOG] [v2-pipeline] Layer cache created (256 MB) @ http://localhost:5173/src/v2-pipeline-worker.ts?worker_file&type=module:28
+[     721ms] [LOG] [v2-pipeline] WebGPU available @ http://localhost:5173/src/v2-pipeline-worker.ts?worker_file&type=module:32
+[     721ms] [LOG] [v2-preview] Layer cache created (64 MB) @ http://localhost:5173/src/v2-preview-worker.ts?worker_file&type=module:30
+[   59942ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:963
+[   60252ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=477c698e:20102
