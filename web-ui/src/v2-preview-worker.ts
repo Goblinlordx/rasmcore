@@ -307,12 +307,16 @@ async function processChain(chain) {
         const raw2 = pipe._pipe;
         const node2 = pipe._node;
         if (raw2 && typeof raw2.render === 'function') {
-          // render() returns Float32Array (pixel-buffer = list<f32> in WIT)
+          // render() returns pixel-buffer (list<f32>) — JCO lifts as Float32Array
           const pixels = raw2.render(node2);
           if (pixels && pixels.length > 0) {
             const info2 = raw2.nodeInfo(node2);
+            const w = info2.width;
+            const h = info2.height;
+            const expected = w * h * 4;
             const f32 = pixels instanceof Float32Array ? pixels : new Float32Array(pixels);
-            gpuHandler.displayFromCpu(f32, info2.width, info2.height);
+            console.log(`[v2-preview] display: ${w}x${h}, pixels=${f32.length} floats (expected ${expected}), type=${pixels.constructor.name}`);
+            gpuHandler.displayFromCpu(f32, w, h);
             const totalMs = Math.round(performance.now() - t0);
             console.log(`[v2-preview] ${totalMs}ms (cpu→display)`);
             self.postMessage({ type: 'displayed', totalMs, proxyMax: PREVIEW_MAX });
