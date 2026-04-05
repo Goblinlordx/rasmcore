@@ -3,77 +3,68 @@ title: SDK host integration guide (GPU, cache, required host facilities)
 type: chore
 status: pending
 created: '2026-04-04'
-updated: '2026-04-04'
+updated: '2026-04-05'
 spec:
-  summary: |
-    Document what host facilities SDK consumers must provide when integrating
+  summary: 'Document what host facilities SDK consumers must provide when integrating
+
     the WASM module: GPU executor (WebGPU/wgpu), and what the module handles
+
     internally (layer cache, fusion, encoding) vs what requires host wiring.
-  context: |
-    The V2 WASM module exposes a pipeline via WIT, but certain capabilities require
-    host cooperation. New SDK consumers (browser apps, Node.js, Go, Swift) need
-    a clear guide on what they must provide vs what works out of the box.
 
-    Current host responsibilities:
-    - GPU: Host must provide WebGPU device/dispatch. WASM generates WGSL shaders
-      but cannot compile or dispatch them — that is a host-specific operation.
-    - Layer cache: Internal to WASM instance (V1 pattern). Created via WIT resource,
-      injected into pipeline. Pixel data lives in WASM linear memory. No host
-      involvement beyond calling constructor and setLayerCache().
+    '
+  context: "The V2 WASM module exposes a pipeline via WIT, but certain capabilities require\nhost cooperation. New SDK consumers\
+    \ (browser apps, Node.js, Go, Swift) need\na clear guide on what they must provide vs what works out of the box.\n\nCurrent\
+    \ host responsibilities:\n- GPU: Host must provide WebGPU device/dispatch. WASM generates WGSL shaders\n  but cannot compile\
+    \ or dispatch them — that is a host-specific operation.\n- Layer cache: Internal to WASM instance (V1 pattern). Created\
+    \ via WIT resource,\n  injected into pipeline. Pixel data lives in WASM linear memory. No host\n  involvement beyond calling\
+    \ constructor and setLayerCache().\n\nWhat works out of the box (no host wiring):\n- All CPU filter execution\n- Analytic\
+    \ fusion and optimization\n- Encoding/decoding (all codecs)\n- Color space conversion\n- Layer cache (once initialized)\n"
+  codebase_analysis: '- GPU: GpuExecutor trait (pipeline-v2/src/gpu.rs) receives WGSL + params, returns f32 pixels
 
-    What works out of the box (no host wiring):
-    - All CPU filter execution
-    - Analytic fusion and optimization
-    - Encoding/decoding (all codecs)
-    - Color space conversion
-    - Layer cache (once initialized)
-  codebase_analysis: |
-    - GPU: GpuExecutor trait (pipeline-v2/src/gpu.rs) receives WGSL + params, returns f32 pixels
     - Cache: LayerCache is a WIT resource with constructor(capacity_mb) — entirely within WASM
+
     - Shader cache: Host-side concern (GPUComputePipeline in browser, ShaderModule in wgpu)
+
     - The WIT interface (wit/v2/pipeline.wit) is the contract — all methods listed there
+
     - generate-v2-fluent-sdk.mjs generates TypeScript from registry metadata
+
+    '
   acceptance_criteria:
-    - SDK README documents host vs internal responsibilities
-    - GPU integration section with browser WebGPU and native wgpu examples
-    - Layer cache section showing initialization and injection pattern
-    - Shader cache section explaining host-side caching strategy
-    - Minimal working example for each host environment (browser, Node, native)
-  out_of_scope: |
-    Implementing the host facilities (separate tracks). Changing the WIT interface.
-  technical_notes: |
-    Structure the guide as:
-    1. What works out of the box (CPU pipeline, all filters, all codecs)
-    2. Optional: GPU acceleration (host must provide)
-       - Interface: WASM sends shader source + params, host compiles + dispatches
-       - Browser: WebGPU device + GpuHandlerV2 pattern
-       - Native: wgpu device + WgpuExecutor
-       - Shader caching is host-side (cache GPUComputePipeline / ShaderModule)
-    3. Optional: Layer cache (internal, host just calls constructor)
-       - Created via WIT resource constructor(capacity_mb)
-       - Injected via pipeline.setLayerCache(cache)
-       - Lives in WASM linear memory, managed by library
-       - Persists across pipeline instances within same WASM instance
-    4. What each SDK generator produces and how to extend
+  - SDK README documents host vs internal responsibilities
+  - GPU integration section with browser WebGPU and native wgpu examples
+  - Layer cache section showing initialization and injection pattern
+  - Shader cache section explaining host-side caching strategy
+  - Minimal working example for each host environment (browser, Node, native)
+  out_of_scope: 'Implementing the host facilities (separate tracks). Changing the WIT interface.
+
+    '
+  technical_notes: "Structure the guide as:\n1. What works out of the box (CPU pipeline, all filters, all codecs)\n2. Optional:\
+    \ GPU acceleration (host must provide)\n   - Interface: WASM sends shader source + params, host compiles + dispatches\n\
+    \   - Browser: WebGPU device + GpuHandlerV2 pattern\n   - Native: wgpu device + WgpuExecutor\n   - Shader caching is host-side\
+    \ (cache GPUComputePipeline / ShaderModule)\n3. Optional: Layer cache (internal, host just calls constructor)\n   - Created\
+    \ via WIT resource constructor(capacity_mb)\n   - Injected via pipeline.setLayerCache(cache)\n   - Lives in WASM linear\
+    \ memory, managed by library\n   - Persists across pipeline instances within same WASM instance\n4. What each SDK generator\
+    \ produces and how to extend\n"
 plan:
-  - phase: Documentation
-    tasks:
-      - text: Create SDK host integration guide documenting internal vs host responsibilities
-        done: false
-      - text: Document GPU integration pattern with browser WebGPU example
-        done: false
-      - text: Document GPU integration pattern with native wgpu example
-        done: false
-      - text: Document layer cache initialization and injection pattern
-        done: false
-      - text: Document shader caching as host-side concern with recommendations
-        done: false
-      - text: Add minimal working examples for browser and native environments
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Review guide against actual WIT interface for accuracy
-        done: false
-      - text: Verify examples compile/run
-        done: false
+- phase: Documentation
+  tasks:
+  - text: Create SDK host integration guide documenting internal vs host responsibilities
+    done: true
+  - text: Document GPU integration pattern with browser WebGPU example
+    done: true
+  - text: Document GPU integration pattern with native wgpu example
+    done: true
+  - text: Document layer cache initialization and injection pattern
+    done: true
+  - text: Document shader caching as host-side concern with recommendations
+    done: true
+  - text: Add minimal working examples for browser and native environments
+    done: true
+- phase: Verification
+  tasks:
+  - text: Review guide against actual WIT interface for accuracy
+    done: true
+  - text: Verify examples compile/run
+    done: true
 extra: {}
