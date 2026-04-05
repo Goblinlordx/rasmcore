@@ -344,10 +344,15 @@ export function useCanvasTransform(
     setViewportEl(el);
   }, []);
 
+  const restore = useCallback((saved: TransformState) => {
+    setState(saved);
+  }, []);
+
   return {
     state: { ...state, zoom: effectiveZoom },
     fitZoom: fit,
     resetToFit,
+    restore,
     gestureRef,
     handlers: {
       onMouseDown: handleMouseDown,

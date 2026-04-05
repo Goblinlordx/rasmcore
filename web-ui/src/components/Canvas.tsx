@@ -32,6 +32,8 @@ export default function Canvas({
   const [viewMode, setViewMode] = useState<ViewMode>('current');
   const [splitPos, setSplitPos] = useState(50);
   const isDragging = useRef(false);
+  // Saved zoom/pan state before entering split mode
+  const savedTransformRef = useRef<{ zoom: number; panX: number; panY: number } | null>(null);
 
   // Measure the container's available space
   const [containerRef, containerSize] = useContainerSize();
@@ -52,9 +54,15 @@ export default function Canvas({
   const transformCanvasStyle = hasImage
     ? computeTransformCSS(transform.state, containerSize, imageWidth, imageHeight)
     : undefined;
+  // Split mode: always fit-to-viewport with no pan
+  const fitState = { zoom: transform.fitZoom, panX: 0, panY: 0 };
+  const fitCanvasStyle = hasImage
+    ? computeTransformCSS(fitState, containerSize, imageWidth, imageHeight)
+    : undefined;
   // Preview uses display mode style when available, original always uses transform
-  const previewStyle = displayMode ? displayCanvasStyle : transformCanvasStyle;
-  const originalStyle = transformCanvasStyle;
+  // Split mode forces fit-to-viewport for both canvases
+  const previewStyle = showSplit ? fitCanvasStyle : (displayMode ? displayCanvasStyle : transformCanvasStyle);
+  const originalStyle = showSplit ? fitCanvasStyle : transformCanvasStyle;
 
   // Forward viewport changes to worker for shader-based pan/zoom
   useEffect(() => {
@@ -128,6 +136,15 @@ export default function Canvas({
               className={'canvas-tab' + (viewMode === mode ? ' active' : '')}
               onClick={(e) => {
                 e.stopPropagation();
+                if (mode === 'split' && viewMode !== 'split') {
+                  // Save current zoom/pan before entering split
+                  savedTransformRef.current = { ...transform.state };
+                  transform.resetToFit();
+                } else if (mode !== 'split' && viewMode === 'split' && savedTransformRef.current) {
+                  // Restore zoom/pan when leaving split
+                  transform.restore(savedTransformRef.current);
+                  savedTransformRef.current = null;
+                }
                 setViewMode(mode);
               }}
             >
@@ -155,10 +172,11 @@ export default function Canvas({
       )}
 
       {/* Viewport container — fills available space, handles pan/zoom events */}
+      {/* Split mode: no pan/zoom — fit-to-viewport only, divider drag handles interaction */}
       <div
         ref={viewportRef}
         className="canvas-viewport"
-        {...(hasImage ? transform.handlers : {})}
+        {...(hasImage && !showSplit ? transform.handlers : {})}
       >
         {/* Both canvases always rendered (never unmount) — visibility controlled by CSS */}
         <canvas
