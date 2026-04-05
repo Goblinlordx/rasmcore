@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { ParamDescriptor } from '@/lib/types';
-import { renderFilter, isLoaded, loadWasm } from '@/lib/wasm-loader';
+import { renderFilterToPixels, isLoaded, loadWasm, type RenderResult } from '@/lib/wasm-loader';
 import { ParamControls } from './ParamControls';
 import { LiveCodeExample } from './LiveCodeExample';
 
@@ -15,10 +15,31 @@ interface PlaygroundProps {
 
 type Status = 'idle' | 'loading-wasm' | 'rendering' | 'ready' | 'error';
 
+/** Render f32 RGBA pixels to a canvas element. */
+function renderToCanvas(canvas: HTMLCanvasElement, result: RenderResult) {
+  const { pixels, width, height } = result;
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const pixelCount = width * height;
+  const u8 = new Uint8ClampedArray(pixelCount * 4);
+  for (let i = 0; i < pixelCount; i++) {
+    const si = i * 4;
+    u8[si] = Math.round(Math.max(0, Math.min(1, pixels[si])) * 255);
+    u8[si + 1] = Math.round(Math.max(0, Math.min(1, pixels[si + 1])) * 255);
+    u8[si + 2] = Math.round(Math.max(0, Math.min(1, pixels[si + 2])) * 255);
+    u8[si + 3] = Math.round(Math.max(0, Math.min(1, pixels[si + 3])) * 255);
+  }
+  ctx.putImageData(new ImageData(u8, width, height), 0, 0);
+}
+
 export function Playground({ filterName, params, referenceImageUrl, staticAfterUrl }: PlaygroundProps) {
   const [status, setStatus] = useState<Status>('idle');
   const [error, setError] = useState<string>('');
-  const [afterUrl, setAfterUrl] = useState<string>(staticAfterUrl || '');
+  const [hasResult, setHasResult] = useState(!!staticAfterUrl);
+  const [staticUrl, setStaticUrl] = useState(staticAfterUrl || '');
   const [values, setValues] = useState<Record<string, number | boolean>>(() => {
     const initial: Record<string, number | boolean> = {};
     for (const p of params) {
@@ -26,7 +47,6 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
         initial[p.name] = (p.default ?? 0) > 0.5;
       } else {
         let val = p.default ?? 0;
-        // Use showcase values for initial display (not identity)
         if (Math.abs(val) < 1e-6 && p.min != null && p.max != null) {
           val = p.min + (p.max - p.min) * 0.3;
         }
@@ -37,10 +57,10 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
   });
 
   const refImageBytes = useRef<Uint8Array | null>(null);
+  const afterCanvasRef = useRef<HTMLCanvasElement>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const renderSeq = useRef(0);
 
-  // Load reference image bytes on first interaction
   const loadRefImage = useCallback(async () => {
     if (refImageBytes.current) return refImageBytes.current;
     const resp = await fetch(referenceImageUrl);
@@ -49,7 +69,7 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
     return refImageBytes.current;
   }, [referenceImageUrl]);
 
-  // Render with current params
+  // Render to canvas with Source caching (no re-decode, no PNG encode)
   const doRender = useCallback(async (vals: Record<string, number | boolean>) => {
     const seq = ++renderSeq.current;
     try {
@@ -60,50 +80,41 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
 
       setStatus('rendering');
       const imgBytes = await loadRefImage();
-      const png = await renderFilter(imgBytes, filterName, vals);
+      const result = await renderFilterToPixels(imgBytes, filterName, vals, referenceImageUrl);
 
-      // Skip if a newer render was requested
       if (seq !== renderSeq.current) return;
 
-      const blob = new Blob([png], { type: 'image/png' });
-      setAfterUrl(prev => {
-        if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
-        return URL.createObjectURL(blob);
-      });
+      // Render f32 pixels directly to canvas — no PNG encode, no Blob
+      if (afterCanvasRef.current) {
+        renderToCanvas(afterCanvasRef.current, result);
+      }
+
+      setStaticUrl(''); // Switch from static img to canvas
+      setHasResult(true);
       setStatus('ready');
       setError('');
     } catch (e) {
       if (seq !== renderSeq.current) return;
       setStatus('error');
       console.error('[playground]', e);
-      // jco wraps WIT errors as Error with .payload containing the actual data
       const payload = (e as any)?.payload;
       const msg = payload ? JSON.stringify(payload, null, 2) : (e instanceof Error ? e.message : JSON.stringify(e, null, 2));
       setError(msg);
     }
-  }, [filterName, loadRefImage]);
+  }, [filterName, loadRefImage, referenceImageUrl]);
 
-  // Debounced param change handler
   const onParamChange = useCallback((newValues: Record<string, number | boolean>) => {
     setValues(newValues);
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     debounceTimer.current = setTimeout(() => doRender(newValues), 100);
   }, [doRender]);
 
-  // Trigger initial render on first interaction
   const [activated, setActivated] = useState(false);
   const activate = useCallback(() => {
     if (activated) return;
     setActivated(true);
     doRender(values);
   }, [activated, doRender, values]);
-
-  // Cleanup blob URLs
-  useEffect(() => {
-    return () => {
-      if (afterUrl.startsWith('blob:')) URL.revokeObjectURL(afterUrl);
-    };
-  }, [afterUrl]);
 
   // Split view state
   const containerRef = useRef<HTMLDivElement>(null);
@@ -127,7 +138,7 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
       </div>
 
       {/* Split view */}
-      {afterUrl ? (
+      {hasResult ? (
         <div
           ref={containerRef}
           style={{
@@ -140,14 +151,26 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
           onMouseLeave={() => { dragging.current = false; }}
           onClick={e => { if (!activated) activate(); updateSplit(e.clientX); }}
         >
+          {/* Before — reference image */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={referenceImageUrl} alt="Before" draggable={false} style={{ display: 'block', maxWidth: '100%', pointerEvents: 'none' }} />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={afterUrl} alt="After" draggable={false} style={{
-            position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-            objectFit: 'cover', pointerEvents: 'none',
-            clipPath: `inset(0 0 0 ${splitPos}%)`,
-          }} />
+
+          {/* After — canvas for live renders, static img as initial fallback */}
+          {staticUrl ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img src={staticUrl} alt="After" draggable={false} style={{
+              position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+              objectFit: 'cover', pointerEvents: 'none',
+              clipPath: `inset(0 0 0 ${splitPos}%)`,
+            }} />
+          ) : (
+            <canvas ref={afterCanvasRef} style={{
+              position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+              objectFit: 'cover', pointerEvents: 'none',
+              clipPath: `inset(0 0 0 ${splitPos}%)`,
+            }} />
+          )}
+
           <div
             style={{
               position: 'absolute', top: 0, bottom: 0, left: `${splitPos}%`,
