@@ -87,10 +87,21 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
     }
   }, [filterName, loadRefImage, referenceImageUrl]);
 
+  const sliderEventTime = useRef(0);
+
   const onParamChange = useCallback((newValues: Record<string, number | boolean>) => {
+    sliderEventTime.current = performance.now();
     setValues(newValues);
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    debounceTimer.current = setTimeout(() => doRender(newValues), 100);
+    debounceTimer.current = setTimeout(() => {
+      const debounceMs = performance.now() - sliderEventTime.current;
+      const renderStart = performance.now();
+      doRender(newValues).then(() => {
+        const renderMs = performance.now() - renderStart;
+        const totalMs = performance.now() - sliderEventTime.current;
+        console.log(`[playground] e2e: slider→visible=${totalMs.toFixed(0)}ms (debounce=${debounceMs.toFixed(0)}ms render=${renderMs.toFixed(0)}ms)`);
+      });
+    }, 100);
   }, [doRender]);
 
   const [activated, setActivated] = useState(false);
