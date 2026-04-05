@@ -1,0 +1,128 @@
+id: sdk-canvas-render_20260405041105Z
+title: Stateful canvas render target for V2 fluent SDK
+type: feature
+status: pending
+created: 2026-04-05
+updated: 2026-04-05
+spec:
+  summary: |
+    Add setCanvas() and render() to the V2 fluent SDK Pipeline class.
+    Consumers bind a canvas once, then call render() after each chain
+    change to GPU-blit directly to the canvas. Falls back to 2D canvas
+    when WebGPU is unavailable. write() for file output stays separate.
+  context: |
+    The V2 pipeline currently supports write(format) for encoded byte output.
+    For interactive applications (editors, previews, playgrounds), consumers
+    need to render pipeline results directly to a canvas element without
+    the encode-decode roundtrip.
+
+    This session built GpuHandlerV2 with executeAndDisplay() and the full
+    WebGPU direct-to-canvas blit pipeline. That infrastructure lives in
+    the web-ui source. This track exposes it through the SDK so any
+    consumer can use it — not just our web UI.
+
+    The consumer chooses their execution model:
+    - Main thread: pass a canvas element, SDK gets WebGPU context on it
+    - Worker: consumer transfers OffscreenCanvas themselves, passes it in
+    - No GPU: SDK falls back to 2D canvas drawImage with CPU-rendered pixels
+  codebase_analysis: |
+    GpuHandlerV2 (web-ui/src/gpu-handler-v2.ts):
+    - setDisplayCanvas(canvas, hdr) — configure rgba16float + tone mapping
+    - executeAndDisplay(ops, input, w, h) — compute + blit, zero readback
+    - displayOnly() — re-blit with viewport update, no recompute
+    - displayFromCpu(pixels, w, h) — upload CPU f32 + blit (fallback)
+    - prepare(shaders) — pre-compile shader cache
+
+    V2 fluent SDK generator (scripts/generate-v2-fluent-sdk.mjs):
+    - Generates Pipeline class with chainable filter methods from registry
+    - write(format) method calls raw WIT write()
+    - No extension mechanism for hand-written methods currently
+
+    WIT pipeline interface (wit/v2/pipeline.wit):
+    - render-gpu-plan(node) -> shaders + input pixels
+    - inject-gpu-result(node, pixels) -> cache result
+    - render(node) -> f32 pixels (CPU path)
+  acceptance_criteria:
+    - Pipeline.setCanvas(canvas, opts?) binds a persistent render target
+    - Pipeline.setCanvas(offscreenCanvas, opts?) works for worker usage
+    - Pipeline.render() executes the chain and displays on the bound canvas
+    - GPU path uses WebGPU direct blit when available (no CPU readback)
+    - CPU fallback uses 2D canvas drawImage when WebGPU unavailable
+    - Canvas dimensions set to image dimensions automatically
+    - opts.hdr enables extended tone mapping on HDR displays
+    - GpuHandlerV2 and blit shader bundled into SDK (not external dependency)
+    - write(format) continues to work independently for file output
+    - Shader cache persists across render() calls (incremental is fast)
+    - SDK generator has extension mechanism for hand-written methods
+  out_of_scope: |
+    - Pan/zoom viewport control (consumer manages CSS or calls updateViewport)
+    - Automatic worker creation (consumer chooses execution model)
+    - Video/animation frame loop (consumer calls render() in their own rAF)
+    - HDR output file encoding (separate concern from display)
+  technical_notes: |
+    Implementation approach:
+
+    1. SDK generator extension mechanism:
+       - Add a sdk/v2/fluent/extensions/ directory for hand-written .ts files
+       - Generator reads extensions and merges them into the Pipeline class
+       - Each extension file exports methods to add to Pipeline.prototype
+
+    2. Canvas render extension (sdk/v2/fluent/extensions/canvas.ts):
+       - Imports GpuHandlerV2 (moved from web-ui/src/ to sdk/v2/lib/)
+       - setCanvas(canvas, opts): detect WebGPU, create handler or 2D fallback
+       - render(): get GPU plan or CPU pixels, dispatch to bound canvas
+       - Caches GPUDevice, shader pipelines, blit pipeline across renders
+
+    3. GpuHandlerV2 relocation:
+       - Move from web-ui/src/gpu-handler-v2.ts to sdk/v2/lib/gpu-handler.ts
+       - web-ui imports from the new location (re-export or path update)
+       - Blit shader (display-blit.wgsl) moves alongside
+
+    4. Fallback path:
+       - When WebGPU unavailable, setCanvas stores 2D context
+       - render() calls pipeline render(node) for f32 pixels
+       - Quantize f32 to Uint8ClampedArray, create ImageData, putImageData
+
+    Consumer usage:
+      const pipe = new Pipeline();
+      pipe.read(imageBytes);
+      pipe.setCanvas(document.getElementById('preview'));
+      pipe.brightness({ amount: 0.3 });
+      pipe.render();  // GPU blit to canvas
+
+      // Slider change...
+      pipe.brightness({ amount: 0.7 });
+      pipe.render();  // re-render, cached shaders
+
+      // File export (independent)
+      const png = pipe.write('png');
+plan:
+  - phase: SDK Extension Mechanism
+    tasks:
+      - text: Add extensions/ directory support to generate-v2-fluent-sdk.mjs — scan for .ts files and merge exported methods into generated Pipeline class
+        done: false
+      - text: Define extension interface — each file exports an object with method implementations that receive the raw pipeline resource as context
+        done: false
+  - phase: GPU Handler Relocation
+    tasks:
+      - text: Move GpuHandlerV2 from web-ui/src/gpu-handler-v2.ts to sdk/v2/lib/gpu-handler.ts
+        done: false
+      - text: Move display-blit.wgsl from web-ui/src/shaders/ to sdk/v2/lib/shaders/
+        done: false
+      - text: Update web-ui imports to use the new SDK location
+        done: false
+  - phase: Canvas Render Implementation
+    tasks:
+      - text: Implement setCanvas(target, opts?) — detect WebGPU, init GpuHandlerV2 or 2D fallback, cache context
+        done: false
+      - text: Implement render() — get GPU plan or CPU pixels, dispatch to bound canvas target
+        done: false
+      - text: Implement 2D fallback — f32 quantize to ImageData, putImageData on 2D canvas
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test setCanvas + render with WebGPU canvas in browser
+        done: false
+      - text: Test fallback path with 2D canvas (disable WebGPU or use Firefox)
+        done: false
+extra: {}

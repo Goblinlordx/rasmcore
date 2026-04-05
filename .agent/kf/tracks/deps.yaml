@@ -361,3 +361,6 @@ remove-v1-pipeline-crate_20260405000541Z:
 
 # Docs sidebar ordering — no deps
 docs-sidebar-ordering_20260405033639Z: []
+
+# SDK canvas render — no deps (GpuHandlerV2 already exists on main)
+sdk-canvas-render_20260405041105Z: []
