@@ -17,6 +17,7 @@ type Status = 'idle' | 'loading-wasm' | 'rendering' | 'ready' | 'error';
 
 /** Render f32 RGBA pixels to a canvas element. */
 function renderToCanvas(canvas: HTMLCanvasElement, result: RenderResult) {
+  const t0 = performance.now();
   const { pixels, width, height } = result;
   canvas.width = width;
   canvas.height = height;
@@ -32,7 +33,9 @@ function renderToCanvas(canvas: HTMLCanvasElement, result: RenderResult) {
     u8[si + 2] = Math.round(Math.max(0, Math.min(1, pixels[si + 2])) * 255);
     u8[si + 3] = Math.round(Math.max(0, Math.min(1, pixels[si + 3])) * 255);
   }
+  const tQ = performance.now();
   ctx.putImageData(new ImageData(u8, width, height), 0, 0);
+  console.log(`[playground] canvas: quantize=${(tQ - t0).toFixed(1)}ms put=${(performance.now() - tQ).toFixed(1)}ms ${width}x${height}`);
 }
 
 export function Playground({ filterName, params, referenceImageUrl, staticAfterUrl }: PlaygroundProps) {

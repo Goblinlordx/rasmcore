@@ -79,30 +79,47 @@ export async function renderFilterToPixels(
   params: Record<string, number | boolean>,
   cacheKey: string,
 ): Promise<RenderResult> {
+  const t0 = performance.now();
+
   const PipelineClass = await loadWasm();
+  const tWasm = performance.now();
+
   const pipe = new PipelineClass();
+  const tPipe = performance.now();
 
   // Use Source (decode cached) or fall back to read(bytes)
   const source = getOrCreateSource(imageBytes, cacheKey);
   let nodeId: number;
+  let usedSource = false;
   if (source && typeof pipe.readSource === 'function') {
     nodeId = pipe.readSource(source);
+    usedSource = true;
   } else {
     nodeId = pipe.read(imageBytes, undefined);
   }
+  const tRead = performance.now();
 
   const paramBuf = serializeParams(filterName, params);
   const filterId = pipe.applyFilter(nodeId, filterName, paramBuf);
+  const tFilter = performance.now();
 
   // Get f32 pixels instead of PNG — faster for canvas display
   const pixels = pipe.render(filterId);
-  const info = pipe.nodeInfo(filterId);
+  const tRender = performance.now();
 
-  return {
-    pixels: pixels instanceof Float32Array ? pixels : new Float32Array(pixels),
-    width: info.width,
-    height: info.height,
-  };
+  const info = pipe.nodeInfo(filterId);
+  const f32 = pixels instanceof Float32Array ? pixels : new Float32Array(pixels);
+  const tTotal = performance.now();
+
+  console.log(
+    `[playground] ${filterName}: total=${(tTotal - t0).toFixed(1)}ms ` +
+    `(wasm=${(tWasm - t0).toFixed(1)} pipe=${(tPipe - tWasm).toFixed(1)} ` +
+    `read=${(tRead - tPipe).toFixed(1)}${usedSource ? '[Source]' : '[bytes]'} ` +
+    `filter=${(tFilter - tRead).toFixed(1)} render=${(tRender - tFilter).toFixed(1)} ` +
+    `copy=${(tTotal - tRender).toFixed(1)}) ${info.width}x${info.height}`
+  );
+
+  return { pixels: f32, width: info.width, height: info.height };
 }
 
 /**
