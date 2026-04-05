@@ -1,5 +1,6 @@
 = Getting Started
 :section: Guides
+:section-order: 1
 :order: 1
 
 rasmcore is a professional-grade image processing pipeline that runs on WebAssembly. All processing happens in f32 linear light with GPU acceleration when available.

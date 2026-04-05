@@ -22,6 +22,7 @@ export async function getManualPages(): Promise<ManualPage[]> {
     let title = basename(file, '.adoc');
     let section = 'Guides';
     let order = 99;
+    let sectionOrder = 50;
 
     const titleMatch = raw.match(/^= (.+)$/m);
     if (titleMatch) title = titleMatch[1];
@@ -32,7 +33,10 @@ export async function getManualPages(): Promise<ManualPage[]> {
     const orderMatch = raw.match(/^:order:\s*(\d+)$/m);
     if (orderMatch) order = parseInt(orderMatch[1]);
 
-    pages.push({ title, section, order, slug: basename(file, '.adoc'), content: raw });
+    const sectionOrderMatch = raw.match(/^:section-order:\s*(\d+)$/m);
+    if (sectionOrderMatch) sectionOrder = parseInt(sectionOrderMatch[1]);
+
+    pages.push({ title, section, order, sectionOrder, slug: basename(file, '.adoc'), content: raw });
   }
 
   cached = pages;

@@ -54,6 +54,32 @@ export function Sidebar({ registry, manualPages }: SidebarProps) {
         fontSize: '1.1rem', color: 'var(--heading)', textDecoration: 'none',
       }}>rasmcore</Link>
 
+      {/* Manual page sections — rendered first, sorted by min sectionOrder */}
+      {Object.keys(sections)
+        .sort((a, b) => {
+          const aMin = Math.min(...sections[a].map(p => p.sectionOrder));
+          const bMin = Math.min(...sections[b].map(p => p.sectionOrder));
+          return aMin !== bMin ? aMin - bMin : a.localeCompare(b);
+        })
+        .map(section => (
+        <div key={section} style={{ marginBottom: '0.5rem' }}>
+          <div style={{ padding: '0.3rem 1rem', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>{section}</div>
+          <ul style={{ listStyle: 'none', padding: 0 }}>
+            {sections[section].sort((a, b) => a.order - b.order).map(p => {
+              const href = `/pages/${p.slug}`;
+              const active = isActive(href);
+              return (
+                <li key={p.slug}>
+                  <Link href={href} ref={active ? activeRef : undefined}
+                    style={{ display: 'block', padding: '0.2rem 1rem 0.2rem 1.5rem', color: active ? 'var(--link)' : 'var(--text)', fontSize: '0.85rem', textDecoration: 'none', fontWeight: active ? 600 : 400, borderLeft: active ? '2px solid var(--link)' : '2px solid transparent', background: active ? 'rgba(88,166,255,0.08)' : 'transparent' }}>{p.title}</Link>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ))}
+
+      {/* Filter categories — sorted alphabetically */}
       {Object.keys(categories).sort().map(cat => (
         <div key={cat} style={{ marginBottom: '0.5rem' }}>
           <div style={{
@@ -100,24 +126,6 @@ export function Sidebar({ registry, manualPages }: SidebarProps) {
           </ul>
         </div>
       )}
-
-      {Object.keys(sections).sort().map(section => (
-        <div key={section} style={{ marginBottom: '0.5rem' }}>
-          <div style={{ padding: '0.3rem 1rem', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>{section}</div>
-          <ul style={{ listStyle: 'none', padding: 0 }}>
-            {sections[section].sort((a, b) => a.order - b.order).map(p => {
-              const href = `/pages/${p.slug}`;
-              const active = isActive(href);
-              return (
-                <li key={p.slug}>
-                  <Link href={href} ref={active ? activeRef : undefined}
-                    style={{ display: 'block', padding: '0.2rem 1rem 0.2rem 1.5rem', color: active ? 'var(--link)' : 'var(--text)', fontSize: '0.85rem', textDecoration: 'none', fontWeight: active ? 600 : 400, borderLeft: active ? '2px solid var(--link)' : '2px solid transparent', background: active ? 'rgba(88,166,255,0.08)' : 'transparent' }}>{p.title}</Link>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      ))}
     </nav>
   );
 }

@@ -42,6 +42,7 @@ export interface ManualPage {
   title: string;
   section: string;
   order: number;
+  sectionOrder: number;
   slug: string;
   content: string;
 }
