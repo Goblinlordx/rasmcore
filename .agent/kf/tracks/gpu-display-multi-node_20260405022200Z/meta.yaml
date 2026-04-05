@@ -1,5 +1,5 @@
 title: Fix GPU display showing transparent canvas with 2+ fused filter nodes
-status: pending
+status: completed
 type: bug
 approved: false
 created: '2026-04-05'

@@ -1,90 +1,87 @@
 id: gpu-display-multi-node_20260405022200Z
-title: "Fix GPU display showing transparent canvas with 2+ fused filter nodes"
+title: Fix GPU display showing transparent canvas with 2+ fused filter nodes
 type: bug
 status: pending
 created: 2026-04-05
-updated: 2026-04-05
+updated: '2026-04-05'
 spec:
-  summary: |
-    GPU display path produces transparent (empty) canvas when two or more
+  summary: 'GPU display path produces transparent (empty) canvas when two or more
+
     point-op filters are applied. Single filter works correctly. The GPU
+
     path reports success with no errors.
-  context: |
-    The WebGPU display surface renders processed images by executing GPU
+
+    '
+  context: 'The WebGPU display surface renders processed images by executing GPU
+
     compute shaders and blitting the result directly to a canvas texture.
+
     This works correctly for a single filter (e.g., one brightness node).
 
+
     When a second filter is added (e.g., two brightness nodes), the fusion
+
     optimizer composes them into a single FusedPointOpNode with a merged
+
     WGSL shader. The GPU path reports success (logs show display mode with
+
     cache hits, no errors), but the canvas shows transparent/empty output.
 
-    The issue is NOT in the fusion math, WGSL shader generation, or alpha
-    handling — all of these have been verified through code review.
-    The root cause requires instrumented debugging.
-  codebase_analysis: |
-    Verified correct:
-    - FusedPointOpNode::compute() preserves alpha (pixel[3] unchanged)
-    - GPU shader template (lower_to_wgsl_shader) preserves pixel.w (alpha)
-    - Blit shader (display-blit.wgsl) premultiplies rgb * alpha correctly
-    - Canvas configured with alphaMode premultiplied, clearValue transparent
-    - Source pixels from JPEG have alpha=1.0 (set in pixels_to_f32_rgba)
-    - Fusion compose/constant_fold produces correct composed expressions
-    - replace_node preserves node ID so pipe._node stays valid
-    - collect_gpu_chain walks through fused node correctly
-    - renderGpuPlan requests source pixels from correct source_id
 
-    Suspected areas requiring instrumentation:
-    - gpu-plan inputPixels length and alpha values for multi-node case
-    - Whether the fused shader is actually being compiled and dispatched
-    - Whether the blit render pass reads from the correct buffer after
-      compute shaders execute (ping-pong buffer reference)
-    - Whether the canvas texture is valid after the render pass
-    - Layer cache interaction — cache hits suggest source pixels are served
-      from cache; verify they contain correct alpha values
+    The issue is NOT in the fusion math, WGSL shader generation, or alpha
+
+    handling — all of these have been verified through code review.
+
+    The root cause requires instrumented debugging.
+
+    '
+  codebase_analysis: "Verified correct:\n- FusedPointOpNode::compute() preserves alpha (pixel[3] unchanged)\n- GPU shader\
+    \ template (lower_to_wgsl_shader) preserves pixel.w (alpha)\n- Blit shader (display-blit.wgsl) premultiplies rgb * alpha\
+    \ correctly\n- Canvas configured with alphaMode premultiplied, clearValue transparent\n- Source pixels from JPEG have\
+    \ alpha=1.0 (set in pixels_to_f32_rgba)\n- Fusion compose/constant_fold produces correct composed expressions\n- replace_node\
+    \ preserves node ID so pipe._node stays valid\n- collect_gpu_chain walks through fused node correctly\n- renderGpuPlan\
+    \ requests source pixels from correct source_id\n\nSuspected areas requiring instrumentation:\n- gpu-plan inputPixels\
+    \ length and alpha values for multi-node case\n- Whether the fused shader is actually being compiled and dispatched\n\
+    - Whether the blit render pass reads from the correct buffer after\n  compute shaders execute (ping-pong buffer reference)\n\
+    - Whether the canvas texture is valid after the render pass\n- Layer cache interaction — cache hits suggest source pixels\
+    \ are served\n  from cache; verify they contain correct alpha values\n"
   acceptance_criteria:
-    - Two or more fused point-op filters display correctly via GPU path
-    - Verified with brightness + brightness, brightness + contrast, and
-      brightness + gamma chains
-    - No regression for single-filter GPU display
-    - No regression for CPU fallback path
-  out_of_scope: |
-    - Non-point-op filter chains (spatial + point-op)
+  - Two or more fused point-op filters display correctly via GPU path
+  - Verified with brightness + brightness, brightness + contrast, and brightness + gamma chains
+  - No regression for single-filter GPU display
+  - No regression for CPU fallback path
+  out_of_scope: '- Non-point-op filter chains (spatial + point-op)
+
     - PNG fallback path (works correctly)
+
     - CPU-only pipeline path (works correctly)
-  technical_notes: |
-    Debugging approach:
-    1. Add console.log in v2-preview-worker.ts after renderGpuPlan:
-       - Log gpuPlan.shaders.length, gpuPlan.width, gpuPlan.height
-       - Log gpuPlan.inputPixels.length and first few alpha values
-         (inputPixels[3], inputPixels[7], etc.)
-    2. Add console.log in gpu-handler-v2.ts executeAndDisplay:
-       - Log ops.length, input.length
-       - Log whether ping-pong buffer swap count is correct
-       - Log blit pass target texture dimensions
-    3. Check if the issue is that the compute output buffer has zeros
-       (shader not dispatching) vs blit reading wrong buffer
-    4. Test with gpuHandler.execute() + displayFromCpu() path to
-       isolate whether the issue is in compute or blit
+
+    '
+  technical_notes: "Debugging approach:\n1. Add console.log in v2-preview-worker.ts after renderGpuPlan:\n   - Log gpuPlan.shaders.length,\
+    \ gpuPlan.width, gpuPlan.height\n   - Log gpuPlan.inputPixels.length and first few alpha values\n     (inputPixels[3],\
+    \ inputPixels[7], etc.)\n2. Add console.log in gpu-handler-v2.ts executeAndDisplay:\n   - Log ops.length, input.length\n\
+    \   - Log whether ping-pong buffer swap count is correct\n   - Log blit pass target texture dimensions\n3. Check if the\
+    \ issue is that the compute output buffer has zeros\n   (shader not dispatching) vs blit reading wrong buffer\n4. Test\
+    \ with gpuHandler.execute() + displayFromCpu() path to\n   isolate whether the issue is in compute or blit\n"
 plan:
-  - phase: "Instrumentation"
-    tasks:
-      - text: "Add diagnostic logging to v2-preview-worker after renderGpuPlan for multi-node chains"
-        done: false
-      - text: "Add diagnostic logging to gpu-handler-v2 executeAndDisplay for buffer state"
-        done: false
-  - phase: "Root Cause"
-    tasks:
-      - text: "Identify whether issue is in compute dispatch, buffer swap, or blit pass"
-        done: false
-      - text: "Fix the root cause"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Verify 2-node, 3-node, and mixed filter chains display correctly"
-        done: false
-      - text: "Remove diagnostic logging"
-        done: false
-      - text: "Verify single-node GPU display still works"
-        done: false
+- phase: Instrumentation
+  tasks:
+  - text: Add diagnostic logging to v2-preview-worker after renderGpuPlan for multi-node chains
+    done: true
+  - text: Add diagnostic logging to gpu-handler-v2 executeAndDisplay for buffer state
+    done: true
+- phase: Root Cause
+  tasks:
+  - text: Identify whether issue is in compute dispatch, buffer swap, or blit pass
+    done: true
+  - text: Fix the root cause
+    done: true
+- phase: Verification
+  tasks:
+  - text: Verify 2-node, 3-node, and mixed filter chains display correctly
+    done: true
+  - text: Remove diagnostic logging
+    done: true
+  - text: Verify single-node GPU display still works
+    done: true
 extra: {}
