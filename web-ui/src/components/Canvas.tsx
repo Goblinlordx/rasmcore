@@ -63,9 +63,9 @@ export default function Canvas({
   const fitCanvasStyle = hasImage
     ? computeTransformCSS(fitState, containerSize, imageWidth, imageHeight)
     : undefined;
-  // Preview uses display mode style when GPU owns it, original always uses CSS transform
+  // Both canvases use display mode style when GPU display is active
   const previewStyle = showSplit ? fitCanvasStyle : (displayMode ? displayCanvasStyle : transformCanvasStyle);
-  const originalStyle = showSplit ? fitCanvasStyle : transformCanvasStyle;
+  const originalStyle = showSplit ? fitCanvasStyle : (displayMode ? displayCanvasStyle : transformCanvasStyle);
 
   // Forward viewport changes to worker for shader-based pan/zoom
   useEffect(() => {

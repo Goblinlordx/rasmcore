@@ -62,21 +62,22 @@ export default function App() {
     preview.viewportCanvasRef.current = worker.previewCanvasRef.current;
   });
 
-  // Transfer OffscreenCanvas to preview worker for WebGPU direct display
-  // Only the preview canvas — original stays on 2D path for now
+  // Transfer OffscreenCanvases to preview worker for WebGPU direct display
   const webgpuInitRef = useRef(false);
   useEffect(() => {
     if (webgpuInitRef.current || !isWebGpuAvailable()) return;
-    const canvas = worker.previewCanvasRef.current;
-    if (!canvas) return;
+    const previewCanvas = worker.previewCanvasRef.current;
+    const originalCanvas = worker.originalCanvasRef.current;
+    if (!previewCanvas || !originalCanvas) return;
     try {
-      const offscreen = canvas.transferControlToOffscreen();
-      preview.setDisplayCanvas(offscreen, isHdrDisplay());
+      const hdr = isHdrDisplay();
+      preview.setDisplayCanvas(previewCanvas.transferControlToOffscreen(), hdr);
+      preview.setOriginalDisplayCanvas(originalCanvas.transferControlToOffscreen(), hdr);
       webgpuInitRef.current = true;
     } catch {
       // transferControlToOffscreen failed — stay in 2D mode
     }
-  }, [preview, worker.previewCanvasRef]);
+  }, [preview, worker.previewCanvasRef, worker.originalCanvasRef]);
 
   // After proxy render completes — background warm disabled for now (perf)
   useEffect(() => {
@@ -115,16 +116,15 @@ export default function App() {
           const url = URL.createObjectURL(blob);
           const img = new Image();
           img.onload = () => {
-            // Original canvas always uses 2D path (not transferred to worker)
-            const oc = worker.originalCanvasRef.current;
-            if (oc) {
-              oc.width = img.width;
-              oc.height = img.height;
-              getWideGamutContext(oc)?.drawImage(img, 0, 0);
-            }
-            // Preview canvas: only draw if NOT in display mode (worker owns it)
+            // In display mode, worker owns both canvases — it renders via GPU on load
             if (!preview.displayMode) {
+              const oc = worker.originalCanvasRef.current;
               const pc = worker.previewCanvasRef.current;
+              if (oc) {
+                oc.width = img.width;
+                oc.height = img.height;
+                getWideGamutContext(oc)?.drawImage(img, 0, 0);
+              }
               if (pc) {
                 pc.width = img.width;
                 pc.height = img.height;
