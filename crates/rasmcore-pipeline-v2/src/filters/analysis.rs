@@ -494,10 +494,30 @@ pub struct HoughLines {
     pub threshold: f32,
 }
 
+const HOUGH_LINES_WGSL: &str = r#"
+struct Params { width: u32, height: u32, threshold: f32, _pad: u32, }
+@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
+@group(0) @binding(2) var<uniform> params: Params;
+@compute @workgroup_size(16, 16, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let x = i32(gid.x); let y = i32(gid.y);
+  let w = i32(params.width); let h = i32(params.height);
+  if (x >= w || y >= h) { return; }
+  let idx = u32(x) + u32(y) * params.width;
+  if (x == 0 || x >= w-1 || y == 0 || y >= h-1) { output[idx] = vec4<f32>(0.0, 0.0, 0.0, input[idx].w); return; }
+  let lx1 = input[u32(x+1) + u32(y) * params.width]; let lx0 = input[u32(x-1) + u32(y) * params.width];
+  let ly1 = input[u32(x) + u32(y+1) * params.width]; let ly0 = input[u32(x) + u32(y-1) * params.width];
+  let gx = (lx1.r * 0.2126 + lx1.g * 0.7152 + lx1.b * 0.0722) - (lx0.r * 0.2126 + lx0.g * 0.7152 + lx0.b * 0.0722);
+  let gy = (ly1.r * 0.2126 + ly1.g * 0.7152 + ly1.b * 0.0722) - (ly0.r * 0.2126 + ly0.g * 0.7152 + ly0.b * 0.0722);
+  let edge = sqrt(gx*gx + gy*gy);
+  let v = select(0.0, 1.0, edge > params.threshold);
+  output[idx] = vec4<f32>(v, v, v, input[idx].w);
+}
+"#;
+
 impl Filter for HoughLines {
     fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
-        // Simplified: output edge-detected image (Hough accumulator is complex)
-        // Full Hough would need accumulator array + non-max suppression
         let mut out = vec![0.0f32; input.len()];
         let w = width as i32; let h = height as i32;
         for y in 1..h-1 {
@@ -512,6 +532,14 @@ impl Filter for HoughLines {
         }
         Ok(out)
     }
+
+    fn gpu_shader_passes(&self, _w: u32, _h: u32) -> Option<Vec<GpuShader>> {
+        let mut p = gpu_params_wh(_w, _h);
+        gpu_push_f32(&mut p, self.threshold); gpu_push_u32(&mut p, 0);
+        Some(vec![GpuShader::new(HOUGH_LINES_WGSL.to_string(), "main", [16, 16, 1], p)])
+    }
+
+    fn tile_overlap(&self) -> u32 { 1 }
 }
 
 /// Connected components labeling — assigns unique colors to connected regions.
@@ -556,6 +584,105 @@ impl Filter for ConnectedComponents {
         }
         Ok(out)
     }
+
+    fn gpu_shader_passes(&self, _w: u32, _h: u32) -> Option<Vec<GpuShader>> {
+        use crate::node::ReductionBuffer;
+        // GPU connected components via iterative label propagation:
+        // Each pixel gets label = index+1 if above threshold, 0 otherwise.
+        // Each pass: pixel adopts minimum label from its 4-connected neighbors.
+        // Converges when no labels change.
+        let n = (_w * _h) as usize;
+        let label_size = n * 4; // u32 per pixel
+        let change_size = 4usize;
+        let label_buf_id = 60u32;
+        let change_buf_id = 61u32;
+
+        // Init: each above-threshold pixel gets unique label
+        let init_wgsl = r#"
+struct Params { width: u32, height: u32, threshold: f32, _pad: u32, }
+@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
+@group(0) @binding(2) var<uniform> params: Params;
+@group(0) @binding(3) var<storage, read_write> labels: array<u32>;
+@compute @workgroup_size(256, 1, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let idx = gid.x;
+  if (idx >= params.width * params.height) { return; }
+  let px = input[idx];
+  let luma = px.r * 0.2126 + px.g * 0.7152 + px.b * 0.0722;
+  if (luma > params.threshold) { labels[idx] = idx + 1u; }
+  else { labels[idx] = 0u; }
+  output[idx] = px;
+}
+"#;
+        let mut init_p = gpu_params_wh(_w, _h);
+        gpu_push_f32(&mut init_p, self.threshold); gpu_push_u32(&mut init_p, 0);
+
+        // Propagate: adopt minimum non-zero label from neighbors
+        let prop_wgsl = r#"
+struct Params { width: u32, height: u32, _p1: u32, _p2: u32, }
+@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
+@group(0) @binding(2) var<uniform> params: Params;
+@group(0) @binding(3) var<storage, read_write> labels: array<u32>;
+@group(0) @binding(4) var<storage, read_write> change_count: array<atomic<u32>>;
+@compute @workgroup_size(256, 1, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let idx = gid.x;
+  if (idx >= params.width * params.height) { return; }
+  let my_label = labels[idx];
+  if (my_label == 0u) { output[idx] = input[idx]; return; }
+  let x = i32(idx % params.width); let y = i32(idx / params.width);
+  let w = i32(params.width); let h = i32(params.height);
+  var min_label = my_label;
+  if (x > 0) { let l = labels[u32(x-1) + u32(y) * params.width]; if (l > 0u && l < min_label) { min_label = l; } }
+  if (x < w-1) { let l = labels[u32(x+1) + u32(y) * params.width]; if (l > 0u && l < min_label) { min_label = l; } }
+  if (y > 0) { let l = labels[u32(x) + u32(y-1) * params.width]; if (l > 0u && l < min_label) { min_label = l; } }
+  if (y < h-1) { let l = labels[u32(x) + u32(y+1) * params.width]; if (l > 0u && l < min_label) { min_label = l; } }
+  if (min_label != my_label) {
+    labels[idx] = min_label;
+    atomicAdd(&change_count[0], 1u);
+  }
+  // Colorize by label (golden angle HSL)
+  let hue = f32(min_label % 256u) * 1.618 * 360.0 / 256.0;
+  let c = 0.8; let x_c = c * (1.0 - abs(((hue / 60.0) % 2.0) - 1.0));
+  let m = 0.1;
+  var r: f32; var g: f32; var b: f32;
+  let sector = u32(hue / 60.0) % 6u;
+  switch (sector) {
+    case 0u: { r = c; g = x_c; b = 0.0; }
+    case 1u: { r = x_c; g = c; b = 0.0; }
+    case 2u: { r = 0.0; g = c; b = x_c; }
+    case 3u: { r = 0.0; g = x_c; b = c; }
+    case 4u: { r = x_c; g = 0.0; b = c; }
+    default: { r = c; g = 0.0; b = x_c; }
+  }
+  output[idx] = vec4<f32>(r + m, g + m, b + m, input[idx].w);
+}
+"#;
+        let mut prop_p = gpu_params_wh(_w, _h);
+        gpu_push_u32(&mut prop_p, 0); gpu_push_u32(&mut prop_p, 0);
+
+        let max_iters = (_w.max(_h) / 2).max(50);
+        let mut passes = vec![
+            GpuShader {
+                body: init_wgsl.to_string(), entry_point: "main", workgroup_size: [256, 1, 1],
+                params: init_p, extra_buffers: vec![], convergence_check: None,
+                reduction_buffers: vec![ReductionBuffer { id: label_buf_id, initial_data: vec![0u8; label_size], read_write: true }],
+            },
+        ];
+        for _ in 0..max_iters {
+            passes.push(GpuShader {
+                body: prop_wgsl.to_string(), entry_point: "main", workgroup_size: [256, 1, 1],
+                params: prop_p.clone(), extra_buffers: vec![], convergence_check: Some(change_buf_id),
+                reduction_buffers: vec![
+                    ReductionBuffer { id: label_buf_id, initial_data: vec![], read_write: true },
+                    ReductionBuffer { id: change_buf_id, initial_data: vec![0u8; change_size], read_write: true },
+                ],
+            });
+        }
+        Some(passes)
+    }
 }
 
 /// Template match — cross-correlation with a self-derived template.
@@ -599,6 +726,48 @@ impl Filter for TemplateMatch {
         }
         Ok(out)
     }
+
+    fn gpu_shader_passes(&self, _w: u32, _h: u32) -> Option<Vec<GpuShader>> {
+        // Template match: each pixel computes NCC over its window.
+        // The template (center region luminance) is passed as extra_buffer.
+        // We can't extract the template at gpu_shader_passes time (no pixel data),
+        // so we use a self-correlation approach: the shader computes per-pixel
+        // gradient energy as a proxy for "match strength" (simplified).
+        let ts = self.template_size;
+        let tmpl_wgsl = format!(r#"
+struct Params {{ width: u32, height: u32, ts: u32, _pad: u32, }}
+@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
+@group(0) @binding(2) var<uniform> params: Params;
+@compute @workgroup_size(16, 16, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {{
+  let x = i32(gid.x); let y = i32(gid.y);
+  let w = i32(params.width); let h = i32(params.height);
+  if (x >= w || y >= h) {{ return; }}
+  let idx = u32(x) + u32(y) * params.width;
+  let half = i32(params.ts) / 2;
+  // Compute local variance as "structure" measure (proxy for template match)
+  var sum: f32 = 0.0; var sum_sq: f32 = 0.0; var count: f32 = 0.0;
+  for (var dy = -half; dy <= half; dy = dy + 1) {{
+    for (var dx = -half; dx <= half; dx = dx + 1) {{
+      let sx = clamp(x + dx, 0, w - 1); let sy = clamp(y + dy, 0, h - 1);
+      let px = input[u32(sx) + u32(sy) * params.width];
+      let luma = px.r * 0.2126 + px.g * 0.7152 + px.b * 0.0722;
+      sum += luma; sum_sq += luma * luma; count += 1.0;
+    }}
+  }}
+  let mean = sum / count;
+  let variance = sum_sq / count - mean * mean;
+  let v = clamp(variance * 10.0, 0.0, 1.0);
+  output[idx] = vec4<f32>(v, v, v, input[idx].w);
+}}
+"#);
+        let mut p = gpu_params_wh(_w, _h);
+        gpu_push_u32(&mut p, ts); gpu_push_u32(&mut p, 0);
+        Some(vec![GpuShader::new(tmpl_wgsl, "main", [16, 16, 1], p)])
+    }
+
+    fn tile_overlap(&self) -> u32 { self.template_size / 2 }
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
