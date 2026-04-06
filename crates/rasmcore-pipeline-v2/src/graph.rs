@@ -147,6 +147,8 @@ pub struct Graph {
     /// Named branch points in the DAG — ref name → node_id.
     /// Used by the multi-output pipeline to fork computation from a named point.
     refs: std::collections::HashMap<String, u32>,
+    /// Graph-level working color space for auto-conversion.
+    working_color_space: Option<crate::color_space::ColorSpace>,
 }
 
 impl Graph {
@@ -173,6 +175,7 @@ impl Graph {
             trace: PipelineTrace::new(),
             buffer_pool: None,
             refs: std::collections::HashMap::new(),
+            working_color_space: None,
         }
     }
 
@@ -191,6 +194,7 @@ impl Graph {
             trace: PipelineTrace::new(),
             buffer_pool: None,
             refs: std::collections::HashMap::new(),
+            working_color_space: None,
         }
     }
 
@@ -198,6 +202,16 @@ impl Graph {
     /// Associate with a Source so all pipelines for the same image share buffers.
     pub fn set_buffer_pool(&mut self, pool: Rc<RefCell<BufferPool>>) {
         self.buffer_pool = Some(pool);
+    }
+
+    /// Set the graph-level working color space.
+    pub fn set_working_color_space(&mut self, cs: crate::color_space::ColorSpace) {
+        self.working_color_space = Some(cs);
+    }
+
+    /// Get the current working color space, if set.
+    pub fn working_color_space(&self) -> Option<crate::color_space::ColorSpace> {
+        self.working_color_space
     }
 
     /// Acquire a pixel buffer from the pool (or allocate if no pool set).
