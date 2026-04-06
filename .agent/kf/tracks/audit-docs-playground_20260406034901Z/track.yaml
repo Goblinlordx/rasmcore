@@ -1,0 +1,51 @@
+id: audit-docs-playground_20260406034901Z
+title: Audit all 81 filters in docs playground — identify broken ones
+type: chore
+status: pending
+created: 2026-04-06
+updated: 2026-04-06
+spec:
+  summary: |
+    Systematically test every registered filter in the docs playground.
+    Classify failures as interface bug vs implementation bug. Produce
+    a report with broken filter list and root cause per failure.
+  context: |
+    Some filters appear broken in the docs playground — slider changes
+    produce no visible effect or wrong output. The playground uses
+    raw applyFilter with binary param serialization. Possible causes:
+    param type mismatch (fixed for Number.isInteger but may have
+    edge cases), scope filters changing dimensions, zero-param filters,
+    or actual filter implementation bugs.
+  acceptance_criteria:
+    - Every registered filter tested in the playground
+    - Each filter classified as PASS, INTERFACE_BUG, or IMPL_BUG
+    - Interface bugs have specific root cause (param type, serialization, dimensions)
+    - Implementation bugs have description of wrong behavior
+    - Report produced at .agent/kf/tracks/{trackId}/report.md
+  out_of_scope: |
+    Fixing the bugs (separate tracks from findings)
+    Testing in web-ui (only docs playground)
+plan:
+  - phase: Automated Testing
+    tasks:
+      - text: Build a test harness that loads each filter via WASM, applies with default params, verifies non-error output
+        done: false
+      - text: Run test harness against all 81 filters, collect pass/fail results
+        done: false
+      - text: For failing filters, test with explicit param types to isolate serialization vs implementation bugs
+        done: false
+  - phase: Manual Verification
+    tasks:
+      - text: Check scope/analysis filters (4) — verify dimension handling and output format
+        done: false
+      - text: Check zero-param filters (invert, auto_level, etc.) — verify they produce visible change
+        done: false
+      - text: Check uncategorized filters (lift_gamma_gain, asc_cdl, split_toning) — verify registration completeness
+        done: false
+  - phase: Report
+    tasks:
+      - text: Produce report classifying each filter with failure mode and root cause
+        done: false
+      - text: Identify shared root causes that can be fixed in bulk (e.g. param serialization pattern)
+        done: false
+extra: {}

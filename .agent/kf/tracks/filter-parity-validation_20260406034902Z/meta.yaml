@@ -1,0 +1,8 @@
+title: Validate filter implementations against f32 ground truth
+status: pending
+type: chore
+approved: false
+created: '2026-04-06'
+updated: '2026-04-06'
+deps:
+- audit-docs-playground_20260406034901Z

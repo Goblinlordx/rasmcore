@@ -1,0 +1,68 @@
+id: filter-parity-validation_20260406034902Z
+title: Validate filter implementations against f32 ground truth
+type: chore
+status: pending
+created: 2026-04-06
+updated: 2026-04-06
+spec:
+  summary: |
+    Validate all filter implementations against analytical ground truth
+    (formula-based for point/color ops) and cross-reference tools
+    (OpenCV f32, OIIO) for complex spatial ops. Produces a parity
+    matrix showing correctness within tolerance.
+  context: |
+    The V2 pipeline processes in f32 linear space. Reference validation
+    must also use f32 to avoid quantization artifacts from 8-bit tools.
+
+    Validation tiers:
+    - Point ops (brightness, contrast, gamma, levels, etc.): verify
+      against the exact mathematical formula. No external tool needed.
+    - Color ops (hue_rotate, saturate, sepia, channel_mixer): verify
+      against standard color science (CIE Lab, HSL, sRGB matrices).
+    - Spatial ops (gaussian_blur, sharpen, bilateral): verify against
+      known convolution kernels computed analytically or via OpenCV f32.
+    - Complex ops (NLM denoise, CLAHE, retinex): cross-reference
+      against OpenCV f32 or OIIO where available.
+  acceptance_criteria:
+    - Point ops validated against exact formula (tolerance < 1e-6)
+    - Color ops validated against standard color science transforms
+    - Spatial ops validated against known kernels (tolerance < 1e-4)
+    - Complex ops cross-referenced where possible, documented where not
+    - Parity matrix produced showing pass/fail/tolerance per filter
+    - Failing filters have documented expected vs actual behavior
+  out_of_scope: |
+    Fixing incorrect implementations (separate tracks)
+    Performance benchmarking
+    GPU shader validation (CPU reference only)
+plan:
+  - phase: Test Infrastructure
+    tasks:
+      - text: Create Rust test binary that loads a reference image, applies each filter, and compares output
+        done: false
+      - text: Define tolerance thresholds per category (point=1e-6, color=1e-4, spatial=1e-3)
+        done: false
+  - phase: Point Op Validation
+    tasks:
+      - text: Validate brightness, contrast, gamma, levels, posterize, exposure against exact formulas
+        done: false
+      - text: Validate invert, solarize, dodge, burn against formula
+        done: false
+  - phase: Color Op Validation
+    tasks:
+      - text: Validate hue_rotate, saturate, sepia, vibrance against HSL/matrix math
+        done: false
+      - text: Validate white_balance, colorize, channel_mixer against color science
+        done: false
+  - phase: Spatial Op Validation
+    tasks:
+      - text: Validate gaussian_blur against analytical Gaussian kernel convolution
+        done: false
+      - text: Validate sharpen, median, bilateral against known reference implementations
+        done: false
+  - phase: Report
+    tasks:
+      - text: Produce parity matrix with pass/fail/tolerance for all 81 filters
+        done: false
+      - text: Document filters with no available reference and reasoning
+        done: false
+extra: {}
