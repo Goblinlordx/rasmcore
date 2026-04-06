@@ -100,7 +100,12 @@ impl<F: Filter + 'static> Node for FilterNode<F> {
         };
 
         let input = upstream.request(self.upstream, input_rect)?;
-        let output = self.filter.compute(&input, input_rect.width, input_rect.height)?;
+        let info = NodeInfo {
+            width: input_rect.width,
+            height: input_rect.height,
+            color_space: self.info.color_space,
+        };
+        let output = self.filter.compute_with_info(&input, &info)?;
 
         if input_rect == request {
             Ok(output)
@@ -111,7 +116,12 @@ impl<F: Filter + 'static> Node for FilterNode<F> {
 
     fn gpu_shader(&self, width: u32, height: u32) -> Option<GpuShader> {
         let body = self.filter.gpu_shader_body()?;
-        let params = self.filter.gpu_params(width, height)?;
+        let info = NodeInfo {
+            width,
+            height,
+            color_space: self.info.color_space,
+        };
+        let params = self.filter.gpu_params_with_info(&info)?;
         Some(GpuShader {
             body: compose_shader(body),
             entry_point: self.filter.gpu_entry_point(),
@@ -236,7 +246,12 @@ impl<F: Filter + GpuFilter + 'static> Node for GpuFilterNode<F> {
         };
 
         let input = upstream.request(self.upstream, input_rect)?;
-        let output = self.filter.compute(&input, input_rect.width, input_rect.height)?;
+        let info = NodeInfo {
+            width: input_rect.width,
+            height: input_rect.height,
+            color_space: self.info.color_space,
+        };
+        let output = self.filter.compute_with_info(&input, &info)?;
 
         if input_rect == request {
             Ok(output)
@@ -557,5 +572,75 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let composed = PointOpExpr::compose(&inv_expr, &expr);
         // 1.0 - (0.5 + 0.3) = 0.2
         assert!((composed.evaluate(0.5) - 0.2).abs() < 1e-6);
+    }
+
+    // ─── compute_with_info plumbing test ────────────────────────────────
+
+    /// A filter that uses color space from NodeInfo to adjust its behavior.
+    struct ColorSpaceAwareFilter;
+
+    impl Filter for ColorSpaceAwareFilter {
+        fn compute(&self, input: &[f32], _w: u32, _h: u32) -> Result<Vec<f32>, PipelineError> {
+            // Fallback: return input unchanged
+            Ok(input.to_vec())
+        }
+
+        fn compute_with_info(
+            &self,
+            input: &[f32],
+            info: &NodeInfo,
+        ) -> Result<Vec<f32>, PipelineError> {
+            // If working in linear space, double the RGB values (simulating
+            // a color-space-dependent operation)
+            if info.color_space == ColorSpace::Linear {
+                Ok(input
+                    .chunks(4)
+                    .flat_map(|px| [px[0] * 2.0, px[1] * 2.0, px[2] * 2.0, px[3]])
+                    .collect())
+            } else {
+                Ok(input.to_vec())
+            }
+        }
+    }
+
+    /// Simple source node for tests.
+    struct TestSource {
+        width: u32,
+        height: u32,
+        color: [f32; 4],
+    }
+
+    impl crate::node::Node for TestSource {
+        fn info(&self) -> NodeInfo {
+            NodeInfo { width: self.width, height: self.height, color_space: ColorSpace::Linear }
+        }
+        fn compute(&self, request: crate::rect::Rect, _up: &mut dyn crate::node::Upstream) -> Result<Vec<f32>, PipelineError> {
+            let n = request.width as usize * request.height as usize;
+            Ok(self.color.repeat(n))
+        }
+        fn upstream_ids(&self) -> Vec<u32> { vec![] }
+    }
+
+    #[test]
+    fn compute_with_info_receives_color_space() {
+        let mut g = Graph::new(0);
+        let src = g.add_node(Box::new(TestSource {
+            width: 2, height: 2, color: [0.5, 0.3, 0.1, 1.0],
+        }));
+        let info = g.node_info(src).unwrap(); // Linear color space
+
+        let filter_id = g.add_node(Box::new(FilterNode::new(
+            src,
+            info,
+            ColorSpaceAwareFilter,
+        )));
+
+        let pixels = g.request_full(filter_id).unwrap();
+
+        // In Linear color space, the filter doubles RGB
+        assert!((pixels[0] - 1.0).abs() < 1e-6, "R: 0.5 * 2 = 1.0, got {}", pixels[0]);
+        assert!((pixels[1] - 0.6).abs() < 1e-6, "G: 0.3 * 2 = 0.6, got {}", pixels[1]);
+        assert!((pixels[2] - 0.2).abs() < 1e-6, "B: 0.1 * 2 = 0.2, got {}", pixels[2]);
+        assert!((pixels[3] - 1.0).abs() < 1e-6, "A: unchanged, got {}", pixels[3]);
     }
 }

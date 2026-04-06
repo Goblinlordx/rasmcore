@@ -35,6 +35,18 @@ pub trait Filter {
     /// CPU implementation (required). Processes the full input buffer.
     fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError>;
 
+    /// CPU implementation with full node info (color space, dimensions).
+    ///
+    /// Filters that need color-space awareness override this instead of `compute()`.
+    /// Default: delegates to `compute()`, ignoring the color space.
+    fn compute_with_info(
+        &self,
+        input: &[f32],
+        info: &crate::node::NodeInfo,
+    ) -> Result<Vec<f32>, PipelineError> {
+        self.compute(input, info.width, info.height)
+    }
+
     // ─── GPU acceleration ─────────────────────────────────────────────────
     // These methods describe static properties of the filter type.
     // They should NOT depend on instance config (self). They are collected
@@ -58,6 +70,14 @@ pub trait Filter {
     /// Return `None` to skip GPU dispatch for this invocation.
     fn gpu_params(&self, _width: u32, _height: u32) -> Option<Vec<u8>> {
         None
+    }
+
+    /// GPU params with full node info (color space, dimensions).
+    ///
+    /// Filters that need color-space-aware GPU uniforms override this.
+    /// Default: delegates to `gpu_params()`, ignoring the color space.
+    fn gpu_params_with_info(&self, info: &crate::node::NodeInfo) -> Option<Vec<u8>> {
+        self.gpu_params(info.width, info.height)
     }
 
     /// Extra GPU storage buffers (kernel weights, LUT data, etc.).
