@@ -1,157 +1,117 @@
 id: analysis-buffer-foundation_20260407000100Z
-title: "Analysis pass foundation — buffer declarations and negotiation pass"
+title: Analysis pass foundation — buffer declarations and negotiation pass
 type: feature
 status: pending
 created: 2026-04-07
-updated: 2026-04-07
+updated: '2026-04-06'
 spec:
-  summary: |
-    Add the foundational traits and types for cross-node analysis buffer
+  summary: 'Add the foundational traits and types for cross-node analysis buffer
+
     sharing. Pure additive — no behavior changes, no existing code modified.
+
     Establishes the buffer declaration/consumption protocol that later tracks
+
     wire into the graph walker and GPU dispatch.
-  context: |
-    The V2 pipeline currently has ReductionBuffer (node.rs:146-156) for
-    persistent GPU buffers within a single node's gpu_shaders() chain.
-    Equalize, Otsu, and other filters use the 3-pass pattern (local reduce →
-    global reduce → apply) internally. This works because all passes share
-    buffer IDs within one execute() call.
 
-    For cross-node analysis (histogram node A → auto_levels node B), we need:
-    1. Node A to declare "I produce reduction buffer with logical ID X"
-    2. Node B to declare "I consume reduction buffer with logical ID X"
-    3. A negotiation step that assigns globally unique buffer IDs across
-       the merged chain (avoiding collisions between independent analyses)
-    4. gpu_shaders() to accept context about available upstream analysis buffers
-       so node B can reference the correct buffer ID in its shader
-
-    This track adds the type definitions and trait methods only. No graph
-    walker changes, no GPU dispatch changes. Downstream tracks wire these
-    declarations into the execution model.
-
-    Reference: .agent/kf/_reports/analysis-render-pass-design.md
-    Research track: analysis-render-pass_20260406103200Z (completed)
-  codebase_analysis: |
-    Files that get new additive code:
-
-    1. node.rs — Node trait gets two new default methods:
-       - analysis_outputs() -> &[AnalysisBufferDecl] (default: empty)
-       - analysis_inputs() -> &[AnalysisBufferRef] (default: empty)
-       These are pure metadata declarations, no execution semantics.
-
-    2. node.rs or new analysis_buffer.rs — New types:
-       - AnalysisBufferDecl { logical_id, kind, initial_size }
-       - AnalysisBufferRef { logical_id }
-       - AnalysisBufferContext { mapping: HashMap<logical_id, resolved_id> }
-       - AnalysisBufferKind enum (Histogram256, ChannelMinMax, ChannelSum, Generic)
-
-    3. node.rs — gpu_shaders() gets a new sibling method:
-       - gpu_shaders_with_context(w, h, &AnalysisBufferContext) -> Option<Vec<GpuShader>>
-       - Default impl: ignores context, calls gpu_shaders(w, h)
-       - Nodes that consume analysis buffers override to use resolved IDs
-
-    4. graph.rs — New function (not yet wired into execution):
-       - negotiate_analysis_buffers(chain: &[node_id]) -> AnalysisBufferContext
-       - Walks the chain, collects all AnalysisBufferDecl, assigns unique IDs,
-         builds the context mapping
-
-    Files that are NOT modified:
-    - gpu.rs (GpuExecutor trait unchanged)
-    - WgpuExecutorV2 (executor unchanged)
-    - Any existing filter implementations
-    - Any existing gpu_shaders() call sites
-    - request_region() execution path
-
-    Safety: all new methods have defaults that preserve existing behavior.
-    Existing code continues to work unchanged.
+    '
+  context: "The V2 pipeline currently has ReductionBuffer (node.rs:146-156) for\npersistent GPU buffers within a single node's\
+    \ gpu_shaders() chain.\nEqualize, Otsu, and other filters use the 3-pass pattern (local reduce →\nglobal reduce → apply)\
+    \ internally. This works because all passes share\nbuffer IDs within one execute() call.\n\nFor cross-node analysis (histogram\
+    \ node A → auto_levels node B), we need:\n1. Node A to declare \"I produce reduction buffer with logical ID X\"\n2. Node\
+    \ B to declare \"I consume reduction buffer with logical ID X\"\n3. A negotiation step that assigns globally unique buffer\
+    \ IDs across\n   the merged chain (avoiding collisions between independent analyses)\n4. gpu_shaders() to accept context\
+    \ about available upstream analysis buffers\n   so node B can reference the correct buffer ID in its shader\n\nThis track\
+    \ adds the type definitions and trait methods only. No graph\nwalker changes, no GPU dispatch changes. Downstream tracks\
+    \ wire these\ndeclarations into the execution model.\n\nReference: .agent/kf/_reports/analysis-render-pass-design.md\n\
+    Research track: analysis-render-pass_20260406103200Z (completed)\n"
+  codebase_analysis: "Files that get new additive code:\n\n1. node.rs — Node trait gets two new default methods:\n   - analysis_outputs()\
+    \ -> &[AnalysisBufferDecl] (default: empty)\n   - analysis_inputs() -> &[AnalysisBufferRef] (default: empty)\n   These\
+    \ are pure metadata declarations, no execution semantics.\n\n2. node.rs or new analysis_buffer.rs — New types:\n   - AnalysisBufferDecl\
+    \ { logical_id, kind, initial_size }\n   - AnalysisBufferRef { logical_id }\n   - AnalysisBufferContext { mapping: HashMap<logical_id,\
+    \ resolved_id> }\n   - AnalysisBufferKind enum (Histogram256, ChannelMinMax, ChannelSum, Generic)\n\n3. node.rs — gpu_shaders()\
+    \ gets a new sibling method:\n   - gpu_shaders_with_context(w, h, &AnalysisBufferContext) -> Option<Vec<GpuShader>>\n\
+    \   - Default impl: ignores context, calls gpu_shaders(w, h)\n   - Nodes that consume analysis buffers override to use\
+    \ resolved IDs\n\n4. graph.rs — New function (not yet wired into execution):\n   - negotiate_analysis_buffers(chain: &[node_id])\
+    \ -> AnalysisBufferContext\n   - Walks the chain, collects all AnalysisBufferDecl, assigns unique IDs,\n     builds the\
+    \ context mapping\n\nFiles that are NOT modified:\n- gpu.rs (GpuExecutor trait unchanged)\n- WgpuExecutorV2 (executor\
+    \ unchanged)\n- Any existing filter implementations\n- Any existing gpu_shaders() call sites\n- request_region() execution\
+    \ path\n\nSafety: all new methods have defaults that preserve existing behavior.\nExisting code continues to work unchanged.\n"
   acceptance_criteria:
-    - AnalysisBufferDecl and AnalysisBufferRef types defined
-    - AnalysisBufferContext type defined with logical→resolved ID mapping
-    - Node trait has analysis_outputs() and analysis_inputs() with empty defaults
-    - gpu_shaders_with_context() method on Node with default delegating to gpu_shaders()
-    - negotiate_analysis_buffers() function computes unique buffer IDs from declarations
-    - Buffer ID collision handling — two independent analyses in same chain get different resolved IDs
-    - All existing tests pass unchanged (zero behavior change)
-    - Unit tests for buffer negotiation with various topologies
-    - Unit tests for ID collision avoidance
-  out_of_scope: |
-    - Wiring into graph walker or GPU dispatch (Track 2)
+  - AnalysisBufferDecl and AnalysisBufferRef types defined
+  - AnalysisBufferContext type defined with logical→resolved ID mapping
+  - Node trait has analysis_outputs() and analysis_inputs() with empty defaults
+  - gpu_shaders_with_context() method on Node with default delegating to gpu_shaders()
+  - negotiate_analysis_buffers() function computes unique buffer IDs from declarations
+  - Buffer ID collision handling — two independent analyses in same chain get different resolved IDs
+  - All existing tests pass unchanged (zero behavior change)
+  - Unit tests for buffer negotiation with various topologies
+  - Unit tests for ID collision avoidance
+  out_of_scope: '- Wiring into graph walker or GPU dispatch (Track 2)
+
     - StagedPipeline CPU path (Track 3)
+
     - Migrating existing filters to new declarations (Track 4)
+
     - Actual GPU execution of cross-node chains
-  technical_notes: |
-    The buffer negotiation protocol:
 
-    1. Each analysis node declares: "I produce buffers with logical IDs [0, 1, ...]"
-       Logical IDs are node-local — node A uses id=0, node B also uses id=0.
-
-    2. Each render node declares: "I consume buffers with logical IDs [0, ...]"
-       These reference the upstream analysis node's logical IDs.
-
-    3. negotiate_analysis_buffers() walks the merged chain and:
-       a. Collects all declared logical IDs from analysis nodes
-       b. Assigns globally unique resolved IDs (starting from 1000 to avoid
-          collision with any node's internal buffer IDs)
-       c. Builds AnalysisBufferContext mapping logical→resolved for each node
-       d. Detects conflicts (two producers for same logical ID without
-          an explicit consumer boundary between them)
-
-    4. gpu_shaders_with_context() uses the resolved IDs when building
-       ReductionBuffer entries. The executor sees globally unique IDs
-       and allocates one GPU buffer per unique resolved ID.
-
-    Example:
-      Node A (histogram): declares output logical_id=0 (768 u32s)
-      Node B (auto_levels): declares input logical_id=0
-      Negotiation: assigns resolved_id=1000 for logical_id=0
-      Node A's gpu_shaders_with_context: reduction passes use buffer id=1000
-      Node B's gpu_shaders_with_context: apply pass reads buffer id=1000
-      Merged chain: [A_pass1(1000), A_pass2(1000), B_apply(1000)] → one execute()
+    '
+  technical_notes: "The buffer negotiation protocol:\n\n1. Each analysis node declares: \"I produce buffers with logical IDs\
+    \ [0, 1, ...]\"\n   Logical IDs are node-local — node A uses id=0, node B also uses id=0.\n\n2. Each render node declares:\
+    \ \"I consume buffers with logical IDs [0, ...]\"\n   These reference the upstream analysis node's logical IDs.\n\n3.\
+    \ negotiate_analysis_buffers() walks the merged chain and:\n   a. Collects all declared logical IDs from analysis nodes\n\
+    \   b. Assigns globally unique resolved IDs (starting from 1000 to avoid\n      collision with any node's internal buffer\
+    \ IDs)\n   c. Builds AnalysisBufferContext mapping logical→resolved for each node\n   d. Detects conflicts (two producers\
+    \ for same logical ID without\n      an explicit consumer boundary between them)\n\n4. gpu_shaders_with_context() uses\
+    \ the resolved IDs when building\n   ReductionBuffer entries. The executor sees globally unique IDs\n   and allocates\
+    \ one GPU buffer per unique resolved ID.\n\nExample:\n  Node A (histogram): declares output logical_id=0 (768 u32s)\n\
+    \  Node B (auto_levels): declares input logical_id=0\n  Negotiation: assigns resolved_id=1000 for logical_id=0\n  Node\
+    \ A's gpu_shaders_with_context: reduction passes use buffer id=1000\n  Node B's gpu_shaders_with_context: apply pass reads\
+    \ buffer id=1000\n  Merged chain: [A_pass1(1000), A_pass2(1000), B_apply(1000)] → one execute()\n"
 plan:
-  - phase: "Type definitions"
-    tasks:
-      - text: "Define AnalysisBufferDecl struct (logical_id, kind, initial_size_bytes)"
-        done: false
-      - text: "Define AnalysisBufferRef struct (logical_id, source_node_hint)"
-        done: false
-      - text: "Define AnalysisBufferKind enum (Histogram256, ChannelMinMax, ChannelSum, Generic)"
-        done: false
-      - text: "Define AnalysisBufferContext struct with logical→resolved ID mapping"
-        done: false
-      - text: "Unit tests for type construction and mapping operations"
-        done: false
-  - phase: "Node trait extensions"
-    tasks:
-      - text: "Add analysis_outputs() -> &[AnalysisBufferDecl] default method to Node trait (returns empty slice)"
-        done: false
-      - text: "Add analysis_inputs() -> &[AnalysisBufferRef] default method to Node trait (returns empty slice)"
-        done: false
-      - text: "Add gpu_shaders_with_context(w, h, &AnalysisBufferContext) default method that delegates to gpu_shaders()"
-        done: false
-      - text: "Verify all existing Node implementations compile without changes"
-        done: false
-      - text: "Run full test suite — confirm zero regressions from trait additions"
-        done: false
-  - phase: "Buffer negotiation logic"
-    tasks:
-      - text: "Implement negotiate_analysis_buffers(nodes: &[&dyn Node]) -> AnalysisBufferContext"
-        done: false
-      - text: "Handle ID collision — multiple producers in same chain get distinct resolved IDs"
-        done: false
-      - text: "Handle unmatched consumers — error if a node declares input but no upstream produces it"
-        done: false
-      - text: "Unit tests: single analysis→render pair negotiation"
-        done: false
-      - text: "Unit tests: two independent analyses in same chain (ID collision avoidance)"
-        done: false
-      - text: "Unit tests: analysis→render→analysis→render sequential chain"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "cargo test --workspace passes (all existing tests)"
-        done: false
-      - text: "cargo build --target wasm32-wasip2 succeeds (WASM compatibility)"
-        done: false
-      - text: "No changes to any existing filter, graph execution, or GPU dispatch code"
-        done: false
+- phase: Type definitions
+  tasks:
+  - text: Define AnalysisBufferDecl struct (logical_id, kind, initial_size_bytes)
+    done: true
+  - text: Define AnalysisBufferRef struct (logical_id, source_node_hint)
+    done: true
+  - text: Define AnalysisBufferKind enum (Histogram256, ChannelMinMax, ChannelSum, Generic)
+    done: true
+  - text: Define AnalysisBufferContext struct with logical→resolved ID mapping
+    done: true
+  - text: Unit tests for type construction and mapping operations
+    done: true
+- phase: Node trait extensions
+  tasks:
+  - text: Add analysis_outputs() -> &[AnalysisBufferDecl] default method to Node trait (returns empty slice)
+    done: true
+  - text: Add analysis_inputs() -> &[AnalysisBufferRef] default method to Node trait (returns empty slice)
+    done: true
+  - text: Add gpu_shaders_with_context(w, h, &AnalysisBufferContext) default method that delegates to gpu_shaders()
+    done: true
+  - text: Verify all existing Node implementations compile without changes
+    done: true
+  - text: Run full test suite — confirm zero regressions from trait additions
+    done: true
+- phase: Buffer negotiation logic
+  tasks:
+  - text: 'Implement negotiate_analysis_buffers(nodes: &[&dyn Node]) -> AnalysisBufferContext'
+    done: true
+  - text: Handle ID collision — multiple producers in same chain get distinct resolved IDs
+    done: true
+  - text: Handle unmatched consumers — error if a node declares input but no upstream produces it
+    done: true
+  - text: 'Unit tests: single analysis→render pair negotiation'
+    done: true
+  - text: 'Unit tests: two independent analyses in same chain (ID collision avoidance)'
+    done: true
+  - text: 'Unit tests: analysis→render→analysis→render sequential chain'
+    done: true
+- phase: Verification
+  tasks:
+  - text: cargo test --workspace passes (all existing tests)
+    done: true
+  - text: cargo build --target wasm32-wasip2 succeeds (WASM compatibility)
+    done: true
+  - text: No changes to any existing filter, graph execution, or GPU dispatch code
+    done: true
 extra: {}
