@@ -3,87 +3,96 @@ title: Give filters access to NodeInfo via backwards-compatible trait method
 type: refactor
 status: pending
 created: 2026-04-07
-updated: 2026-04-07
+updated: '2026-04-06'
 spec:
-  summary: |
-    Add compute_with_info(&self, input, info) to Filter trait with default
+  summary: 'Add compute_with_info(&self, input, info) to Filter trait with default
+
     delegation to compute(). Update FilterNode to call it. Filters that need
+
     color-space awareness override the new method. Zero breakage of existing
+
     178 filter implementations.
-  context: |
-    Filter::compute() only receives pixels, width, height. Filters cannot
+
+    '
+  context: 'Filter::compute() only receives pixels, width, height. Filters cannot
+
     access the working color space. FilterNode already holds NodeInfo (with
+
     color_space) but does not pass it through. 178 filter implementations
+
     exist — changing the compute() signature would break all of them.
 
+
     A backwards-compatible approach adds a new method with a default that
+
     delegates to the existing compute(). Only filters that need NodeInfo
+
     override the new method.
-  codebase_analysis: |
-    FilterNode at filter_node.rs:91-110 calls self.filter.compute(&input,
+
+    '
+  codebase_analysis: 'FilterNode at filter_node.rs:91-110 calls self.filter.compute(&input,
+
     width, height). It has self.info: NodeInfo available.
 
+
     GpuFilterNode follows the same pattern. gpu_params() also only receives
+
     width/height but needs color space for luma-aware uniforms.
 
+
     The change is:
+
     1. Add default method to Filter trait (no breakage)
+
     2. FilterNode calls compute_with_info() instead of compute()
+
     3. gpu_params() gains &NodeInfo parameter (with default delegation)
+
     4. Update GpuFilterNode similarly
 
+
     Scope: ~4 files changed (ops.rs, filter_node.rs, node.rs). Zero filter
+
     files touched.
+
+    '
   acceptance_criteria:
-    - Filter trait has compute_with_info(input, info) with default -> compute()
-    - Filter trait has gpu_params_with_info(info) with default -> gpu_params()
-    - FilterNode calls compute_with_info passing its NodeInfo
-    - GpuFilterNode calls gpu_params_with_info passing its NodeInfo
-    - All existing 178 filters continue to work unchanged
-    - One test filter overrides compute_with_info to prove the plumbing works
-  out_of_scope: |
-    Updating existing filters to use NodeInfo. That is for downstream tracks.
+  - Filter trait has compute_with_info(input, info) with default -> compute()
+  - Filter trait has gpu_params_with_info(info) with default -> gpu_params()
+  - FilterNode calls compute_with_info passing its NodeInfo
+  - GpuFilterNode calls gpu_params_with_info passing its NodeInfo
+  - All existing 178 filters continue to work unchanged
+  - One test filter overrides compute_with_info to prove the plumbing works
+  out_of_scope: 'Updating existing filters to use NodeInfo. That is for downstream tracks.
+
     WIT interface changes (NodeInfo already flows through WIT).
-  technical_notes: |
-    The backwards-compatible approach:
 
-    trait Filter {
-        fn compute(&self, input: &[f32], w: u32, h: u32) -> Result<...>;
-
-        fn compute_with_info(&self, input: &[f32], info: &NodeInfo) -> Result<...> {
-            self.compute(input, info.width, info.height)  // default
-        }
-
-        fn gpu_params(&self, w: u32, h: u32) -> Option<Vec<u8>> { None }
-
-        fn gpu_params_with_info(&self, info: &NodeInfo) -> Option<Vec<u8>> {
-            self.gpu_params(info.width, info.height)  // default
-        }
-    }
-
-    FilterNode::compute() changes from:
-      self.filter.compute(&input, w, h)
-    to:
-      self.filter.compute_with_info(&input, &self.info)
+    '
+  technical_notes: "The backwards-compatible approach:\n\ntrait Filter {\n    fn compute(&self, input: &[f32], w: u32, h:\
+    \ u32) -> Result<...>;\n\n    fn compute_with_info(&self, input: &[f32], info: &NodeInfo) -> Result<...> {\n        self.compute(input,\
+    \ info.width, info.height)  // default\n    }\n\n    fn gpu_params(&self, w: u32, h: u32) -> Option<Vec<u8>> { None }\n\
+    \n    fn gpu_params_with_info(&self, info: &NodeInfo) -> Option<Vec<u8>> {\n        self.gpu_params(info.width, info.height)\
+    \  // default\n    }\n}\n\nFilterNode::compute() changes from:\n  self.filter.compute(&input, w, h)\nto:\n  self.filter.compute_with_info(&input,\
+    \ &self.info)\n"
 plan:
-  - phase: Trait Extension
-    tasks:
-      - text: Add compute_with_info() default method to Filter trait in ops.rs
-        done: false
-      - text: Add gpu_params_with_info() default method to Filter trait
-        done: false
-  - phase: Node Integration
-    tasks:
-      - text: Update FilterNode::compute() to call compute_with_info()
-        done: false
-      - text: Update GpuFilterNode to call gpu_params_with_info()
-        done: false
-      - text: Update any other callers of Filter::compute() in graph.rs or fusion.rs
-        done: false
-  - phase: Verification
-    tasks:
-      - text: All 178 existing filters pass tests unchanged (cargo test)
-        done: false
-      - text: Add test filter that overrides compute_with_info to read color_space
-        done: false
+- phase: Trait Extension
+  tasks:
+  - text: Add compute_with_info() default method to Filter trait in ops.rs
+    done: true
+  - text: Add gpu_params_with_info() default method to Filter trait
+    done: true
+- phase: Node Integration
+  tasks:
+  - text: Update FilterNode::compute() to call compute_with_info()
+    done: true
+  - text: Update GpuFilterNode to call gpu_params_with_info()
+    done: true
+  - text: Update any other callers of Filter::compute() in graph.rs or fusion.rs
+    done: true
+- phase: Verification
+  tasks:
+  - text: All 178 existing filters pass tests unchanged (cargo test)
+    done: true
+  - text: Add test filter that overrides compute_with_info to read color_space
+    done: true
 extra: {}
