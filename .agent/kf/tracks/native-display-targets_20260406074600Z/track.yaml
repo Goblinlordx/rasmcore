@@ -5,129 +5,110 @@ status: pending
 created: '2026-04-06'
 updated: '2026-04-06'
 spec:
-  summary: |
-    Add optional display target support to rasmcore-sdk-v2. Consumers
+  summary: 'Add optional display target support to rasmcore-sdk-v2. Consumers
+
     provide wgpu surfaces (from their own windows); the SDK blits GPU
+
     compute results directly to them — zero CPU readback for display.
-  context: |
-    The browser SDK has addDisplay(name, canvas) which attaches render
+
+    '
+  context: 'The browser SDK has addDisplay(name, canvas) which attaches render
+
     targets to pipeline nodes. The GPU blit shader maps the compute
+
     output buffer directly to the canvas texture. This is the zero-copy
+
     display path that makes interactive editing fast.
 
+
     The native SDK (rasmcore-sdk-v2) currently only supports headless
+
     compute: execute → readback → Vec<f32>. For native apps that want
+
     real-time preview (like a Rust GUI editor using egui/winit), they
+
     need the same zero-copy display path: compute result stays on GPU,
+
     blit shader maps it to a window surface.
 
+
     The SDK should NOT own windows. The consumer creates a wgpu::Surface
+
     from their own windowing system and passes it in. The SDK manages
+
     the blit pipeline, viewport uniforms, and display registration.
+
     Same separation of concerns as browser: host owns canvas, SDK
+
     owns the blit.
-  codebase_analysis: |
-    Browser GpuHandlerV2 (gpu-handler-v2.ts):
-    - displays: Map<string, DisplayRegistration>
-    - addDisplay(name, canvas, hdr): creates GPUCanvasContext, configures,
-      creates viewport uniform buffer
-    - appendBlitPass(encoder, name, pixelBuf): render pass reading from
-      storage buffer, writing to canvas texture via blit shader
-    - display-blit.wgsl: fullscreen triangle, viewport pan/zoom, tone mapping
 
-    Native WgpuExecutorV2 (rasmcore-gpu-native):
-    - Has device/queue but no display surface support
-    - execute() returns Vec<f32> via staging buffer readback
-    - No blit pipeline, no surface management
-
-    rasmcore-sdk-v2:
-    - Pipeline wraps Graph + GPU executor
-    - render() does readback, write() encodes
-    - No display target concept yet
-
-    What needs to be added:
-    - Blit shader (port display-blit.wgsl to Rust-side)
-    - DisplayTarget struct: surface, context, viewport uniform, blit pipeline
-    - Pipeline::add_display(name, surface) or similar API
-    - Pipeline::display(name) to blit current result to surface
-    - Viewport update for pan/zoom
+    '
+  codebase_analysis: "Browser GpuHandlerV2 (gpu-handler-v2.ts):\n- displays: Map<string, DisplayRegistration>\n- addDisplay(name,\
+    \ canvas, hdr): creates GPUCanvasContext, configures,\n  creates viewport uniform buffer\n- appendBlitPass(encoder, name,\
+    \ pixelBuf): render pass reading from\n  storage buffer, writing to canvas texture via blit shader\n- display-blit.wgsl:\
+    \ fullscreen triangle, viewport pan/zoom, tone mapping\n\nNative WgpuExecutorV2 (rasmcore-gpu-native):\n- Has device/queue\
+    \ but no display surface support\n- execute() returns Vec<f32> via staging buffer readback\n- No blit pipeline, no surface\
+    \ management\n\nrasmcore-sdk-v2:\n- Pipeline wraps Graph + GPU executor\n- render() does readback, write() encodes\n-\
+    \ No display target concept yet\n\nWhat needs to be added:\n- Blit shader (port display-blit.wgsl to Rust-side)\n- DisplayTarget\
+    \ struct: surface, context, viewport uniform, blit pipeline\n- Pipeline::add_display(name, surface) or similar API\n-\
+    \ Pipeline::display(name) to blit current result to surface\n- Viewport update for pan/zoom\n"
   acceptance_criteria:
-    - Pipeline::add_display(name, surface_config) registers a display target
-    - Pipeline::blit(name) blits the current GPU result to the named surface
-    - Zero CPU readback in the display path (compute buffer → blit → surface)
-    - Viewport uniforms support pan/zoom/tone mapping per target
-    - Multiple simultaneous display targets (viewport + scope panels)
-    - Consumer provides wgpu::Surface — SDK does not create windows
-    - Optional feature flag (display) — headless SDK has no surface deps
-    - Works with winit, egui, SDL2, or any wgpu surface provider
-  out_of_scope: |
-    Window creation, event loop, UI framework integration.
-    That is the consumer's responsibility.
+  - Pipeline::add_display(name, surface_config) registers a display target
+  - Pipeline::blit(name) blits the current GPU result to the named surface
+  - Zero CPU readback in the display path (compute buffer → blit → surface)
+  - Viewport uniforms support pan/zoom/tone mapping per target
+  - Multiple simultaneous display targets (viewport + scope panels)
+  - Consumer provides wgpu::Surface — SDK does not create windows
+  - Optional feature flag (display) — headless SDK has no surface deps
+  - Works with winit, egui, SDL2, or any wgpu surface provider
+  out_of_scope: 'Window creation, event loop, UI framework integration.
+
+    That is the consumer''s responsibility.
+
     WebGPU browser display (already handled by GpuHandlerV2).
-  technical_notes: |
-    Feature: rasmcore-sdk-v2 gets a "display" feature flag.
-    When enabled, adds surface management and blit pipeline.
 
-    API sketch:
-      let mut pipe = Pipeline::open(&bytes)?
-          .brightness(0.15)?;
-
-      // Consumer creates surface from their window
-      let surface = instance.create_surface(&window)?;
-
-      // Register as display target
-      pipe.add_display("viewport", surface, &surface_config);
-
-      // On each frame: blit GPU result to surface (zero readback)
-      pipe.blit("viewport");
-
-      // Pan/zoom
-      pipe.update_viewport("viewport", pan_x, pan_y, zoom);
-
-    Blit shader: port display-blit.wgsl from web-ui.
-    Same fullscreen-triangle approach, same viewport uniform layout.
-
-    DisplayTarget struct:
-      surface: wgpu::Surface
-      config: wgpu::SurfaceConfiguration
-      viewport_buf: wgpu::Buffer
-      blit_pipeline: wgpu::RenderPipeline
-      blit_bind_group_layout: wgpu::BindGroupLayout
-
-    The blit pipeline is created once per display target.
-    Each blit() call: get current texture, create bind group with
-    compute output buffer + viewport uniform, render pass, present.
+    '
+  technical_notes: "Feature: rasmcore-sdk-v2 gets a \"display\" feature flag.\nWhen enabled, adds surface management and blit\
+    \ pipeline.\n\nAPI sketch:\n  let mut pipe = Pipeline::open(&bytes)?\n      .brightness(0.15)?;\n\n  // Consumer creates\
+    \ surface from their window\n  let surface = instance.create_surface(&window)?;\n\n  // Register as display target\n \
+    \ pipe.add_display(\"viewport\", surface, &surface_config);\n\n  // On each frame: blit GPU result to surface (zero readback)\n\
+    \  pipe.blit(\"viewport\");\n\n  // Pan/zoom\n  pipe.update_viewport(\"viewport\", pan_x, pan_y, zoom);\n\nBlit shader:\
+    \ port display-blit.wgsl from web-ui.\nSame fullscreen-triangle approach, same viewport uniform layout.\n\nDisplayTarget\
+    \ struct:\n  surface: wgpu::Surface\n  config: wgpu::SurfaceConfiguration\n  viewport_buf: wgpu::Buffer\n  blit_pipeline:\
+    \ wgpu::RenderPipeline\n  blit_bind_group_layout: wgpu::BindGroupLayout\n\nThe blit pipeline is created once per display\
+    \ target.\nEach blit() call: get current texture, create bind group with\ncompute output buffer + viewport uniform, render\
+    \ pass, present.\n"
 plan:
-  - phase: Blit Shader
-    tasks:
-      - text: Port display-blit.wgsl to Rust-side (include_str or const)
-        done: false
-      - text: Create blit render pipeline with viewport uniform support
-        done: false
-      - text: Viewport uniform struct matching browser layout
-        done: false
-  - phase: Display Target API
-    tasks:
-      - text: DisplayTarget struct with surface, config, viewport, blit pipeline
-        done: false
-      - text: Pipeline::add_display(name, surface, config) registration
-        done: false
-      - text: Pipeline::blit(name) zero-copy display
-        done: false
-      - text: Pipeline::update_viewport(name, pan_x, pan_y, zoom)
-        done: false
-      - text: Multiple simultaneous targets
-        done: false
-  - phase: Feature Flag
-    tasks:
-      - text: Gate behind display feature in Cargo.toml
-        done: false
-      - text: Headless SDK compiles without surface deps
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Test display target creation and blit (headless with wgpu texture output)
-        done: false
-      - text: Test multiple targets with different viewports
-        done: false
+- phase: Blit Shader
+  tasks:
+  - text: Port display-blit.wgsl to Rust-side (include_str or const)
+    done: true
+  - text: Create blit render pipeline with viewport uniform support
+    done: true
+  - text: Viewport uniform struct matching browser layout
+    done: true
+- phase: Display Target API
+  tasks:
+  - text: DisplayTarget struct with surface, config, viewport, blit pipeline
+    done: true
+  - text: Pipeline::add_display(name, surface, config) registration
+    done: true
+  - text: Pipeline::blit(name) zero-copy display
+    done: true
+  - text: Pipeline::update_viewport(name, pan_x, pan_y, zoom)
+    done: true
+  - text: Multiple simultaneous targets
+    done: true
+- phase: Feature Flag
+  tasks:
+  - text: Gate behind display feature in Cargo.toml
+    done: true
+  - text: Headless SDK compiles without surface deps
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test display target creation and blit (headless with wgpu texture output)
+    done: true
+  - text: Test multiple targets with different viewports
+    done: true
 extra: {}
