@@ -375,6 +375,33 @@ pub struct DrawArc {
     #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)] pub color_a: f32,
 }
 
+const DRAW_ARC_WGSL: &str = r#"
+const PI: f32 = 3.14159265358979;
+struct Params { width: u32, height: u32, acx: f32, acy: f32, radius: f32, start_angle: f32, end_angle: f32, stroke_width: f32, cr: f32, cg: f32, cb: f32, ca: f32, }
+@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
+@group(0) @binding(2) var<uniform> params: Params;
+@compute @workgroup_size(256, 1, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let idx = gid.x;
+  if (idx >= params.width * params.height) { return; }
+  let x = f32(idx % params.width); let y = f32(idx / params.width);
+  let dx = x - params.acx; let dy = y - params.acy;
+  let dist = abs(length(vec2<f32>(dx, dy)) - params.radius);
+  var angle = atan2(dy, dx);
+  if (angle < 0.0) { angle += 2.0 * PI; }
+  let sa = params.start_angle; let ea = params.end_angle;
+  var in_arc: bool;
+  if (sa <= ea) { in_arc = angle >= sa && angle <= ea; }
+  else { in_arc = angle >= sa || angle <= ea; }
+  if (!in_arc) { output[idx] = input[idx]; return; }
+  let half_w = params.stroke_width * 0.5;
+  let cov = sdf_coverage_stroke(dist, half_w);
+  let color = vec4<f32>(params.cr, params.cg, params.cb, params.ca);
+  output[idx] = sdf_blend(input[idx], color, cov);
+}
+"#;
+
 impl Filter for DrawArc {
     fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
         let mut out = input.to_vec();
@@ -399,6 +426,19 @@ impl Filter for DrawArc {
         }
         Ok(out)
     }
+
+    fn gpu_shader_passes(&self, _width: u32, _height: u32) -> Option<Vec<GpuShader>> {
+        let shader = format!("{SDF_BLEND_WGSL}\n{DRAW_ARC_WGSL}");
+        let mut p = gpu_params_wh(_width, _height);
+        gpu_push_f32(&mut p, self.cx); gpu_push_f32(&mut p, self.cy);
+        gpu_push_f32(&mut p, self.radius);
+        gpu_push_f32(&mut p, self.start_angle.to_radians());
+        gpu_push_f32(&mut p, self.end_angle.to_radians());
+        gpu_push_f32(&mut p, self.stroke_width);
+        gpu_push_f32(&mut p, self.color_r); gpu_push_f32(&mut p, self.color_g);
+        gpu_push_f32(&mut p, self.color_b); gpu_push_f32(&mut p, self.color_a);
+        Some(vec![GpuShader::new(shader, "main", [256, 1, 1], p)])
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -420,6 +460,33 @@ pub struct DrawPolygon {
     #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)] pub color_a: f32,
 }
 
+const DRAW_POLYGON_WGSL: &str = r#"
+const PI: f32 = 3.14159265358979;
+struct Params { width: u32, height: u32, pcx: f32, pcy: f32, radius: f32, sides: f32, stroke_width: f32, cr: f32, cg: f32, cb: f32, ca: f32, _pad: u32, }
+@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
+@group(0) @binding(2) var<uniform> params: Params;
+@compute @workgroup_size(256, 1, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let idx = gid.x;
+  if (idx >= params.width * params.height) { return; }
+  let x = f32(idx % params.width); let y = f32(idx / params.width);
+  let dx = x - params.pcx; let dy = y - params.pcy;
+  let angle = atan2(dy, dx);
+  let n = params.sides;
+  let sector = 2.0 * PI / n;
+  // Fold angle into one sector
+  let a = ((angle % sector) + sector) % sector - sector * 0.5;
+  let r = length(vec2<f32>(dx, dy));
+  let d = r * cos(a) - params.radius * cos(PI / n);
+  var cov: f32;
+  if (params.stroke_width > 0.0) { cov = sdf_coverage_stroke(d, params.stroke_width * 0.5); }
+  else { cov = sdf_coverage_fill(d); }
+  let color = vec4<f32>(params.cr, params.cg, params.cb, params.ca);
+  output[idx] = sdf_blend(input[idx], color, cov);
+}
+"#;
+
 impl Filter for DrawPolygon {
     fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
         let mut out = input.to_vec();
@@ -429,7 +496,6 @@ impl Filter for DrawPolygon {
             for x in 0..width {
                 let dx = x as f32 - self.cx;
                 let dy = y as f32 - self.cy;
-                // SDF for regular polygon
                 let angle = dy.atan2(dx);
                 let sector = (2.0 * PI) / n;
                 let a = (angle % sector) - sector * 0.5;
@@ -443,6 +509,19 @@ impl Filter for DrawPolygon {
             }
         }
         Ok(out)
+    }
+
+    fn gpu_shader_passes(&self, _width: u32, _height: u32) -> Option<Vec<GpuShader>> {
+        let shader = format!("{SDF_BLEND_WGSL}\n{DRAW_POLYGON_WGSL}");
+        let mut p = gpu_params_wh(_width, _height);
+        gpu_push_f32(&mut p, self.cx); gpu_push_f32(&mut p, self.cy);
+        gpu_push_f32(&mut p, self.radius);
+        gpu_push_f32(&mut p, self.sides.max(3) as f32);
+        gpu_push_f32(&mut p, self.stroke_width);
+        gpu_push_f32(&mut p, self.color_r); gpu_push_f32(&mut p, self.color_g);
+        gpu_push_f32(&mut p, self.color_b); gpu_push_f32(&mut p, self.color_a);
+        gpu_push_u32(&mut p, 0);
+        Some(vec![GpuShader::new(shader, "main", [256, 1, 1], p)])
     }
 }
 
