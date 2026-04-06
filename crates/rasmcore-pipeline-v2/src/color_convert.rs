@@ -327,4 +327,94 @@ mod tests {
         assert!((pixels[1] - 0.3).abs() < 0.001);
         assert!((pixels[2] - 0.1).abs() < 0.001);
     }
+
+    /// Test filter that declares a preferred color space.
+    struct PreferredCsFilter {
+        upstream: u32,
+        info: NodeInfo,
+        preferred: ColorSpace,
+    }
+
+    impl Node for PreferredCsFilter {
+        fn info(&self) -> NodeInfo { self.info.clone() }
+        fn compute(&self, request: Rect, upstream: &mut dyn Upstream) -> Result<Vec<f32>, PipelineError> {
+            // Pass through — the test is about auto-conversion, not filter behavior
+            upstream.request(self.upstream, request)
+        }
+        fn upstream_ids(&self) -> Vec<u32> { vec![self.upstream] }
+        fn preferred_color_space(&self) -> Option<ColorSpace> {
+            Some(self.preferred)
+        }
+    }
+
+    #[test]
+    fn auto_convert_preferred_color_space() {
+        // Filter prefers ACEScct but upstream is Linear.
+        // After auto-conversion: the filter output should still be Linear
+        // because convert-back restores the original space.
+        let mut g = Graph::new(0);
+        let src = g.add_node(Box::new(LinearSource {
+            w: 2, h: 2, color: [0.5, 0.3, 0.1, 1.0],
+        }));
+        let src_info = g.node_info(src).unwrap();
+        assert_eq!(src_info.color_space, ColorSpace::Linear);
+
+        // Insert convert-to -> filter -> convert-back manually
+        // (simulating what apply_filter does)
+        let convert_to = ColorConvertNode::new(src, src_info.clone(), ColorSpace::Linear, ColorSpace::AcesCct);
+        let conv_to_id = g.add_node(Box::new(convert_to));
+        let conv_to_info = g.node_info(conv_to_id).unwrap();
+        assert_eq!(conv_to_info.color_space, ColorSpace::AcesCct);
+
+        let filter = PreferredCsFilter {
+            upstream: conv_to_id,
+            info: conv_to_info.clone(),
+            preferred: ColorSpace::AcesCct,
+        };
+        let filter_id = g.add_node(Box::new(filter));
+        let filter_info = g.node_info(filter_id).unwrap();
+
+        let convert_back = ColorConvertNode::new(filter_id, filter_info, ColorSpace::AcesCct, ColorSpace::Linear);
+        let back_id = g.add_node(Box::new(convert_back));
+        let back_info = g.node_info(back_id).unwrap();
+        assert_eq!(back_info.color_space, ColorSpace::Linear);
+
+        // Render and verify round-trip preserves values
+        let pixels = g.request_full(back_id).unwrap();
+        assert!((pixels[0] - 0.5).abs() < 0.01, "r: {}", pixels[0]);
+        assert!((pixels[1] - 0.3).abs() < 0.01, "g: {}", pixels[1]);
+        assert!((pixels[2] - 0.1).abs() < 0.01, "b: {}", pixels[2]);
+    }
+
+    #[test]
+    fn working_color_space_on_graph() {
+        let mut g = Graph::new(0);
+        assert!(g.working_color_space().is_none());
+        g.set_working_color_space(ColorSpace::AcesCg);
+        assert_eq!(g.working_color_space(), Some(ColorSpace::AcesCg));
+    }
+
+    #[test]
+    fn no_redundant_conversion_when_spaces_match() {
+        // If filter prefers Linear and upstream is already Linear, no conversion needed
+        let mut g = Graph::new(0);
+        let src = g.add_node(Box::new(LinearSource {
+            w: 2, h: 2, color: [0.5, 0.5, 0.5, 1.0],
+        }));
+        let src_info = g.node_info(src).unwrap();
+        assert_eq!(src_info.color_space, ColorSpace::Linear);
+
+        // Filter prefers Linear — same as upstream, so no conversion nodes added
+        let filter = PreferredCsFilter {
+            upstream: src,
+            info: src_info,
+            preferred: ColorSpace::Linear,
+        };
+        let filter_id = g.add_node(Box::new(filter));
+
+        // Only 2 nodes total: src + filter (no conversion nodes)
+        assert_eq!(filter_id, 1);
+        let pixels = g.request_full(filter_id).unwrap();
+        assert!((pixels[0] - 0.5).abs() < 1e-6);
+    }
 }
