@@ -327,6 +327,49 @@ pub trait Node {
     fn as_lmt(&self) -> Option<&crate::lmt::Lmt> {
         None
     }
+
+    // ─── Cross-Node Analysis Buffer Protocol ────────────────────────────
+
+    /// Analysis buffers this node produces (for cross-node GPU sharing).
+    ///
+    /// Override to declare reduction buffers that downstream nodes can consume.
+    /// The graph walker uses these declarations to merge analysis + render
+    /// shader chains into a single GPU submit with zero CPU readback.
+    ///
+    /// Default: empty (not an analysis producer).
+    fn analysis_outputs(&self) -> &[crate::analysis_buffer::AnalysisBufferDecl] {
+        &[]
+    }
+
+    /// Analysis buffers this node consumes from upstream analysis nodes.
+    ///
+    /// Override to declare which upstream analysis buffers this node reads.
+    /// The logical IDs must match `AnalysisBufferDecl::logical_id` from an
+    /// upstream producer. The negotiation step resolves logical → global IDs.
+    ///
+    /// Default: empty (not an analysis consumer).
+    fn analysis_inputs(&self) -> &[crate::analysis_buffer::AnalysisBufferRef] {
+        &[]
+    }
+
+    /// GPU shaders with cross-node analysis buffer context.
+    ///
+    /// When the graph walker detects analysis→render pairs, it calls this
+    /// method instead of `gpu_shaders()`. The `mapping` provides resolved
+    /// buffer IDs that are globally unique across the merged chain.
+    ///
+    /// Nodes that consume analysis buffers override this to substitute
+    /// their internal logical buffer IDs with the resolved IDs from the mapping.
+    ///
+    /// Default: delegates to `gpu_shaders()` (ignores context).
+    fn gpu_shaders_with_context(
+        &self,
+        width: u32,
+        height: u32,
+        _mapping: &crate::analysis_buffer::NodeBufferMapping,
+    ) -> Option<Vec<GpuShader>> {
+        self.gpu_shaders(width, height)
+    }
 }
 
 /// How a node estimates its required input region.
