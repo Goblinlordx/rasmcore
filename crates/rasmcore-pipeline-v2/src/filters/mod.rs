@@ -8,6 +8,7 @@
 
 pub mod adjustment;
 pub mod color;
+pub mod distortion;
 pub mod effect;
 pub mod enhancement;
 pub mod grading;
