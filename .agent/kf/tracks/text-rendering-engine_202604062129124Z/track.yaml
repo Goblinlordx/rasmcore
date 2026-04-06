@@ -1,0 +1,78 @@
+id: text-rendering-engine_20260406212914Z
+title: Text rendering with injectable Font resource
+type: feature
+status: pending
+created: 2026-04-07
+updated: 2026-04-07
+spec:
+  summary: |
+    Font as a WIT resource (same pattern as Source) — consumer provides
+    TTF/OTF bytes, pipeline creates Font with parsed glyphs and cached
+    atlas. draw_text accepts Font reference. No fonts embedded in binary.
+  context: |
+    draw_text is registered but needs a font engine. The Font resource
+    pattern follows Source: consumer provides bytes externally, pipeline
+    caches parsed data. Tests use fixture font files, never bundled fonts.
+
+    WIT type:
+      resource font {
+        constructor(data: buffer);
+        info: func() -> font-info;
+      }
+
+    SDK:
+      const font = new Font(ttfBytes);
+      pipe.drawText({ font, text, x, y, size, color });
+  acceptance_criteria:
+    - Font WIT resource with constructor(bytes)
+    - TTF/OTF parsing via ttf-parser or ab_glyph (no system fonts)
+    - Glyph rasterization to texture atlas (cached on Font resource)
+    - GPU blit from atlas to canvas (instanced quads per glyph)
+    - SIMD CPU fallback (scanline rasterization)
+    - No fonts embedded in WASM binary
+    - Tests use fixture font files from tests/fixtures/
+  out_of_scope: |
+    Complex text shaping (bidi, ligatures, kerning tables)
+    System font discovery
+    Rich text / HTML rendering
+  technical_notes: |
+    Font resource lifecycle:
+    1. Consumer: new Font(ttfBytes) — parse TTF, extract glyph outlines
+    2. First drawText: rasterize needed glyphs to atlas texture (GPU or CPU)
+    3. Subsequent drawText: reuse cached atlas, only rasterize new glyphs
+    4. GPU path: upload atlas as texture, instanced quad per glyph
+    5. CPU path: direct scanline rasterization per glyph
+plan:
+  - phase: Font Resource
+    tasks:
+      - text: Add font WIT resource type with constructor(data, buffer)
+        done: false
+      - text: Implement FontResource in WASM adapter with TTF parser (ttf-parser crate)
+        done: false
+      - text: Parse glyph outlines and metrics from TTF data
+        done: false
+  - phase: Glyph Atlas
+    tasks:
+      - text: Implement glyph rasterization to f32 alpha atlas (CPU path)
+        done: false
+      - text: Cache atlas on FontResource — grow as new glyphs are needed
+        done: false
+      - text: Implement GPU atlas upload and instanced quad rendering
+        done: false
+  - phase: draw_text Filter
+    tasks:
+      - text: Update draw_text filter to accept Font resource reference + text params
+        done: false
+      - text: Implement GPU shader for atlas-based text rendering
+        done: false
+      - text: Implement SIMD CPU fallback for text rendering
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Add test fixture font (open source TTF, e.g. Inter or Noto)
+        done: false
+      - text: Test draw_text renders correctly with fixture font
+        done: false
+      - text: Verify no fonts embedded in WASM binary (check binary size)
+        done: false
+extra: {}

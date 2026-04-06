@@ -421,3 +421,9 @@ wit-use-lmt_20260406075500Z: []
 
 # Stroke input research — no deps
 research-stroke-input-engine_20260406212331Z: []
+
+# Parity gap tracks — all independent
+blend-modes-expansion_20260406212912Z: []
+cube-hald-lut-parsers_202604062129123Z: []
+text-rendering-engine_202604062129124Z: []
+generators-expansion_202604062129125Z: []
