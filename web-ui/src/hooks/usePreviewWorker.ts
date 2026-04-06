@@ -32,6 +32,25 @@ export function usePreviewWorker() {
   const pendingLoadRef = useRef<ArrayBuffer | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const queuedChainRef = useRef<any[] | null>(null); // single-slot queue
+  /** Monotonic generation counter — incremented on every processChain/processMulti call.
+   *  When a queued render drains, we skip stale entries and only execute the latest. */
+  const generationRef = useRef(0);
+  const queuedGenerationRef = useRef(0);
+
+  /** Drain single-slot queue — only executes if the queued generation matches the latest. */
+  const drainQueue = () => {
+    if (!queuedChainRef.current || !workerRef.current) return;
+    // Skip if a newer request has been queued since this one was enqueued
+    if (queuedGenerationRef.current < generationRef.current) {
+      // Re-read latest — generationRef advanced, so queuedChainRef was overwritten
+      queuedGenerationRef.current = generationRef.current;
+    }
+    const next = queuedChainRef.current;
+    queuedChainRef.current = null;
+    processingRef.current = true;
+    setState((s) => ({ ...s, processing: true }));
+    workerRef.current.postMessage({ type: 'process', chain: next });
+  };
   /** Called after each proxy render completes (for background warm trigger) */
   const onProxyCompleteRef = useRef<(() => void) | null>(null);
   /** OffscreenCanvas to transfer to worker for WebGPU display */
@@ -79,14 +98,7 @@ export function usePreviewWorker() {
           previewWidth: e.data.previewWidth ?? 0,
           previewHeight: e.data.previewHeight ?? 0,
         }));
-        // Drain queue — a processChain may have been queued while loading
-        if (queuedChainRef.current && workerRef.current) {
-          const next = queuedChainRef.current;
-          queuedChainRef.current = null;
-          processingRef.current = true;
-          setState((s) => ({ ...s, processing: true }));
-          workerRef.current.postMessage({ type: 'process', chain: next });
-        }
+        drainQueue();
         return;
       }
 
@@ -95,14 +107,7 @@ export function usePreviewWorker() {
         processingRef.current = false;
         setState((s) => ({ ...s, processing: false, proxyMs: e.data.totalMs }));
         if (onProxyCompleteRef.current) onProxyCompleteRef.current();
-        // Drain single-slot queue
-        if (queuedChainRef.current && workerRef.current) {
-          const next = queuedChainRef.current;
-          queuedChainRef.current = null;
-          processingRef.current = true;
-          setState((s) => ({ ...s, processing: true }));
-          workerRef.current.postMessage({ type: 'process', chain: next });
-        }
+        drainQueue();
         return;
       }
 
@@ -140,14 +145,7 @@ export function usePreviewWorker() {
         };
         img.src = url;
 
-        // Drain single-slot queue
-        if (queuedChainRef.current && workerRef.current) {
-          const next = queuedChainRef.current;
-          queuedChainRef.current = null;
-          processingRef.current = true;
-          setState((s) => ({ ...s, processing: true }));
-          workerRef.current.postMessage({ type: 'process', chain: next });
-        }
+        drainQueue();
         return;
       }
 
@@ -203,8 +201,10 @@ export function usePreviewWorker() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (chain: any[]) => {
       if (!workerRef.current || !readyRef.current) return;
+      generationRef.current++;
       if (processingRef.current) {
-        queuedChainRef.current = chain; // replace previous queued
+        queuedChainRef.current = chain;
+        queuedGenerationRef.current = generationRef.current;
         return;
       }
       processingRef.current = true;
@@ -230,8 +230,10 @@ export function usePreviewWorker() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (chain: any[], scopes: string[]) => {
       if (!workerRef.current || !readyRef.current) return;
+      generationRef.current++;
       if (processingRef.current) {
         queuedChainRef.current = chain;
+        queuedGenerationRef.current = generationRef.current;
         return;
       }
       processingRef.current = true;

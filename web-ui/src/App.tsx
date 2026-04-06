@@ -223,12 +223,19 @@ export default function App() {
     }
   }, [preview, activeLayer]);
 
-  // Send preview immediately — single-slot queue in usePreviewWorker drops
-  // stale requests automatically (latest params always win).
-  // Unified preview — viewport + scopes in one pipeline execution
+  // rAF-coalesced preview dispatch — at most one render per animation frame.
+  // Slider input fires 60-100+ times/sec; this collapses them to ~60Hz.
+  // Combined with the single-slot queue in usePreviewWorker, ensures at most
+  // 2 renders after slider release: the one in flight + the latest queued.
+  const rafIdRef = useRef(0);
   const schedulePreview = useCallback(() => {
-    preview.processMulti(serializeChainRef.current(), [selectedScopeRef.current]);
+    if (rafIdRef.current) return; // already scheduled for this frame
+    rafIdRef.current = requestAnimationFrame(() => {
+      rafIdRef.current = 0;
+      preview.processMulti(serializeChainRef.current(), [selectedScopeRef.current]);
+    });
   }, [preview]);
+  useEffect(() => () => { if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current); }, []);
 
   const handleDownload = useCallback(
     (format: string, quality: number) => {

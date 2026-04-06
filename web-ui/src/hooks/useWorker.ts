@@ -27,6 +27,8 @@ export function useWorker() {
   const readyRef = useRef(false);
   const processingRef = useRef(false);
   const queueRef = useRef<unknown>(null);
+  const generationRef = useRef(0);
+  const queuedGenRef = useRef(0);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const originalCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -157,8 +159,10 @@ export function useWorker() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (msg: any) => {
       if (!workerRef.current || !readyRef.current) return;
+      generationRef.current++;
       if (processingRef.current) {
         queueRef.current = msg;
+        queuedGenRef.current = generationRef.current;
         return;
       }
       processingRef.current = true;
