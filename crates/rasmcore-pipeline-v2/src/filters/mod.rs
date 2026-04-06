@@ -10,6 +10,7 @@ pub mod adjustment;
 pub mod color;
 pub mod composite;
 pub mod distortion;
+pub mod edge;
 pub mod effect;
 pub mod enhancement;
 pub mod morphology;
