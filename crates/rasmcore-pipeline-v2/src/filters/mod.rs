@@ -14,6 +14,7 @@ pub mod distortion;
 pub mod draw;
 pub mod edge;
 pub mod effect;
+pub mod generator;
 pub mod enhancement;
 pub mod morphology;
 pub mod grading;
