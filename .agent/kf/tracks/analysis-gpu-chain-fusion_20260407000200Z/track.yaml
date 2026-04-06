@@ -1,0 +1,186 @@
+id: analysis-gpu-chain-fusion_20260407000200Z
+title: "GPU analysis→render chain fusion — zero-readback cross-node dispatch"
+type: feature
+status: pending
+created: 2026-04-07
+updated: 2026-04-07
+spec:
+  summary: |
+    Wire the analysis buffer foundation into the graph walker and GPU dispatch.
+    collect_gpu_chain() learns to walk through analysis nodes and merge their
+    shaders with downstream render nodes. GPU-default, zero CPU readback for
+    analysis results that stay as GPU buffers.
+  context: |
+    After Track 1 (foundation), nodes can declare analysis buffer
+    outputs/inputs and gpu_shaders_with_context() accepts resolved buffer IDs.
+    This track wires that into the actual execution path.
+
+    Current execution (graph.rs:629-688):
+      request_region(node_id) →
+        collect_gpu_chain(node_id) → walks backwards, collects gpu_shaders()
+        request_region(source_id) → gets input pixels
+        executor.execute(chain, pixels) → one GPU submit
+
+    collect_gpu_chain() (graph.rs:595-627) stops at any node that:
+    - Returns None from gpu_shaders()
+    - Has 0 or 2+ upstreams
+
+    The change: collect_gpu_chain() now does a two-step collection:
+    1. Walk backwards as before, but also check analysis_outputs()/analysis_inputs()
+    2. When encountering an analysis node (has analysis_outputs and gpu_shaders),
+       include it in the chain rather than stopping
+    3. When the downstream render node has analysis_inputs(), use
+       gpu_shaders_with_context() instead of gpu_shaders() to get resolved IDs
+    4. Run negotiate_analysis_buffers() on the merged node list
+    5. Rebuild the shader chain with resolved buffer IDs
+
+    The execution path in request_region() stays the same structure —
+    it just gets a longer chain that includes analysis + render shaders
+    submitted as one execute() call.
+
+    Reference: .agent/kf/_reports/analysis-render-pass-design.md
+  codebase_analysis: |
+    Files modified:
+
+    1. graph.rs — collect_gpu_chain():
+       - Currently stops at analysis nodes. Needs to recognize them via
+         analysis_outputs() and continue walking.
+       - After collection, calls negotiate_analysis_buffers() to get context.
+       - Calls gpu_shaders_with_context() instead of gpu_shaders() for nodes
+         that have analysis_inputs().
+       - Returns the merged chain as before — request_region() doesn't change.
+
+    2. graph.rs — request_region():
+       - Minimal change: the GPU dispatch block (lines 664-688) may need to
+         pass AnalysisBufferContext when collecting chains.
+       - The actual execute() call is unchanged — it already handles
+         ReductionBuffer IDs across the full ops slice.
+
+    3. graph.rs — render_gpu_plan() and render_multi_gpu_plan():
+       - Same pattern: use context-aware chain collection.
+       - Multi-output plans with shared analysis sources work via
+         StageInput::PriorStage (pixel sharing) + shared buffer IDs.
+
+    Files NOT modified:
+    - gpu.rs (GpuExecutor trait unchanged)
+    - WgpuExecutorV2 (executor handles buffers correctly already)
+    - staged.rs (CPU path is separate track)
+    - Any filter implementations (migration is separate track)
+    - WASM executor (same execute() contract)
+
+    Risk areas:
+    - collect_gpu_chain() is on the critical render path. Changes must be
+      carefully tested. Default behavior (no analysis nodes) must produce
+      identical chains to current code.
+    - Buffer ID collision between a node's internal reduction buffers and
+      cross-node negotiated IDs. Negotiation uses IDs starting at 1000 to
+      avoid collision with typical 0-based internal IDs.
+  acceptance_criteria:
+    - collect_gpu_chain() walks through analysis nodes instead of stopping
+    - Merged chains include analysis reduction passes + render apply passes
+    - Buffer IDs are globally unique via negotiate_analysis_buffers()
+    - Single execute() call for analysis→render pairs (zero CPU readback)
+    - Existing GPU chains (no analysis nodes) produce identical results
+    - request_region() GPU dispatch works with merged chains
+    - render_gpu_plan() and render_multi_gpu_plan() support merged chains
+    - Regression test suite passes — all existing GPU dispatch paths unchanged
+    - Performance test — merged chain is faster than separate execute() calls
+    - Chain with analysis→render→analysis→render fuses into stages correctly
+  out_of_scope: |
+    - CPU fallback for geometry-changing analysis (Track 3)
+    - Concrete filter implementations using the new protocol (Track 4)
+    - GpuExecutor trait changes (not needed — executor already handles this)
+    - WASM-specific changes (same execute() contract)
+  technical_notes: |
+    The key insight: collect_gpu_chain() change is small but critical.
+
+    Current logic (pseudocode):
+      walk backwards from sink:
+        if node.gpu_shaders().is_some() && node.upstream_ids().len() == 1:
+          prepend shaders to chain
+          continue walking
+        else:
+          stop
+
+    New logic:
+      walk backwards from sink:
+        if node.has_analysis_inputs():
+          use gpu_shaders_with_context(w, h, &context) instead
+        if node.gpu_shaders().is_some() && node.upstream_ids().len() == 1:
+          prepend shaders to chain
+          if node.has_analysis_outputs():
+            mark as analysis node (for negotiation)
+          continue walking
+        else:
+          stop
+
+      after collection:
+        if any analysis nodes found:
+          context = negotiate_analysis_buffers(chain_nodes)
+          rebuild shaders using gpu_shaders_with_context for affected nodes
+
+    Two-pass approach for safety:
+    1. First pass: collect nodes as before (identify the chain)
+    2. If analysis nodes present: second pass with context to get resolved shaders
+    3. If no analysis nodes: identical to current behavior (no overhead)
+
+    The "no analysis nodes" fast path ensures zero performance regression
+    for existing pipelines.
+
+    For sequential analysis→render→analysis→render chains:
+    The entire chain CAN be one execute() call if:
+    - All analysis results are GPU buffers (not geometry changes)
+    - Each analysis's reduction passes output=input (passthrough pixels)
+    - The render passes between analyses transform pixels normally
+    - Each analysis→render pair uses distinct buffer ID ranges
+
+    If an analysis produces a geometry change (needs CPU), the chain
+    splits at that point. This is handled by Track 3 (staged CPU path).
+plan:
+  - phase: "collect_gpu_chain() extension"
+    tasks:
+      - text: "Snapshot current collect_gpu_chain() behavior in regression tests before modifying"
+        done: false
+      - text: "Add analysis node detection (analysis_outputs().is_empty() check) to chain walker"
+        done: false
+      - text: "Walk through analysis nodes instead of stopping — include their shaders in chain"
+        done: false
+      - text: "After collection, run negotiate_analysis_buffers() if analysis nodes present"
+        done: false
+      - text: "Rebuild affected shaders via gpu_shaders_with_context() with resolved IDs"
+        done: false
+      - text: "Fast path: no analysis nodes → identical behavior to current code (zero overhead)"
+        done: false
+      - text: "Unit tests: chain collection with and without analysis nodes"
+        done: false
+  - phase: "request_region() integration"
+    tasks:
+      - text: "Wire context-aware chain collection into GPU dispatch block (graph.rs:664-688)"
+        done: false
+      - text: "Verify execute() call receives the merged chain with correct buffer IDs"
+        done: false
+      - text: "Regression tests: all existing request_region() GPU paths produce identical output"
+        done: false
+  - phase: "Multi-output plan support"
+    tasks:
+      - text: "Extend render_gpu_plan() to use context-aware chain collection"
+        done: false
+      - text: "Extend render_multi_gpu_plan() — shared analysis sources across multiple targets"
+        done: false
+      - text: "Unit tests: multi-output with shared analysis node"
+        done: false
+  - phase: "End-to-end verification"
+    tasks:
+      - text: "Integration test with mock analysis node (GPU reduction) + mock render node (reads buffer)"
+        done: false
+      - text: "Verify single execute() call (trace shows 1 GPU dispatch, not 2)"
+        done: false
+      - text: "Verify buffer contents are correct (analysis result reaches render shader)"
+        done: false
+      - text: "Benchmark: merged chain vs current separate-dispatch baseline"
+        done: false
+      - text: "Full workspace test suite passes (cargo test --workspace)"
+        done: false
+      - text: "WASM build succeeds (cargo build --target wasm32-wasip2)"
+        done: false
+extra: {}

@@ -1,0 +1,8 @@
+title: Staged CPU analysis path — geometry-changing analysis with StagedPipeline
+status: pending
+type: feature
+approved: false
+created: '2026-04-06'
+updated: '2026-04-06'
+deps:
+- analysis-buffer-foundation_20260407000100Z

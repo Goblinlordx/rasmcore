@@ -1,0 +1,187 @@
+id: analysis-staged-cpu-path_20260407000300Z
+title: "Staged CPU analysis path — geometry-changing analysis with StagedPipeline"
+type: feature
+status: pending
+created: 2026-04-07
+updated: 2026-04-07
+spec:
+  summary: |
+    Implement StagedPipeline.execute() for the CPU opt-in path where analysis
+    results change graph topology (crop rects, output dimensions). Handles
+    sequential analysis→render→analysis→render chains where intermediate
+    pixel output is needed between stages.
+  context: |
+    The GPU-default path (Track 2) handles analysis results that stay as GPU
+    buffers — histogram, min/max, channel stats. But some analyses produce
+    results that change graph structure:
+
+    - smart_crop → Rect that changes crop dimensions
+    - face_detect → Rect for ROI extraction
+    - auto_rotate → Matrix that changes output orientation
+
+    These CANNOT be pure GPU because the graph topology (output dimensions,
+    node configuration) must change between stages, which is a CPU decision.
+
+    This is the "CPU opt-in" path. It uses StagedPipeline to orchestrate:
+    1. Render up to analysis node (GPU-accelerated)
+    2. Read back pixels (full image at tile barrier)
+    3. Run analysis (CPU or GPU with small readback)
+    4. Bind result to downstream node params
+    5. Repeat for next analysis→render pair
+    6. Final render produces output
+
+    Current staged.rs state:
+    - AnalysisNode trait exists but analyze() is CPU-only
+    - ParamBinding, type checking, constraint validation all work
+    - StagedPipeline.execute() is NOT implemented
+    - add_analysis_node() has ownership placeholder
+
+    The user's example: smart_crop → emboss → smart_crop
+    - Stage 1: analyze input → crop rect
+    - Stage 2: render crop + emboss → pixels
+    - Stage 3: analyze embossed output → second crop rect
+    - Stage 4: render second crop → final output
+
+    Each stage uses the normal Graph.request_full() which already dispatches
+    to GPU when possible. The CPU work is only the analysis + param binding.
+
+    Reference: .agent/kf/_reports/analysis-render-pass-design.md
+  codebase_analysis: |
+    Files modified:
+
+    1. staged.rs — Major changes:
+       - Fix add_analysis_node() ownership (line 230 placeholder)
+       - Implement topological wave scheduler
+       - Implement execute() loop
+
+    2. node.rs — Minor addition:
+       - Add analyze() default method to Node trait (returns None)
+       - AnalysisNode implementations override to return Some(AnalysisResult)
+       - This avoids the double-ownership problem: graph owns Node,
+         staged pipeline calls node.analyze() through the graph
+
+    3. graph.rs — Minor additions:
+       - Add set_node_param(node_id, name, value) public method
+       - Add get_node_analyze(node_id, pixels, w, h) public method
+       - These let StagedPipeline interact with the graph cleanly
+
+    Files NOT modified:
+    - gpu.rs, GpuExecutor (GPU path unchanged)
+    - collect_gpu_chain (Track 2 handles this)
+    - Any existing filter implementations
+    - Any existing test files
+
+    The staged CPU path and the GPU chain fusion (Track 2) are complementary:
+    - GPU fusion: analysis result stays on GPU (histogram → auto_levels)
+    - Staged CPU: analysis result changes topology (smart_crop → crop)
+    - A pipeline can have BOTH: GPU-fused histogram + staged smart_crop
+  acceptance_criteria:
+    - StagedPipeline.execute() implemented and functional
+    - Supports sequential analysis→render chains of arbitrary depth
+    - Each analysis stage receives actual pixel output from prior render
+    - Analysis results bind to downstream params via ParamBinding
+    - Type checking validates result type against param type
+    - Value constraints validated (RectWithinUpstream, Range, etc.)
+    - Topological wave scheduler handles diamond dependencies
+    - Error propagation — analysis failure stops with clear error
+    - GPU render stages work within staged pipeline (no regression)
+    - Integration test — analysis→render→analysis→render chain
+    - All existing tests pass (no changes to current execution paths)
+  out_of_scope: |
+    - GPU-only analysis path (Track 2 handles this)
+    - Concrete AnalysisNode filter implementations (Track 4)
+    - Multi-output staged pipelines (single sink for now)
+    - Parallel analysis execution within a wave
+    - Tile-based analysis (full-image only)
+  technical_notes: |
+    Execution model — topological waves:
+
+    1. Build dependency graph from ParamBindings:
+       - For each binding: source_node (analysis) → target_node (render)
+       - If target_node's upstream feeds into another analysis, that analysis
+         is in a later wave
+
+    2. Sort into execution waves:
+       Wave 0: analysis nodes with no render dependencies
+       Bind 0: apply Wave 0 results to target params
+       Wave 1: render producing pixels for next analysis
+       Wave 2: analysis nodes needing Wave 1 pixels
+       Bind 2: apply Wave 2 results
+       Wave 3: final render
+       ...
+
+    3. For each analysis wave:
+       - graph.request_full(analysis_upstream) → pixels (GPU-accelerated)
+       - node.analyze(pixels, w, h) → AnalysisResult
+       - Store result
+
+    4. For each bind step:
+       - Apply AnalysisResult to target_node params via set_param()
+       - Validate constraints
+
+    5. Final wave: graph.request_full(sink_node) → output pixels
+
+    Ownership solution:
+    - Add analyze() to Node trait with default None return
+    - StagedPipeline doesn't own separate AnalysisNode objects
+    - It calls graph.get_node(id).analyze() through the graph
+    - ParamBindings reference node IDs, not trait objects
+
+    Memory: each analysis wave materializes full upstream image.
+    Spatial cache reuse means repeated requests for unchanged data are free.
+plan:
+  - phase: "Node trait analyze() method"
+    tasks:
+      - text: "Add analyze(&self, input, w, h) -> Option<AnalysisResult> default method to Node trait"
+        done: false
+      - text: "Add is_analysis_node() -> bool helper (returns analyze().is_some() equivalent)"
+        done: false
+      - text: "Add graph.analyze_node(node_id) public method that fetches upstream pixels and runs analysis"
+        done: false
+      - text: "Add graph.set_node_param(node_id, name, value) public method"
+        done: false
+      - text: "Unit tests: Node default returns None, mock analysis node returns result"
+        done: false
+  - phase: "Topological wave scheduler"
+    tasks:
+      - text: "Build dependency graph from ParamBindings (analysis→render edges)"
+        done: false
+      - text: "Detect render→analysis dependencies (analysis upstream is a bound render node)"
+        done: false
+      - text: "Topologically sort into alternating analysis/bind/render waves"
+        done: false
+      - text: "Cycle detection with clear error message"
+        done: false
+      - text: "Unit tests: linear chain, diamond, multi-stage wave scheduling"
+        done: false
+  - phase: "StagedPipeline.execute() implementation"
+    tasks:
+      - text: "Fix add_analysis_node() ownership — use analyze() on Node instead of separate map"
+        done: false
+      - text: "Implement execute() loop over waves"
+        done: false
+      - text: "Analysis wave: graph.request_full(upstream) → analyze() → store result"
+        done: false
+      - text: "Bind wave: apply results to target params, validate constraints"
+        done: false
+      - text: "Render wave: graph.request_full(sink) for intermediate or final output"
+        done: false
+      - text: "Cache invalidation: after param binding, invalidate affected node caches"
+        done: false
+      - text: "Error handling: analysis failure, type mismatch, constraint violation"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Integration test with mock analysis→render→analysis→render chain"
+        done: false
+      - text: "Integration test with diamond dependency (two analyses feeding one render)"
+        done: false
+      - text: "Verify GPU render stages work within staged pipeline"
+        done: false
+      - text: "Verify spatial cache interaction — repeated analysis on unchanged data"
+        done: false
+      - text: "Full workspace test suite passes"
+        done: false
+      - text: "WASM build succeeds"
+        done: false
+extra: {}

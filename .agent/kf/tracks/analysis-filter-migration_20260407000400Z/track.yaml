@@ -1,0 +1,162 @@
+id: analysis-filter-migration_20260407000400Z
+title: "Migrate existing filters to analysis pass protocol"
+type: feature
+status: pending
+created: 2026-04-07
+updated: 2026-04-07
+spec:
+  summary: |
+    Migrate existing analysis-capable filters to the new analysis pass protocol.
+    GPU-capable filters (auto_levels, equalize, Otsu) declare analysis buffer
+    outputs so they participate in cross-node GPU chain fusion. Geometry-changing
+    filters (smart_crop, seam_carve) implement analyze() for the staged CPU path.
+    Add concrete SmartCropAnalysis node for the end-to-end example.
+  context: |
+    After Tracks 1-3, the infrastructure exists but no filters use it.
+    Several existing filters already have internal analysis logic that should
+    be exposed via the new protocol:
+
+    GPU buffer analysis (uses Track 2 — zero readback):
+    - auto_levels: internally computes ChannelMinMax → apply stretch.
+      Currently a single node with 3-pass gpu_shaders(). Should declare
+      analysis_outputs() so another node can read the min/max buffer.
+    - equalize: internally computes Histogram256 → build CDF → apply.
+      Should declare analysis_outputs() for the histogram buffer.
+    - Otsu threshold: internally computes Histogram256 → find threshold.
+      Should declare analysis_outputs() for histogram.
+
+    CPU analysis (uses Track 3 — staged pipeline):
+    - smart_crop (filters/analysis.rs): computes energy map → finds
+      best crop rect. Output is a Rect that changes dimensions.
+      Should implement analyze() returning AnalysisResult::Rect.
+    - seam_carve (filters/analysis.rs): computes seams → removes.
+      Output changes dimensions. Should implement analyze().
+
+    New node needed:
+    - SmartCropAnalysis: standalone analysis node that produces a Rect.
+      Used in the smart_crop → emboss → smart_crop example.
+      Wraps the existing energy/saliency computation from smart_crop.
+
+    This track also validates the full end-to-end flow:
+    - GPU path: histogram_analysis → auto_levels (zero readback)
+    - CPU path: smart_crop → emboss → smart_crop (staged pipeline)
+
+    Reference: .agent/kf/_reports/analysis-render-pass-design.md
+  codebase_analysis: |
+    Files to examine for existing analysis logic:
+
+    1. filters/analysis.rs — SmartCrop, SeamCarve filters
+       - SmartCrop::compute() does energy computation + crop selection inline
+       - Energy computation is reusable for SmartCropAnalysis node
+       - SeamCarve has similar inline analysis
+
+    2. filters/enhance.rs or filters/color.rs — auto_levels, equalize
+       - auto_levels: uses ChannelMinMax reduction internally
+       - equalize: uses Histogram256 reduction internally
+       - Both currently return gpu_shaders() with all 3 passes bundled
+
+    3. filters/edge.rs — Otsu, triangle threshold
+       - Use Histogram256 reduction + apply threshold
+       - 3-pass GPU pattern already working
+
+    Migration pattern for GPU filters:
+    - Split existing 3-pass gpu_shaders() into:
+      a. analysis_outputs() declaring the reduction buffer
+      b. gpu_shaders() returning only the reduction passes (1-2)
+      c. A separate render shader that reads the buffer (pass 3)
+    - OR: keep existing behavior AND add declarations for cross-node use
+      (backward compatible — single-node still works, cross-node also works)
+
+    Migration pattern for CPU filters:
+    - Add analyze() method returning the analysis result
+    - Keep existing compute() as the render path
+    - StagedPipeline calls analyze() separately from compute()
+
+    Safety concern: splitting existing gpu_shaders() could break current
+    behavior if not done carefully. Prefer additive approach: keep existing
+    single-node behavior, ADD cross-node declarations on top.
+  acceptance_criteria:
+    - auto_levels declares analysis_outputs() for ChannelMinMax buffer
+    - equalize declares analysis_outputs() for Histogram256 buffer
+    - Otsu threshold declares analysis_outputs() for Histogram256 buffer
+    - smart_crop implements analyze() returning AnalysisResult::Rect
+    - SmartCropAnalysis standalone node implemented and registered
+    - Integration test: histogram analysis (GPU) → auto_levels render (GPU), single execute() call
+    - Integration test: smart_crop → emboss → smart_crop via StagedPipeline
+    - All existing filter tests pass unchanged (backward compatible)
+    - Existing single-node GPU chains still work (no regression)
+    - WASM build succeeds with migrated filters
+  out_of_scope: |
+    - New analysis algorithms not already present in the codebase
+    - Face detection, object detection (ML-based analysis — future)
+    - Auto white balance analysis (separate filter track)
+    - Performance optimization of analysis algorithms themselves
+  technical_notes: |
+    Backward compatibility strategy:
+
+    For GPU filters (auto_levels, equalize, Otsu):
+    - Keep existing gpu_shaders() returning all 3 passes (single-node path)
+    - ADD analysis_outputs() declaring the reduction buffer
+    - ADD gpu_shaders_with_context() that, when context is available,
+      returns only the reduction passes (pass 1-2). The apply pass (pass 3)
+      becomes the downstream render node's responsibility.
+    - When used standalone (no cross-node): gpu_shaders() called, 3 passes, works as before
+    - When used as analysis source: gpu_shaders_with_context() called, 2 passes,
+      downstream render gets the apply pass with resolved buffer ID
+
+    For CPU filters (smart_crop):
+    - Keep existing compute() unchanged
+    - ADD analyze() returning AnalysisResult::Rect
+    - StagedPipeline calls analyze() for the staged path
+    - Direct compute() still works for non-staged usage
+
+    SmartCropAnalysis node:
+    - Wraps the energy/saliency computation from smart_crop
+    - analyze() returns Rect
+    - compute() is a passthrough (returns input unchanged)
+    - This separates "determine what to crop" from "do the crop"
+    - Enables: SmartCropAnalysis → Crop → Emboss → SmartCropAnalysis → Crop
+plan:
+  - phase: "GPU filter declarations (additive, no behavior change)"
+    tasks:
+      - text: "auto_levels: add analysis_outputs() declaring ChannelMinMax buffer"
+        done: false
+      - text: "auto_levels: add gpu_shaders_with_context() returning reduction-only passes when context available"
+        done: false
+      - text: "equalize: add analysis_outputs() declaring Histogram256 buffer"
+        done: false
+      - text: "equalize: add gpu_shaders_with_context() returning reduction-only passes"
+        done: false
+      - text: "Otsu/triangle threshold: add analysis_outputs() for Histogram256"
+        done: false
+      - text: "Regression tests: all GPU filters produce identical output in standalone mode"
+        done: false
+  - phase: "CPU analysis implementations"
+    tasks:
+      - text: "smart_crop: implement analyze() returning AnalysisResult::Rect"
+        done: false
+      - text: "SmartCropAnalysis standalone node — extract energy/saliency from smart_crop"
+        done: false
+      - text: "Register SmartCropAnalysis via inventory"
+        done: false
+      - text: "Unit tests: SmartCropAnalysis produces valid Rect for test images"
+        done: false
+  - phase: "End-to-end integration"
+    tasks:
+      - text: "GPU integration test: histogram analysis → auto_levels, verify single GPU dispatch"
+        done: false
+      - text: "GPU integration test: verify histogram buffer contents match standalone auto_levels output"
+        done: false
+      - text: "CPU integration test: SmartCropAnalysis → Crop → Emboss → SmartCropAnalysis → Crop"
+        done: false
+      - text: "Verify pixel-exact output match between new protocol and existing standalone filters"
+        done: false
+  - phase: "Full verification"
+    tasks:
+      - text: "cargo test --workspace — all tests pass"
+        done: false
+      - text: "cargo build --target wasm32-wasip2 — WASM build succeeds"
+        done: false
+      - text: "Benchmark: cross-node GPU analysis vs standalone (should be faster or equal)"
+        done: false
+extra: {}
