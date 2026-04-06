@@ -1311,7 +1311,7 @@ mod tests {
     }
 
     #[test]
-    fn gpu_plan_returns_none_for_non_gpu_nodes() {
+    fn gpu_plan_passthrough_for_non_gpu_nodes() {
         let mut g = Graph::new(0);
         let src = g.add_node(Box::new(SolidColorNode {
             width: 4,
@@ -1325,9 +1325,13 @@ mod tests {
             info,
         }));
 
-        // ScaleNode doesn't have gpu_shaders() — plan should be None
+        // ScaleNode doesn't have gpu_shaders() — plan is a passthrough
+        // (empty shaders, host just uploads and blits the CPU-computed pixels)
         let plan = g.gpu_plan(scale).unwrap();
-        assert!(plan.is_none(), "non-GPU nodes should return None gpu_plan");
+        assert!(plan.is_some(), "non-GPU nodes get a passthrough plan");
+        let plan = plan.unwrap();
+        assert!(plan.shaders.is_empty(), "passthrough plan has no shaders");
+        assert_eq!(plan.input_pixels.len(), 4 * 4 * 4, "pixels from CPU compute");
     }
 
     #[test]

@@ -730,7 +730,8 @@ mod tests {
         let passes = r.build_passes(1920, 1080);
         // 2 × vec4 per workgroup (min + max)
         assert_eq!(passes.buffer_size, passes.num_workgroups as usize * 32);
-        assert_eq!(passes.buffer_id, 1);
+        // Default buffer_id is 0; use .with_buffer_id() to differentiate
+        assert_eq!(passes.buffer_id, 0);
     }
 
     #[test]
@@ -766,9 +767,11 @@ mod tests {
     }
 
     #[test]
-    fn buffer_ids_differ_between_kinds() {
-        let sum = GpuReduction::channel_sum(256);
-        let mm = GpuReduction::channel_min_max(256);
+    fn buffer_ids_differ_with_explicit_ids() {
+        // Default constructors all use buffer_id=0. Callers differentiate
+        // via .with_buffer_id() when chaining multiple reductions.
+        let sum = GpuReduction::channel_sum(256).with_buffer_id(0);
+        let mm = GpuReduction::channel_min_max(256).with_buffer_id(1);
         let sp = sum.build_passes(100, 100);
         let mp = mm.build_passes(100, 100);
         assert_ne!(sp.buffer_id, mp.buffer_id);
@@ -811,7 +814,8 @@ mod tests {
         let passes = r.build_passes(1920, 1080);
         // 768 u32 per workgroup (3 channels × 256 bins × 4 bytes)
         assert_eq!(passes.buffer_size, passes.num_workgroups as usize * 768 * 4);
-        assert_eq!(passes.buffer_id, 2);
+        // Default buffer_id is 0; use .with_buffer_id() to differentiate
+        assert_eq!(passes.buffer_id, 0);
     }
 
     #[test]
@@ -847,10 +851,10 @@ mod tests {
     }
 
     #[test]
-    fn histogram_256_buffer_id_unique() {
-        let sum = GpuReduction::channel_sum(256).build_passes(10, 10);
-        let mm = GpuReduction::channel_min_max(256).build_passes(10, 10);
-        let hist = GpuReduction::histogram_256(256).build_passes(10, 10);
+    fn histogram_256_buffer_id_with_explicit() {
+        let sum = GpuReduction::channel_sum(256).with_buffer_id(0).build_passes(10, 10);
+        let mm = GpuReduction::channel_min_max(256).with_buffer_id(1).build_passes(10, 10);
+        let hist = GpuReduction::histogram_256(256).with_buffer_id(2).build_passes(10, 10);
         let ids = [sum.buffer_id, mm.buffer_id, hist.buffer_id];
         assert_ne!(ids[0], ids[1]);
         assert_ne!(ids[0], ids[2]);
