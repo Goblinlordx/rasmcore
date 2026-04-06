@@ -3,48 +3,57 @@ title: .cube and Hald LUT file parsers for grading infrastructure
 type: feature
 status: pending
 created: 2026-04-07
-updated: 2026-04-07
+updated: '2026-04-06'
 spec:
-  summary: |
-    Parse .cube files (1D and 3D LUT) and Hald CLUT images into the
+  summary: 'Parse .cube files (1D and 3D LUT) and Hald CLUT images into the
+
     existing 3D LUT infrastructure. apply_cube_lut and apply_hald_lut
+
     are registered filters but need file format parsing backends.
-  context: |
-    .cube is the industry standard LUT format (DaVinci Resolve, PS, LR).
+
+    '
+  context: '.cube is the industry standard LUT format (DaVinci Resolve, PS, LR).
+
     Hald CLUT is an image-based LUT format (darktable, RawTherapee).
+
     Both encode color transforms as lookup tables. The V2 pipeline has
+
     Clut3D infrastructure (fusion.rs) — the parsers just need to produce
+
     Clut3D data from the file formats.
+
+    '
   acceptance_criteria:
-    - .cube parser handles both 1D and 3D LUT formats
-    - Hald image decoder extracts 3D LUT from identity-structure image
-    - Both feed into existing Clut3D apply infrastructure
-    - LUT data passed as extra buffer to GPU shader (tetrahedral interp)
-  out_of_scope: |
-    LUT generation or baking. Only parsing external LUT files.
+  - .cube parser handles both 1D and 3D LUT formats
+  - Hald image decoder extracts 3D LUT from identity-structure image
+  - Both feed into existing Clut3D apply infrastructure
+  - LUT data passed as extra buffer to GPU shader (tetrahedral interp)
+  out_of_scope: 'LUT generation or baking. Only parsing external LUT files.
+
+    '
 plan:
-  - phase: Cube Parser
-    tasks:
-      - text: Implement .cube file parser (title, domain, size, 1D/3D data)
-        done: false
-      - text: Convert parsed 1D LUT to f32 transfer function
-        done: false
-      - text: Convert parsed 3D LUT to Clut3D for tetrahedral interpolation
-        done: false
-  - phase: Hald Decoder
-    tasks:
-      - text: Implement Hald CLUT image decoder (detect identity structure, extract LUT)
-        done: false
-      - text: Convert Hald data to Clut3D
-        done: false
-  - phase: Integration
-    tasks:
-      - text: Wire apply_cube_lut filter to accept LUT data as extra buffer param
-        done: false
-      - text: Wire apply_hald_lut filter to accept decoded Hald image
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Test with standard .cube files from DaVinci Resolve
-        done: false
+- phase: Cube Parser
+  tasks:
+  - text: Implement .cube file parser (title, domain, size, 1D/3D data)
+    done: true
+  - text: Convert parsed 1D LUT to f32 transfer function
+    done: true
+  - text: Convert parsed 3D LUT to Clut3D for tetrahedral interpolation
+    done: true
+- phase: Hald Decoder
+  tasks:
+  - text: Implement Hald CLUT image decoder (detect identity structure, extract LUT)
+    done: true
+  - text: Convert Hald data to Clut3D
+    done: true
+- phase: Integration
+  tasks:
+  - text: Wire apply_cube_lut filter to accept LUT data as extra buffer param
+    done: true
+  - text: Wire apply_hald_lut filter to accept decoded Hald image
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test with standard .cube files from DaVinci Resolve
+    done: true
 extra: {}
