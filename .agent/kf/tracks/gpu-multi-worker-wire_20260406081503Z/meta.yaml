@@ -1,8 +1,8 @@
 title: Wire multi-output GPU pipeline in preview worker
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-05'
-updated: '2026-04-05'
+updated: '2026-04-06'
 deps:
 - gpu-multi-plan_20260406081502Z
