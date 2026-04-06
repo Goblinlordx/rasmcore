@@ -5,82 +5,96 @@ status: pending
 created: '2026-04-06'
 updated: '2026-04-06'
 spec:
-  summary: |
-    Move WgpuExecutorV2 from rasmcore-cli into a new rasmcore-gpu-native
+  summary: 'Move WgpuExecutorV2 from rasmcore-cli into a new rasmcore-gpu-native
+
     crate that implements the GpuExecutor trait. Enables other crates
+
     (pipeline-v2 tests, native SDK) to use GPU execution without
+
     depending on the CLI.
-  context: |
-    WgpuExecutorV2 (431 lines) in rasmcore-cli/src/gpu_executor_v2.rs is a
+
+    '
+  context: 'WgpuExecutorV2 (431 lines) in rasmcore-cli/src/gpu_executor_v2.rs is a
+
     complete, production-ready native GPU executor: wgpu device init, shader
+
     caching (FNV-1a), ping-pong buffers, reduction buffer persistence,
+
     convergence checks, and staging readback. But it lives in the CLI crate,
-    so rasmcore-pipeline-v2 tests and a future native SDK can't use it.
-  codebase_analysis: |
-    rasmcore-cli/src/gpu_executor_v2.rs:
+
+    so rasmcore-pipeline-v2 tests and a future native SDK can''t use it.
+
+    '
+  codebase_analysis: 'rasmcore-cli/src/gpu_executor_v2.rs:
+
     - WgpuExecutorV2 struct with device, queue, shader_cache, buffer pools
+
     - Implements GpuExecutor trait from rasmcore-pipeline-v2
+
     - Uses wgpu 24, pollster, bytemuck (all behind gpu feature flag)
+
     - bench-pipeline binary already uses it for native GPU benchmarks
 
+
     rasmcore-pipeline-v2/src/gpu.rs:
+
     - GpuExecutor trait: execute(), prepare(), max_buffer_size()
+
     - GpuError enum: NotAvailable, ShaderCompilation, Execution, BufferTooLarge
 
+
     Dependencies:
+
     - wgpu 24 already in workspace (cli crate)
+
     - pollster 0.4 for async blocking
+
     - bytemuck 1 for buffer casting
+
+    '
   acceptance_criteria:
-    - New crate rasmcore-gpu-native with WgpuExecutorV2
-    - Implements GpuExecutor from rasmcore-pipeline-v2
-    - rasmcore-cli depends on rasmcore-gpu-native (no code duplication)
-    - GPU feature flag preserved (optional dep)
-    - try_new() gracefully returns None on machines without GPU
-    - bench-pipeline still works using the extracted crate
-    - All existing GPU tests pass
-  out_of_scope: |
-    Native SDK (separate track). GPU shader tests (separate track).
+  - New crate rasmcore-gpu-native with WgpuExecutorV2
+  - Implements GpuExecutor from rasmcore-pipeline-v2
+  - rasmcore-cli depends on rasmcore-gpu-native (no code duplication)
+  - GPU feature flag preserved (optional dep)
+  - try_new() gracefully returns None on machines without GPU
+  - bench-pipeline still works using the extracted crate
+  - All existing GPU tests pass
+  out_of_scope: 'Native SDK (separate track). GPU shader tests (separate track).
+
     Changing the GpuExecutor trait interface.
-  technical_notes: |
-    New crate: crates/rasmcore-gpu-native/
-      Cargo.toml: depends on rasmcore-pipeline-v2, wgpu, pollster, bytemuck
-      src/lib.rs: WgpuExecutorV2 + impl GpuExecutor
-      src/buffer_pool.rs: CachedBuffer, ping-pong management
 
-    rasmcore-cli changes:
-      Remove gpu_executor_v2.rs
-      Add dep: rasmcore-gpu-native = { path = "../rasmcore-gpu-native" }
-      Re-export or use directly
-
-    rasmcore-pipeline-v2 changes:
-      dev-dependencies: rasmcore-gpu-native (for GPU tests)
-      No production dependency change
+    '
+  technical_notes: "New crate: crates/rasmcore-gpu-native/\n  Cargo.toml: depends on rasmcore-pipeline-v2, wgpu, pollster,\
+    \ bytemuck\n  src/lib.rs: WgpuExecutorV2 + impl GpuExecutor\n  src/buffer_pool.rs: CachedBuffer, ping-pong management\n\
+    \nrasmcore-cli changes:\n  Remove gpu_executor_v2.rs\n  Add dep: rasmcore-gpu-native = { path = \"../rasmcore-gpu-native\"\
+    \ }\n  Re-export or use directly\n\nrasmcore-pipeline-v2 changes:\n  dev-dependencies: rasmcore-gpu-native (for GPU tests)\n\
+    \  No production dependency change\n"
 plan:
-  - phase: Create Crate
-    tasks:
-      - text: Create crates/rasmcore-gpu-native/ with Cargo.toml
-        done: false
-      - text: Move WgpuExecutorV2 from rasmcore-cli to new crate
-        done: false
-      - text: Ensure GpuExecutor trait impl compiles standalone
-        done: false
-  - phase: Wire Dependencies
-    tasks:
-      - text: rasmcore-cli depends on rasmcore-gpu-native
-        done: false
-      - text: Remove gpu_executor_v2.rs from rasmcore-cli
-        done: false
-      - text: bench-pipeline uses executor from new crate
-        done: false
-      - text: Add rasmcore-gpu-native as dev-dep of rasmcore-pipeline-v2
-        done: false
-  - phase: Verification
-    tasks:
-      - text: bench-pipeline runs successfully with native GPU
-        done: false
-      - text: Existing GPU parity tests pass
-        done: false
-      - text: cargo test on machine without GPU skips gracefully
-        done: false
+- phase: Create Crate
+  tasks:
+  - text: Create crates/rasmcore-gpu-native/ with Cargo.toml
+    done: true
+  - text: Move WgpuExecutorV2 from rasmcore-cli to new crate
+    done: true
+  - text: Ensure GpuExecutor trait impl compiles standalone
+    done: true
+- phase: Wire Dependencies
+  tasks:
+  - text: rasmcore-cli depends on rasmcore-gpu-native
+    done: true
+  - text: Remove gpu_executor_v2.rs from rasmcore-cli
+    done: true
+  - text: bench-pipeline uses executor from new crate
+    done: true
+  - text: Add rasmcore-gpu-native as dev-dep of rasmcore-pipeline-v2
+    done: true
+- phase: Verification
+  tasks:
+  - text: bench-pipeline runs successfully with native GPU
+    done: true
+  - text: Existing GPU parity tests pass
+    done: true
+  - text: cargo test on machine without GPU skips gracefully
+    done: true
 extra: {}
