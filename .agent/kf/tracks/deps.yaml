@@ -390,3 +390,6 @@ filter-parity-validation_20260406034902Z:
 
 # Preview queue coalesce — no deps (web-ui only)
 preview-queue-coalesce_20260406035600Z: []
+
+# V1-V2 filter gap research — no deps
+research-v1v2-filter-gap_20260406041500Z: []

@@ -1,0 +1,39 @@
+id: research-v1v2-filter-gap_20260406041500Z
+title: "Research: V1 to V2 filter gap analysis — 92 filters not ported"
+type: research
+status: pending
+created: 2026-04-06
+updated: 2026-04-06
+spec:
+  summary: |
+    V1 had 179 filters, V2 has 81 (+ 12 new). 6 V1 filters were
+    duplicates/renames. 92 are genuine functionality gaps. Categorize,
+    prioritize, and produce a port-back plan.
+  context: |
+    The V2 pipeline was built as a clean reimplementation focused on
+    f32-native, GPU-primary processing. Many V1 filters were not ported
+    because V2 focused on the core adjustment/color/spatial/effect set.
+    Categories entirely missing from V2 include distortion, morphology,
+    edge detection, thresholding, drawing, generators, evaluate math,
+    mask operations, and several grading curves.
+  acceptance_criteria:
+    - Complete mapping of V1 filters to V2 equivalents or gaps
+    - Each gap classified by priority (PS-parity, common use, niche)
+    - Recommended implementation tracks for high-priority gaps
+    - Design doc at tracks/{trackId}/design.md
+  out_of_scope: |
+    Implementing the missing filters (separate tracks from findings)
+plan:
+  - phase: Analysis
+    tasks:
+      - text: Map all 179 V1 filters to V2 equivalents, duplicates, or gaps
+        done: false
+      - text: Classify each gap by priority based on Photoshop parity target
+        done: false
+      - text: Group gaps into implementation tracks by category
+        done: false
+  - phase: Report
+    tasks:
+      - text: Produce design doc with prioritized gap list and recommended tracks
+        done: false
+extra: {}
