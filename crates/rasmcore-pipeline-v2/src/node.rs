@@ -288,6 +288,17 @@ pub trait Node {
         ColorSpace::Linear
     }
 
+    /// Preferred color space for this node's operation.
+    ///
+    /// When Some(cs), the pipeline auto-inserts conversions:
+    ///   upstream -> convert(current->cs) -> this_node -> convert(cs->current)
+    /// so downstream nodes remain in the original space.
+    ///
+    /// When None (default), the node operates in whatever space it receives.
+    fn preferred_color_space(&self) -> Option<ColorSpace> {
+        None
+    }
+
     /// Advisory tile size hint for the demand strategy.
     ///
     /// Neighborhood ops (blur, sharpen) should report their tile overlap
