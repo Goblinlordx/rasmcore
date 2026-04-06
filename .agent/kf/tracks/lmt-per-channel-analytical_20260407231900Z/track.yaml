@@ -1,0 +1,147 @@
+id: lmt-per-channel-analytical_20260407231900Z
+title: Migrate Lmt::Analytical to per-channel [PointOpExpr; 3]
+type: refactor
+status: pending
+created: '2026-04-06'
+updated: '2026-04-06'
+spec:
+  summary: Replace single-expression Lmt::Analytical(PointOpExpr) with per-channel Lmt::Analytical([PointOpExpr; 3]). Transitional
+    Lmt::AnalyticalPerChannel variant, mechanical migration of all 11 adjustment filters, fusion optimizer update, CDL subsumption,
+    then cleanup.
+  context: 'Lmt::Analytical(PointOpExpr) applies one expression uniformly to R, G, B.
+
+    This prevents per-channel analytical transforms (color balance, channel
+
+    mixer, 1D LUTs with different per-channel curves) from fusing symbolically.
+
+    They must fall back to CLUTs, losing precision and composability.
+
+
+    Lmt::Cdl already has per-channel [f32; 3] arrays but its to_analytical()
+
+    only extracts channel[0], losing per-channel info during fusion. The new
+
+    Lmt::Lut1D type also has per-channel data that cannot be expressed as
+
+    a single PointOpExpr.
+
+
+    Professional grading tools (Resolve, Nuke, Baselight) all represent
+
+    per-channel operations natively. This migration aligns with that.'
+  codebase_analysis: 'Key files:
+
+    - lmt.rs: Lmt enum (Analytical, Lut1D, Clut3D, Cdl, Chain), LmtNode
+
+    - ops.rs: PointOpExpr enum, compose(), evaluate(), Filter trait with analytic_expression()
+
+    - fusion.rs: fuse_analytical_chains(), FusedPointOpNode, lower_to_wgsl(), lower_to_wgsl_shader(), F32Lut, constant_fold()
+
+    - filters/adjustment.rs: 11 filters with to_lmt() -> Lmt::Analytical
+
+    - filter_node.rs: FilterNode delegates analytic_expression()
+
+
+    Current flow: Filter::analytic_expression() -> PointOpExpr -> fuse_analytical_chains() -> compose() -> constant_fold()
+    -> FusedPointOpNode(gpu_shader + cpu_lut)
+
+
+    WGSL generation: lower_to_wgsl_shader() creates fn apply_expr(v: f32) called for each channel independently. Per-channel
+    version needs fn apply_expr_r/g/b or an array approach.
+
+
+    FusedPointOpNode::compute() uses F32Lut which evaluates same LUT for all channels. Per-channel needs 3 LUTs.
+
+
+    Migration is mechanical: Analytical(expr) -> Analytical([expr.clone(), expr.clone(), expr]) for uniform filters. Per-channel
+    ops use different expressions per channel.'
+  acceptance_criteria:
+  - Lmt::Analytical holds [PointOpExpr; 3] (one per R, G, B channel)
+  - All 11 adjustment filters produce [expr; 3] (uniform — same expr all channels)
+  - Lmt::Cdl is subsumed — represented as Analytical with per-channel expressions
+  - 'Fusion composes per-channel: compose([r1,g1,b1], [r2,g2,b2]) = [compose(r1,r2), compose(g1,g2), compose(b1,b2)]'
+  - Single WGSL shader with 3 inlined per-channel functions (apply_r, apply_g, apply_b) — one dispatch
+  - FusedPointOpNode always holds [F32Lut; 3] (one per channel)
+  - brightness(+0.5) -> brightness(-0.5) still fuses to identity (regression test)
+  - All existing LMT and fusion tests pass unchanged
+  - Chain of per-channel ops fuses into single [PointOpExpr; 3] — e.g. CDL -> brightness -> CDL = one fused node with 3 composed
+    expressions
+  out_of_scope: Adding new per-channel filters (channel mixer, color balance) — those are separate feature tracks that build
+    on this foundation. Converting Lut1D to Analytical — Lut1D is already efficient as its own type.
+  technical_notes: 'Transition strategy (user-requested):
+
+    1. Add Lmt::AnalyticalPerChannel([PointOpExpr; 3]) alongside existing Analytical
+
+    2. Migrate all constructors to use AnalyticalPerChannel
+
+    3. Update fusion to handle both variants (match on both, compose per-channel)
+
+    4. Update WGSL generation for per-channel
+
+    5. Update FusedPointOpNode for per-channel LUTs
+
+    6. Remove old Analytical variant
+
+    7. Rename AnalyticalPerChannel -> Analytical
+
+
+    No special-casing for uniform channels. Always use [PointOpExpr; 3], always 3 LUTs, always 3 WGSL apply functions. The
+    cost of 3 table lookups vs 1 is negligible (nanoseconds per pixel). Simplicity over micro-optimization.
+
+
+    CDL subsumption: Cdl { slope, offset, power } becomes Analytical([pow(slope[0]*x+offset[0], power[0]), pow(slope[1]*x+offset[1],
+    power[1]), pow(slope[2]*x+offset[2], power[2])]). This eliminates a variant and makes CDL fuse analytically per-channel.'
+plan:
+- phase: Add AnalyticalPerChannel variant
+  tasks:
+  - text: Add Lmt::AnalyticalPerChannel([PointOpExpr; 3]) variant to lmt.rs
+    done: false
+  - text: Add to_analytical_per_channel() method returning Option<[PointOpExpr; 3]>
+    done: false
+  - text: Update Lmt::apply() to handle AnalyticalPerChannel (evaluate per-channel)
+    done: false
+  - text: Update LmtNode capabilities/analytic_expression for new variant
+    done: false
+- phase: Update fusion for per-channel
+  tasks:
+  - text: Add compose_per_channel([PointOpExpr;3], [PointOpExpr;3]) to fusion.rs
+    done: false
+  - text: Update fuse_analytical_chains to collect [PointOpExpr;3] from both variants
+    done: false
+  - text: Update lower_to_wgsl_shader to generate single shader with 3 inlined per-channel fns (apply_r/g/b)
+    done: false
+  - text: Update FusedPointOpNode to hold [F32Lut; 3], update compute() for per-channel
+    done: false
+  - text: Update constant_fold to work per-channel (fold each independently)
+    done: false
+- phase: Migrate filters and subsume Cdl
+  tasks:
+  - text: Migrate all 11 adjustment filter to_lmt() to return AnalyticalPerChannel([expr; 3])
+    done: false
+  - text: Update Filter::analytic_expression() return type or add analytic_expression_per_channel()
+    done: false
+  - text: Subsume Lmt::Cdl as AnalyticalPerChannel with per-channel pow(slope*x+offset, power)
+    done: false
+  - text: Update all Cdl constructors (grading.rs AscCdl, lmt.rs tests) to use Analytical
+    done: false
+- phase: Cleanup and rename
+  tasks:
+  - text: Remove old Lmt::Analytical(PointOpExpr) variant
+    done: false
+  - text: Remove Lmt::Cdl variant
+    done: false
+  - text: Rename AnalyticalPerChannel -> Analytical throughout
+    done: false
+  - text: Update all tests referencing old variant names
+    done: false
+- phase: Verification
+  tasks:
+  - text: All existing LMT tests pass
+    done: false
+  - text: All existing fusion tests pass (brightness cancel, chain compose)
+    done: false
+  - text: WASM component build succeeds
+    done: false
+  - text: New test - per-channel CDL fuses correctly (different slope per channel)
+    done: false
+extra: {}
