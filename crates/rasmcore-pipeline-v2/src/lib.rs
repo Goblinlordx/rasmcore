@@ -41,6 +41,7 @@ pub mod staged;
 pub mod gpu_shaders;
 pub mod aces_audit;
 pub mod noise;
+pub mod lmt;
 pub mod filters;
 
 // Re-export core types at crate root
@@ -79,6 +80,9 @@ pub use ops::{
 // Re-export node wrappers
 #[allow(deprecated)]
 pub use filter_node::{FilterNode, GpuFilterNode, compose_shader, IO_F32};
+
+// Re-export LMT types
+pub use lmt::{Lmt, LmtNode, parse_cube};
 
 // Re-export color pipeline
 pub use color_math::{
