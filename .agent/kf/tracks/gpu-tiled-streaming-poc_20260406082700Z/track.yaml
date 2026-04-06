@@ -1,0 +1,126 @@
+id: gpu-tiled-streaming-poc_20260406082700Z
+title: "PoC: GPU tiled streaming with reduction accumulation across tiles"
+type: feature
+status: pending
+created: 2026-04-06
+updated: 2026-04-06
+spec:
+  summary: |
+    Proof-of-concept that validates GPU tiled streaming for large images.
+    Process a small image in artificially small tiles to prove: (1) reduction
+    shaders accumulate correctly across tile dispatches, (2) apply pass
+    produces identical output whether tiled or full-image.
+  context: |
+    The current GPU path processes the full image in one dispatch. For 8K+
+    images this requires ~1GB of ping-pong buffers. Professional tools
+    handle this with two-pass streaming:
+
+    Pass 1 (analysis): Stream tiles through reduction shader (histogram).
+    Each tile's contribution accumulates into a shared small buffer
+    (256x3 bins = 3KB). No full-image buffer needed.
+
+    Pass 2 (apply): Stream tiles through LUT apply shader. Each tile reads
+    from the LUT built in pass 1. Output tiles are the final result.
+
+    The image is read twice but never held fully in GPU memory. Memory is
+    bounded by tile_size * 2 (ping-pong) + reduction buffer (tiny).
+
+    This PoC validates the pattern works with our architecture before
+    committing to a full implementation. Uses a 256x256 image processed
+    in 64x64 tiles — small enough for fast testing, large enough to have
+    multiple tiles and prove cross-tile accumulation.
+  codebase_analysis: |
+    Current GPU reduction infrastructure:
+    - gpu_shaders/reduction.rs: Histogram256, ChannelSum, MinMax
+    - ReductionBuffer: persistent buffer across multi-pass shader chains
+    - GpuExecutor::execute(): supports reduction_buffers on GpuShader
+    - WgpuExecutorV2: handles reduction buffer lifecycle
+
+    Key question: can we call execute() multiple times (once per tile)
+    with the same reduction buffer accumulating across calls? Currently
+    execute() creates fresh ping-pong buffers each call. The reduction
+    buffer needs to persist.
+
+    Options:
+    A) Add execute_tiled() that takes a pre-allocated reduction buffer
+       and processes tiles in sequence
+    B) Add a multi-call API: begin_tiled() → process_tile() x N → finish()
+    C) Keep single execute() but pre-populate reduction buffer from prior call
+
+    The PoC should try the simplest approach and validate correctness.
+  acceptance_criteria:
+    - Tiled histogram matches full-image histogram exactly
+    - Tiled equalize output matches full-image equalize within f32 tolerance
+    - GPU memory bounded by tile size (not full image)
+    - Test uses 256x256 image with 64x64 tiles (16 tile dispatches)
+    - All tests pass on real GPU via cargo test
+    - Tests skip gracefully without GPU
+  out_of_scope: |
+    - Production tiled streaming API (this is PoC only)
+    - Actual 8K image processing
+    - Spatial filter tiling with overlap
+    - Browser/WebGPU integration
+    - Performance optimization of the tiled path
+  technical_notes: |
+    PoC test structure:
+
+    #[test]
+    fn tiled_histogram_matches_full() {
+        // 1. Full-image reference
+        let full_hist = gpu_histogram_full(&input, 256, 256);
+
+        // 2. Tiled: accumulate histogram across 64x64 tiles
+        let mut hist_buf = zero_histogram();
+        for tile in tiles(256, 256, 64, 64) {
+            let tile_pixels = extract_tile(&input, tile);
+            gpu_histogram_accumulate(&tile_pixels, tile.w, tile.h, &mut hist_buf);
+        }
+
+        assert_eq!(hist_buf, full_hist);
+    }
+
+    #[test]
+    fn tiled_equalize_matches_full() {
+        // 1. Full-image reference
+        let full_out = gpu_equalize_full(&input, 256, 256);
+
+        // 2. Tiled: analysis pass (histogram) then apply pass (LUT)
+        let hist = tiled_histogram(&input, 256, 256, 64, 64);
+        let lut = build_equalize_lut(&hist);
+        let tiled_out = tiled_apply_lut(&input, 256, 256, 64, 64, &lut);
+
+        assert_pixels_close(&tiled_out, &full_out, 1e-5);
+    }
+
+    The key infrastructure question this answers: does our reduction
+    buffer mechanism support accumulation across multiple execute() calls?
+    If yes, tiled streaming is architecturally viable. If not, we know
+    exactly what needs to change.
+plan:
+  - phase: "Infrastructure"
+    tasks:
+      - text: "Investigate whether WgpuExecutorV2 reduction buffers persist across multiple execute() calls"
+        done: false
+      - text: "Add execute_with_reduction() or modify execute() to accept pre-existing reduction buffers"
+        done: false
+      - text: "Add tile iteration helper (divide image rect into tile rects)"
+        done: false
+  - phase: "Analysis Pass PoC"
+    tasks:
+      - text: "Implement tiled histogram accumulation — dispatch histogram shader per tile with shared buffer"
+        done: false
+      - text: "Test tiled histogram matches full-image histogram"
+        done: false
+  - phase: "Apply Pass PoC"
+    tasks:
+      - text: "Implement tiled LUT apply — dispatch point-op shader per tile with LUT from analysis pass"
+        done: false
+      - text: "Test tiled equalize output matches full-image equalize"
+        done: false
+  - phase: "Validation"
+    tasks:
+      - text: "Verify GPU memory usage is bounded by tile size (log buffer allocations)"
+        done: false
+      - text: "Document findings — what works, what needs to change for production"
+        done: false
+extra: {}
