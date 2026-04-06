@@ -551,37 +551,45 @@ pub struct SmartCrop {
 impl Filter for SmartCrop {
     fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
         let w = width as usize; let h = height as usize;
-        let cw = (w as f32 * self.ratio) as usize;
-        let ch = (h as f32 * self.ratio) as usize;
-        if cw >= w || ch >= h { return Ok(input.to_vec()); }
-        // Find region with maximum gradient energy
+        let cw = ((w as f32 * self.ratio) as usize).max(1).min(w);
+        let ch = ((h as f32 * self.ratio) as usize).max(1).min(h);
+        if cw >= w && ch >= h { return Ok(input.to_vec()); }
+
+        // Find region with maximum gradient energy (analysis pass)
         let mut best_x = 0; let mut best_y = 0; let mut best_energy = f32::NEG_INFINITY;
         let step = 4.max(cw / 10);
-        for sy in (0..=h-ch).step_by(step) {
-            for sx in (0..=w-cw).step_by(step) {
+        for sy in (0..=h.saturating_sub(ch)).step_by(step) {
+            for sx in (0..=w.saturating_sub(cw)).step_by(step) {
                 let mut energy = 0.0f32;
                 for y in (sy..sy+ch).step_by(4) {
                     for x in (sx..sx+cw).step_by(4) {
-                        let i = (y * w + x) * 4;
-                        let xp = (x+1).min(w-1) * 4 + y * w * 4;
-                        let gx = (input[i] - input.get(xp).copied().unwrap_or(0.0)).abs();
-                        energy += gx;
+                        if x + 1 < w {
+                            let i = (y * w + x) * 4;
+                            let i1 = (y * w + x + 1) * 4;
+                            let gx = (input[i] - input[i1]).abs();
+                            energy += gx;
+                        }
                     }
                 }
                 if energy > best_energy { best_energy = energy; best_x = sx; best_y = sy; }
             }
         }
-        // Extract crop, pad to original size
-        let mut out = vec![0.0f32; (width * height * 4) as usize];
+
+        // Extract crop — output is smaller than input
+        let mut out = vec![0.0f32; cw * ch * 4];
         for y in 0..ch {
             for x in 0..cw {
                 let si = ((best_y + y) * w + best_x + x) * 4;
-                let di = (y * w + x) * 4;
+                let di = (y * cw + x) * 4;
                 out[di..di+4].copy_from_slice(&input[si..si+4]);
             }
         }
         Ok(out)
     }
+
+    // Smart crop requests full image — needs all pixels for energy analysis.
+    // Output dimensions are ratio-based (known from params).
+    // Future: proper two-phase analysis→render pipeline separation.
 }
 
 /// Hough line detection — output line visualization.
