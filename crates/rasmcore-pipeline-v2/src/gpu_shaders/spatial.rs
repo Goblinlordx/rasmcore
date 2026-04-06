@@ -457,3 +457,143 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   output[idx] = sample_bilinear(sx, sy);
 }
 "#;
+
+// ─── Advanced Spatial Shaders ────────────────────────────────────────────────
+
+/// Zoom blur — radial blur from center.
+///
+/// Samples along radial lines from each pixel toward center_x/center_y.
+pub const ZOOM_BLUR: &str = r#"
+struct Params {
+  width: u32,
+  height: u32,
+  samples: u32,
+  _pad: u32,
+  center_x: f32,
+  center_y: f32,
+  factor: f32,
+  _pad2: u32,
+}
+@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
+@group(0) @binding(2) var<uniform> params: Params;
+
+@compute @workgroup_size(256, 1, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let idx = gid.x;
+  if (idx >= params.width * params.height) { return; }
+
+  let x = f32(idx % params.width);
+  let y = f32(idx / params.width);
+  let dx = params.center_x - x;
+  let dy = params.center_y - y;
+  let n = params.samples;
+  let inv_n = 1.0 / f32(n);
+
+  var sum = vec4<f32>(0.0);
+  for (var s = 0u; s < n; s++) {
+    let t = f32(s) * params.factor / f32(n);
+    let sx = clamp(i32(round(x + dx * t)), 0, i32(params.width) - 1);
+    let sy = clamp(i32(round(y + dy * t)), 0, i32(params.height) - 1);
+    sum += input[u32(sx) + u32(sy) * params.width];
+  }
+  output[idx] = sum * inv_n;
+}
+"#;
+
+/// Spin blur — rotational blur around center.
+///
+/// Samples along circular arcs around center_x/center_y.
+pub const SPIN_BLUR: &str = r#"
+struct Params {
+  width: u32,
+  height: u32,
+  samples: u32,
+  _pad: u32,
+  center_x: f32,
+  center_y: f32,
+  angle_rad: f32,
+  _pad2: u32,
+}
+@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
+@group(0) @binding(2) var<uniform> params: Params;
+
+@compute @workgroup_size(256, 1, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let idx = gid.x;
+  if (idx >= params.width * params.height) { return; }
+
+  let x = f32(idx % params.width);
+  let y = f32(idx / params.width);
+  let dx = x - params.center_x;
+  let dy = y - params.center_y;
+  let n = params.samples;
+  let inv_n = 1.0 / f32(n);
+  let half = f32(n) * 0.5;
+
+  var sum = vec4<f32>(0.0);
+  for (var s = 0u; s < n; s++) {
+    let offset = params.angle_rad * (f32(s) - half) / f32(n);
+    let cos_t = cos(offset);
+    let sin_t = sin(offset);
+    let sx = clamp(i32(round(params.center_x + dx * cos_t - dy * sin_t)), 0, i32(params.width) - 1);
+    let sy = clamp(i32(round(params.center_y + dx * sin_t + dy * cos_t)), 0, i32(params.height) - 1);
+    sum += input[u32(sx) + u32(sy) * params.width];
+  }
+  output[idx] = sum * inv_n;
+}
+"#;
+
+/// Tilt shift — blend original with blurred based on distance from focus band.
+///
+/// Input is the blurred image; extra_buffers[0] has the original.
+/// Computes per-pixel smoothstep mask from distance to focus band.
+pub const TILT_SHIFT_BLEND: &str = r#"
+struct Params {
+  width: u32,
+  height: u32,
+  _pad0: u32,
+  _pad1: u32,
+  focus_position: f32,
+  half_band: f32,
+  transition: f32,
+  cos_angle: f32,
+  sin_angle: f32,
+  _pad2: u32,
+  _pad3: u32,
+  _pad4: u32,
+}
+@group(0) @binding(0) var<storage, read> blurred: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
+@group(0) @binding(2) var<uniform> params: Params;
+@group(0) @binding(3) var<storage, read> original: array<vec4<f32>>;
+
+@compute @workgroup_size(256, 1, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let idx = gid.x;
+  if (idx >= params.width * params.height) { return; }
+
+  let x = f32(idx % params.width) / f32(params.width) - 0.5;
+  let y = f32(idx / params.width) / f32(params.height) - params.focus_position;
+  let dist = abs(x * params.sin_angle + y * params.cos_angle);
+
+  var t: f32;
+  if (dist < params.half_band) {
+    t = 0.0;
+  } else {
+    let d = min((dist - params.half_band) / params.transition, 1.0);
+    t = d * d * (3.0 - 2.0 * d); // smoothstep
+  }
+
+  let orig = original[idx];
+  let blur = blurred[idx];
+  output[idx] = mix(orig, blur, vec4<f32>(t));
+}
+"#;
+
+/// Convolution with kernel from extra_buffer — used by lens_blur and bokeh_blur.
+///
+/// Same as CONVOLVE but separate constant for clarity.
+/// Kernel is in extra_buffers[0] as f32 array.
+pub const LENS_BLUR: &str = CONVOLVE;

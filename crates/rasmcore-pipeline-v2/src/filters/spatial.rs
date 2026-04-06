@@ -1174,6 +1174,253 @@ impl GpuFilter for DisplacementMap {
     }
 }
 
+// ── LensBlur / BokehBlur GPU (kernel convolution via extra_buffer) ──────────
+
+impl GpuFilter for LensBlur {
+    fn shader_body(&self) -> &str { spatial::LENS_BLUR }
+    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn params(&self, w: u32, h: u32) -> Vec<u8> {
+        let ksize = self.radius * 2 + 1;
+        let kernel = if self.blade_count < 3 {
+            make_disc_kernel(self.radius)
+        } else {
+            make_polygon_kernel(self.radius, self.blade_count, self.rotation)
+        };
+        let divisor: f32 = kernel.iter().sum::<f32>().max(1e-6);
+        let mut buf = Vec::with_capacity(32);
+        buf.extend_from_slice(&w.to_le_bytes());
+        buf.extend_from_slice(&h.to_le_bytes());
+        buf.extend_from_slice(&ksize.to_le_bytes());
+        buf.extend_from_slice(&ksize.to_le_bytes());
+        buf.extend_from_slice(&(1.0f32 / divisor).to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf
+    }
+    fn extra_buffers(&self) -> Vec<Vec<u8>> {
+        let kernel = if self.blade_count < 3 {
+            make_disc_kernel(self.radius)
+        } else {
+            make_polygon_kernel(self.radius, self.blade_count, self.rotation)
+        };
+        let mut kb = Vec::with_capacity(kernel.len() * 4);
+        for &w in &kernel {
+            kb.extend_from_slice(&w.to_le_bytes());
+        }
+        vec![kb]
+    }
+}
+
+impl GpuFilter for BokehBlur {
+    fn shader_body(&self) -> &str { spatial::LENS_BLUR }
+    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn params(&self, w: u32, h: u32) -> Vec<u8> {
+        let ksize = self.radius * 2 + 1;
+        let kernel = if self.shape == 1 {
+            make_polygon_kernel(self.radius, 6, 0.0)
+        } else {
+            make_disc_kernel(self.radius)
+        };
+        let divisor: f32 = kernel.iter().sum::<f32>().max(1e-6);
+        let mut buf = Vec::with_capacity(32);
+        buf.extend_from_slice(&w.to_le_bytes());
+        buf.extend_from_slice(&h.to_le_bytes());
+        buf.extend_from_slice(&ksize.to_le_bytes());
+        buf.extend_from_slice(&ksize.to_le_bytes());
+        buf.extend_from_slice(&(1.0f32 / divisor).to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf
+    }
+    fn extra_buffers(&self) -> Vec<Vec<u8>> {
+        let kernel = if self.shape == 1 {
+            make_polygon_kernel(self.radius, 6, 0.0)
+        } else {
+            make_disc_kernel(self.radius)
+        };
+        let mut kb = Vec::with_capacity(kernel.len() * 4);
+        for &w in &kernel {
+            kb.extend_from_slice(&w.to_le_bytes());
+        }
+        vec![kb]
+    }
+}
+
+// ── ZoomBlur GPU (single-pass radial sampling) ──────────────────────────────
+
+gpu_filter!(ZoomBlur,
+    shader: spatial::ZOOM_BLUR,
+    workgroup: [256, 1, 1],
+    params(self_, w, h) => [
+        w, h,
+        ((self_.factor.abs() * 64.0).ceil() as u32).clamp(8, 128),
+        0u32,
+        self_.center_x * w as f32,
+        self_.center_y * h as f32,
+        self_.factor,
+        0u32
+    ]
+);
+
+// ── SpinBlur GPU (single-pass rotational sampling) ──────────────────────────
+
+gpu_filter!(SpinBlur,
+    shader: spatial::SPIN_BLUR,
+    workgroup: [256, 1, 1],
+    params(self_, w, h) => [
+        w, h,
+        ((self_.angle.to_radians().abs() * 32.0).ceil() as u32).clamp(8, 128),
+        0u32,
+        self_.center_x * w as f32,
+        self_.center_y * h as f32,
+        self_.angle.to_radians(),
+        0u32
+    ]
+);
+
+// ── TiltShift GPU (blur pass + blend pass) ──────────────────────────────────
+
+impl GpuFilter for TiltShift {
+    fn shader_body(&self) -> &str { "" } // multi-pass only
+    fn workgroup_size(&self) -> [u32; 3] { [256, 1, 1] }
+    fn params(&self, _w: u32, _h: u32) -> Vec<u8> { Vec::new() }
+
+    fn gpu_shaders(&self, w: u32, h: u32) -> Vec<GpuShader> {
+        if self.blur_radius <= 0.0 || self.band_size >= 1.0 {
+            return vec![self.gpu_shader(w, h)];
+        }
+        let (krad, kernel_bytes) = gaussian_kernel_bytes(self.blur_radius);
+        let n = w * h;
+
+        // Pass 1: horizontal blur
+        let h_params = {
+            let mut buf = Vec::new();
+            buf.extend_from_slice(&w.to_le_bytes());
+            buf.extend_from_slice(&h.to_le_bytes());
+            buf.extend_from_slice(&krad.to_le_bytes());
+            buf.extend_from_slice(&0u32.to_le_bytes());
+            buf
+        };
+        // Pass 2: vertical blur
+        let v_params = h_params.clone();
+        // Pass 3: blend with mask
+        let angle_rad = self.angle.to_radians();
+        let half_band = self.band_size * 0.5;
+        let transition = half_band.max(0.05);
+        let blend_params = {
+            let mut buf = Vec::new();
+            buf.extend_from_slice(&w.to_le_bytes());
+            buf.extend_from_slice(&h.to_le_bytes());
+            buf.extend_from_slice(&0u32.to_le_bytes());
+            buf.extend_from_slice(&0u32.to_le_bytes());
+            buf.extend_from_slice(&self.focus_position.to_le_bytes());
+            buf.extend_from_slice(&half_band.to_le_bytes());
+            buf.extend_from_slice(&transition.to_le_bytes());
+            buf.extend_from_slice(&angle_rad.cos().to_le_bytes());
+            buf.extend_from_slice(&angle_rad.sin().to_le_bytes());
+            buf.extend_from_slice(&0u32.to_le_bytes());
+            buf.extend_from_slice(&0u32.to_le_bytes());
+            buf.extend_from_slice(&0u32.to_le_bytes());
+            buf
+        };
+
+        vec![
+            GpuShader {
+                body: spatial::GAUSSIAN_BLUR_H.to_string(),
+                entry_point: "main",
+                workgroup_size: [256, 1, 1],
+                params: h_params,
+                extra_buffers: vec![kernel_bytes.clone()],
+                reduction_buffers: vec![],
+                convergence_check: None, loop_dispatch: None,
+            },
+            GpuShader {
+                body: spatial::GAUSSIAN_BLUR_V.to_string(),
+                entry_point: "main",
+                workgroup_size: [256, 1, 1],
+                params: v_params,
+                extra_buffers: vec![kernel_bytes],
+                reduction_buffers: vec![],
+                convergence_check: None, loop_dispatch: None,
+            },
+            GpuShader {
+                body: spatial::TILT_SHIFT_BLEND.to_string(),
+                entry_point: "main",
+                workgroup_size: [256, 1, 1],
+                params: blend_params,
+                extra_buffers: vec![vec![0u8; (n * 16) as usize]], // placeholder for original (snapshot)
+                reduction_buffers: vec![],
+                convergence_check: None, loop_dispatch: None,
+            },
+        ]
+    }
+}
+
+// ── SmartSharpen GPU (bilateral blur + unsharp mask) ────────────────────────
+// Uses bilateral shader for blur, then sharpen_apply for unsharp mask.
+
+impl GpuFilter for SmartSharpen {
+    fn shader_body(&self) -> &str { "" } // multi-pass only
+    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn params(&self, _w: u32, _h: u32) -> Vec<u8> { Vec::new() }
+
+    fn gpu_shaders(&self, w: u32, h: u32) -> Vec<GpuShader> {
+        if self.amount.abs() < 1e-6 {
+            return vec![self.gpu_shader(w, h)];
+        }
+        let r = self.radius;
+        let sc2 = -0.5f32 / (self.threshold * self.threshold);
+        let ss2 = -0.5f32 / (r as f32 * r as f32);
+        let n = w * h;
+
+        // Pass 1: bilateral blur
+        let bilateral_params = {
+            let mut buf = Vec::new();
+            buf.extend_from_slice(&w.to_le_bytes());
+            buf.extend_from_slice(&h.to_le_bytes());
+            buf.extend_from_slice(&r.to_le_bytes());
+            buf.extend_from_slice(&0u32.to_le_bytes());
+            buf.extend_from_slice(&sc2.to_le_bytes());
+            buf.extend_from_slice(&ss2.to_le_bytes());
+            buf.extend_from_slice(&0u32.to_le_bytes());
+            buf.extend_from_slice(&0u32.to_le_bytes());
+            buf
+        };
+        // Pass 2: unsharp mask
+        let sharpen_params = {
+            let mut buf = Vec::new();
+            buf.extend_from_slice(&w.to_le_bytes());
+            buf.extend_from_slice(&h.to_le_bytes());
+            buf.extend_from_slice(&self.amount.to_le_bytes());
+            buf.extend_from_slice(&0u32.to_le_bytes());
+            buf
+        };
+
+        vec![
+            GpuShader {
+                body: spatial::BILATERAL.to_string(),
+                entry_point: "main",
+                workgroup_size: [16, 16, 1],
+                params: bilateral_params,
+                extra_buffers: vec![],
+                reduction_buffers: vec![],
+                convergence_check: None, loop_dispatch: None,
+            },
+            GpuShader {
+                body: spatial::SHARPEN_APPLY.to_string(),
+                entry_point: "main",
+                workgroup_size: [256, 1, 1],
+                params: sharpen_params,
+                extra_buffers: vec![vec![0u8; (n * 16) as usize]], // placeholder for original
+                reduction_buffers: vec![],
+                convergence_check: None, loop_dispatch: None,
+            },
+        ]
+    }
+}
+
 // All spatial filters are auto-registered via #[derive(V2Filter)] on their structs.
 
 #[cfg(test)]
