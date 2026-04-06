@@ -3,52 +3,64 @@ title: Expand blend modes — 20+ Photoshop-standard modes
 type: feature
 status: pending
 created: 2026-04-07
-updated: 2026-04-07
+updated: '2026-04-06'
 spec:
-  summary: |
-    Add all standard Photoshop blend modes as compositing options.
+  summary: 'Add all standard Photoshop blend modes as compositing options.
+
     Currently have 4 (blend, blend_if, premultiply, unpremultiply).
+
     Add ~20 per-pixel blend mode filters. Biggest visible parity gap.
-  context: |
-    GPU-first (WGSL compute shaders). SIMD CPU fallback.
+
+    '
+  context: 'GPU-first (WGSL compute shaders). SIMD CPU fallback.
+
     Each blend mode is a per-pixel math formula — trivial GPU shaders.
+
     Most are single-expression: multiply = a*b, screen = 1-(1-a)*(1-b).
+
+    '
   acceptance_criteria:
-    - All standard PS blend modes implemented as V2 filters
-    - GPU shader for each mode
-    - SIMD CPU fallback for each mode
-    - Registered with proper params (mode enum or individual filters)
-  out_of_scope: |
-    Interactive brush blending (separate stroke engine track)
-  technical_notes: |
-    Modes to add: multiply, screen, overlay, soft_light, hard_light,
+  - All standard PS blend modes implemented as V2 filters
+  - GPU shader for each mode
+  - SIMD CPU fallback for each mode
+  - Registered with proper params (mode enum or individual filters)
+  out_of_scope: 'Interactive brush blending (separate stroke engine track)
+
+    '
+  technical_notes: 'Modes to add: multiply, screen, overlay, soft_light, hard_light,
+
     color_dodge, color_burn, difference, exclusion, hue, saturation,
+
     color, luminosity, dissolve, darker_color, lighter_color,
+
     linear_burn, linear_dodge, vivid_light, linear_light, pin_light,
+
     hard_mix. Each is a single WGSL function applied per pixel.
+
+    '
 plan:
-  - phase: Normal/Darken/Lighten
-    tasks:
-      - text: Implement multiply, screen, dissolve, darker_color, lighter_color blend modes
-        done: false
-      - text: Implement linear_burn, linear_dodge (add/subtract clamped) blend modes
-        done: false
-  - phase: Contrast/Inversion
-    tasks:
-      - text: Implement overlay, soft_light, hard_light, vivid_light, linear_light, pin_light, hard_mix
-        done: false
-      - text: Implement color_dodge, color_burn blend modes
-        done: false
-      - text: Implement difference, exclusion blend modes
-        done: false
-  - phase: HSL Modes
-    tasks:
-      - text: Implement hue, saturation, color, luminosity blend modes (require RGB-HSL conversion in shader)
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Verify all modes appear in registry and docs playground
-        done: false
-      - text: Test each mode against known reference values
-        done: false
+- phase: Normal/Darken/Lighten
+  tasks:
+  - text: Implement multiply, screen, dissolve, darker_color, lighter_color blend modes
+    done: true
+  - text: Implement linear_burn, linear_dodge (add/subtract clamped) blend modes
+    done: true
+- phase: Contrast/Inversion
+  tasks:
+  - text: Implement overlay, soft_light, hard_light, vivid_light, linear_light, pin_light, hard_mix
+    done: true
+  - text: Implement color_dodge, color_burn blend modes
+    done: true
+  - text: Implement difference, exclusion blend modes
+    done: true
+- phase: HSL Modes
+  tasks:
+  - text: Implement hue, saturation, color, luminosity blend modes (require RGB-HSL conversion in shader)
+    done: true
+- phase: Verification
+  tasks:
+  - text: Verify all modes appear in registry and docs playground
+    done: true
+  - text: Test each mode against known reference values
+    done: true
 extra: {}
