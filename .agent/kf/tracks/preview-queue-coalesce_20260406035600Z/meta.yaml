@@ -1,5 +1,5 @@
 title: Fix preview render queue to coalesce stale requests
-status: pending
+status: completed
 type: bug
 approved: false
 created: '2026-04-06'
