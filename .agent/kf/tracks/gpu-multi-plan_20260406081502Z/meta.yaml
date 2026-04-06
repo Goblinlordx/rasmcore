@@ -1,9 +1,9 @@
 title: Multi-output GPU plan extraction (render-multi-gpu-plan)
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-05'
-updated: '2026-04-05'
+updated: '2026-04-06'
 deps:
 - gpu-graph-refs_20260406081500Z
 - gpu-multi-display_20260406081501Z

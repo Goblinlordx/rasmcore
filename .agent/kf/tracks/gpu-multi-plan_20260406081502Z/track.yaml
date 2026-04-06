@@ -5,101 +5,108 @@ status: pending
 created: '2026-04-06'
 updated: '2026-04-06'
 spec:
-  summary: |
-    Implement render-multi-gpu-plan in Rust/WIT that returns ordered GPU
+  summary: 'Implement render-multi-gpu-plan in Rust/WIT that returns ordered GPU
+
     stages with ref dependencies. Each stage specifies input source (pixels
+
     or prior-stage buffer). Host executes via GpuHandler.executeMulti().
-  context: |
-    The current render-gpu-plan extracts a single linear GPU shader chain
+
+    '
+  context: 'The current render-gpu-plan extracts a single linear GPU shader chain
+
     for one node. The multi-output design needs a plan covering multiple
+
     output nodes (viewport + scopes), each potentially branching from a
+
     shared ref point.
 
+
     The plan must be topologically sorted so that upstream stages compute
+
     before downstream consumers. Ref-based inputs let stages read from
-    a prior stage's GPU buffer instead of re-uploading pixels.
-  codebase_analysis: |
-    graph.rs gpu_plan() (lines 266-304):
+
+    a prior stage''s GPU buffer instead of re-uploading pixels.
+
+    '
+  codebase_analysis: 'graph.rs gpu_plan() (lines 266-304):
+
     - Runs fusion optimizer
+
     - Calls collect_gpu_chain(node_id) to walk backward
+
     - Returns GpuPlan { shaders, input_pixels, width, height }
+
     - Single node, single chain
 
+
     collect_gpu_chain() walks backward from a node collecting GPU-capable
+
     nodes with single upstream. Stops at first non-GPU or multi-upstream.
 
+
     For multi-plan: need to call collect_gpu_chain for EACH target node,
+
     detect shared prefixes (ref points), and split into stages where
+
     downstream stages reference prior stage output instead of re-uploading.
 
-    WIT currently has render-gpu-plan returning option<gpu-plan>.
-    New render-multi-gpu-plan returns multi-gpu-plan with list<gpu-stage>.
-  acceptance_criteria:
-    - render_multi_gpu_plan(targets) method on Graph
-    - Takes list of (target_name, node_id) pairs
-    - Returns ordered list of gpu-stage with correct dependencies
-    - Stages sharing a common prefix are deduplicated (computed once)
-    - stage-input variant distinguishes pixels upload vs prior-stage ref
-    - WIT record multi-gpu-plan with list of gpu-stage
-    - WIT method render-multi-gpu-plan on image-pipeline-v2
-    - WASM adapter implements the WIT method
-    - Existing render-gpu-plan unchanged (backward compatible)
-  out_of_scope: |
-    GpuHandler executeMulti (separate track). Worker integration.
-    GPU scope shaders.
-  technical_notes: |
-    Algorithm for multi-plan extraction:
-    1. For each target, collect_gpu_chain → (source_node_id, shaders[])
-    2. Group by common source_node_id (shared prefix detection)
-    3. If multiple targets share the same upstream chain:
-       - Emit one stage for the shared chain (tagged as ref)
-       - Emit per-target stages that read from that ref
-    4. If a target has no GPU chain: emit passthrough stage (pixels only)
-    5. Topological sort: source stages first, then downstream
 
-    WIT types:
-      record gpu-stage {
-        target-name: string,
-        shaders: list<gpu-shader>,
-        input-source: stage-input,
-        width: u32, height: u32,
-      }
-      variant stage-input {
-        pixels(pixel-buffer),
-        prior-stage(string),
-      }
-      record multi-gpu-plan {
-        stages: list<gpu-stage>,
-      }
+    WIT currently has render-gpu-plan returning option<gpu-plan>.
+
+    New render-multi-gpu-plan returns multi-gpu-plan with list<gpu-stage>.
+
+    '
+  acceptance_criteria:
+  - render_multi_gpu_plan(targets) method on Graph
+  - Takes list of (target_name, node_id) pairs
+  - Returns ordered list of gpu-stage with correct dependencies
+  - Stages sharing a common prefix are deduplicated (computed once)
+  - stage-input variant distinguishes pixels upload vs prior-stage ref
+  - WIT record multi-gpu-plan with list of gpu-stage
+  - WIT method render-multi-gpu-plan on image-pipeline-v2
+  - WASM adapter implements the WIT method
+  - Existing render-gpu-plan unchanged (backward compatible)
+  out_of_scope: 'GpuHandler executeMulti (separate track). Worker integration.
+
+    GPU scope shaders.
+
+    '
+  technical_notes: "Algorithm for multi-plan extraction:\n1. For each target, collect_gpu_chain → (source_node_id, shaders[])\n\
+    2. Group by common source_node_id (shared prefix detection)\n3. If multiple targets share the same upstream chain:\n \
+    \  - Emit one stage for the shared chain (tagged as ref)\n   - Emit per-target stages that read from that ref\n4. If a\
+    \ target has no GPU chain: emit passthrough stage (pixels only)\n5. Topological sort: source stages first, then downstream\n\
+    \nWIT types:\n  record gpu-stage {\n    target-name: string,\n    shaders: list<gpu-shader>,\n    input-source: stage-input,\n\
+    \    width: u32, height: u32,\n  }\n  variant stage-input {\n    pixels(pixel-buffer),\n    prior-stage(string),\n  }\n\
+    \  record multi-gpu-plan {\n    stages: list<gpu-stage>,\n  }\n"
 plan:
-  - phase: Rust Multi-Plan
-    tasks:
-      - text: Define MultiGpuPlan and GpuStage structs in graph.rs
-        done: false
-      - text: Define StageInput enum (Pixels vs PriorStage)
-        done: false
-      - text: Implement render_multi_gpu_plan on Graph
-        done: false
-      - text: Shared prefix detection — deduplicate common upstream chains
-        done: false
-      - text: Test multi-plan with 1 viewport + 2 scope targets
-        done: false
-  - phase: WIT and WASM
-    tasks:
-      - text: Add multi-gpu-plan, gpu-stage, stage-input types to pipeline.wit
-        done: false
-      - text: Add render-multi-gpu-plan method to image-pipeline-v2
-        done: false
-      - text: Implement WASM adapter for render-multi-gpu-plan
-        done: false
-  - phase: Fluent SDK
-    tasks:
-      - text: Add addDisplay(name) to fluent Pipeline (registers target nodes)
-        done: false
-      - text: Add execute() method that calls render-multi-gpu-plan
-        done: false
-      - text: Test fluent API builds correct multi-target plan
-        done: false
-      - text: Verify single-target plan still works via existing path
-        done: false
+- phase: Rust Multi-Plan
+  tasks:
+  - text: Define MultiGpuPlan and GpuStage structs in graph.rs
+    done: true
+  - text: Define StageInput enum (Pixels vs PriorStage)
+    done: true
+  - text: Implement render_multi_gpu_plan on Graph
+    done: true
+  - text: Shared prefix detection — deduplicate common upstream chains
+    done: true
+  - text: Test multi-plan with 1 viewport + 2 scope targets
+    done: true
+- phase: WIT and WASM
+  tasks:
+  - text: Add multi-gpu-plan, gpu-stage, stage-input types to pipeline.wit
+    done: true
+  - text: Add render-multi-gpu-plan method to image-pipeline-v2
+    done: true
+  - text: Implement WASM adapter for render-multi-gpu-plan
+    done: true
+- phase: Fluent SDK
+  tasks:
+  - text: Add addDisplay(name) to fluent Pipeline (registers target nodes)
+    done: true
+  - text: Add execute() method that calls render-multi-gpu-plan
+    done: true
+  - text: Test fluent API builds correct multi-target plan
+    done: true
+  - text: Verify single-target plan still works via existing path
+    done: true
 extra: {}
