@@ -1,0 +1,126 @@
+id: fuse-clut-chains_20260406053300Z
+title: Implement CLUT chain fusion optimizer
+type: feature
+status: pending
+created: '2026-04-06'
+updated: '2026-04-06'
+spec:
+  summary: |
+    Wire up fuse_clut_chains() to find consecutive ClutOp-capable nodes
+    and replace them with a single FusedClutNode via compose_cluts().
+    Adds CLUT detection to FilterNode so the optimizer can find fusable chains.
+  context: |
+    The fusion optimizer already fuses consecutive analytic point-ops (brightness,
+    contrast, gamma) into a single expression tree + 1D LUT. The equivalent for
+    3D color operations (curves, CDL, lift/gamma/gain, split toning, hue-vs-sat,
+    external LUTs) is CLUT fusion: compose multiple 3D LUTs into one.
+
+    All the building blocks exist:
+    - ClutOp trait (build_clut() -> Clut3D) — implemented by 12+ grading filters
+    - Clut3D struct with sample() and from_fn()
+    - compose_cluts(outer, inner) -> Clut3D — composes two CLUTs
+    - FusedClutNode — wraps a composed Clut3D as a pipeline Node
+
+    What's missing: fuse_clut_chains() is a TODO stub. The graph walker that
+    detects consecutive ClutOp-capable nodes and replaces them hasn't been
+    implemented. Also, FilterNode always reports clut: false — it doesn't
+    detect whether the wrapped filter implements ClutOp.
+  codebase_analysis: |
+    fusion.rs:
+    - fuse_clut_chains() at line 813 — TODO stub
+    - fuse_analytic_chains() at ~line 715 — working reference implementation
+    - compose_cluts() at line 575 — working, tested
+    - FusedClutNode at line 655 — working, tested
+    - optimize() calls fuse_analytic_chains + fuse_clut_chains
+
+    filter_node.rs:
+    - FilterNode always returns clut: false in capabilities()
+    - Analytic detection uses analytic_expression() returning Option — same
+      pattern should work for CLUT
+
+    ops.rs Filter trait:
+    - analytic_expression() -> Option<PointOpExpr> exists (default None)
+    - No equivalent for CLUT — need to add build_clut() -> Option<Clut3D>
+
+    filters/color.rs:
+    - ClutOp trait: fn build_clut(&self) -> Clut3D
+    - Implemented by: hue_rotate, saturate, vibrance, sepia, colorize,
+      white_balance_temperature, photo_filter, lab_adjust, modulate,
+      selective_color, replace_color
+
+    filters/grading.rs:
+    - ClutOp implemented by: CurvesMaster, CurvesRed/Green/Blue,
+      AscCdl, LiftGammaGain, SplitToning, HueVsSat, HueVsLum,
+      LumVsSat, SatVsSat, ApplyCubeLut, ApplyHaldLut, TonemapReinhard
+  acceptance_criteria:
+    - Filter trait has build_clut() method (default None)
+    - Filters implementing ClutOp also override build_clut() on Filter
+    - FilterNode detects clut capability at runtime via build_clut().is_some()
+    - fuse_clut_chains() walks graph finding consecutive clut-capable nodes
+    - Consecutive clut nodes replaced with single FusedClutNode
+    - compose_cluts chains correctly (A -> B -> C becomes compose(C, compose(B, A)))
+    - Non-clut nodes break the chain (spatial ops, scopes, etc.)
+    - Mixed chains work correctly (point-ops fuse separately, then clut-ops fuse)
+    - 3+ grading filters in sequence produce identical output whether fused or not
+    - Performance improvement measurable on 5-filter grading chain
+  out_of_scope: |
+    GPU CLUT application shader (future — upload composed CLUT as 3D texture).
+    CLUT + point-op cross-fusion (composing 1D LUT into 3D CLUT).
+    Automatic quality selection for grid size.
+  technical_notes: |
+    Detection pattern (same as analytic):
+    1. Add to Filter trait: fn build_clut(&self) -> Option<Clut3D> { None }
+    2. Filters with ClutOp override: fn build_clut(&self) -> Option<Clut3D> {
+         Some(ClutOp::build_clut(self))
+       }
+    3. FilterNode::capabilities() checks self.filter.build_clut().is_some()
+       for the clut flag
+    4. FilterNode exposes build_clut() to the node level for the walker
+
+    Walker pattern (mirror fuse_analytic_chains):
+    1. Walk nodes in reverse order (sink to source)
+    2. If node has clut capability, start collecting chain
+    3. Walk upstream — if upstream also has clut, extend chain
+    4. Stop at first non-clut node
+    5. If chain length >= 2, compose CLUTs and replace with FusedClutNode
+    6. Composition order: innermost (upstream) first, outermost (downstream) last
+
+    The filter author never thinks about fusion. They implement ClutOp
+    (which they already do for 20+ filters) and add one line to their
+    Filter impl. The optimizer does the rest.
+
+    Note: build_clut() is potentially expensive (samples the function at
+    33^3 grid points). The walker should only call it once per node during
+    fusion, not on every frame. The fused CLUT is cached in the FusedClutNode.
+plan:
+  - phase: Detection Infrastructure
+    tasks:
+      - text: Add build_clut() method to Filter trait (default None)
+        done: false
+      - text: Override build_clut() on all filters that implement ClutOp
+        done: false
+      - text: FilterNode detects clut capability via build_clut().is_some()
+        done: false
+      - text: FilterNode exposes build_clut() pass-through to Node level
+        done: false
+  - phase: Graph Walker
+    tasks:
+      - text: Implement fuse_clut_chains() — walk graph finding consecutive clut nodes
+        done: false
+      - text: Compose CLUTs in correct order (inner first, outer last)
+        done: false
+      - text: Replace chain with FusedClutNode, update graph edges
+        done: false
+      - text: Handle edge cases — single-node chains, mixed analytic+clut, non-linear graphs
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test 3-filter grading chain produces identical output fused vs unfused
+        done: false
+      - text: Test mixed chain (brightness + curves + blur) — only curves portion fuses
+        done: false
+      - text: Test CLUT composition order matches sequential application
+        done: false
+      - text: Benchmark 5-filter grading chain with fusion on vs off
+        done: false
+extra: {}
