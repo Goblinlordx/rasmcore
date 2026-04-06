@@ -120,17 +120,78 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 /// against itself (useful for self-blending effects like "multiply to darken").
 ///
 /// For two-layer compositing, use the pipeline's composite node instead.
+///
+/// Modes:
+///   0=normal, 1=multiply, 2=screen, 3=overlay, 4=soft_light,
+///   5=hard_light, 6=color_dodge, 7=color_burn, 8=darken, 9=lighten,
+///   10=difference, 11=exclusion, 12=linear_burn, 13=linear_dodge,
+///   14=vivid_light, 15=linear_light, 16=pin_light, 17=hard_mix,
+///   18=dissolve, 19=darker_color, 20=lighter_color,
+///   21=hue, 22=saturation, 23=color, 24=luminosity
 #[derive(Clone, rasmcore_macros::V2Filter)]
 #[filter(name = "blend", category = "composite", cost = "O(n)")]
 pub struct Blend {
-    /// Blend mode: 0=normal, 1=multiply, 2=screen, 3=overlay, 4=soft_light,
-    /// 5=hard_light, 6=color_dodge, 7=color_burn, 8=darken, 9=lighten,
-    /// 10=difference, 11=exclusion, 12=linear_burn, 13=linear_dodge
-    #[param(min = 0, max = 13, step = 1, default = 1)]
+    /// Blend mode (0-24, see filter docs for mode list)
+    #[param(min = 0, max = 24, step = 1, default = 1)]
     pub mode: u32,
     /// Blend opacity (0 = original, 1 = fully blended)
     #[param(min = 0.0, max = 1.0, step = 0.05, default = 0.5)]
     pub opacity: f32,
+}
+
+// ─── W3C compositing spec helpers (non-separable blend modes) ──────────────
+
+fn css_lum(r: f32, g: f32, b: f32) -> f32 {
+    0.299 * r + 0.587 * g + 0.114 * b
+}
+
+fn clip_color(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
+    let l = css_lum(r, g, b);
+    let n = r.min(g).min(b);
+    let _x = r.max(g).max(b);
+    let (mut ro, mut go, mut bo) = (r, g, b);
+    if n < 0.0 {
+        let d = (l - n).max(1e-7);
+        ro = l + (ro - l) * l / d;
+        go = l + (go - l) * l / d;
+        bo = l + (bo - l) * l / d;
+    }
+    let x2 = ro.max(go).max(bo);
+    if x2 > 1.0 {
+        let l2 = css_lum(ro, go, bo);
+        let d2 = (x2 - l2).max(1e-7);
+        ro = l2 + (ro - l2) * (1.0 - l2) / d2;
+        go = l2 + (go - l2) * (1.0 - l2) / d2;
+        bo = l2 + (bo - l2) * (1.0 - l2) / d2;
+    }
+    (ro, go, bo)
+}
+
+fn set_lum(r: f32, g: f32, b: f32, l: f32) -> (f32, f32, f32) {
+    let d = l - css_lum(r, g, b);
+    clip_color(r + d, g + d, b + d)
+}
+
+fn css_sat(r: f32, g: f32, b: f32) -> f32 {
+    r.max(g).max(b) - r.min(g).min(b)
+}
+
+fn set_sat(r: f32, g: f32, b: f32, s: f32) -> (f32, f32, f32) {
+    let cmin = r.min(g).min(b);
+    let cmax = r.max(g).max(b);
+    let range = cmax - cmin;
+    if range < 1e-7 {
+        return (0.0, 0.0, 0.0);
+    }
+    let scale = s / range;
+    ((r - cmin) * scale, (g - cmin) * scale, (b - cmin) * scale)
+}
+
+// Simple hash for dissolve mode.
+fn pcg_hash(v: u32) -> u32 {
+    let mut x = v.wrapping_mul(747796405).wrapping_add(2891336453);
+    x = ((x >> ((x >> 28).wrapping_add(4))) ^ x).wrapping_mul(277803737);
+    (x >> 22) ^ x
 }
 
 impl Filter for Blend {
@@ -139,38 +200,105 @@ impl Filter for Blend {
         let inv_opacity = 1.0 - opacity;
         let mut out = input.to_vec();
 
-        // Hoist mode dispatch outside the loop so the inner loop is a single
-        // arithmetic expression that LLVM can auto-vectorize.
-        let blend_fn: fn(f32) -> f32 = match self.mode {
-            1 => |b: f32| b * b,
-            2 => |b: f32| 1.0 - (1.0 - b) * (1.0 - b),
-            3 => |b: f32| if b < 0.5 { 2.0 * b * b } else { 1.0 - 2.0 * (1.0 - b) * (1.0 - b) },
-            4 => |b: f32| if b < 0.5 { b * (b + 0.5) } else { 1.0 - (1.0 - b) * (1.5 - b) },
-            5 => |b: f32| if b < 0.5 { 2.0 * b * b } else { 1.0 - 2.0 * (1.0 - b) * (1.0 - b) },
-            6 => |b: f32| if b < 1.0 { (b / (1.0 - b + 1e-6)).min(1.0) } else { 1.0 },
-            7 => |b: f32| if b > 0.0 { 1.0 - ((1.0 - b) / (b + 1e-6)).min(1.0) } else { 0.0 },
-            8 => |b: f32| b,    // darken (identity for self-blend)
-            9 => |b: f32| b,    // lighten (identity for self-blend)
-            10 => |_: f32| 0.0, // difference (zero for self-blend)
-            11 => |b: f32| b + b - 2.0 * b * b,
-            12 => |b: f32| (b + b - 1.0).max(0.0),
-            13 => |b: f32| (b + b).min(1.0),
-            _ => |b: f32| b,    // normal (identity)
-        };
+        match self.mode {
+            // ── Per-channel modes (0-17) ───────────────────────────────
+            0..=17 => {
+                // Hoist mode dispatch outside the loop so the inner loop is a
+                // single arithmetic expression that LLVM can auto-vectorize.
+                let blend_fn: fn(f32) -> f32 = match self.mode {
+                    1 => |b: f32| b * b,
+                    2 => |b: f32| 1.0 - (1.0 - b) * (1.0 - b),
+                    3 => |b: f32| if b < 0.5 { 2.0 * b * b } else { 1.0 - 2.0 * (1.0 - b) * (1.0 - b) },
+                    4 => |b: f32| if b < 0.5 { b * (b + 0.5) } else { 1.0 - (1.0 - b) * (1.5 - b) },
+                    5 => |b: f32| if b < 0.5 { 2.0 * b * b } else { 1.0 - 2.0 * (1.0 - b) * (1.0 - b) },
+                    6 => |b: f32| if b < 1.0 { (b / (1.0 - b + 1e-6)).min(1.0) } else { 1.0 },
+                    7 => |b: f32| if b > 0.0 { 1.0 - ((1.0 - b) / (b + 1e-6)).min(1.0) } else { 0.0 },
+                    8 => |b: f32| b,    // darken (identity for self-blend)
+                    9 => |b: f32| b,    // lighten (identity for self-blend)
+                    10 => |_: f32| 0.0, // difference (zero for self-blend)
+                    11 => |b: f32| b + b - 2.0 * b * b,
+                    12 => |b: f32| (b + b - 1.0).max(0.0),
+                    13 => |b: f32| (b + b).min(1.0),
+                    14 => |b: f32| { // vivid_light
+                        if b <= 0.5 {
+                            if b > 0.0 { (1.0 - (1.0 - b) / (2.0 * b)).max(0.0) } else { 0.0 }
+                        } else {
+                            (b / (2.0 * (1.0 - b) + 1e-6)).min(1.0)
+                        }
+                    },
+                    15 => |b: f32| (2.0 * b + b - 1.0).clamp(0.0, 1.0), // linear_light
+                    16 => |b: f32| { // pin_light
+                        if b < 0.5 { b.min(2.0 * b) } else { b.max(2.0 * b - 1.0) }
+                    },
+                    17 => |b: f32| if b + b >= 1.0 { 1.0 } else { 0.0 }, // hard_mix
+                    _ => |b: f32| b,
+                };
 
-        for px in out.chunks_exact_mut(4) {
-            let r = px[0].clamp(0.0, 1.0);
-            let g = px[1].clamp(0.0, 1.0);
-            let b = px[2].clamp(0.0, 1.0);
-            px[0] = px[0] * inv_opacity + blend_fn(r) * opacity;
-            px[1] = px[1] * inv_opacity + blend_fn(g) * opacity;
-            px[2] = px[2] * inv_opacity + blend_fn(b) * opacity;
+                for px in out.chunks_exact_mut(4) {
+                    let r = px[0].clamp(0.0, 1.0);
+                    let g = px[1].clamp(0.0, 1.0);
+                    let b = px[2].clamp(0.0, 1.0);
+                    px[0] = px[0] * inv_opacity + blend_fn(r) * opacity;
+                    px[1] = px[1] * inv_opacity + blend_fn(g) * opacity;
+                    px[2] = px[2] * inv_opacity + blend_fn(b) * opacity;
+                }
+            }
+
+            // ── Dissolve (18) ──────────────────────────────────────────
+            18 => {
+                for (i, _px) in out.chunks_exact_mut(4).enumerate() {
+                    let h = pcg_hash(i as u32);
+                    let threshold = (h as f64 / u32::MAX as f64) as f32;
+                    if threshold > opacity {
+                        // keep original — no change needed
+                    }
+                    // else: use blended pixel (identity for self-blend)
+                }
+            }
+
+            // ── Darker color (19) ──────────────────────────────────────
+            // Compare luminance of base vs blend pixel, keep the darker.
+            // For self-blend: identity (same pixel both sides).
+            19 | 20 => {
+                // No-op for self-blend. Opacity lerp with itself = identity.
+            }
+
+            // ── HSL modes (21-24) ──────────────────────────────────────
+            21..=24 => {
+                for px in out.chunks_exact_mut(4) {
+                    let (r, g, b) = (px[0].clamp(0.0, 1.0), px[1].clamp(0.0, 1.0), px[2].clamp(0.0, 1.0));
+                    // For self-blend, base == blend. Formulas still applied for correctness.
+                    let (ro, go, bo) = match self.mode {
+                        21 => { // hue: hue from blend, sat+lum from base
+                            let (sr, sg, sb) = set_sat(r, g, b, css_sat(r, g, b));
+                            set_lum(sr, sg, sb, css_lum(r, g, b))
+                        }
+                        22 => { // saturation: sat from blend, hue+lum from base
+                            let (sr, sg, sb) = set_sat(r, g, b, css_sat(r, g, b));
+                            set_lum(sr, sg, sb, css_lum(r, g, b))
+                        }
+                        23 => { // color: hue+sat from blend, lum from base
+                            set_lum(r, g, b, css_lum(r, g, b))
+                        }
+                        24 => { // luminosity: lum from blend, hue+sat from base
+                            set_lum(r, g, b, css_lum(r, g, b))
+                        }
+                        _ => (r, g, b),
+                    };
+                    px[0] = px[0] * inv_opacity + ro * opacity;
+                    px[1] = px[1] * inv_opacity + go * opacity;
+                    px[2] = px[2] * inv_opacity + bo * opacity;
+                }
+            }
+
+            _ => {} // unknown mode: identity
         }
+
         Ok(out)
     }
 
     fn gpu_shader_body(&self) -> Option<&'static str> {
-        Some(BLEND_WGSL)
+        Some(include_str!("../shaders/blend.wgsl"))
     }
 
     fn gpu_params(&self, width: u32, height: u32) -> Option<Vec<u8>> {
@@ -182,41 +310,6 @@ impl Filter for Blend {
         Some(buf)
     }
 }
-
-const BLEND_WGSL: &str = r#"
-struct Params { width: u32, height: u32, opacity: f32, mode: u32, }
-@group(0) @binding(2) var<uniform> params: Params;
-
-fn blend_ch(b: f32, mode: u32) -> f32 {
-    switch (mode) {
-        case 1u:  { return b * b; }
-        case 2u:  { return 1.0 - (1.0 - b) * (1.0 - b); }
-        case 3u:  { if (b < 0.5) { return 2.0 * b * b; } else { return 1.0 - 2.0 * (1.0 - b) * (1.0 - b); } }
-        case 4u:  { if (b < 0.5) { return b * (b + 0.5); } else { return 1.0 - (1.0 - b) * (1.5 - b); } }
-        case 5u:  { if (b < 0.5) { return 2.0 * b * b; } else { return 1.0 - 2.0 * (1.0 - b) * (1.0 - b); } }
-        case 6u:  { return min(b / (1.0 - b + 0.000001), 1.0); }
-        case 7u:  { return max(1.0 - (1.0 - b) / (b + 0.000001), 0.0); }
-        case 8u:  { return b; }
-        case 9u:  { return b; }
-        case 10u: { return 0.0; }
-        case 11u: { return b + b - 2.0 * b * b; }
-        case 12u: { return max(b + b - 1.0, 0.0); }
-        case 13u: { return min(b + b, 1.0); }
-        default:  { return b; }
-    }
-}
-
-@compute @workgroup_size(16, 16, 1)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    if (gid.x >= params.width || gid.y >= params.height) { return; }
-    let idx = gid.y * params.width + gid.x;
-    let p = load_pixel(idx);
-    let b = clamp(p, vec4(0.0), vec4(1.0));
-    let blended = vec4(blend_ch(b.x, params.mode), blend_ch(b.y, params.mode), blend_ch(b.z, params.mode), b.w);
-    let result = mix(p, blended, params.opacity);
-    store_pixel(idx, vec4(result.xyz, p.w));
-}
-"#;
 
 // ─── Blend If ──────────────────────────────────────────────────────────────
 
@@ -378,6 +471,120 @@ mod tests {
         let out = f.compute(&input, 1, 1).unwrap();
         for i in 0..3 {
             assert!((out[i] - input[i]).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn blend_overlay_midtone() {
+        // overlay at 0.5 => 2*0.5*0.5 = 0.5 (inflection point)
+        let input = pixel(0.5, 0.5, 0.5, 1.0);
+        let f = Blend { mode: 3, opacity: 1.0 };
+        let out = f.compute(&input, 1, 1).unwrap();
+        assert!((out[0] - 0.5).abs() < 1e-5);
+    }
+
+    #[test]
+    fn blend_vivid_light() {
+        // vivid_light at b=0.8 (>0.5): b / (2*(1-b)+eps) = 0.8 / 0.4 = 2.0 → clamped to 1.0
+        let input = pixel(0.8, 0.8, 0.8, 1.0);
+        let f = Blend { mode: 14, opacity: 1.0 };
+        let out = f.compute(&input, 1, 1).unwrap();
+        assert!((out[0] - 1.0).abs() < 1e-4, "vivid_light(0.8) should be ~1.0: {}", out[0]);
+    }
+
+    #[test]
+    fn blend_vivid_light_dark() {
+        // vivid_light at b=0.3 (<=0.5): 1 - (1-0.3)/(2*0.3) = 1 - 0.7/0.6 → clamp(0) = 0
+        let input = pixel(0.3, 0.3, 0.3, 1.0);
+        let f = Blend { mode: 14, opacity: 1.0 };
+        let out = f.compute(&input, 1, 1).unwrap();
+        assert!(out[0] <= 0.01, "vivid_light(0.3) should be ~0: {}", out[0]);
+    }
+
+    #[test]
+    fn blend_linear_light() {
+        // linear_light self-blend: 3*b - 1
+        // b=0.8 => 2.4-1 = 1.4 → clamped to 1.0
+        let input = pixel(0.8, 0.8, 0.8, 1.0);
+        let f = Blend { mode: 15, opacity: 1.0 };
+        let out = f.compute(&input, 1, 1).unwrap();
+        assert!((out[0] - 1.0).abs() < 1e-5, "linear_light(0.8) = {}", out[0]);
+        // b=0.5 => 1.5-1 = 0.5
+        let input2 = pixel(0.5, 0.5, 0.5, 1.0);
+        let out2 = f.compute(&input2, 1, 1).unwrap();
+        assert!((out2[0] - 0.5).abs() < 1e-5, "linear_light(0.5) = {}", out2[0]);
+    }
+
+    #[test]
+    fn blend_pin_light_self_blend_identity() {
+        // pin_light with self-blend is always identity
+        let input = pixel(0.3, 0.7, 0.5, 1.0);
+        let f = Blend { mode: 16, opacity: 1.0 };
+        let out = f.compute(&input, 1, 1).unwrap();
+        for i in 0..3 {
+            assert!((out[i] - input[i]).abs() < 1e-5, "pin_light ch{i}: {}", out[i]);
+        }
+    }
+
+    #[test]
+    fn blend_hard_mix_threshold() {
+        // hard_mix: 2*b >= 1 → 1, else 0
+        let bright = pixel(0.6, 0.6, 0.6, 1.0);
+        let f = Blend { mode: 17, opacity: 1.0 };
+        let out = f.compute(&bright, 1, 1).unwrap();
+        assert!((out[0] - 1.0).abs() < 1e-5, "hard_mix(0.6) should be 1.0");
+
+        let dark = pixel(0.4, 0.4, 0.4, 1.0);
+        let out2 = f.compute(&dark, 1, 1).unwrap();
+        assert!(out2[0].abs() < 1e-5, "hard_mix(0.4) should be 0.0");
+    }
+
+    #[test]
+    fn blend_dissolve_does_not_panic() {
+        let input = pixel(0.5, 0.5, 0.5, 1.0);
+        let f = Blend { mode: 18, opacity: 0.5 };
+        let out = f.compute(&input, 1, 1).unwrap();
+        assert_eq!(out.len(), 4);
+    }
+
+    #[test]
+    fn blend_darker_lighter_color_self_blend_identity() {
+        let input = pixel(0.3, 0.7, 0.5, 1.0);
+        for mode in [19, 20] {
+            let f = Blend { mode, opacity: 1.0 };
+            let out = f.compute(&input, 1, 1).unwrap();
+            for i in 0..4 {
+                assert!((out[i] - input[i]).abs() < 1e-6, "mode {mode} ch{i}");
+            }
+        }
+    }
+
+    #[test]
+    fn blend_hsl_modes_self_blend_identity() {
+        let input = pixel(0.3, 0.6, 0.9, 1.0);
+        for mode in 21..=24 {
+            let f = Blend { mode, opacity: 1.0 };
+            let out = f.compute(&input, 1, 1).unwrap();
+            for i in 0..3 {
+                assert!(
+                    (out[i] - input[i]).abs() < 0.02,
+                    "HSL mode {mode} ch{i}: expected ~{}, got {}",
+                    input[i], out[i]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn blend_all_modes_no_panic() {
+        let input = pixel(0.5, 0.3, 0.8, 1.0);
+        for mode in 0..=24 {
+            let f = Blend { mode, opacity: 0.7 };
+            let out = f.compute(&input, 1, 1).unwrap();
+            assert_eq!(out.len(), 4, "mode {mode} output length");
+            for i in 0..3 {
+                assert!(out[i].is_finite(), "mode {mode} ch{i} is NaN/Inf");
+            }
         }
     }
 
