@@ -1,0 +1,143 @@
+id: analysis-render-pass_20260406103200Z
+title: "Research: Multi-pass analysis-then-render pipeline execution"
+type: research
+status: pending
+created: '2026-04-06'
+updated: '2026-04-06'
+spec:
+  summary: |
+    Validate the existing StagedPipeline design against professional tool
+    models (DaVinci Resolve, Nuke, After Effects). Identify gaps between
+    what staged.rs provides and what full multi-pass analysis-then-render
+    needs. Produce implementation plan with concrete tracks.
+  context: |
+    Professional image/video tools use multi-pass execution:
+    1. Analysis pass — compute metadata (histogram, face ROI, energy map,
+       motion vectors, scene statistics)
+    2. Bind pass — apply analysis results as parameters to downstream nodes
+    3. Render pass — execute pixel pipeline with all params resolved
+
+    This is recursive: input -> smart_crop -> emboss -> smart_crop is valid.
+    Each analysis node creates a tile barrier (full image materializes),
+    analysis runs, then tiling resumes downstream. Multiple analysis nodes
+    in a chain create multiple barriers.
+
+    DaVinci Resolve additionally has:
+    - ROI negotiation pass (backwards) before render (forwards)
+    - Pre-computed analysis (face tracking, scene detection) cached across frames
+    - Tile-based render with analysis-aware tile scheduling
+
+    Nuke adds:
+    - Hash pass to detect which nodes changed
+    - ROI pass to negotiate buffer sizes
+    - Render pass with tile-based execution
+
+    The rasmcore V2 pipeline already has most of the infrastructure:
+    - StagedPipeline with AnalysisNode trait, ParamBinding, type validation
+    - InputRectEstimate::FullImage for tile barriers
+    - GPU multi-pass reduction (histogram, connected components)
+    - Demand-driven tile execution with spatial/layer caching
+
+    What is missing: StagedPipeline.execute() implementation, concrete
+    AnalysisNode impls, recursive analysis chain support, and integration
+    of analysis with the graph execution model.
+  codebase_analysis: |
+    staged.rs (existing):
+    - AnalysisNode trait: result_type() + analyze(input, w, h)
+    - AnalysisResult enum: Rect, Scalar, ScalarVec, Points, Matrix
+    - ParamBinding: source_node -> target_node.target_param with transform
+    - StagedPipeline: wraps Graph + bindings, validate/analyze/bind/execute phases
+    - Type checking: AnalysisResultType compatibility with ParamType
+    - Constraint validation: RectWithinUpstream, Range, MaxContext
+    - INCOMPLETE: add_analysis_node() is placeholder, execute() not implemented
+
+    graph.rs (existing):
+    - request_region handles FullImage by requesting full upstream rect
+    - Spatial cache stores materialized full images for downstream tile reuse
+    - GPU dispatch via collect_gpu_chain + executor.execute
+    - No explicit analysis phase — analysis is embedded in filter compute()
+
+    filters/analysis.rs (existing):
+    - SeamCarve, SmartCrop — inline analysis within compute()
+    - Comment documents DaVinci/Nuke two-phase model as future architecture
+    - Content-aware energy computation done per-pixel in render pass
+
+    gpu_shaders/reduction.rs + analysis.rs:
+    - Histogram256 3-pass reduction (proven, working)
+    - Connected components with convergence check
+    - Multi-pass shader chains with persistent ReductionBuffers
+  acceptance_criteria:
+    - Design document covering multi-pass execution model
+    - Gap analysis between staged.rs and full implementation
+    - Professional tool comparison (Resolve, Nuke, AE, PS)
+    - Recursive analysis chain design (smart_crop -> emboss -> smart_crop)
+    - Tile barrier interaction model documented
+    - GPU analysis dispatch design (histogram, energy map on GPU)
+    - Concrete implementation plan with track dependencies
+    - Assessment of what can be done incrementally vs what requires arch changes
+  out_of_scope: |
+    Implementation code. This track produces a design document only.
+    Concrete AnalysisNode implementations (separate tracks from findings).
+  technical_notes: |
+    Key design questions to investigate:
+
+    1. Recursive analysis chains:
+       - input -> analyze(histogram) -> auto_level -> analyze(crop) -> crop
+       - Each analyze node is a tile barrier
+       - Can the same analysis node appear multiple times in a chain?
+       - How does caching interact? (same analysis on same input = cache hit)
+
+    2. Analysis result lifecycle:
+       - When are analysis results invalidated? (upstream param change)
+       - Are they cached in the layer cache? (content-hash keyed)
+       - Can analysis results be shared across pipelines? (e.g., face ROI)
+
+    3. GPU analysis dispatch:
+       - Histogram as AnalysisNode (not just multi-pass filter)
+       - Energy map for seam carving as GPU compute
+       - Face detection as CPU analysis (no GPU path)
+       - How does GPU analysis interact with GPU render chain?
+
+    4. Tile barrier scheduling:
+       - Multiple barriers in a chain: what order do they execute?
+       - Memory: full image at each barrier — peak memory = N barriers * image size
+       - Can we pipeline: analyze barrier 1 while rendering post-barrier-1?
+
+    5. Professional tool passes we should support:
+       - Analysis pass (histogram, face, energy) — YES, via AnalysisNode
+       - ROI negotiation pass — PARTIALLY, via InputRectEstimate
+       - Hash/change detection pass — PARTIALLY, via content_hash
+       - Convergence pass — YES, via convergence_check on ReductionBuffer
+       - Multi-resolution pass — NOT YET, needs pyramid infrastructure
+
+    6. Incremental adoption:
+       - Can existing filters (Otsu, auto_level, equalize) migrate to
+         AnalysisNode without breaking the current API?
+       - Can StagedPipeline.execute() call Graph.request_full() internally?
+       - Can analysis nodes coexist with regular nodes in the same graph?
+
+    Output: .agent/kf/_reports/analysis-render-pass-design.md
+plan:
+  - phase: Professional Tool Survey
+    tasks:
+      - text: Document DaVinci Resolve pass model (ROI negotiate, render, composite)
+        done: false
+      - text: Document Nuke pass model (hash, ROI, render)
+        done: false
+      - text: Identify passes rasmcore should support (analysis, bind, render, convergence)
+        done: false
+  - phase: Gap Analysis
+    tasks:
+      - text: Audit staged.rs — what works, what is placeholder, what is missing
+        done: false
+      - text: Design recursive analysis chain execution model
+        done: false
+      - text: Design tile barrier interaction with analysis nodes
+        done: false
+  - phase: Implementation Plan
+    tasks:
+      - text: Write design document to .agent/kf/_reports/
+        done: false
+      - text: Produce concrete track specs for implementation (staged pipeline, analysis nodes, migration)
+        done: false
+extra: {}
