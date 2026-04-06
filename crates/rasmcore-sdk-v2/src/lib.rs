@@ -36,6 +36,8 @@ use rasmcore_pipeline_v2 as v2;
 use v2::{Graph, NodeInfo, ColorSpace, ParamMap, PipelineError};
 use v2::node::{Node, Upstream};
 use v2::rect::Rect;
+use v2::gpu_shaders::pixel_source;
+use v2::hash::source_hash_pixels;
 
 // ─── Source Node ────────────────────────────────────────────────────────────
 
@@ -51,6 +53,47 @@ impl Node for SourceNode {
     }
     fn upstream_ids(&self) -> Vec<u32> { vec![] }
 }
+
+// ─── Host-Decoded Pixel Source Node ────────────────────────────────────────
+
+struct SourceNodePixels {
+    raw_bytes: Vec<u8>,
+    format: HostPixelFormat,
+    info: NodeInfo,
+}
+
+impl Node for SourceNodePixels {
+    fn info(&self) -> NodeInfo { self.info.clone() }
+    fn compute(&self, _r: Rect, _u: &mut dyn Upstream) -> Result<Vec<f32>, PipelineError> {
+        match self.format {
+            HostPixelFormat::Rgba8 => Ok(v2::color_math::srgb_rgba8_to_f32_linear(&self.raw_bytes)),
+            HostPixelFormat::Rgba16 => {
+                let mut out = Vec::with_capacity((self.info.width * self.info.height * 4) as usize);
+                for chunk in self.raw_bytes.chunks_exact(8) {
+                    out.push(u16::from_le_bytes([chunk[0], chunk[1]]) as f32 / 65535.0);
+                    out.push(u16::from_le_bytes([chunk[2], chunk[3]]) as f32 / 65535.0);
+                    out.push(u16::from_le_bytes([chunk[4], chunk[5]]) as f32 / 65535.0);
+                    out.push(u16::from_le_bytes([chunk[6], chunk[7]]) as f32 / 65535.0);
+                }
+                Ok(out)
+            }
+            HostPixelFormat::RgbaF32 => {
+                let mut out = Vec::with_capacity(self.raw_bytes.len() / 4);
+                for chunk in self.raw_bytes.chunks_exact(4) {
+                    out.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+                }
+                Ok(out)
+            }
+        }
+    }
+    fn gpu_shader(&self, width: u32, height: u32) -> Option<v2::GpuShader> {
+        pixel_source::conversion_shader(self.format, &self.raw_bytes, width, height)
+    }
+    fn upstream_ids(&self) -> Vec<u32> { vec![] }
+}
+
+// Re-export HostPixelFormat for SDK consumers
+pub use v2::gpu_shaders::pixel_source::HostPixelFormat;
 
 // ─── Pipeline ──────────────────────────────────────────────────────────────
 
@@ -96,6 +139,51 @@ impl Pipeline {
         let graph = Rc::new(RefCell::new(graph));
         let node = graph.borrow_mut().add_node(Box::new(source));
         Ok(Pipeline { graph, node })
+    }
+
+    /// Create a pipeline from host-decoded raw pixel bytes.
+    ///
+    /// Accepts u8 sRGB, u16 linear, or f32 linear pixels. For non-f32 formats,
+    /// a GPU conversion shader is prepended to the pipeline chain.
+    pub fn open_pixels(data: Vec<u8>, width: u32, height: u32, format: HostPixelFormat) -> Self {
+        let mut graph = Graph::new(16 * 1024 * 1024);
+
+        if let Ok(executor) = rasmcore_gpu_native::WgpuExecutorV2::try_new() {
+            graph.set_gpu_executor(Rc::new(executor));
+        }
+
+        let format_tag = match format {
+            HostPixelFormat::Rgba8 => "source-rgba8",
+            HostPixelFormat::Rgba16 => "source-rgba16",
+            HostPixelFormat::RgbaF32 => "source-f32",
+        };
+        let src_hash = source_hash_pixels(format_tag, &data, width, height);
+
+        let color_space = match format {
+            HostPixelFormat::Rgba8 => ColorSpace::Srgb,
+            HostPixelFormat::Rgba16 | HostPixelFormat::RgbaF32 => ColorSpace::Linear,
+        };
+
+        let node: Box<dyn Node> = if format == HostPixelFormat::RgbaF32 {
+            let mut pixels = Vec::with_capacity((width * height * 4) as usize);
+            for chunk in data.chunks_exact(4) {
+                pixels.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+            }
+            Box::new(SourceNode {
+                pixels,
+                info: NodeInfo { width, height, color_space },
+            })
+        } else {
+            Box::new(SourceNodePixels {
+                raw_bytes: data,
+                format,
+                info: NodeInfo { width, height, color_space },
+            })
+        };
+
+        let graph = Rc::new(RefCell::new(graph));
+        let id = graph.borrow_mut().add_node_with_hash(node, src_hash);
+        Pipeline { graph, node: id }
     }
 
     /// Create a pipeline from raw f32 RGBA pixels.
@@ -350,5 +438,55 @@ mod tests {
         let pipe = Pipeline::from_pixels(px, 4, 4);
         let result = pipe.apply("nonexistent_filter", &ParamMap::new());
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn open_pixels_rgba8_cpu_conversion() {
+        // Known sRGB u8 value: 128 (0.502) -> sRGB EOTF -> ~0.2158 linear
+        let u8_pixels: Vec<u8> = vec![128, 128, 128, 255, 0, 0, 0, 255];
+        let pipe = Pipeline::open_pixels(u8_pixels, 2, 1, HostPixelFormat::Rgba8);
+        let info = pipe.info();
+        assert_eq!(info.width, 2);
+        assert_eq!(info.height, 1);
+        let rendered = pipe.render().unwrap();
+        assert_eq!(rendered.len(), 2 * 1 * 4);
+        // sRGB 128/255 = 0.502 -> linear ~0.2158
+        let expected = v2::color_math::srgb_to_linear(128.0 / 255.0);
+        assert!((rendered[0] - expected).abs() < 1e-5, "r: {} vs {}", rendered[0], expected);
+        assert!((rendered[1] - expected).abs() < 1e-5, "g: {} vs {}", rendered[1], expected);
+        assert!((rendered[2] - expected).abs() < 1e-5, "b: {} vs {}", rendered[2], expected);
+        assert!((rendered[3] - 1.0).abs() < 1e-5, "a should be 1.0");
+        // Second pixel: sRGB 0 -> linear 0
+        assert!((rendered[4]).abs() < 1e-5, "black r should be 0");
+    }
+
+    #[test]
+    fn open_pixels_rgba16_normalization() {
+        // u16 value 32768 = 0.5 (already linear)
+        let mut data = Vec::new();
+        data.extend_from_slice(&32768u16.to_le_bytes()); // R
+        data.extend_from_slice(&32768u16.to_le_bytes()); // G
+        data.extend_from_slice(&32768u16.to_le_bytes()); // B
+        data.extend_from_slice(&65535u16.to_le_bytes()); // A
+        let pipe = Pipeline::open_pixels(data, 1, 1, HostPixelFormat::Rgba16);
+        let rendered = pipe.render().unwrap();
+        assert_eq!(rendered.len(), 4);
+        let expected = 32768.0 / 65535.0;
+        assert!((rendered[0] - expected).abs() < 1e-5, "r: {} vs {}", rendered[0], expected);
+        assert!((rendered[3] - 1.0).abs() < 1e-5, "a should be 1.0");
+    }
+
+    #[test]
+    fn open_pixels_f32_passthrough() {
+        // f32 pixels passed through unchanged
+        let f32_vals: Vec<f32> = vec![0.5, 0.3, 0.1, 1.0];
+        let bytes: Vec<u8> = f32_vals.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let pipe = Pipeline::open_pixels(bytes, 1, 1, HostPixelFormat::RgbaF32);
+        let rendered = pipe.render().unwrap();
+        assert_eq!(rendered.len(), 4);
+        assert!((rendered[0] - 0.5).abs() < 1e-6);
+        assert!((rendered[1] - 0.3).abs() < 1e-6);
+        assert!((rendered[2] - 0.1).abs() < 1e-6);
+        assert!((rendered[3] - 1.0).abs() < 1e-6);
     }
 }
