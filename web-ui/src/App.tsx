@@ -112,10 +112,8 @@ export default function App() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/immutability
     worker.onLoadedRef.current = () => {
-      // Trigger proxy render first (fast), then background warm follows via onProxyComplete
-      const chain = serializeChainRef.current();
-      preview.processChain(chain);
-      preview.processScope(chain, selectedScopeRef.current);
+      // Trigger unified multi-output render (viewport + scopes in one pipeline execution)
+      preview.processMulti(serializeChainRef.current(), [selectedScopeRef.current]);
     };
   }, [worker, preview]);
 
@@ -169,9 +167,7 @@ export default function App() {
   // Apply chain via proxy first (fast ~1080p), then background warm follows automatically
   const applyFullChain = useCallback(() => {
     if (!activeLayer?.imageBytes) return;
-    const chain = serializeChainRef.current();
-    preview.processChain(chain);
-    preview.processScope(chain, selectedScopeRef.current);
+    preview.processMulti(serializeChainRef.current(), [selectedScopeRef.current]);
   }, [activeLayer, preview]);
 
   const requestCompositeProcess = useCallback(() => {
@@ -221,19 +217,17 @@ export default function App() {
   const selectedScopeRef = useRef('scope_histogram');
   const handleScopeChange = useCallback((scope: string) => {
     selectedScopeRef.current = scope;
-    // Trigger immediate scope render with current chain
+    // Trigger unified render with new scope selection
     if (activeLayer?.imageBytes) {
-      preview.processScope(serializeChainRef.current(), scope);
+      preview.processMulti(serializeChainRef.current(), [scope]);
     }
   }, [preview, activeLayer]);
 
   // Send preview immediately — single-slot queue in usePreviewWorker drops
   // stale requests automatically (latest params always win).
+  // Unified preview — viewport + scopes in one pipeline execution
   const schedulePreview = useCallback(() => {
-    const chain = serializeChainRef.current();
-    preview.processChain(chain);
-    // Also update scope
-    preview.processScope(chain, selectedScopeRef.current);
+    preview.processMulti(serializeChainRef.current(), [selectedScopeRef.current]);
   }, [preview]);
 
   const handleDownload = useCallback(

@@ -224,6 +224,31 @@ export function usePreviewWorker() {
     [],
   );
 
+  /** Unified multi-output render: viewport + scopes in one pipeline execution.
+   *  Falls back to legacy separate paths if multi-output is unavailable. */
+  const processMulti = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (chain: any[], scopes: string[]) => {
+      if (!workerRef.current || !readyRef.current) return;
+      if (processingRef.current) {
+        queuedChainRef.current = chain;
+        return;
+      }
+      processingRef.current = true;
+      setState((s) => ({ ...s, processing: true }));
+      workerRef.current.postMessage({ type: 'process-multi', chain, scopes });
+    },
+    [],
+  );
+
+  /** Register a scope OffscreenCanvas as a display target in the GPU handler. */
+  const registerScopeDisplay = useCallback((name: string, canvas: OffscreenCanvas, hdr: boolean) => {
+    workerRef.current?.postMessage(
+      { type: 'init-scope-display', name, canvas, hdr },
+      [canvas],
+    );
+  }, []);
+
   /** Queue an OffscreenCanvas to be sent to the worker for WebGPU display. */
   const setDisplayCanvas = useCallback((canvas: OffscreenCanvas, hdr: boolean) => {
     if (readyRef.current && workerRef.current) {
@@ -278,6 +303,8 @@ export function usePreviewWorker() {
     loadImage,
     processChain,
     processScope,
+    processMulti,
+    registerScopeDisplay,
     setDisplayCanvas,
     setOriginalDisplayCanvas,
     resizeCanvas,

@@ -362,7 +362,155 @@ function handleViewport(data: any) {
   }
 }
 
-// ─── Scope Rendering ──────────────────────────────────────────────────────
+// ─── Multi-output rendering (ref/branch/display) ─────────────────────────
+
+async function processMulti(chain: any[], scopes: string[]) {
+  if (!previewBytes && !currentSource) {
+    self.postMessage({ type: 'error', message: 'No image loaded' });
+    return;
+  }
+
+  const t0 = performance.now();
+  let pipeRaw: any = null;
+  try {
+    let pipe = createPipelineFromSource();
+    if (!pipe) {
+      self.postMessage({ type: 'error', message: 'Failed to create pipeline' });
+      return;
+    }
+    pipeRaw = pipe._pipe;
+
+    // Apply filter chain
+    for (const step of chain) {
+      const method = snakeToCamel(step.name);
+      if (typeof pipe[method] !== 'function') {
+        const raw = pipe._pipe;
+        if (raw && typeof raw.applyFilter === 'function') {
+          const paramBuf = buildParamBuf(step.params, step.paramValues);
+          const node = raw.applyFilter(pipe._node, step.name, paramBuf);
+          pipe = Object.create(Pipeline.prototype);
+          pipe._pipe = raw;
+          pipe._node = node;
+        }
+        continue;
+      }
+      if (!step.params || step.params.length === 0) {
+        pipe = pipe[method]();
+      } else {
+        const config = buildConfig(step.params, step.paramValues);
+        pipe = pipe[method](config);
+      }
+    }
+
+    // Set ref at the end of the chain for scope branches
+    const raw = pipe._pipe;
+    const viewportNode = pipe._node;
+    if (typeof raw.setRef === 'function') {
+      raw.setRef('main', viewportNode);
+    }
+
+    // Build display targets: viewport + each scope
+    const targets: [string, number][] = [['viewport', viewportNode]];
+
+    for (const scopeName of scopes) {
+      // Branch from ref, append scope filter
+      if (typeof raw.applyFilter === 'function') {
+        const scopeNode = raw.applyFilter(viewportNode, scopeName, new Uint8Array(0));
+        targets.push([scopeName, scopeNode]);
+      }
+    }
+
+    // Try GPU multi-plan dispatch
+    let multiDisplayed = false;
+    if (gpuHandler && displayMode && gpuHandler.hasDisplay('viewport') && typeof raw.renderMultiGpuPlan === 'function') {
+      try {
+        const plan = raw.renderMultiGpuPlan(targets);
+        if (plan && plan.stages && plan.stages.length > 0) {
+          const multiStages = plan.stages.map(s => ({
+            name: s.targetName,
+            shaders: s.shaders.map(sh => ({
+              source: sh.source,
+              entryPoint: sh.entryPoint,
+              workgroupX: sh.workgroupX,
+              workgroupY: sh.workgroupY,
+              workgroupZ: sh.workgroupZ,
+              params: new Uint8Array(sh.params),
+              extraBuffers: sh.extraBuffers.map(b => new Uint8Array(b)),
+            })),
+            input: s.input.tag === 'pixels'
+              ? { tag: 'pixels' as const, data: new Float32Array(s.input.val) }
+              : { tag: 'prior' as const, name: s.input.val },
+            width: s.width,
+            height: s.height,
+          }));
+
+          const err = await gpuHandler.executeMulti(multiStages);
+          if (!err) multiDisplayed = true;
+        }
+      } catch (e: any) {
+        console.warn('[v2-preview] Multi GPU dispatch failed, falling back:', e?.message);
+      }
+    }
+
+    if (multiDisplayed) {
+      const totalMs = Math.round(performance.now() - t0);
+      const trace = collectTrace(raw);
+      logTrace(trace, totalMs);
+      self.postMessage({ type: 'displayed', totalMs, proxyMax: PREVIEW_MAX, trace, multi: true });
+      return;
+    }
+
+    // CPU fallback: render viewport via existing single-output path
+    // Viewport
+    if (displayMode && gpuHandler?.hasDisplay('viewport')) {
+      try {
+        const pixels = raw.render(viewportNode);
+        if (pixels && pixels.length > 0) {
+          const info = raw.nodeInfo(viewportNode);
+          const f32 = pixels instanceof Float32Array ? pixels : new Float32Array(pixels);
+          gpuHandler.displayFromCpu('viewport', f32, info.width, info.height);
+        }
+      } catch (_) { /* fall through */ }
+    }
+
+    // Scopes — render to PNG (CPU path, but chain is already cached from viewport render)
+    for (const scopeName of scopes) {
+      try {
+        const scopeNode = raw.applyFilter(viewportNode, scopeName, new Uint8Array(0));
+        const scopePixels = raw.render(scopeNode);
+        if (scopePixels && scopePixels.length > 0) {
+          const scopeInfo = raw.nodeInfo(scopeNode);
+          // If scope has a display target, use GPU blit
+          if (gpuHandler?.hasDisplay(scopeName)) {
+            const f32 = scopePixels instanceof Float32Array ? scopePixels : new Float32Array(scopePixels);
+            gpuHandler.displayFromCpu(scopeName, f32, scopeInfo.width, scopeInfo.height);
+          } else {
+            // PNG fallback for scope
+            const pngPipe = Object.create(Pipeline.prototype);
+            pngPipe._pipe = raw;
+            pngPipe._node = scopeNode;
+            const output = pngPipe.write('png');
+            const buf = output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength);
+            self.postMessage({ type: 'scope-result', png: buf, scopeName, totalMs: 0 }, [buf]);
+          }
+        }
+      } catch (_) { /* scope failure is non-critical */ }
+    }
+
+    const totalMs = Math.round(performance.now() - t0);
+    self.postMessage({ type: 'displayed', totalMs, proxyMax: PREVIEW_MAX, multi: true });
+  } catch (e: any) {
+    const detail = e?.payload ? JSON.stringify(e.payload, null, 2) : e?.message || String(e);
+    console.error('[v2-preview] Multi process failed:', detail);
+    self.postMessage({ type: 'error', message: detail });
+  } finally {
+    if (pipeRaw && typeof pipeRaw.finalizeLayerCache === 'function') {
+      try { pipeRaw.finalizeLayerCache(); } catch { /* ignore */ }
+    }
+  }
+}
+
+// ─── Scope Rendering (legacy single-scope path) ─────────────────────────
 
 async function processScope(chain: any[], scopeName: string) {
   if (!previewBytes && !currentSource) {
@@ -444,8 +592,17 @@ self.onmessage = (e) => {
     case 'viewport':
       handleViewport(e.data);
       break;
+    case 'process-multi':
+      processMulti(e.data.chain, e.data.scopes || []);
+      break;
     case 'process-scope':
       processScope(e.data.chain, e.data.scopeName);
+      break;
+    case 'init-scope-display':
+      if (gpuHandler) {
+        gpuHandler.addDisplay(e.data.name, e.data.canvas, e.data.hdr ?? false);
+        console.log(`[v2-preview] Scope display registered: ${e.data.name}`);
+      }
       break;
     case 'set-tracing':
       tracingEnabled = !!e.data.enabled;
