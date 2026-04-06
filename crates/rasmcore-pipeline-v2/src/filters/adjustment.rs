@@ -4,6 +4,7 @@
 //! for fusion optimizer). These are per-channel operations: f(v) applied
 //! independently to R, G, B. Alpha is preserved unchanged.
 
+use crate::lmt::Lmt;
 use crate::node::PipelineError;
 use crate::ops::{Filter, PointOpExpr};
 
@@ -18,24 +19,22 @@ pub struct Brightness {
     pub amount: f32,
 }
 
-impl Filter for Brightness {
-    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
-        let _ = (width, height);
-        let offset = self.amount;
-        let mut out = input.to_vec();
-        for pixel in out.chunks_exact_mut(4) {
-            pixel[0] += offset;
-            pixel[1] += offset;
-            pixel[2] += offset;
-        }
-        Ok(out)
-    }
-
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
-        Some(PointOpExpr::Add(
+impl Brightness {
+    pub fn to_lmt(&self) -> Lmt {
+        Lmt::Analytical(PointOpExpr::Add(
             Box::new(PointOpExpr::Input),
             Box::new(PointOpExpr::Constant(self.amount)),
         ))
+    }
+}
+
+impl Filter for Brightness {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        Ok(self.to_lmt().apply(input))
+    }
+
+    fn analytic_expression(&self) -> Option<PointOpExpr> {
+        self.to_lmt().to_analytical()
     }
 }
 
@@ -50,22 +49,10 @@ pub struct Contrast {
     pub amount: f32,
 }
 
-impl Filter for Contrast {
-    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
-        let _ = (width, height);
+impl Contrast {
+    pub fn to_lmt(&self) -> Lmt {
         let factor = 1.0 + self.amount;
-        let mut out = input.to_vec();
-        for pixel in out.chunks_exact_mut(4) {
-            pixel[0] = (pixel[0] - 0.5) * factor + 0.5;
-            pixel[1] = (pixel[1] - 0.5) * factor + 0.5;
-            pixel[2] = (pixel[2] - 0.5) * factor + 0.5;
-        }
-        Ok(out)
-    }
-
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
-        let factor = 1.0 + self.amount;
-        Some(PointOpExpr::Add(
+        Lmt::Analytical(PointOpExpr::Add(
             Box::new(PointOpExpr::Mul(
                 Box::new(PointOpExpr::Sub(
                     Box::new(PointOpExpr::Input),
@@ -75,6 +62,16 @@ impl Filter for Contrast {
             )),
             Box::new(PointOpExpr::Constant(0.5)),
         ))
+    }
+}
+
+impl Filter for Contrast {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        Ok(self.to_lmt().apply(input))
+    }
+
+    fn analytic_expression(&self) -> Option<PointOpExpr> {
+        self.to_lmt().to_analytical()
     }
 }
 
@@ -88,27 +85,25 @@ pub struct Gamma {
     pub gamma: f32,
 }
 
-impl Filter for Gamma {
-    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
-        let _ = (width, height);
-        let inv_gamma = 1.0 / self.gamma;
-        let mut out = input.to_vec();
-        for pixel in out.chunks_exact_mut(4) {
-            pixel[0] = pixel[0].max(0.0).powf(inv_gamma);
-            pixel[1] = pixel[1].max(0.0).powf(inv_gamma);
-            pixel[2] = pixel[2].max(0.0).powf(inv_gamma);
-        }
-        Ok(out)
-    }
-
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
-        Some(PointOpExpr::Pow(
+impl Gamma {
+    pub fn to_lmt(&self) -> Lmt {
+        Lmt::Analytical(PointOpExpr::Pow(
             Box::new(PointOpExpr::Max(
                 Box::new(PointOpExpr::Input),
                 Box::new(PointOpExpr::Constant(0.0)),
             )),
             Box::new(PointOpExpr::Constant(1.0 / self.gamma)),
         ))
+    }
+}
+
+impl Filter for Gamma {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        Ok(self.to_lmt().apply(input))
+    }
+
+    fn analytic_expression(&self) -> Option<PointOpExpr> {
+        self.to_lmt().to_analytical()
     }
 }
 
@@ -129,25 +124,23 @@ pub struct Exposure {
     pub ev: f32,
 }
 
-impl Filter for Exposure {
-    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
-        let _ = (width, height);
+impl Exposure {
+    pub fn to_lmt(&self) -> Lmt {
         let multiplier = 2.0f32.powf(self.ev);
-        let mut out = input.to_vec();
-        for pixel in out.chunks_exact_mut(4) {
-            pixel[0] *= multiplier;
-            pixel[1] *= multiplier;
-            pixel[2] *= multiplier;
-        }
-        Ok(out)
-    }
-
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
-        let multiplier = 2.0f32.powf(self.ev);
-        Some(PointOpExpr::Mul(
+        Lmt::Analytical(PointOpExpr::Mul(
             Box::new(PointOpExpr::Input),
             Box::new(PointOpExpr::Constant(multiplier)),
         ))
+    }
+}
+
+impl Filter for Exposure {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        Ok(self.to_lmt().apply(input))
+    }
+
+    fn analytic_expression(&self) -> Option<PointOpExpr> {
+        self.to_lmt().to_analytical()
     }
 }
 
@@ -158,23 +151,22 @@ impl Filter for Exposure {
 #[filter(name = "invert", category = "adjustment", cost = "O(n)")]
 pub struct Invert;
 
-impl Filter for Invert {
-    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
-        let _ = (width, height);
-        let mut out = input.to_vec();
-        for pixel in out.chunks_exact_mut(4) {
-            pixel[0] = 1.0 - pixel[0];
-            pixel[1] = 1.0 - pixel[1];
-            pixel[2] = 1.0 - pixel[2];
-        }
-        Ok(out)
-    }
-
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
-        Some(PointOpExpr::Sub(
+impl Invert {
+    pub fn to_lmt(&self) -> Lmt {
+        Lmt::Analytical(PointOpExpr::Sub(
             Box::new(PointOpExpr::Constant(1.0)),
             Box::new(PointOpExpr::Input),
         ))
+    }
+}
+
+impl Filter for Invert {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        Ok(self.to_lmt().apply(input))
+    }
+
+    fn analytic_expression(&self) -> Option<PointOpExpr> {
+        self.to_lmt().to_analytical()
     }
 }
 
@@ -195,24 +187,10 @@ pub struct Levels {
     pub gamma: f32,
 }
 
-impl Filter for Levels {
-    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
-        let _ = (width, height);
+impl Levels {
+    pub fn to_lmt(&self) -> Lmt {
         let range = (self.white - self.black).max(1e-6);
-        let inv_gamma = 1.0 / self.gamma;
-        let black = self.black;
-        let mut out = input.to_vec();
-        for pixel in out.chunks_exact_mut(4) {
-            pixel[0] = ((pixel[0] - black) / range).max(0.0).powf(inv_gamma);
-            pixel[1] = ((pixel[1] - black) / range).max(0.0).powf(inv_gamma);
-            pixel[2] = ((pixel[2] - black) / range).max(0.0).powf(inv_gamma);
-        }
-        Ok(out)
-    }
-
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
-        let range = (self.white - self.black).max(1e-6);
-        Some(PointOpExpr::Pow(
+        Lmt::Analytical(PointOpExpr::Pow(
             Box::new(PointOpExpr::Max(
                 Box::new(PointOpExpr::Div(
                     Box::new(PointOpExpr::Sub(
@@ -228,6 +206,16 @@ impl Filter for Levels {
     }
 }
 
+impl Filter for Levels {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        Ok(self.to_lmt().apply(input))
+    }
+
+    fn analytic_expression(&self) -> Option<PointOpExpr> {
+        self.to_lmt().to_analytical()
+    }
+}
+
 /// Posterize — reduce to N discrete levels.
 ///
 /// `output = floor(input * levels) / (levels - 1)`
@@ -238,24 +226,11 @@ pub struct Posterize {
     pub levels: u8,
 }
 
-impl Filter for Posterize {
-    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
-        let _ = (width, height);
+impl Posterize {
+    pub fn to_lmt(&self) -> Lmt {
         let n = self.levels as f32;
         let inv = 1.0 / (n - 1.0).max(1.0);
-        let mut out = input.to_vec();
-        for pixel in out.chunks_exact_mut(4) {
-            pixel[0] = (pixel[0] * n).floor().min(n - 1.0) * inv;
-            pixel[1] = (pixel[1] * n).floor().min(n - 1.0) * inv;
-            pixel[2] = (pixel[2] * n).floor().min(n - 1.0) * inv;
-        }
-        Ok(out)
-    }
-
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
-        let n = self.levels as f32;
-        let inv = 1.0 / (n - 1.0).max(1.0);
-        Some(PointOpExpr::Mul(
+        Lmt::Analytical(PointOpExpr::Mul(
             Box::new(PointOpExpr::Min(
                 Box::new(PointOpExpr::Floor(Box::new(PointOpExpr::Mul(
                     Box::new(PointOpExpr::Input),
@@ -265,6 +240,16 @@ impl Filter for Posterize {
             )),
             Box::new(PointOpExpr::Constant(inv)),
         ))
+    }
+}
+
+impl Filter for Posterize {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        Ok(self.to_lmt().apply(input))
+    }
+
+    fn analytic_expression(&self) -> Option<PointOpExpr> {
+        self.to_lmt().to_analytical()
     }
 }
 
@@ -285,26 +270,16 @@ pub struct SigmoidalContrast {
     pub sharpen: bool,
 }
 
-impl Filter for SigmoidalContrast {
-    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
-        let _ = (width, height);
-        let a = self.strength;
-        let b = self.midpoint;
-        let sharpen = self.sharpen;
-        let mut out = input.to_vec();
-        for pixel in out.chunks_exact_mut(4) {
-            pixel[0] = sigmoidal(pixel[0], a, b, sharpen);
-            pixel[1] = sigmoidal(pixel[1], a, b, sharpen);
-            pixel[2] = sigmoidal(pixel[2], a, b, sharpen);
-        }
-        Ok(out)
+impl SigmoidalContrast {
+    pub fn to_lmt(&self) -> Lmt {
+        Lmt::Analytical(self.build_expr())
     }
 
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
+    fn build_expr(&self) -> PointOpExpr {
         let a = self.strength;
         let b = self.midpoint;
         if a.abs() < 1e-6 {
-            return Some(PointOpExpr::Input);
+            return PointOpExpr::Input;
         }
         if self.sharpen {
             // sig(x) = 1/(1+exp(-a*(x-b)))
@@ -315,7 +290,7 @@ impl Filter for SigmoidalContrast {
             let sig_1 = 1.0 / (1.0 + (-a * (1.0 - b)).exp());
             let den = sig_1 - sig_0;
             if den.abs() < 1e-10 {
-                return Some(PointOpExpr::Input);
+                return PointOpExpr::Input;
             }
             // 1/(1+exp(-a*(v-b))) expressed as tree
             let neg_a_v_minus_b = PointOpExpr::Mul(
@@ -333,19 +308,19 @@ impl Filter for SigmoidalContrast {
                 )),
             );
             // (sigmoid - sig_0) / den
-            Some(PointOpExpr::Div(
+            PointOpExpr::Div(
                 Box::new(PointOpExpr::Sub(
                     Box::new(sigmoid),
                     Box::new(PointOpExpr::Constant(sig_0)),
                 )),
                 Box::new(PointOpExpr::Constant(den)),
-            ))
+            )
         } else {
             // Inverse sigmoidal
             let sig_mid = 1.0 / (1.0 + (-a * b).exp());
             let sig_range = 1.0 / (1.0 + (-a * (1.0 - b)).exp()) - sig_mid;
             if sig_range.abs() < 1e-10 {
-                return Some(PointOpExpr::Input);
+                return PointOpExpr::Input;
             }
             // t = sig_mid + v * sig_range
             // out = b - ln(1/t - 1) / a
@@ -364,17 +339,28 @@ impl Filter for SigmoidalContrast {
                 )),
                 Box::new(PointOpExpr::Constant(1.0)),
             );
-            Some(PointOpExpr::Sub(
+            PointOpExpr::Sub(
                 Box::new(PointOpExpr::Constant(b)),
                 Box::new(PointOpExpr::Div(
                     Box::new(PointOpExpr::Ln(Box::new(inv_t_minus_1))),
                     Box::new(PointOpExpr::Constant(a)),
                 )),
-            ))
+            )
         }
     }
 }
 
+impl Filter for SigmoidalContrast {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        Ok(self.to_lmt().apply(input))
+    }
+
+    fn analytic_expression(&self) -> Option<PointOpExpr> {
+        self.to_lmt().to_analytical()
+    }
+}
+
+#[allow(dead_code)] // Retained for reference — compute() now uses Lmt::apply(PointOpExpr)
 fn sigmoidal(v: f32, strength: f32, midpoint: f32, sharpen: bool) -> f32 {
     if strength.abs() < 1e-6 {
         return v;
@@ -406,25 +392,23 @@ pub struct Dodge {
     pub amount: f32,
 }
 
-impl Filter for Dodge {
-    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
-        let _ = (width, height);
+impl Dodge {
+    pub fn to_lmt(&self) -> Lmt {
         let divisor = (1.0 - self.amount).max(1e-6);
-        let mut out = input.to_vec();
-        for pixel in out.chunks_exact_mut(4) {
-            pixel[0] /= divisor;
-            pixel[1] /= divisor;
-            pixel[2] /= divisor;
-        }
-        Ok(out)
-    }
-
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
-        let divisor = (1.0 - self.amount).max(1e-6);
-        Some(PointOpExpr::Div(
+        Lmt::Analytical(PointOpExpr::Div(
             Box::new(PointOpExpr::Input),
             Box::new(PointOpExpr::Constant(divisor)),
         ))
+    }
+}
+
+impl Filter for Dodge {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        Ok(self.to_lmt().apply(input))
+    }
+
+    fn analytic_expression(&self) -> Option<PointOpExpr> {
+        self.to_lmt().to_analytical()
     }
 }
 
@@ -438,22 +422,10 @@ pub struct Burn {
     pub amount: f32,
 }
 
-impl Filter for Burn {
-    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
-        let _ = (width, height);
+impl Burn {
+    pub fn to_lmt(&self) -> Lmt {
         let amt = self.amount.max(1e-6);
-        let mut out = input.to_vec();
-        for pixel in out.chunks_exact_mut(4) {
-            pixel[0] = 1.0 - (1.0 - pixel[0]) / amt;
-            pixel[1] = 1.0 - (1.0 - pixel[1]) / amt;
-            pixel[2] = 1.0 - (1.0 - pixel[2]) / amt;
-        }
-        Ok(out)
-    }
-
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
-        let amt = self.amount.max(1e-6);
-        Some(PointOpExpr::Sub(
+        Lmt::Analytical(PointOpExpr::Sub(
             Box::new(PointOpExpr::Constant(1.0)),
             Box::new(PointOpExpr::Div(
                 Box::new(PointOpExpr::Sub(
@@ -463,6 +435,16 @@ impl Filter for Burn {
                 Box::new(PointOpExpr::Constant(amt)),
             )),
         ))
+    }
+}
+
+impl Filter for Burn {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        Ok(self.to_lmt().apply(input))
+    }
+
+    fn analytic_expression(&self) -> Option<PointOpExpr> {
+        self.to_lmt().to_analytical()
     }
 }
 
@@ -476,22 +458,9 @@ pub struct Solarize {
     pub threshold: f32,
 }
 
-impl Filter for Solarize {
-    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
-        let _ = (width, height);
-        let thresh = self.threshold;
-        let mut out = input.to_vec();
-        for pixel in out.chunks_exact_mut(4) {
-            if pixel[0] > thresh { pixel[0] = 1.0 - pixel[0]; }
-            if pixel[1] > thresh { pixel[1] = 1.0 - pixel[1]; }
-            if pixel[2] > thresh { pixel[2] = 1.0 - pixel[2]; }
-        }
-        Ok(out)
-    }
-
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
-        // if (v - threshold) > 0 then (1 - v) else v
-        Some(PointOpExpr::Select(
+impl Solarize {
+    pub fn to_lmt(&self) -> Lmt {
+        Lmt::Analytical(PointOpExpr::Select(
             Box::new(PointOpExpr::Sub(
                 Box::new(PointOpExpr::Input),
                 Box::new(PointOpExpr::Constant(self.threshold)),
@@ -502,6 +471,16 @@ impl Filter for Solarize {
             )),
             Box::new(PointOpExpr::Input),
         ))
+    }
+}
+
+impl Filter for Solarize {
+    fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
+        Ok(self.to_lmt().apply(input))
+    }
+
+    fn analytic_expression(&self) -> Option<PointOpExpr> {
+        self.to_lmt().to_analytical()
     }
 }
 
