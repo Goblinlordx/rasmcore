@@ -587,9 +587,34 @@ impl Filter for SmartCrop {
         Ok(out)
     }
 
-    // Smart crop requests full image — needs all pixels for energy analysis.
-    // Output dimensions are ratio-based (known from params).
-    // Future: proper two-phase analysis→render pipeline separation.
+    // ## GPU status: CPU-only
+    //
+    // Smart crop cannot run on GPU in the current architecture because it
+    // requires an **analysis→render phase separation** that doesn't exist yet:
+    //
+    // 1. Analysis phase: scan full image energy to determine crop window position
+    // 2. Render phase: extract the crop region using the discovered position
+    //
+    // The position (a spatial result — an x,y rect) isn't known until after
+    // the analysis completes. Our GPU reduction infrastructure produces scalar
+    // results (sums, histograms) but not spatial decisions like "best rect."
+    //
+    // Professional GPU pipelines (Resolve, Nuke, Flame) solve this with
+    // two-phase graph evaluation:
+    //   Phase 1 (backwards): ROI negotiation — each node declares input region needed
+    //   Phase 2 (forwards): pixel execution at determined buffer sizes
+    //
+    // For smart_crop, the ROI depends on content analysis, which breaks the
+    // static ROI model. The solution is an explicit analysis pass that runs
+    // before the render pass, producing metadata (crop rect) that configures
+    // the render pass.
+    //
+    // This same pattern is needed for:
+    //   - Content-aware resize (seam selection depends on energy analysis)
+    //   - Auto white balance (correction depends on scene statistics)
+    //   - Any operation where output geometry depends on input content
+    //
+    // Tracked as future architectural work: analysis→render pipeline phases.
 }
 
 /// Hough line detection — output line visualization.
