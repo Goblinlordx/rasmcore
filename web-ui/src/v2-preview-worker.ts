@@ -266,7 +266,7 @@ async function processChain(chain) {
           if (pixels && pixels.length > 0) {
             const info2 = raw.nodeInfo(sinkNode);
             const f32 = pixels instanceof Float32Array ? pixels : new Float32Array(pixels);
-            gpuHandler.displayFromCpu(f32, info2.width, info2.height);
+            gpuHandler.displayFromCpu('viewport', f32, info2.width, info2.height);
             const totalMs = Math.round(performance.now() - t0);
             self.postMessage({ type: 'displayed', totalMs, proxyMax: PREVIEW_MAX });
             return;
@@ -310,7 +310,7 @@ async function initDisplay(canvas: OffscreenCanvas, hdr: boolean) {
 
 function handleResizeCanvas(width: number, height: number) {
   if (!gpuHandler || !displayMode) return;
-  gpuHandler.resizeDisplay(width, height);
+  gpuHandler.resizeDisplay('viewport', width, height);
 }
 
 async function initOriginalDisplay(canvas: OffscreenCanvas, hdr: boolean) {
@@ -342,14 +342,14 @@ function renderOriginalSource() {
 
 function handleViewport(data: any) {
   if (!gpuHandler || !displayMode) return;
-  gpuHandler.resizeDisplay(data.canvasWidth, data.canvasHeight);
+  gpuHandler.resizeDisplay('viewport', data.canvasWidth, data.canvasHeight);
   gpuHandler.updateViewport(
     data.panX, data.panY, data.zoom,
     data.canvasWidth, data.canvasHeight,
     gpuHandler.imageWidth, gpuHandler.imageHeight,
     data.toneMode ?? 0,
   );
-  gpuHandler.displayOnly();
+  gpuHandler.displayOnly('viewport');
 
   if (gpuHandler.hasOriginalDisplay) {
     gpuHandler.resizeOriginalDisplay(data.canvasWidth, data.canvasHeight);

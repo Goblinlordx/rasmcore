@@ -5,8 +5,7 @@
  * No BufferFormat enum. No U32Packed. No pack/unpack.
  * Always array<vec4<f32>> storage buffers.
  *
- * Shader bodies use load_pixel/store_pixel from io_f32 fragment
- * (auto-composed by the pipeline).
+ * Supports N named display targets via addDisplay(name, canvas, hdr).
  */
 
 // @ts-ignore — bundler resolves raw WGSL import
@@ -30,6 +29,29 @@ export type GpuError =
 
 export type GpuResult = { ok: Float32Array } | { err: GpuError };
 
+/** A single stage in a multi-target GPU execution plan. */
+export interface MultiStage {
+  /** Display target name to blit result to. */
+  name: string;
+  /** Compute shaders to run (empty = passthrough — just upload + blit). */
+  shaders: GpuShader[];
+  /** Input data: fresh pixels or reuse a prior stage's output buffer. */
+  input: { tag: 'pixels'; data: Float32Array } | { tag: 'prior'; name: string };
+  width: number;
+  height: number;
+}
+
+/** Registered display target — an OffscreenCanvas with WebGPU context. */
+interface DisplayRegistration {
+  name: string;
+  canvas: OffscreenCanvas;
+  ctx: GPUCanvasContext;
+  viewportBuf: GPUBuffer;
+  lastPixelBuf: GPUBuffer | null;
+  imageWidth: number;
+  imageHeight: number;
+}
+
 /** Viewport uniform layout — must match Viewport struct in display-blit.wgsl. */
 const VIEWPORT_BYTE_SIZE = 32; // 7 f32 + 1 u32 = 32 bytes
 
@@ -44,7 +66,7 @@ function hashSource(source: string): string {
 }
 
 /**
- * V2 GPU handler — f32-only.
+ * V2 GPU handler — f32-only, multi-display.
  *
  * All buffers are array<vec4<f32>>. No BufferFormat. No format dispatch.
  * Bytes per pixel = 16 (4 channels * 4 bytes). Always.
@@ -55,36 +77,12 @@ export class GpuHandlerV2 {
   private initPromise: Promise<void> | null = null;
   private available = true;
 
-  // Display surface state (preview / processed view)
-  private displayCanvas: OffscreenCanvas | null = null;
-  private canvasCtx: GPUCanvasContext | null = null;
+  // Shared blit pipeline (same shader for all displays)
   private blitPipeline: GPURenderPipeline | null = null;
   private blitBindGroupLayout: GPUBindGroupLayout | null = null;
-  private viewportBuf: GPUBuffer | null = null;
-  private lastOutputBuf: GPUBuffer | null = null;
-  private lastImageWidth = 0;
-  private lastImageHeight = 0;
 
-  // Original view display surface (second canvas, same device + blit pipeline)
-  private origCanvas: OffscreenCanvas | null = null;
-  private origCtx: GPUCanvasContext | null = null;
-  private origViewportBuf: GPUBuffer | null = null;
-  private sourcePixelBuf: GPUBuffer | null = null;
-  private sourceImageWidth = 0;
-  private sourceImageHeight = 0;
-  /** Buffers queued for deferred destruction — destroyed on next submit, not immediately. */
-  private pendingDestroy: GPUBuffer[] = [];
-
-  /** Queue a buffer for destruction on the next submit (not immediately). */
-  private deferDestroy(buf: GPUBuffer): void {
-    this.pendingDestroy.push(buf);
-  }
-
-  /** Flush deferred destroys — safe to call before a new submit. */
-  private flushDeferred(): void {
-    for (const buf of this.pendingDestroy) buf.destroy();
-    this.pendingDestroy.length = 0;
-  }
+  // Named display targets
+  private displays: Map<string, DisplayRegistration> = new Map();
 
   static isAvailable(): boolean {
     return typeof navigator !== 'undefined' && 'gpu' in navigator;
@@ -118,10 +116,213 @@ export class GpuHandlerV2 {
     });
   }
 
+  private ensureBlitPipeline(device: GPUDevice): void {
+    if (this.blitPipeline) return;
+
+    this.blitBindGroupLayout = device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT | GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+      ],
+    });
+
+    const shaderModule = device.createShaderModule({ code: BLIT_SHADER });
+    this.blitPipeline = device.createRenderPipeline({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [this.blitBindGroupLayout] }),
+      vertex: { module: shaderModule, entryPoint: 'vs_main' },
+      fragment: {
+        module: shaderModule,
+        entryPoint: 'fs_main',
+        targets: [{
+          format: 'rgba16float' as GPUTextureFormat,
+          blend: {
+            color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+          },
+        }],
+      },
+      primitive: { topology: 'triangle-list' },
+    });
+  }
+
+  // ─── Display Registry ──────────────────────────────────────────────────
+
+  /** Register a named display target from an OffscreenCanvas. */
+  async addDisplay(name: string, canvas: OffscreenCanvas, hdr: boolean): Promise<void> {
+    await this.ensureDevice();
+    const device = this.device!;
+    this.ensureBlitPipeline(device);
+
+    const ctx = canvas.getContext('webgpu') as GPUCanvasContext;
+    ctx.configure({
+      device,
+      format: 'rgba16float',
+      alphaMode: 'premultiplied',
+      toneMapping: { mode: hdr ? 'extended' : 'standard' },
+    });
+
+    const viewportBuf = device.createBuffer({
+      size: VIEWPORT_BYTE_SIZE,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    this.displays.set(name, {
+      name,
+      canvas,
+      ctx,
+      viewportBuf,
+      lastPixelBuf: null,
+      imageWidth: 0,
+      imageHeight: 0,
+    });
+  }
+
+  /** Remove a named display target and clean up its resources. */
+  removeDisplay(name: string): void {
+    const d = this.displays.get(name);
+    if (!d) return;
+    d.viewportBuf.destroy();
+    this.displays.delete(name);
+  }
+
+  /** Check if a named display target exists. */
+  hasDisplayTarget(name: string): boolean {
+    return this.displays.has(name);
+  }
+
+  /** Check if any display targets are registered. */
+  get hasDisplay(): boolean {
+    return this.displays.size > 0;
+  }
+
+  /** Width of the last rendered image for a display. */
+  imageWidthFor(name: string): number {
+    return this.displays.get(name)?.imageWidth ?? 0;
+  }
+
+  /** Height of the last rendered image for a display. */
+  imageHeightFor(name: string): number {
+    return this.displays.get(name)?.imageHeight ?? 0;
+  }
+
+  // Legacy getters for backward compatibility
+  get imageWidth(): number { return this.imageWidthFor('viewport'); }
+  get imageHeight(): number { return this.imageHeightFor('viewport'); }
+
+  /** Resize a named display canvas (skip if unchanged — resize clears the canvas). */
+  resizeDisplay(name: string, width: number, height: number): void {
+    const d = this.displays.get(name);
+    if (!d) return;
+    if (d.canvas.width !== width) d.canvas.width = width;
+    if (d.canvas.height !== height) d.canvas.height = height;
+  }
+
+  /** Update viewport uniform for a named display. */
+  updateViewportFor(
+    name: string,
+    panX: number, panY: number, zoom: number,
+    canvasWidth: number, canvasHeight: number,
+    imageWidth: number, imageHeight: number,
+    toneMode: number,
+  ): void {
+    if (!this.device) return;
+    const d = this.displays.get(name);
+    if (!d) return;
+    const data = new ArrayBuffer(VIEWPORT_BYTE_SIZE);
+    const f = new Float32Array(data, 0, 7);
+    const u = new Uint32Array(data, 28, 1);
+    f[0] = canvasWidth; f[1] = canvasHeight;
+    f[2] = imageWidth; f[3] = imageHeight;
+    f[4] = panX; f[5] = panY; f[6] = zoom;
+    u[0] = toneMode;
+    this.device.queue.writeBuffer(d.viewportBuf, 0, data);
+    d.imageWidth = imageWidth;
+    d.imageHeight = imageHeight;
+  }
+
+  // Legacy updateViewport — delegates to 'viewport' display
+  updateViewport(
+    panX: number, panY: number, zoom: number,
+    canvasWidth: number, canvasHeight: number,
+    imageWidth: number, imageHeight: number,
+    toneMode: number,
+  ): void {
+    this.updateViewportFor('viewport', panX, panY, zoom, canvasWidth, canvasHeight, imageWidth, imageHeight, toneMode);
+  }
+
+  /** Blit a pixel buffer to a named display target. */
+  blitTo(name: string, pixelBuf: GPUBuffer): void {
+    if (!this.device || !this.blitPipeline || !this.blitBindGroupLayout) return;
+    const d = this.displays.get(name);
+    if (!d) return;
+
+    const canvasTexture = d.ctx.getCurrentTexture();
+    const bindGroup = this.device.createBindGroup({
+      layout: this.blitBindGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer: pixelBuf } },
+        { binding: 1, resource: { buffer: d.viewportBuf } },
+      ],
+    });
+
+    const encoder = this.device.createCommandEncoder();
+    const pass = encoder.beginRenderPass({
+      colorAttachments: [{
+        view: canvasTexture.createView(),
+        loadOp: 'clear',
+        storeOp: 'store',
+        clearValue: { r: 0, g: 0, b: 0, a: 0 },
+      }],
+    });
+    pass.setPipeline(this.blitPipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.draw(3);
+    pass.end();
+    this.device.queue.submit([encoder.finish()]);
+    d.lastPixelBuf = pixelBuf;
+  }
+
+  /** Append a blit render pass to an existing command encoder for a named display. */
+  private appendBlitPassTo(encoder: GPUCommandEncoder, name: string, pixelBuf: GPUBuffer): void {
+    if (!this.blitPipeline || !this.blitBindGroupLayout) return;
+    const d = this.displays.get(name);
+    if (!d) return;
+
+    const canvasTexture = d.ctx.getCurrentTexture();
+    const bindGroup = this.device!.createBindGroup({
+      layout: this.blitBindGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer: pixelBuf } },
+        { binding: 1, resource: { buffer: d.viewportBuf } },
+      ],
+    });
+
+    const pass = encoder.beginRenderPass({
+      colorAttachments: [{
+        view: canvasTexture.createView(),
+        loadOp: 'clear',
+        storeOp: 'store',
+        clearValue: { r: 0, g: 0, b: 0, a: 0 },
+      }],
+    });
+    pass.setPipeline(this.blitPipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.draw(3);
+    pass.end();
+    d.lastPixelBuf = pixelBuf;
+  }
+
+  /** Re-blit without recompute for a named display. */
+  displayOnly(name: string): void {
+    const d = this.displays.get(name);
+    if (!d?.lastPixelBuf) return;
+    this.blitTo(name, d.lastPixelBuf);
+  }
+
+  // ─── Compute ───────────────────────────────────────────────────────────
+
   /**
-   * Execute GPU shaders on f32 pixel data.
-   *
-   * Always vec4<f32>. Always 16 bytes per pixel. No format variants.
+   * Execute GPU shaders on f32 pixel data with CPU readback.
    */
   async execute(
     ops: GpuShader[],
@@ -137,7 +338,7 @@ export class GpuHandlerV2 {
     const device = this.device!;
     const pixelCount = width * height;
     const floatCount = pixelCount * 4;
-    const byteCount = floatCount * 4; // f32 = 4 bytes
+    const byteCount = floatCount * 4;
 
     if (input.length !== floatCount) {
       return { err: { tag: 'execution-error',
@@ -145,7 +346,6 @@ export class GpuHandlerV2 {
     }
 
     try {
-      // Ping-pong f32 buffers
       const bufA = device.createBuffer({
         size: byteCount,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
@@ -161,28 +361,8 @@ export class GpuHandlerV2 {
 
       for (let i = 0; i < ops.length; i++) {
         const op = ops[i];
-        const hash = hashSource(op.source) + ':' + op.entryPoint;
-        let pipeline = this.shaderCache.get(hash);
+        const pipeline = this.getOrCreatePipeline(device, op);
 
-        if (!pipeline) {
-          const module = device.createShaderModule({ code: op.source });
-          const entries: GPUBindGroupLayoutEntry[] = [
-            { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-            { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
-            { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
-          ];
-          for (let j = 0; j < op.extraBuffers.length; j++) {
-            entries.push({ binding: 3 + j, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } });
-          }
-          const layout = device.createBindGroupLayout({ entries });
-          pipeline = device.createComputePipeline({
-            layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
-            compute: { module, entryPoint: op.entryPoint },
-          });
-          this.shaderCache.set(hash, pipeline);
-        }
-
-        // Uniform buffer
         const paramSize = Math.max(16, Math.ceil(op.params.byteLength / 16) * 16);
         const paramBuf = device.createBuffer({
           size: paramSize,
@@ -190,7 +370,6 @@ export class GpuHandlerV2 {
         });
         device.queue.writeBuffer(paramBuf, 0, op.params);
 
-        // Extra buffers
         const extras: GPUBuffer[] = op.extraBuffers.map(data => {
           const buf = device.createBuffer({
             size: Math.max(4, data.byteLength),
@@ -200,7 +379,6 @@ export class GpuHandlerV2 {
           return buf;
         });
 
-        // Bind group
         const bgEntries: GPUBindGroupEntry[] = [
           { binding: 0, resource: { buffer: readBuf } },
           { binding: 1, resource: { buffer: writeBuf } },
@@ -208,25 +386,20 @@ export class GpuHandlerV2 {
         ];
         extras.forEach((buf, j) => bgEntries.push({ binding: 3 + j, resource: { buffer: buf } }));
 
-        const bindGroup = device.createBindGroup({
-          layout: pipeline.getBindGroupLayout(0),
-          entries: bgEntries,
-        });
-
         const encoder = device.createCommandEncoder();
         const pass = encoder.beginComputePass();
         pass.setPipeline(pipeline);
-        pass.setBindGroup(0, bindGroup);
+        pass.setBindGroup(0, device.createBindGroup({
+          layout: pipeline.getBindGroupLayout(0),
+          entries: bgEntries,
+        }));
         pass.dispatchWorkgroups(
           Math.ceil(width / op.workgroupX),
           Math.ceil(height / op.workgroupY),
           1,
         );
         pass.end();
-        this.flushDeferred();
         device.queue.submit([encoder.finish()]);
-
-        // paramBuf and extras GC'd when unreferenced
         [readBuf, writeBuf] = [writeBuf, readBuf];
       }
 
@@ -237,7 +410,6 @@ export class GpuHandlerV2 {
       });
       const copyEnc = device.createCommandEncoder();
       copyEnc.copyBufferToBuffer(readBuf, 0, staging, 0, byteCount);
-      this.flushDeferred();
       device.queue.submit([copyEnc.finish()]);
 
       await staging.mapAsync(GPUMapMode.READ);
@@ -256,253 +428,23 @@ export class GpuHandlerV2 {
 
   /**
    * Pre-compile shader sources into GPUComputePipelines.
-   * Warms the cache so subsequent execute()/executeAndDisplay() calls
-   * get O(1) pipeline lookups with no shader compilation stalls.
    */
   async prepare(shaders: GpuShader[]): Promise<void> {
     if (shaders.length === 0) return;
-
     try { await this.ensureDevice(); }
     catch { return; }
-
     const device = this.device!;
     for (const op of shaders) {
-      const hash = hashSource(op.source) + ':' + op.entryPoint;
-      if (this.shaderCache.has(hash)) continue;
-
-      const module = device.createShaderModule({ code: op.source });
-      const entries: GPUBindGroupLayoutEntry[] = [
-        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
-        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
-      ];
-      for (let j = 0; j < op.extraBuffers.length; j++) {
-        entries.push({ binding: 3 + j, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } });
-      }
-      const layout = device.createBindGroupLayout({ entries });
-      const pipeline = device.createComputePipeline({
-        layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
-        compute: { module, entryPoint: op.entryPoint },
-      });
-      this.shaderCache.set(hash, pipeline);
+      this.getOrCreatePipeline(device, op);
     }
   }
 
-  /** Number of cached shader pipelines. */
   get cacheSize(): number {
     return this.shaderCache.size;
   }
 
-  // ─── Display Surface ────────────────────────────────────────────────────
-
   /**
-   * Configure a WebGPU canvas for direct display.
-   * Call once after receiving an OffscreenCanvas from the main thread.
-   */
-  async setDisplayCanvas(canvas: OffscreenCanvas, hdr: boolean): Promise<void> {
-    await this.ensureDevice();
-    const device = this.device!;
-    this.displayCanvas = canvas;
-
-    const ctx = canvas.getContext('webgpu') as GPUCanvasContext;
-    const format: GPUTextureFormat = 'rgba16float';
-    const toneMapping: GPUCanvasToneMapping = { mode: hdr ? 'extended' : 'standard' };
-    ctx.configure({
-      device,
-      format,
-      alphaMode: 'premultiplied',
-      toneMapping,
-    });
-    this.canvasCtx = ctx;
-
-    // Blit bind group layout: storage buffer (pixels) + uniform (viewport)
-    this.blitBindGroupLayout = device.createBindGroupLayout({
-      entries: [
-        { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT | GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
-      ],
-    });
-
-    const shaderModule = device.createShaderModule({ code: BLIT_SHADER });
-    this.blitPipeline = device.createRenderPipeline({
-      layout: device.createPipelineLayout({ bindGroupLayouts: [this.blitBindGroupLayout] }),
-      vertex: { module: shaderModule, entryPoint: 'vs_main' },
-      fragment: {
-        module: shaderModule,
-        entryPoint: 'fs_main',
-        targets: [{
-          format,
-          blend: {
-            color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-          },
-        }],
-      },
-      primitive: { topology: 'triangle-list' },
-    });
-
-    // Persistent viewport uniform buffer
-    this.viewportBuf = device.createBuffer({
-      size: VIEWPORT_BYTE_SIZE,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-  }
-
-  // ─── Original View Display ──────────────────────────────────────────────
-
-  /** Configure a second WebGPU canvas for the original/before view. */
-  async setOriginalCanvas(canvas: OffscreenCanvas, hdr: boolean): Promise<void> {
-    await this.ensureDevice();
-    const device = this.device!;
-    this.origCanvas = canvas;
-    const ctx = canvas.getContext('webgpu') as GPUCanvasContext;
-    ctx.configure({
-      device,
-      format: 'rgba16float',
-      alphaMode: 'premultiplied',
-      toneMapping: { mode: hdr ? 'extended' : 'standard' },
-    });
-    this.origCtx = ctx;
-
-    // Ensure blit pipeline exists (may already be created by setDisplayCanvas)
-    if (!this.blitBindGroupLayout) {
-      this.blitBindGroupLayout = device.createBindGroupLayout({
-        entries: [
-          { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
-          { binding: 1, visibility: GPUShaderStage.FRAGMENT | GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
-        ],
-      });
-      const shaderModule = device.createShaderModule({ code: BLIT_SHADER });
-      this.blitPipeline = device.createRenderPipeline({
-        layout: device.createPipelineLayout({ bindGroupLayouts: [this.blitBindGroupLayout] }),
-        vertex: { module: shaderModule, entryPoint: 'vs_main' },
-        fragment: {
-          module: shaderModule, entryPoint: 'fs_main',
-          targets: [{ format: 'rgba16float' as GPUTextureFormat, blend: {
-            color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-          }}],
-        },
-        primitive: { topology: 'triangle-list' },
-      });
-    }
-    this.origViewportBuf = device.createBuffer({
-      size: VIEWPORT_BYTE_SIZE,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-  }
-
-  get hasOriginalDisplay(): boolean {
-    return this.origCtx !== null && this.blitPipeline !== null;
-  }
-
-  /** Upload source pixels for original view. Blit happens on next viewport update. */
-  storeSourcePixels(pixels: Float32Array, width: number, height: number): void {
-    if (!this.device) return;
-    if (this.sourcePixelBuf) this.sourcePixelBuf.destroy();
-    this.sourcePixelBuf = this.device.createBuffer({
-      size: pixels.byteLength,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-    });
-    this.device.queue.writeBuffer(this.sourcePixelBuf, 0, pixels);
-    this.sourceImageWidth = width;
-    this.sourceImageHeight = height;
-
-    // If original canvas is already sized by a viewport message, update viewport
-    // with correct image dimensions and blit immediately
-    if (this.origCtx && this.origCanvas && this.origCanvas.width > 1 && this.origViewportBuf) {
-      this.updateOriginalViewport(0, 0, 1, this.origCanvas.width, this.origCanvas.height, 0);
-      this.blitOriginal();
-    }
-  }
-
-  updateOriginalViewport(panX: number, panY: number, zoom: number, canvasWidth: number, canvasHeight: number, toneMode: number): void {
-    if (!this.device || !this.origViewportBuf) return;
-    const data = new ArrayBuffer(VIEWPORT_BYTE_SIZE);
-    const f = new Float32Array(data, 0, 7);
-    const u = new Uint32Array(data, 28, 1);
-    f[0] = canvasWidth; f[1] = canvasHeight;
-    f[2] = this.sourceImageWidth; f[3] = this.sourceImageHeight;
-    f[4] = panX; f[5] = panY; f[6] = zoom;
-    u[0] = toneMode;
-    this.device.queue.writeBuffer(this.origViewportBuf, 0, data);
-  }
-
-  resizeOriginalDisplay(width: number, height: number): void {
-    if (!this.origCanvas) return;
-    if (this.origCanvas.width !== width) this.origCanvas.width = width;
-    if (this.origCanvas.height !== height) this.origCanvas.height = height;
-  }
-
-  blitOriginal(): void {
-    if (!this.device || !this.origCtx || !this.blitPipeline || !this.blitBindGroupLayout || !this.origViewportBuf || !this.sourcePixelBuf) return;
-    const bindGroup = this.device.createBindGroup({
-      layout: this.blitBindGroupLayout,
-      entries: [
-        { binding: 0, resource: { buffer: this.sourcePixelBuf } },
-        { binding: 1, resource: { buffer: this.origViewportBuf } },
-      ],
-    });
-    const encoder = this.device.createCommandEncoder();
-    const pass = encoder.beginRenderPass({
-      colorAttachments: [{
-        view: this.origCtx.getCurrentTexture().createView(),
-        clearValue: { r: 0, g: 0, b: 0, a: 0 },
-        loadOp: 'clear', storeOp: 'store',
-      }],
-    });
-    pass.setPipeline(this.blitPipeline);
-    pass.setBindGroup(0, bindGroup);
-    pass.draw(3);
-    pass.end();
-    this.device.queue.submit([encoder.finish()]);
-  }
-
-  /** Whether a display canvas has been configured. */
-  get hasDisplay(): boolean {
-    return this.canvasCtx !== null && this.blitPipeline !== null;
-  }
-
-  /** Width of the last rendered image (preview resolution). */
-  get imageWidth(): number { return this.lastImageWidth; }
-
-  /** Height of the last rendered image (preview resolution). */
-  get imageHeight(): number { return this.lastImageHeight; }
-
-  /** Resize the OffscreenCanvas from the worker thread (skip if unchanged — resize clears the canvas). */
-  resizeDisplay(width: number, height: number): void {
-    if (!this.displayCanvas) return;
-    if (this.displayCanvas.width !== width) this.displayCanvas.width = width;
-    if (this.displayCanvas.height !== height) this.displayCanvas.height = height;
-  }
-
-  /**
-   * Update viewport uniform for pan/zoom.
-   * Call on every pan/zoom change — cheap (just a writeBuffer).
-   */
-  updateViewport(
-    panX: number, panY: number, zoom: number,
-    canvasWidth: number, canvasHeight: number,
-    imageWidth: number, imageHeight: number,
-    toneMode: number,
-  ): void {
-    if (!this.device || !this.viewportBuf) return;
-    const data = new ArrayBuffer(VIEWPORT_BYTE_SIZE);
-    const f = new Float32Array(data, 0, 7);
-    const u = new Uint32Array(data, 28, 1);
-    f[0] = canvasWidth;
-    f[1] = canvasHeight;
-    f[2] = imageWidth;
-    f[3] = imageHeight;
-    f[4] = panX;
-    f[5] = panY;
-    f[6] = zoom;
-    u[0] = toneMode;
-    this.device.queue.writeBuffer(this.viewportBuf, 0, data);
-  }
-
-  /**
-   * Execute GPU shaders and blit the result directly to the canvas.
+   * Execute GPU shaders and blit the result to the 'viewport' display.
    * No CPU readback — the result stays on the GPU.
    */
   async executeAndDisplay(
@@ -511,8 +453,22 @@ export class GpuHandlerV2 {
     width: number,
     height: number,
   ): Promise<GpuError | null> {
-    if (!this.canvasCtx || !this.blitPipeline || !this.blitBindGroupLayout || !this.viewportBuf) {
-      return { tag: 'not-available', val: 'Display canvas not configured' };
+    return this.executeAndBlitTo('viewport', ops, input, width, height);
+  }
+
+  /**
+   * Execute GPU shaders and blit the result to a named display target.
+   */
+  async executeAndBlitTo(
+    displayName: string,
+    ops: GpuShader[],
+    input: Float32Array,
+    width: number,
+    height: number,
+  ): Promise<GpuError | null> {
+    const d = this.displays.get(displayName);
+    if (!d || !this.blitPipeline || !this.blitBindGroupLayout) {
+      return { tag: 'not-available', val: `Display '${displayName}' not configured` };
     }
 
     try { await this.ensureDevice(); }
@@ -520,12 +476,11 @@ export class GpuHandlerV2 {
 
     const device = this.device!;
 
-    // Viewport is managed by handleViewport from the main thread.
-    // But if no viewport has been set yet (first render), set a default.
-    if (this.lastImageWidth === 0 && this.viewportBuf) {
-      const cw = this.displayCanvas?.width || width;
-      const ch = this.displayCanvas?.height || height;
-      this.updateViewport(0, 0, 1, cw, ch, width, height, 0);
+    // Default viewport on first render
+    if (d.imageWidth === 0) {
+      const cw = d.canvas.width || width;
+      const ch = d.canvas.height || height;
+      this.updateViewportFor(displayName, 0, 0, 1, cw, ch, width, height, 0);
     }
 
     const pixelCount = width * height;
@@ -538,7 +493,6 @@ export class GpuHandlerV2 {
     }
 
     try {
-      // Ping-pong f32 buffers
       const bufA = device.createBuffer({
         size: byteCount,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
@@ -554,29 +508,9 @@ export class GpuHandlerV2 {
 
       const encoder = device.createCommandEncoder();
 
-      // Compute passes
       for (let i = 0; i < ops.length; i++) {
         const op = ops[i];
-        const hash = hashSource(op.source) + ':' + op.entryPoint;
-        let pipeline = this.shaderCache.get(hash);
-
-        if (!pipeline) {
-          const module = device.createShaderModule({ code: op.source });
-          const entries: GPUBindGroupLayoutEntry[] = [
-            { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-            { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
-            { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
-          ];
-          for (let j = 0; j < op.extraBuffers.length; j++) {
-            entries.push({ binding: 3 + j, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } });
-          }
-          const layout = device.createBindGroupLayout({ entries });
-          pipeline = device.createComputePipeline({
-            layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
-            compute: { module, entryPoint: op.entryPoint },
-          });
-          this.shaderCache.set(hash, pipeline);
-        }
+        const pipeline = this.getOrCreatePipeline(device, op);
 
         const paramSize = Math.max(16, Math.ceil(op.params.byteLength / 16) * 16);
         const paramBuf = device.createBuffer({
@@ -601,124 +535,225 @@ export class GpuHandlerV2 {
         ];
         extras.forEach((buf, j) => bgEntries.push({ binding: 3 + j, resource: { buffer: buf } }));
 
-        const bindGroup = device.createBindGroup({
-          layout: pipeline.getBindGroupLayout(0),
-          entries: bgEntries,
-        });
-
         const pass = encoder.beginComputePass();
         pass.setPipeline(pipeline);
-        pass.setBindGroup(0, bindGroup);
+        pass.setBindGroup(0, device.createBindGroup({
+          layout: pipeline.getBindGroupLayout(0),
+          entries: bgEntries,
+        }));
         pass.dispatchWorkgroups(
           Math.ceil(width / op.workgroupX),
           Math.ceil(height / op.workgroupY),
           1,
         );
         pass.end();
-
-        // paramBuf and extras GC'd when unreferenced
         [readBuf, writeBuf] = [writeBuf, readBuf];
       }
 
-      // Blit render pass — reads compute output, writes to canvas
-      this.appendBlitPass(encoder, readBuf);
-
-      // Flush previous frame's deferred destroys before submitting new work
+      // Blit to named display
+      this.appendBlitPassTo(encoder, displayName, readBuf);
       device.queue.submit([encoder.finish()]);
 
-      // Defer destruction of previous frame's output buffer
-      // Previous output buffer GC'd when lastOutputBuf reference changes
-      this.lastOutputBuf = readBuf;
-      this.lastImageWidth = width;
-      this.lastImageHeight = height;
+      d.lastPixelBuf = readBuf;
+      d.imageWidth = width;
+      d.imageHeight = height;
 
-      // Defer destruction of the other ping-pong buffer
-      // writeBuf GC'd when unreferenced
-
-      return null; // success
+      return null;
     } catch (e) {
       return { tag: 'execution-error', val: (e as Error).message };
     }
   }
 
   /**
-   * Re-blit the last compute output with current viewport.
-   * For viewport-only updates (pan/zoom) — no recompute.
+   * Execute ordered stages, each targeting a named display.
+   * Stages can reuse prior stage output buffers via { tag: 'prior', name }.
    */
-  displayOnly(): void {
-    if (!this.device || !this.canvasCtx || !this.blitPipeline || !this.lastOutputBuf) return;
+  async executeMulti(stages: MultiStage[]): Promise<GpuError | null> {
+    if (stages.length === 0) return null;
 
-    const encoder = this.device.createCommandEncoder();
-    this.appendBlitPass(encoder, this.lastOutputBuf);
-    this.device.queue.submit([encoder.finish()]);
+    try { await this.ensureDevice(); }
+    catch (e) { return { tag: 'not-available', val: (e as Error).message }; }
+
+    const device = this.device!;
+    const encoder = device.createCommandEncoder();
+    const stageOutputs: Map<string, GPUBuffer> = new Map();
+
+    for (const stage of stages) {
+      const d = this.displays.get(stage.name);
+      if (!d) continue;
+
+      const byteCount = stage.width * stage.height * 4 * 4;
+
+      // Resolve input
+      let inputBuf: GPUBuffer;
+      if (stage.input.tag === 'prior') {
+        const prior = stageOutputs.get(stage.input.name);
+        if (!prior) {
+          return { tag: 'execution-error', val: `Prior stage '${stage.input.name}' not found` };
+        }
+        inputBuf = prior;
+      } else {
+        inputBuf = device.createBuffer({
+          size: byteCount,
+          usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
+        });
+        device.queue.writeBuffer(inputBuf, 0, stage.input.data);
+      }
+
+      let readBuf = inputBuf;
+
+      if (stage.shaders.length > 0) {
+        // Compute passes
+        const writeBufInit = device.createBuffer({
+          size: byteCount,
+          usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
+        });
+        let writeBuf = writeBufInit;
+
+        for (const op of stage.shaders) {
+          const pipeline = this.getOrCreatePipeline(device, op);
+
+          const paramSize = Math.max(16, Math.ceil(op.params.byteLength / 16) * 16);
+          const paramBuf = device.createBuffer({
+            size: paramSize,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+          });
+          device.queue.writeBuffer(paramBuf, 0, op.params);
+
+          const extras: GPUBuffer[] = op.extraBuffers.map(data => {
+            const buf = device.createBuffer({
+              size: Math.max(4, data.byteLength),
+              usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+            });
+            device.queue.writeBuffer(buf, 0, data);
+            return buf;
+          });
+
+          const bgEntries: GPUBindGroupEntry[] = [
+            { binding: 0, resource: { buffer: readBuf } },
+            { binding: 1, resource: { buffer: writeBuf } },
+            { binding: 2, resource: { buffer: paramBuf } },
+          ];
+          extras.forEach((buf, j) => bgEntries.push({ binding: 3 + j, resource: { buffer: buf } }));
+
+          const pass = encoder.beginComputePass();
+          pass.setPipeline(pipeline);
+          pass.setBindGroup(0, device.createBindGroup({
+            layout: pipeline.getBindGroupLayout(0),
+            entries: bgEntries,
+          }));
+          pass.dispatchWorkgroups(
+            Math.ceil(stage.width / op.workgroupX),
+            Math.ceil(stage.height / op.workgroupY),
+            1,
+          );
+          pass.end();
+          [readBuf, writeBuf] = [writeBuf, readBuf];
+        }
+      }
+
+      // Blit to display
+      this.appendBlitPassTo(encoder, stage.name, readBuf);
+      d.lastPixelBuf = readBuf;
+      d.imageWidth = stage.width;
+      d.imageHeight = stage.height;
+      stageOutputs.set(stage.name, readBuf);
+    }
+
+    device.queue.submit([encoder.finish()]);
+    return null;
   }
 
   /**
-   * Upload CPU f32 pixels to GPU and display via blit.
-   * For CPU-only filter chains that still need the WebGPU display path.
+   * Upload CPU f32 pixels and blit to a named display.
    */
-  displayFromCpu(pixels: Float32Array, width: number, height: number): void {
-    if (!this.device || !this.canvasCtx || !this.blitPipeline || !this.blitBindGroupLayout || !this.viewportBuf) return;
+  displayFromCpu(name: string, pixels: Float32Array, width: number, height: number): void {
+    if (!this.device || !this.blitPipeline || !this.blitBindGroupLayout) return;
+    const d = this.displays.get(name);
+    if (!d) return;
 
-    if (this.lastImageWidth === 0) {
-      const cw = this.displayCanvas?.width || width;
-      const ch = this.displayCanvas?.height || height;
-      this.updateViewport(0, 0, 1, cw, ch, width, height, 0);
+    if (d.imageWidth === 0) {
+      const cw = d.canvas.width || width;
+      const ch = d.canvas.height || height;
+      this.updateViewportFor(name, 0, 0, 1, cw, ch, width, height, 0);
     }
 
-    const byteCount = pixels.byteLength;
     const buf = this.device.createBuffer({
-      size: byteCount,
+      size: pixels.byteLength,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(buf, 0, pixels);
-
-    const encoder = this.device.createCommandEncoder();
-    this.appendBlitPass(encoder, buf);
-
-    this.device.queue.submit([encoder.finish()]);
-
-    // Defer destruction of previous frame's buffer
-    // Previous output buffer GC'd when lastOutputBuf reference changes
-    this.lastOutputBuf = buf;
-    this.lastImageWidth = width;
-    this.lastImageHeight = height;
+    this.blitTo(name, buf);
+    d.imageWidth = width;
+    d.imageHeight = height;
   }
 
-  /** Append a blit render pass to an existing command encoder. */
-  private appendBlitPass(encoder: GPUCommandEncoder, pixelBuf: GPUBuffer): void {
-    if (!this.canvasCtx || !this.blitPipeline || !this.blitBindGroupLayout || !this.viewportBuf) return;
+  // ─── Legacy Compatibility ──────────────────────────────────────────────
 
-    const canvasTexture = this.canvasCtx.getCurrentTexture();
-    const bindGroup = this.device!.createBindGroup({
-      layout: this.blitBindGroupLayout,
-      entries: [
-        { binding: 0, resource: { buffer: pixelBuf } },
-        { binding: 1, resource: { buffer: this.viewportBuf } },
-      ],
-    });
+  // These delegate to the named display registry for backward compatibility
+  // with existing worker code that uses the old hardcoded API.
 
-    const pass = encoder.beginRenderPass({
-      colorAttachments: [{
-        view: canvasTexture.createView(),
-        loadOp: 'clear',
-        storeOp: 'store',
-        clearValue: { r: 0, g: 0, b: 0, a: 0 },
-      }],
-    });
-    pass.setPipeline(this.blitPipeline);
-    pass.setBindGroup(0, bindGroup);
-    pass.draw(3); // fullscreen triangle
-    pass.end();
+  async setDisplayCanvas(canvas: OffscreenCanvas, hdr: boolean): Promise<void> {
+    return this.addDisplay('viewport', canvas, hdr);
+  }
+
+  async setOriginalCanvas(canvas: OffscreenCanvas, hdr: boolean): Promise<void> {
+    return this.addDisplay('original', canvas, hdr);
+  }
+
+  get hasOriginalDisplay(): boolean {
+    return this.hasDisplayTarget('original');
+  }
+
+  storeSourcePixels(pixels: Float32Array, width: number, height: number): void {
+    this.displayFromCpu('original', pixels, width, height);
+  }
+
+  updateOriginalViewport(panX: number, panY: number, zoom: number, canvasWidth: number, canvasHeight: number, toneMode: number): void {
+    const d = this.displays.get('original');
+    if (!d) return;
+    this.updateViewportFor('original', panX, panY, zoom, canvasWidth, canvasHeight, d.imageWidth, d.imageHeight, toneMode);
+  }
+
+  resizeOriginalDisplay(width: number, height: number): void {
+    this.resizeDisplay('original', width, height);
+  }
+
+  blitOriginal(): void {
+    this.displayOnly('original');
+  }
+
+  // ─── Helpers ───────────────────────────────────────────────────────────
+
+  private getOrCreatePipeline(device: GPUDevice, op: GpuShader): GPUComputePipeline {
+    const hash = hashSource(op.source) + ':' + op.entryPoint;
+    let pipeline = this.shaderCache.get(hash);
+    if (!pipeline) {
+      const module = device.createShaderModule({ code: op.source });
+      const entries: GPUBindGroupLayoutEntry[] = [
+        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+      ];
+      for (let j = 0; j < op.extraBuffers.length; j++) {
+        entries.push({ binding: 3 + j, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } });
+      }
+      const layout = device.createBindGroupLayout({ entries });
+      pipeline = device.createComputePipeline({
+        layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+        compute: { module, entryPoint: op.entryPoint },
+      });
+      this.shaderCache.set(hash, pipeline);
+    }
+    return pipeline;
   }
 
   destroy(): void {
     this.shaderCache.clear();
-    this.flushDeferred();
-    if (this.lastOutputBuf) { this.lastOutputBuf.destroy(); this.lastOutputBuf = null; }
-    if (this.viewportBuf) { this.viewportBuf.destroy(); this.viewportBuf = null; }
-    this.displayCanvas = null;
-    this.canvasCtx = null;
+    for (const d of this.displays.values()) {
+      d.viewportBuf.destroy();
+    }
+    this.displays.clear();
     this.blitPipeline = null;
     this.blitBindGroupLayout = null;
     if (this.device) { this.device.destroy(); this.device = null; }
