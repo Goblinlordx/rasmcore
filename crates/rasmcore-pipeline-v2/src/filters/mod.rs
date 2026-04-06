@@ -22,3 +22,4 @@ pub mod grading;
 pub mod mask;
 pub mod scope;
 pub mod spatial;
+pub mod tool;
