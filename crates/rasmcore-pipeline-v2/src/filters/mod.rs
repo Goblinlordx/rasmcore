@@ -8,6 +8,7 @@
 
 pub mod adjustment;
 pub mod alpha;
+pub mod analysis;
 pub mod color;
 pub mod composite;
 pub mod distortion;
