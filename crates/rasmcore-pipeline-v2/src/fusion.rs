@@ -638,6 +638,7 @@ impl Node for FusedPointOpNode {
             extra_buffers: vec![],
             reduction_buffers: vec![],
             convergence_check: None,
+            loop_dispatch: None,
         })
     }
 

@@ -903,6 +903,7 @@ impl GpuFilter for GaussianNoise {
             extra_buffers: vec![],
             reduction_buffers: vec![],
             convergence_check: None,
+            loop_dispatch: None,
         }
     }
 }
@@ -955,6 +956,7 @@ impl GpuFilter for UniformNoise {
             extra_buffers: vec![],
             reduction_buffers: vec![],
             convergence_check: None,
+            loop_dispatch: None,
         }
     }
 }
@@ -1013,6 +1015,7 @@ impl GpuFilter for SaltPepperNoise {
             extra_buffers: vec![],
             reduction_buffers: vec![],
             convergence_check: None,
+            loop_dispatch: None,
         }
     }
 }
@@ -1080,6 +1083,7 @@ impl GpuFilter for PoissonNoise {
             extra_buffers: vec![],
             reduction_buffers: vec![],
             convergence_check: None,
+            loop_dispatch: None,
         }
     }
 }
@@ -1199,6 +1203,7 @@ impl GpuFilter for Glitch {
             extra_buffers: vec![],
             reduction_buffers: vec![],
             convergence_check: None,
+            loop_dispatch: None,
         }
     }
 }
@@ -1426,6 +1431,7 @@ impl GpuFilter for FilmGrain {
             extra_buffers: vec![],
             reduction_buffers: vec![],
             convergence_check: None,
+            loop_dispatch: None,
         }
     }
 }

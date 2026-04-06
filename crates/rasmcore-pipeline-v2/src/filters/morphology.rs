@@ -228,6 +228,7 @@ fn make_snapshot_shader(width: u32, height: u32, buf_id: u32) -> GpuShader {
             read_write: true,
         }],
             convergence_check: None,
+            loop_dispatch: None,
     }
 }
 
@@ -247,6 +248,7 @@ fn make_sub_shader(wgsl: &str, width: u32, height: u32, buf_id: u32) -> GpuShade
             read_write: false,    // read-only on this pass
         }],
             convergence_check: None,
+            loop_dispatch: None,
     }
 }
 
@@ -267,6 +269,7 @@ fn make_erode_from_snap_shader(width: u32, height: u32, radius: u32, snap_id: u3
             read_write: false,
         }],
             convergence_check: None,
+            loop_dispatch: None,
     }
 }
 
@@ -447,6 +450,7 @@ impl Filter for MorphGradient {
                         read_write: true,
                     }],
             convergence_check: None,
+            loop_dispatch: None,
                 }
             },
             // Pass 3: erode from original (buf 0)
@@ -776,6 +780,7 @@ impl Filter for Skeletonize {
                     }],
                     // Only check after step2 — both steps accumulate into same counter
                     convergence_check: if sub == 1 { Some(change_buf_id) } else { None },
+                    loop_dispatch: None,
                 };
                 passes.push(shader);
             }

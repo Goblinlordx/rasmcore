@@ -444,6 +444,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             body: energy_wgsl.to_string(), entry_point: "main",
             workgroup_size: [256, 1, 1], params: energy_p,
             extra_buffers: vec![], convergence_check: None,
+            loop_dispatch: None,
             reduction_buffers: vec![ReductionBuffer {
                 id: dp_buf_id, initial_data: vec![0u8; dp_buf_size], read_write: true,
             }],
@@ -474,18 +475,22 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
-        for row in 1.._h {
-            let mut row_p = gpu_params_wh(_w, _h);
-            gpu_push_u32(&mut row_p, row); gpu_push_u32(&mut row_p, 0);
-            passes.push(GpuShader {
-                body: dp_row_wgsl.to_string(), entry_point: "main",
-                workgroup_size: [256, 1, 1], params: row_p,
-                extra_buffers: vec![], convergence_check: None,
-                reduction_buffers: vec![ReductionBuffer {
-                    id: dp_buf_id, initial_data: vec![], read_write: true,
-                }],
-            });
-        }
+        // Single shader dispatched height-1 times via loop_dispatch.
+        // The `row` param at byte offset 8 is set to 0, 1, 2, ..., height-2
+        // by the executor. Row 0 is the energy base case (already computed).
+        // We start from row=0 in the loop but the shader skips row 0 (y==0 guard).
+        let mut row_p = gpu_params_wh(_w, _h);
+        gpu_push_u32(&mut row_p, 0); // row placeholder — overwritten by loop_dispatch
+        gpu_push_u32(&mut row_p, 0); // pad
+        passes.push(GpuShader {
+            body: dp_row_wgsl.to_string(), entry_point: "main",
+            workgroup_size: [256, 1, 1], params: row_p,
+            extra_buffers: vec![], convergence_check: None,
+            loop_dispatch: Some(crate::node::LoopDispatch { count: _h, param_offset: 8 }),
+            reduction_buffers: vec![ReductionBuffer {
+                id: dp_buf_id, initial_data: vec![], read_write: true,
+            }],
+        });
 
         // Final pass: find seam and shift pixels
         // This reads the completed DP table, traces back from the minimum
@@ -761,6 +766,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             GpuShader {
                 body: init_wgsl.to_string(), entry_point: "main", workgroup_size: [256, 1, 1],
                 params: init_p, extra_buffers: vec![], convergence_check: None,
+            loop_dispatch: None,
                 reduction_buffers: vec![ReductionBuffer { id: label_buf_id, initial_data: vec![0u8; label_size], read_write: true }],
             },
         ];
@@ -768,6 +774,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             passes.push(GpuShader {
                 body: prop_wgsl.to_string(), entry_point: "main", workgroup_size: [256, 1, 1],
                 params: prop_p.clone(), extra_buffers: vec![], convergence_check: Some(change_buf_id),
+                loop_dispatch: None,
                 reduction_buffers: vec![
                     ReductionBuffer { id: label_buf_id, initial_data: vec![], read_write: true },
                     ReductionBuffer { id: change_buf_id, initial_data: vec![0u8; change_size], read_write: true },

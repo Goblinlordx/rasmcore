@@ -72,6 +72,23 @@ pub struct GpuShader {
     /// writes a non-zero value to indicate "changed" and the host loops until no
     /// changes occur.
     pub convergence_check: Option<u32>,
+    /// If set, the executor dispatches this shader `count` times, writing
+    /// `i = 0, 1, 2, ..., count-1` as a little-endian u32 at byte offset
+    /// `param_offset` in the params buffer before each dispatch.
+    ///
+    /// Single compile, multiple dispatches. Used for row-by-row wavefront
+    /// algorithms (e.g., seam carving DP) where each iteration processes
+    /// one row/column and depends on the previous.
+    pub loop_dispatch: Option<LoopDispatch>,
+}
+
+/// Loop dispatch configuration — run a shader N times with incrementing index.
+#[derive(Debug, Clone)]
+pub struct LoopDispatch {
+    /// Number of iterations (0..count exclusive).
+    pub count: u32,
+    /// Byte offset in the params buffer where the iteration index (u32) is written.
+    pub param_offset: usize,
 }
 
 impl GpuShader {
@@ -90,6 +107,7 @@ impl GpuShader {
             extra_buffers: vec![],
             reduction_buffers: vec![],
             convergence_check: None,
+            loop_dispatch: None,
         }
     }
 
@@ -109,6 +127,13 @@ impl GpuShader {
     /// ID is all zeros, skip remaining passes.
     pub fn with_convergence_check(mut self, buffer_id: u32) -> Self {
         self.convergence_check = Some(buffer_id);
+        self
+    }
+
+    /// Set loop dispatch: run this shader `count` times, writing iteration
+    /// index (0..count) as u32 at `param_offset` in the params buffer.
+    pub fn with_loop_dispatch(mut self, count: u32, param_offset: usize) -> Self {
+        self.loop_dispatch = Some(LoopDispatch { count, param_offset });
         self
     }
 }

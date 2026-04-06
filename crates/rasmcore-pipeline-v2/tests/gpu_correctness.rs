@@ -105,6 +105,7 @@ fn test_filter_parity<F: Filter>(
         extra_buffers: extra,
         reduction_buffers: vec![],
         convergence_check: None,
+            loop_dispatch: None,
     }];
 
     let gpu_out = gpu

@@ -120,6 +120,7 @@ impl<F: Filter + 'static> Node for FilterNode<F> {
             extra_buffers: self.filter.gpu_extra_buffers(),
             reduction_buffers: vec![],
             convergence_check: None,
+            loop_dispatch: None,
         })
     }
 
@@ -254,6 +255,7 @@ impl<F: Filter + GpuFilter + 'static> Node for GpuFilterNode<F> {
             extra_buffers: self.filter.extra_buffers(),
             reduction_buffers: vec![],
             convergence_check: None,
+            loop_dispatch: None,
         })
     }
 
