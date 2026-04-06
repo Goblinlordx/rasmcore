@@ -1,5 +1,5 @@
 title: 'PoC: GPU tiled streaming with reduction accumulation across tiles'
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-06'
