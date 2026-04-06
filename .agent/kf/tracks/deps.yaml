@@ -418,3 +418,6 @@ lmt-migrate-point-ops_20260406071802Z:
 
 # WIT use-lmt — depends on LMT foundation (already complete)
 wit-use-lmt_20260406075500Z: []
+
+# Stroke input research — no deps
+research-stroke-input-engine_20260406212331Z: []
