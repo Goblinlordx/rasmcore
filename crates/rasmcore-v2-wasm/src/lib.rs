@@ -581,6 +581,50 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
         }))
     }
 
+    fn render_multi_gpu_plan(
+        &self,
+        targets: Vec<(String, u32)>,
+    ) -> Result<wit::MultiGpuPlan, RasmcoreError> {
+        let plan = self
+            .graph
+            .borrow_mut()
+            .render_multi_gpu_plan(&targets)
+            .map_err(to_wit_error)?;
+
+        let stages = plan
+            .stages
+            .into_iter()
+            .map(|s| {
+                let shaders = s
+                    .shaders
+                    .into_iter()
+                    .map(|sh| wit::GpuShader {
+                        source: sh.body,
+                        entry_point: sh.entry_point.to_string(),
+                        workgroup_x: sh.workgroup_size[0],
+                        workgroup_y: sh.workgroup_size[1],
+                        workgroup_z: sh.workgroup_size[2],
+                        params: sh.params,
+                        extra_buffers: sh.extra_buffers,
+                    })
+                    .collect();
+                let input = match s.input {
+                    v2::StageInput::Pixels(px) => wit::StageInput::Pixels(px),
+                    v2::StageInput::PriorStage(name) => wit::StageInput::PriorStage(name),
+                };
+                wit::GpuStage {
+                    target_name: s.target_name,
+                    shaders,
+                    input,
+                    width: s.width,
+                    height: s.height,
+                }
+            })
+            .collect();
+
+        Ok(wit::MultiGpuPlan { stages })
+    }
+
     fn inject_gpu_result(&self, node: u32, pixels: Vec<f32>) {
         self.graph.borrow_mut().inject_gpu_result(node, pixels);
     }

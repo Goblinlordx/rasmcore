@@ -81,6 +81,39 @@ pub struct GpuPlan {
     pub height: u32,
 }
 
+// ─── Multi-output GPU plan ─────────────────────────────────────────────────
+
+/// Input source for a GPU stage in a multi-output plan.
+#[derive(Debug, Clone)]
+pub enum StageInput {
+    /// Upload f32 pixels from CPU (source node or CPU-computed result).
+    Pixels(Vec<f32>),
+    /// Read from a prior stage's GPU output buffer (by target name).
+    PriorStage(String),
+}
+
+/// A single stage in a multi-output GPU execution plan.
+#[derive(Debug)]
+pub struct GpuStage {
+    /// Display target name this stage serves (e.g., "viewport", "histogram").
+    pub target_name: String,
+    /// GPU shaders to execute (empty = passthrough, just blit the input).
+    pub shaders: Vec<crate::node::GpuShader>,
+    /// Where the input data comes from.
+    pub input: StageInput,
+    /// Output dimensions.
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Multi-output GPU plan — ordered list of stages to execute in one submit.
+#[derive(Debug)]
+pub struct MultiGpuPlan {
+    /// Stages in execution order. Prior-stage refs are always resolved
+    /// by an earlier stage in the list.
+    pub stages: Vec<GpuStage>,
+}
+
 /// The V2 pipeline graph.
 ///
 /// Manages node topology, caching, GPU dispatch, and demand-driven execution.
@@ -358,6 +391,145 @@ impl Graph {
                 }))
             }
         }
+    }
+
+    /// Extract a multi-output GPU execution plan for multiple display targets.
+    ///
+    /// Each target is a `(name, node_id)` pair. The plan detects shared upstream
+    /// chains: if multiple targets branch from the same node (via refs), the shared
+    /// chain is computed once and downstream stages read from that buffer.
+    ///
+    /// Stages are topologically ordered: upstream stages appear first.
+    pub fn render_multi_gpu_plan(
+        &mut self,
+        targets: &[(String, u32)],
+    ) -> Result<MultiGpuPlan, PipelineError> {
+        if !self.optimized {
+            crate::fusion::optimize(self);
+            self.optimized = true;
+        }
+
+        if targets.is_empty() {
+            return Ok(MultiGpuPlan { stages: vec![] });
+        }
+
+        // For each target, extract (source_node_id, shaders, output_info)
+        struct TargetChain {
+            name: String,
+            node_id: u32,
+            source_id: u32,
+            shaders: Vec<crate::node::GpuShader>,
+            width: u32,
+            height: u32,
+        }
+
+        let mut chains = Vec::new();
+        for (name, node_id) in targets {
+            let info = self.node_info(*node_id)?;
+            let chain = self.collect_gpu_chain(*node_id, info.width, info.height);
+            match chain {
+                Some((source_id, shaders)) => {
+                    chains.push(TargetChain {
+                        name: name.clone(),
+                        node_id: *node_id,
+                        source_id,
+                        shaders,
+                        width: info.width,
+                        height: info.height,
+                    });
+                }
+                None => {
+                    // No GPU chain — passthrough (pixels only, empty shaders)
+                    chains.push(TargetChain {
+                        name: name.clone(),
+                        node_id: *node_id,
+                        source_id: *node_id,
+                        shaders: vec![],
+                        width: info.width,
+                        height: info.height,
+                    });
+                }
+            }
+        }
+
+        // Detect shared source nodes. If multiple targets share the same source_id,
+        // the first one provides the pixels and subsequent ones use PriorStage.
+        //
+        // Additionally, if a target's source_id matches another target's node_id
+        // (i.e., it branches from a ref that is itself a display target), it uses
+        // PriorStage referencing that target.
+        let mut stages = Vec::new();
+        // Track which source_ids have been computed (name of the stage that computed them)
+        let mut computed_sources: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
+        // Also track which node_ids are display targets (for ref-based branching)
+        let mut target_nodes: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
+        for c in &chains {
+            target_nodes.insert(c.node_id, c.name.clone());
+        }
+
+        // Sort: stages whose source_id is another target's node_id come after that target
+        // Simple approach: emit stages with Pixels input first, then PriorStage
+        let mut deferred = Vec::new();
+
+        for c in &chains {
+            // Check if this target's source was already computed by a prior stage
+            if let Some(prior_name) = computed_sources.get(&c.source_id) {
+                stages.push(GpuStage {
+                    target_name: c.name.clone(),
+                    shaders: c.shaders.clone(),
+                    input: StageInput::PriorStage(prior_name.clone()),
+                    width: c.width,
+                    height: c.height,
+                });
+            } else if let Some(prior_name) = target_nodes.get(&c.source_id) {
+                // Source is another target's output — defer until that target is computed
+                if prior_name != &c.name {
+                    deferred.push(c);
+                    continue;
+                }
+                // Self-reference — treat as pixels
+                let request = Rect::new(0, 0, c.width, c.height);
+                let pixels = self.request_region(c.source_id, request)?;
+                computed_sources.insert(c.source_id, c.name.clone());
+                stages.push(GpuStage {
+                    target_name: c.name.clone(),
+                    shaders: c.shaders.clone(),
+                    input: StageInput::Pixels(pixels),
+                    width: c.width,
+                    height: c.height,
+                });
+            } else {
+                // First time seeing this source — fetch pixels
+                let src_info = self.node_info(c.source_id)?;
+                let request = Rect::new(0, 0, src_info.width, src_info.height);
+                let pixels = self.request_region(c.source_id, request)?;
+                computed_sources.insert(c.source_id, c.name.clone());
+                stages.push(GpuStage {
+                    target_name: c.name.clone(),
+                    shaders: c.shaders.clone(),
+                    input: StageInput::Pixels(pixels),
+                    width: c.width,
+                    height: c.height,
+                });
+            }
+        }
+
+        // Emit deferred stages (targets that branch from another target's output)
+        for c in deferred {
+            let prior_name = target_nodes.get(&c.source_id)
+                .or_else(|| computed_sources.get(&c.source_id))
+                .cloned()
+                .unwrap_or_default();
+            stages.push(GpuStage {
+                target_name: c.name.clone(),
+                shaders: c.shaders.clone(),
+                input: StageInput::PriorStage(prior_name),
+                width: c.width,
+                height: c.height,
+            });
+        }
+
+        Ok(MultiGpuPlan { stages })
     }
 
     /// Pre-compile all GPU shaders reachable from `node_id`.

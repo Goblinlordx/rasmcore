@@ -126,6 +126,34 @@ interface pipeline-v2 {
         height: u32,
     }
 
+    // ─── Multi-output GPU plan ────────────────────────────────────────
+
+    /// Input source for a stage in a multi-output GPU plan.
+    variant stage-input {
+        /// Upload f32 pixels from CPU.
+        pixels(pixel-buffer),
+        /// Read from a prior stage's GPU output buffer (by target name).
+        prior-stage(string),
+    }
+
+    /// A single stage in a multi-output GPU execution plan.
+    record gpu-stage {
+        /// Display target name (e.g., "viewport", "histogram").
+        target-name: string,
+        /// GPU shaders to execute (empty = passthrough blit).
+        shaders: list<gpu-shader>,
+        /// Where the input data comes from.
+        input: stage-input,
+        /// Output dimensions.
+        width: u32,
+        height: u32,
+    }
+
+    /// Multi-output GPU plan — ordered stages for one queue.submit().
+    record multi-gpu-plan {
+        stages: list<gpu-stage>,
+    }
+
     /// Trace event kind.
     enum trace-event-kind {
         fusion,
@@ -246,6 +274,11 @@ interface pipeline-v2 {
         /// these through WebGPU/wgpu and calls inject-gpu-result with the output.
         /// Returns none if no GPU chain exists (use render() for CPU fallback).
         render-gpu-plan: func(node: node-id) -> result<option<gpu-plan>, rasmcore-error>;
+
+        /// Extract a multi-output GPU plan for multiple display targets.
+        /// Each target is a (name, node-id) pair. Shared upstream chains are
+        /// deduplicated: downstream stages reference prior stage buffers.
+        render-multi-gpu-plan: func(targets: list<tuple<string, node-id>>) -> result<multi-gpu-plan, rasmcore-error>;
 
         /// Inject GPU execution result back into the pipeline cache.
         ///

@@ -216,6 +216,32 @@ export class Pipeline {
     return new Pipeline(this._pipe, nodeId);
   }
 
+  // ─── Multi-output display targets ─────────────────────────────────────
+
+  /** Internal map of display target name → node ID. */
+  private _displays: Map<string, number> | null = null;
+
+  /** Register a display target at the current node.
+   *  Multiple displays can be attached to the same or different nodes.
+   *  Call execute() to render all targets in one GPU submit. */
+  addDisplay(name: string): Pipeline {
+    if (!this._displays) this._displays = new Map();
+    this._displays.set(name, this._node);
+    return this;
+  }
+
+  /** Extract a multi-output GPU plan for all registered display targets.
+   *  Returns the plan for host-side execution via GpuHandler.executeMulti(). */
+  renderMultiGpuPlan(): any {
+    if (!this._displays || this._displays.size === 0) return null;
+    if (typeof this._pipe.renderMultiGpuPlan !== 'function') return null;
+    const targets: [string, number][] = [];
+    for (const [name, nodeId] of this._displays) {
+      targets.push([name, nodeId]);
+    }
+    return this._pipe.renderMultiGpuPlan(targets);
+  }
+
   // ─── Filter methods (generated) ─────────────────────────────────────────
 
 `;

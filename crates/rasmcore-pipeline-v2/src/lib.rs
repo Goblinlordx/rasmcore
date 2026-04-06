@@ -49,7 +49,7 @@ pub use node::{Node, NodeInfo, NodeCapabilities, GpuShader, TileHint, PipelineEr
 pub use aces_audit::{AcesViolation, AcesAuditResult};
 pub use color_space::ColorSpace;
 pub use gpu::{GpuError, GpuExecutor};
-pub use graph::{Graph, GpuPlan, BufferPool};
+pub use graph::{Graph, GpuPlan, MultiGpuPlan, GpuStage, StageInput, BufferPool};
 pub use demand::{DemandStrategy, DemandHint};
 pub use cache::{SpatialCache, SpatialCachePool};
 pub use hash::{content_hash, source_hash};
