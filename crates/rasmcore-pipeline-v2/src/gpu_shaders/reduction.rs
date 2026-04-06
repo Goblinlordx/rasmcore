@@ -166,6 +166,7 @@ impl GpuReduction {
                 initial_data: vec![0u8; buf_size],
                 read_write: true,
             }],
+            convergence_check: None,
         };
 
         let pass2 = GpuShader {
@@ -179,6 +180,7 @@ impl GpuReduction {
                 initial_data: vec![],
                 read_write: true,
             }],
+            convergence_check: None,
         };
 
         ReductionPasses {
@@ -224,6 +226,7 @@ impl GpuReduction {
                 initial_data: vec![0u8; buf_size],
                 read_write: true,
             }],
+            convergence_check: None,
         };
 
         let pass2 = GpuShader {
@@ -237,6 +240,7 @@ impl GpuReduction {
                 initial_data: vec![],
                 read_write: true,
             }],
+            convergence_check: None,
         };
 
         ReductionPasses {
@@ -283,6 +287,7 @@ impl GpuReduction {
                 initial_data: vec![0u8; buf_size],
                 read_write: true,
             }],
+            convergence_check: None,
         };
 
         let pass2 = GpuShader {
@@ -296,6 +301,7 @@ impl GpuReduction {
                 initial_data: vec![],
                 read_write: true,
             }],
+            convergence_check: None,
         };
 
         ReductionPasses {

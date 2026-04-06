@@ -64,6 +64,14 @@ pub struct GpuShader {
     /// are the **same GPU allocation**. Zero-initialized from `initial_data` before
     /// the first pass that declares them. Contents persist across all subsequent passes.
     pub reduction_buffers: Vec<ReductionBuffer>,
+    /// If set, the executor checks this reduction buffer after the pass completes.
+    /// If all bytes are zero, remaining passes in the chain are skipped (converged).
+    /// The buffer is reset to zero before the NEXT pass starts.
+    ///
+    /// Used for iterative algorithms (e.g., Zhang-Suen thinning) where the shader
+    /// writes a non-zero value to indicate "changed" and the host loops until no
+    /// changes occur.
+    pub convergence_check: Option<u32>,
 }
 
 impl GpuShader {
@@ -81,6 +89,7 @@ impl GpuShader {
             params,
             extra_buffers: vec![],
             reduction_buffers: vec![],
+            convergence_check: None,
         }
     }
 
@@ -93,6 +102,13 @@ impl GpuShader {
     /// Add reduction (mutable, persistent) buffers.
     pub fn with_reduction_buffers(mut self, bufs: Vec<ReductionBuffer>) -> Self {
         self.reduction_buffers = bufs;
+        self
+    }
+
+    /// Set convergence check: after this pass, if the reduction buffer with this
+    /// ID is all zeros, skip remaining passes.
+    pub fn with_convergence_check(mut self, buffer_id: u32) -> Self {
+        self.convergence_check = Some(buffer_id);
         self
     }
 }

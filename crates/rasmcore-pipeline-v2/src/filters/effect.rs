@@ -902,6 +902,7 @@ impl GpuFilter for GaussianNoise {
             params: self.params(width, height),
             extra_buffers: vec![],
             reduction_buffers: vec![],
+            convergence_check: None,
         }
     }
 }
@@ -953,6 +954,7 @@ impl GpuFilter for UniformNoise {
             params: self.params(width, height),
             extra_buffers: vec![],
             reduction_buffers: vec![],
+            convergence_check: None,
         }
     }
 }
@@ -1010,6 +1012,7 @@ impl GpuFilter for SaltPepperNoise {
             params: self.params(width, height),
             extra_buffers: vec![],
             reduction_buffers: vec![],
+            convergence_check: None,
         }
     }
 }
@@ -1076,6 +1079,7 @@ impl GpuFilter for PoissonNoise {
             params: self.params(width, height),
             extra_buffers: vec![],
             reduction_buffers: vec![],
+            convergence_check: None,
         }
     }
 }
@@ -1194,6 +1198,7 @@ impl GpuFilter for Glitch {
             params: self.params(width, height),
             extra_buffers: vec![],
             reduction_buffers: vec![],
+            convergence_check: None,
         }
     }
 }
@@ -1420,6 +1425,7 @@ impl GpuFilter for FilmGrain {
             params: self.params(width, height),
             extra_buffers: vec![],
             reduction_buffers: vec![],
+            convergence_check: None,
         }
     }
 }

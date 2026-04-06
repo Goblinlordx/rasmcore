@@ -77,6 +77,7 @@ pub trait Filter {
             params,
             extra_buffers: self.gpu_extra_buffers(),
             reduction_buffers: vec![],
+            convergence_check: None,
         }])
     }
 
@@ -127,6 +128,7 @@ pub trait GpuFilter {
             params: self.params(width, height),
             extra_buffers: self.extra_buffers(),
             reduction_buffers: vec![],
+            convergence_check: None,
         }
     }
     fn gpu_shaders(&self, width: u32, height: u32) -> Vec<GpuShader> {

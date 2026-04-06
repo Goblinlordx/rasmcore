@@ -956,6 +956,7 @@ impl GpuFilter for FilmGrain {
             params: self.params(width, height),
             extra_buffers: self.extra_buffers(),
             reduction_buffers: vec![],
+            convergence_check: None,
         }
     }
 }
