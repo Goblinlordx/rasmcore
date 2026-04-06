@@ -3131,6 +3131,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rasmcore-sdk-v2"
+version = "0.1.0"
+dependencies = [
+ "rasmcore-codecs-v2",
+ "rasmcore-gpu-native",
+ "rasmcore-pipeline-v2",
+]
+
+[[package]]
 name = "rasmcore-tga"
 version = "0.1.0"
 
