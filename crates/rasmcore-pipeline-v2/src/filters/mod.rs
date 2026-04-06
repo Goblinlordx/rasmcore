@@ -11,6 +11,7 @@ pub mod color;
 pub mod distortion;
 pub mod effect;
 pub mod enhancement;
+pub mod morphology;
 pub mod grading;
 pub mod scope;
 pub mod spatial;
