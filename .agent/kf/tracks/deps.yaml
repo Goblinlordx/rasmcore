@@ -408,3 +408,10 @@ v2-generators_2026040604440009Z: []
 v2-evaluate-math_2026040604440010Z: []
 v2-tools_2026040604440011Z: []
 v2-analysis-transform_2026040604440012Z: []
+
+# LMT architecture — sequential dependency chain
+lmt-foundation_20260406071800Z: []
+lmt-fusion_20260406071801Z:
+  - lmt-foundation_20260406071800Z
+lmt-migrate-point-ops_20260406071802Z:
+  - lmt-fusion_20260406071801Z

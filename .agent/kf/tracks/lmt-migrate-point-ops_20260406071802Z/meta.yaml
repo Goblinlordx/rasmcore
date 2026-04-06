@@ -1,0 +1,8 @@
+title: Migrate point-op filters to Lmt constructors
+status: pending
+type: refactor
+approved: false
+created: '2026-04-06'
+updated: '2026-04-06'
+deps:
+- lmt-fusion_20260406071801Z

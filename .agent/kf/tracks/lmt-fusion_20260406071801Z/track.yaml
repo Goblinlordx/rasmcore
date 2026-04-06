@@ -1,0 +1,93 @@
+id: lmt-fusion_20260406071801Z
+title: "LMT fusion optimizer — compose and bake Lmt chains"
+type: feature
+status: pending
+created: 2026-04-06
+updated: 2026-04-06
+spec:
+  summary: |
+    Teach the fusion optimizer to work on Lmt chains: compose adjacent
+    analyticals, bake analytical+CLUT combinations, emit fused GPU
+    kernels. Extends the existing PointOpExpr fusion system.
+  context: |
+    The existing fusion optimizer in graph.rs fuse_color_ops() detects
+    chains of nodes with analytic_expression() and composes them via
+    PointOpExpr::compose(). It also handles CLUT fusion via fusion_clut().
+
+    With LmtNode in place (from the foundation track), the optimizer
+    needs to handle Lmt-typed chains where different Lmt variants are
+    interleaved. The key fusion rules:
+
+    1. Adjacent Analytical LMTs compose symbolically (existing behavior)
+    2. Analytical before Clut3D can bake into the CLUT (existing behavior)
+    3. Adjacent Cdl ops compose (multiply slopes, add offsets, multiply powers)
+    4. Cdl is convertible to Analytical (for composition with other analyticals)
+    5. Chain LMTs flatten into their components for fusion
+
+    The result: a pipeline of [Lmt, Lmt, Lmt, Filter, Lmt, Lmt] fuses
+    the LMT runs into minimal nodes while leaving non-LMT Filters alone.
+  codebase_analysis: |
+    Existing fusion entry point: graph.rs fuse_color_ops()
+    - Walks the node graph looking for chains of analytic nodes
+    - Composes PointOpExpr trees via compose()
+    - Lowers fused expression to WGSL via fusion::lower_to_wgsl()
+    - Replaces the chain with a single FusedNode
+
+    fusion.rs contains:
+    - lower_to_wgsl(expr) — converts PointOpExpr to WGSL shader code
+    - Clut3D struct and tetrahedral interpolation
+    - CLUT baking from PointOpExpr chains
+
+    The optimizer already handles the analytical and CLUT paths. This
+    track extends it to recognize LmtNode specifically and handle the
+    Cdl and Chain variants.
+  acceptance_criteria:
+    - Adjacent Lmt::Analytical nodes fuse via PointOpExpr::compose()
+    - Lmt::Cdl composes with adjacent analyticals
+    - Lmt::Chain flattens before fusion (component LMTs participate individually)
+    - Fused LMT chains emit a single GPU kernel via lower_to_wgsl()
+    - Mixed chains (LmtNode + FilterNode) fuse the LMT segments correctly
+    - Existing fusion behavior for plain FilterNodes unchanged
+  out_of_scope: |
+    - CLUT+CLUT composition (requires 3D resampling — complex, separate track)
+    - Migrating existing filters to LMT (next track)
+    - Inverse CLUT computation
+  technical_notes: |
+    The fusion optimizer needs to treat LmtNode the same as FilterNode
+    for chain detection. The key change is in how it extracts the fusable
+    representation:
+
+    - LmtNode with Analytical → analytic_expression() (already wired)
+    - LmtNode with Cdl → convert to PointOpExpr (slope*x+offset)^power
+    - LmtNode with Clut3D → fusion_clut() (already wired)
+    - LmtNode with Chain → expand inline, each component participates
+
+    The Cdl-to-PointOpExpr conversion is straightforward:
+      per channel: Pow(Add(Mul(Input, slope), offset), power)
+
+    This is the same form as Exposure or Gamma — the optimizer already
+    handles Pow, Mul, Add composition.
+plan:
+  - phase: Optimizer Extension
+    tasks:
+      - text: Add Cdl-to-PointOpExpr conversion function
+        done: false
+      - text: Extend fuse_color_ops to recognize LmtNode in fusion chains
+        done: false
+      - text: Handle Chain variant by flattening before fusion pass
+        done: false
+  - phase: GPU Codegen
+    tasks:
+      - text: Verify fused LMT chains emit correct WGSL via lower_to_wgsl
+        done: false
+      - text: Test GPU kernel output for Analytical+Cdl+Analytical chain
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test analytical LMT chain fusion matches sequential application
+        done: false
+      - text: Test mixed LmtNode + FilterNode chain fuses LMT segments only
+        done: false
+      - text: Test existing FilterNode-only fusion unchanged (regression)
+        done: false
+extra: {}

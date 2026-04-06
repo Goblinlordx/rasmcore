@@ -1,0 +1,122 @@
+id: lmt-migrate-point-ops_20260406071802Z
+title: "Migrate point-op filters to Lmt constructors"
+type: refactor
+status: pending
+created: 2026-04-06
+updated: 2026-04-06
+spec:
+  summary: |
+    Convert existing point-op filters (exposure, contrast, gamma,
+    brightness, levels, etc.) from standalone Filter impls to Lmt
+    constructors that emit LmtNode. One at a time with parity validation.
+  context: |
+    With the Lmt type and LMT fusion in place, existing point-op filters
+    can be reframed as predefined LMT constructors. Instead of each
+    filter having its own compute() and analytic_expression(), they
+    become functions that return an Lmt::Analytical(expr) which is
+    wrapped in an LmtNode.
+
+    The user-facing API stays identical — .exposure({ ev: 1.0 }) still
+    works, the param registry still has typed params. The change is
+    internal: the filter struct becomes a thin constructor that produces
+    an Lmt value rather than implementing Filter::compute() directly.
+
+    This unifies the execution path: a user-created exposure(ev=1) and
+    a loaded .cube LMT flow through the same fusion and dispatch system.
+  codebase_analysis: |
+    Point-op filters to migrate (all in filters/adjustment.rs):
+    - Exposure: Mul(Input, 2^ev)
+    - Brightness: Add(Input, amount)
+    - Contrast: Add(Mul(Sub(Input, 0.5), factor), 0.5)
+    - Gamma: Pow(Input, 1/gamma)
+    - Levels: Pow(Div(Sub(Input, black), range), 1/gamma)
+    - Invert: Sub(1, Input)
+    - Posterize: Floor(Mul(Input, levels)) / levels
+    - SigmoidalContrast: sigmoid transfer
+    - Dodge: Div(Input, Sub(1, amount))
+    - Burn: Sub(1, Div(Sub(1, Input), amount))
+    - Solarize: conditional inversion
+
+    Grading filters (filters/grading.rs):
+    - AscCdl: slope/offset/power — natural Lmt::Cdl
+    - LiftGammaGain: convertible to CDL
+    - SplitToning: analytical
+
+    Each migration replaces Filter impl with Lmt construction. The
+    V2Filter derive macro may need a variant that generates LmtNode
+    wrappers instead of FilterNode wrappers.
+  acceptance_criteria:
+    - All migrated filters produce identical output to pre-migration (pixel-exact for analytical)
+    - Inverse chains fuse to identity (exposure +1/-1, brightness +1/-1, invert/invert, gamma 2.0/0.5)
+    - Fused identity chains are eliminated from the pipeline (zero compute)
+    - Param registry entries unchanged — SDK API is identical
+    - Non-migrated filters (spatial, distortion, etc.) completely unaffected
+    - Each filter migrated in a separate commit for easy bisection
+  out_of_scope: |
+    - Migrating spatial filters (blur, bilateral, etc.) — not LMTs
+    - Migrating distortion filters — not LMTs
+    - Migrating draw/mask/composite ops — not LMTs
+    - Changing the user-facing SDK API
+  technical_notes: |
+    Migration pattern per filter:
+
+    Before:
+      impl Filter for Exposure {
+        fn compute(&self, input, w, h) -> Result<Vec<f32>> {
+          let m = 2.0f32.powf(self.ev);
+          // manual pixel loop
+        }
+        fn analytic_expression(&self) -> Option<PointOpExpr> {
+          Some(Mul(Input, Constant(2.0f32.powf(self.ev))))
+        }
+      }
+
+    After:
+      impl Exposure {
+        fn to_lmt(&self) -> Lmt {
+          Lmt::Analytical(Mul(Input, Constant(2.0f32.powf(self.ev))))
+        }
+      }
+      // V2Filter derive generates LmtNode wrapper instead of FilterNode
+
+    The compute() method is no longer needed — LmtNode::compute()
+    evaluates the PointOpExpr. The analytical expression IS the
+    implementation, not a separate optimization hint.
+
+    Migrate in order of complexity:
+    1. Invert (simplest — no params)
+    2. Exposure (one param, pure multiply)
+    3. Brightness (one param, pure add)
+    4. Contrast, Gamma, Levels
+    5. AscCdl (becomes Lmt::Cdl directly)
+    6. Remaining: Posterize, Sigmoidal, Dodge, Burn, Solarize
+plan:
+  - phase: Infrastructure
+    tasks:
+      - text: Add to_lmt() method pattern and LmtNode factory variant to V2Filter derive macro
+        done: false
+      - text: Add parity test harness that compares Filter::compute vs LmtNode::compute output
+        done: false
+  - phase: Migration Wave 1 (simple analytical)
+    tasks:
+      - text: Migrate Invert to Lmt::Analytical — verify identity chain (invert+invert)
+        done: false
+      - text: Migrate Exposure to Lmt::Analytical — verify inverse chain (ev +1/-1 = identity)
+        done: false
+      - text: Migrate Brightness to Lmt::Analytical — verify inverse chain (+1/-1 = identity)
+        done: false
+      - text: Migrate Gamma to Lmt::Analytical — verify inverse chain (2.0/0.5 = identity)
+        done: false
+  - phase: Migration Wave 2 (compound analytical + CDL)
+    tasks:
+      - text: Migrate Contrast, Levels to Lmt::Analytical
+        done: false
+      - text: Migrate AscCdl to Lmt::Cdl
+        done: false
+      - text: Migrate remaining point-ops (Posterize, Sigmoidal, Dodge, Burn, Solarize)
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Run full parity suite — all migrated filters match pre-migration output
+        done: false
+extra: {}

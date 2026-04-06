@@ -1,0 +1,96 @@
+id: lmt-foundation_20260406071800Z
+title: "LMT node foundation — Lmt enum, LmtNode, CLF/cube import"
+type: feature
+status: pending
+created: 2026-04-06
+updated: 2026-04-06
+spec:
+  summary: |
+    Define the Lmt enum (Analytical/Clut3D/Cdl/Chain), LmtNode pipeline
+    wrapper, .cube file parser, and CLF parser. External LMTs enter the
+    pipeline as first-class nodes alongside existing filters.
+  context: |
+    ACES Look Modification Transforms (LMTs) are the industry standard
+    for creative color grading. They come in several forms: analytical
+    (matrix+curve chains), 3D CLUTs (.cube files), ASC CDL, or CLF
+    containers that combine multiple forms.
+
+    Our pipeline already has the internal representations — PointOpExpr
+    for analytical ops, ColorLut3D for 3D lookups, and AscCdl for CDL.
+    But they exist as separate unrelated types. A unified Lmt enum lets
+    any LMT form enter through a single LmtNode, preparing for unified
+    fusion in a follow-up track.
+
+    This track does NOT change existing filters or fusion. It adds new
+    types and a new node alongside the existing system.
+  codebase_analysis: |
+    Existing types to unify under Lmt:
+    - PointOpExpr (ops.rs) — analytical per-channel expressions, already fusable
+    - Clut3D (fusion.rs) — 3D lookup table, used by fusion for CLUT baking
+    - AscCdl struct (filters/grading.rs) — slope/offset/power per channel
+
+    Existing parsers:
+    - color_lut.rs in rasmcore-image has .cube parsing but it targets the
+      V1 ColorLut3D type, not the V2 fusion Clut3D
+    - No CLF parser exists
+
+    LmtNode should implement the Node trait like FilterNode does, but
+    instead of wrapping a Filter it wraps an Lmt value. For fusion
+    compatibility it should expose analytic_expression() when the Lmt
+    is Analytical, and fusion_clut() when it is Clut3D.
+  acceptance_criteria:
+    - Lmt enum with variants Analytical(PointOpExpr), Clut3D(data), Cdl(slope,offset,power), Chain(Vec<Lmt>)
+    - LmtNode implements Node trait with proper compute(), analytic_expression(), fusion_clut()
+    - .cube file parser produces Lmt::Clut3D
+    - CLF parser produces Lmt::Chain (at minimum 1D+3D+1D containers)
+    - LmtNode can be added to a V2 Graph and renders correctly
+    - Existing filters and fusion completely untouched
+  out_of_scope: |
+    - Modifying existing filters to use Lmt
+    - Changing the fusion optimizer
+    - CLF export (import only)
+    - Full CLF spec coverage (ProcessList with all operator types)
+  technical_notes: |
+    The Lmt enum lives in a new module: crates/rasmcore-pipeline-v2/src/lmt.rs
+
+    Lmt::Analytical wraps PointOpExpr directly — no new expression type.
+    Lmt::Clut3D wraps the existing fusion::Clut3D type.
+    Lmt::Cdl stores (slope, offset, power) as [f32; 3] each.
+    Lmt::Chain is a Vec<Lmt> for CLF containers with multiple stages.
+
+    LmtNode::compute() dispatches on the variant:
+    - Analytical: evaluate PointOpExpr per pixel
+    - Clut3D: tetrahedral interpolation
+    - Cdl: slope*x + offset then pow
+    - Chain: apply sequentially
+
+    .cube parser: reuse the existing parsing logic from rasmcore-image
+    color_lut.rs but output Lmt::Clut3D instead of the V1 type.
+plan:
+  - phase: Core Types
+    tasks:
+      - text: Define Lmt enum in new lmt.rs module
+        done: false
+      - text: Implement LmtNode wrapping Lmt as a pipeline Node
+        done: false
+      - text: Wire LmtNode analytic_expression() and fusion_clut() for compatibility
+        done: false
+  - phase: Import Parsers
+    tasks:
+      - text: Implement .cube file parser producing Lmt::Clut3D
+        done: false
+      - text: Implement basic CLF parser producing Lmt::Chain
+        done: false
+      - text: Register lmt_node as a factory in the V2 registry
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test LmtNode with Analytical — matches PointOpExpr evaluation
+        done: false
+      - text: Test LmtNode with Clut3D — identity LUT produces identity output
+        done: false
+      - text: Test .cube import roundtrip — load file, render through LmtNode
+        done: false
+      - text: Test LmtNode in a Graph chain with existing FilterNodes
+        done: false
+extra: {}
