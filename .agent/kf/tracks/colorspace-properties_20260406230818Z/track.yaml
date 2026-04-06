@@ -3,57 +3,60 @@ title: Add derived color-space properties to ColorSpace enum
 type: feature
 status: pending
 created: 2026-04-07
-updated: 2026-04-07
+updated: '2026-04-06'
 spec:
-  summary: |
-    Add luma_coefficients(), white_point(), is_scene_referred(), and
-    gamut_volume() methods to ColorSpace. Foundation for color-space-aware
-    filter operations.
-  context: |
-    The pipeline tracks ColorSpace per-node but filters use hardcoded luma
-    weights (51+ instances of BT.709 or NTSC coefficients). The correct
-    weights are derived from each color space's RGB-to-XYZ matrix (Y row).
-    This track adds methods so downstream work can replace hardcoded constants.
-  codebase_analysis: |
-    ColorSpace enum at color_space.rs has 10 variants with only is_linear()
-    and is_log(). The XYZ matrices already exist in color_math.rs — the Y
-    row of each matrix IS the luma coefficients. We just need to expose them
-    as a method on ColorSpace.
+  summary: 'Add luma_coefficients(), white_point(), is_scene_referred(), and
 
-    Luma coefficients by primaries:
-      Rec.709 (Linear/Srgb/Rec709): [0.2126, 0.7152, 0.0722]
-      Rec.2020: [0.2627, 0.6780, 0.0593]
-      AP1 (AcesCg/AcesCct/AcesCc): [0.2722287, 0.6740818, 0.0536895]
-      AP0 (Aces2065_1): [0.9525564, 1.0000000, 0.0000937]
-      P3 (DisplayP3): [0.2290, 0.6917, 0.0793]
-      Unknown: defaults to Rec.709
-    White points: D65 = (0.3127, 0.3290), D60 = (0.32168, 0.33767)
+    gamut_volume() methods to ColorSpace. Foundation for color-space-aware
+
+    filter operations.
+
+    '
+  context: 'The pipeline tracks ColorSpace per-node but filters use hardcoded luma
+
+    weights (51+ instances of BT.709 or NTSC coefficients). The correct
+
+    weights are derived from each color space''s RGB-to-XYZ matrix (Y row).
+
+    This track adds methods so downstream work can replace hardcoded constants.
+
+    '
+  codebase_analysis: "ColorSpace enum at color_space.rs has 10 variants with only is_linear()\nand is_log(). The XYZ matrices\
+    \ already exist in color_math.rs — the Y\nrow of each matrix IS the luma coefficients. We just need to expose them\nas\
+    \ a method on ColorSpace.\n\nLuma coefficients by primaries:\n  Rec.709 (Linear/Srgb/Rec709): [0.2126, 0.7152, 0.0722]\n\
+    \  Rec.2020: [0.2627, 0.6780, 0.0593]\n  AP1 (AcesCg/AcesCct/AcesCc): [0.2722287, 0.6740818, 0.0536895]\n  AP0 (Aces2065_1):\
+    \ [0.9525564, 1.0000000, 0.0000937]\n  P3 (DisplayP3): [0.2290, 0.6917, 0.0793]\n  Unknown: defaults to Rec.709\nWhite\
+    \ points: D65 = (0.3127, 0.3290), D60 = (0.32168, 0.33767)\n"
   acceptance_criteria:
-    - luma_coefficients() returns [f32; 3] derived from color space primaries
-    - white_point() returns CIE xy chromaticity (D65 or D60)
-    - is_scene_referred() distinguishes ACES from display-referred spaces
-    - is_perceptually_uniform() identifies log spaces (ACEScct, ACEScc)
-    - Coefficients match Y row of corresponding XYZ matrix in color_math.rs
-    - Unit tests verify each variant
-  out_of_scope: |
-    Changing any filter code. This track only adds methods to ColorSpace.
-  technical_notes: |
-    Spaces sharing primaries return identical luma coefficients regardless
+  - luma_coefficients() returns [f32; 3] derived from color space primaries
+  - white_point() returns CIE xy chromaticity (D65 or D60)
+  - is_scene_referred() distinguishes ACES from display-referred spaces
+  - is_perceptually_uniform() identifies log spaces (ACEScct, ACEScc)
+  - Coefficients match Y row of corresponding XYZ matrix in color_math.rs
+  - Unit tests verify each variant
+  out_of_scope: 'Changing any filter code. This track only adds methods to ColorSpace.
+
+    '
+  technical_notes: 'Spaces sharing primaries return identical luma coefficients regardless
+
     of transfer function. Linear and Srgb both use Rec.709 primaries.
+
     AcesCg/AcesCct/AcesCc all use AP1 primaries.
+
+    '
 plan:
-  - phase: Implementation
-    tasks:
-      - text: Add luma_coefficients() returning [f32; 3] per-variant
-        done: false
-      - text: Add white_point() returning (f32, f32) CIE xy
-        done: false
-      - text: Add is_scene_referred() and is_perceptually_uniform()
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Tests verifying coefficients match XYZ matrix Y row
-        done: false
-      - text: Test spaces sharing primaries return identical coefficients
-        done: false
+- phase: Implementation
+  tasks:
+  - text: Add luma_coefficients() returning [f32; 3] per-variant
+    done: true
+  - text: Add white_point() returning (f32, f32) CIE xy
+    done: true
+  - text: Add is_scene_referred() and is_perceptually_uniform()
+    done: true
+- phase: Verification
+  tasks:
+  - text: Tests verifying coefficients match XYZ matrix Y row
+    done: true
+  - text: Test spaces sharing primaries return identical coefficients
+    done: true
 extra: {}
