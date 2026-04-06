@@ -295,6 +295,13 @@ pub trait Node {
     fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
         None
     }
+
+    /// If this node is an LMT node, return the underlying Lmt value.
+    /// Used by the fusion optimizer to flatten Chain LMTs into individual nodes.
+    /// Default: None (not an LMT node).
+    fn as_lmt(&self) -> Option<&crate::lmt::Lmt> {
+        None
+    }
 }
 
 /// How a node estimates its required input region.

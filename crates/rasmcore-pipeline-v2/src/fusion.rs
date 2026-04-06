@@ -707,9 +707,25 @@ impl Node for FusedClutNode {
 pub fn optimize(graph: &mut Graph) {
     // Note: the caller (request_full, gpu_plan) emits the trace event.
     // Don't emit here to avoid double-counting.
+    flatten_lmt_chains(graph);
     fuse_analytical_chains(graph);
     fuse_affine_chains(graph);
     fuse_clut_chains(graph);
+}
+
+/// Flatten Lmt::Chain nodes into individual LmtNodes.
+///
+/// Chain nodes execute correctly via Lmt::apply() (sequential stages),
+/// but don't participate in cross-node fusion. This pass is a placeholder
+/// for future optimization that would expand Chain nodes into individual
+/// LmtNodes so the analytical/CLUT passes can compose across them.
+///
+/// Current behavior: Chain nodes are left as-is. Their internal stages
+/// execute sequentially inside LmtNode::compute(), which is correct.
+fn flatten_lmt_chains(_graph: &mut Graph) {
+    // Future: expand Lmt::Chain nodes into individual LmtNodes.
+    // Requires Graph::rewire_upstream or similar node insertion API.
+    // For now, chains execute correctly without cross-node fusion.
 }
 
 /// Fuse chains of analytical (point op) nodes into single expression trees.

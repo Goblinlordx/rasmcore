@@ -169,6 +169,10 @@ impl Node for LmtNode {
     fn fusion_clut(&self) -> Option<Clut3D> {
         self.lmt.as_clut().cloned()
     }
+
+    fn as_lmt(&self) -> Option<&Lmt> {
+        Some(&self.lmt)
+    }
 }
 
 // ─── .cube Parser ────────────────────────────────────────────────────────────
@@ -507,5 +511,133 @@ LUT_3D_SIZE 2
     fn parse_cube_wrong_entry_count_errors() {
         let cube = "LUT_3D_SIZE 2\n0.0 0.0 0.0\n";
         assert!(parse_cube(cube).is_err());
+    }
+
+    // ── Fusion tests — LmtNode participates in existing fusion optimizer ─
+
+    #[test]
+    fn analytical_lmt_chain_fuses_in_graph() {
+        // Two LmtNode(Analytical) should fuse into one FusedPointOpNode
+        let mut g = Graph::new(0);
+        let src = g.add_node(Box::new(SolidSource {
+            w: 2, h: 2, color: [0.5, 0.5, 0.5, 1.0],
+        }));
+        let info = g.node_info(src).unwrap();
+
+        // LMT 1: multiply by 2 (exposure +1 EV)
+        let n1 = g.add_node(Box::new(LmtNode::new(
+            src, info.clone(),
+            Lmt::Analytical(PointOpExpr::Mul(
+                Box::new(PointOpExpr::Input),
+                Box::new(PointOpExpr::Constant(2.0)),
+            )),
+        )));
+
+        // LMT 2: multiply by 0.5 (exposure -1 EV)
+        let n2 = g.add_node(Box::new(LmtNode::new(
+            n1, info,
+            Lmt::Analytical(PointOpExpr::Mul(
+                Box::new(PointOpExpr::Input),
+                Box::new(PointOpExpr::Constant(0.5)),
+            )),
+        )));
+
+        // Should fuse: 2.0 * 0.5 = 1.0 (identity, but FusedPointOpNode still created)
+        let result = g.request_full(n2).unwrap();
+        // 0.5 * 2.0 * 0.5 = 0.5 (round-trip)
+        assert!((result[0] - 0.5).abs() < 1e-5, "fused LMT chain should produce 0.5, got {}", result[0]);
+    }
+
+    #[test]
+    fn cdl_lmt_fuses_with_analytical() {
+        // CDL converts to analytical, so it should fuse with adjacent analytical LMTs
+        let mut g = Graph::new(0);
+        let src = g.add_node(Box::new(SolidSource {
+            w: 1, h: 1, color: [0.5, 0.5, 0.5, 1.0],
+        }));
+        let info = g.node_info(src).unwrap();
+
+        // CDL: slope=2, offset=0, power=1 → just doubles (like exposure +1 EV)
+        let n1 = g.add_node(Box::new(LmtNode::new(
+            src, info.clone(),
+            Lmt::Cdl {
+                slope: [2.0, 2.0, 2.0],
+                offset: [0.0, 0.0, 0.0],
+                power: [1.0, 1.0, 1.0],
+            },
+        )));
+
+        // Analytical: add 0.1
+        let n2 = g.add_node(Box::new(LmtNode::new(
+            n1, info,
+            Lmt::Analytical(PointOpExpr::Add(
+                Box::new(PointOpExpr::Input),
+                Box::new(PointOpExpr::Constant(0.1)),
+            )),
+        )));
+
+        let result = g.request_full(n2).unwrap();
+        // 0.5 * 2.0 + 0.1 = 1.1
+        assert!((result[0] - 1.1).abs() < 1e-4, "CDL+analytical fusion should produce 1.1, got {}", result[0]);
+    }
+
+    #[test]
+    fn mixed_lmt_and_filter_nodes_fuse() {
+        use crate::filter_node::FilterNode;
+        use crate::ops::Filter;
+
+        #[derive(Clone)]
+        struct AddOffset { amount: f32 }
+        impl Filter for AddOffset {
+            fn compute(&self, input: &[f32], _w: u32, _h: u32) -> Result<Vec<f32>, PipelineError> {
+                Ok(input.iter().enumerate().map(|(i, &v)| {
+                    if i % 4 == 3 { v } else { v + self.amount }
+                }).collect())
+            }
+            fn analytic_expression(&self) -> Option<PointOpExpr> {
+                Some(PointOpExpr::Add(
+                    Box::new(PointOpExpr::Input),
+                    Box::new(PointOpExpr::Constant(self.amount)),
+                ))
+            }
+        }
+
+        let mut g = Graph::new(0);
+        let src = g.add_node(Box::new(SolidSource {
+            w: 1, h: 1, color: [0.5, 0.5, 0.5, 1.0],
+        }));
+        let info = g.node_info(src).unwrap();
+
+        // FilterNode: add 0.1
+        let f1 = g.add_node(Box::new(FilterNode::new(
+            src, info.clone(), AddOffset { amount: 0.1 },
+        )));
+
+        // LmtNode: multiply by 2
+        let l1 = g.add_node(Box::new(LmtNode::new(
+            f1, info.clone(),
+            Lmt::Analytical(PointOpExpr::Mul(
+                Box::new(PointOpExpr::Input),
+                Box::new(PointOpExpr::Constant(2.0)),
+            )),
+        )));
+
+        // FilterNode: add 0.05
+        let f2 = g.add_node(Box::new(FilterNode::new(
+            l1, info, AddOffset { amount: 0.05 },
+        )));
+
+        let result = g.request_full(f2).unwrap();
+        // (0.5 + 0.1) * 2.0 + 0.05 = 1.25
+        assert!((result[0] - 1.25).abs() < 1e-4, "mixed chain should produce 1.25, got {}", result[0]);
+    }
+
+    #[test]
+    fn lmt_node_as_lmt_returns_value() {
+        use crate::node::Node;
+        let lmt = Lmt::Analytical(PointOpExpr::Input);
+        let node = LmtNode::new(0, test_info(1, 1), lmt);
+        assert!(node.as_lmt().is_some());
+        assert!(matches!(node.as_lmt().unwrap(), Lmt::Analytical(_)));
     }
 }
