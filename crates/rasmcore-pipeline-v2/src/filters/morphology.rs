@@ -130,6 +130,97 @@ fn erode_cpu(input: &[f32], width: u32, height: u32, radius: u32) -> Vec<f32> {
     out
 }
 
+/// Copy input to a reduction buffer (snapshot) and pass through to output.
+const SNAPSHOT_WGSL: &str = r#"
+struct Params { width: u32, height: u32, _p1: u32, _p2: u32, }
+@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
+@group(0) @binding(2) var<uniform> params: Params;
+@group(0) @binding(3) var<storage, read_write> snapshot: array<vec4<f32>>;
+@compute @workgroup_size(16, 16, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let x = gid.x; let y = gid.y;
+  if (x >= params.width || y >= params.height) { return; }
+  let idx = x + y * params.width;
+  let px = input[idx];
+  snapshot[idx] = px;
+  output[idx] = px;
+}
+"#;
+
+/// Subtract: output = clamp(snapshot − input, 0, 1) per RGB channel.
+const SUB_SNAP_MINUS_CURRENT_WGSL: &str = r#"
+struct Params { width: u32, height: u32, _p1: u32, _p2: u32, }
+@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
+@group(0) @binding(2) var<uniform> params: Params;
+@group(0) @binding(3) var<storage, read> snapshot: array<vec4<f32>>;
+@compute @workgroup_size(16, 16, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let x = gid.x; let y = gid.y;
+  if (x >= params.width || y >= params.height) { return; }
+  let idx = x + y * params.width;
+  let a = snapshot[idx]; let b = input[idx];
+  output[idx] = vec4<f32>(max(a.r - b.r, 0.0), max(a.g - b.g, 0.0), max(a.b - b.b, 0.0), a.w);
+}
+"#;
+
+/// Subtract: output = clamp(current − snapshot, 0, 1) per RGB channel.
+const SUB_CURRENT_MINUS_SNAP_WGSL: &str = r#"
+struct Params { width: u32, height: u32, _p1: u32, _p2: u32, }
+@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
+@group(0) @binding(2) var<uniform> params: Params;
+@group(0) @binding(3) var<storage, read> snapshot: array<vec4<f32>>;
+@compute @workgroup_size(16, 16, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let x = gid.x; let y = gid.y;
+  if (x >= params.width || y >= params.height) { return; }
+  let idx = x + y * params.width;
+  let a = input[idx]; let b = snapshot[idx];
+  output[idx] = vec4<f32>(max(a.r - b.r, 0.0), max(a.g - b.g, 0.0), max(a.b - b.b, 0.0), a.w);
+}
+"#;
+
+use crate::node::ReductionBuffer;
+
+fn make_snapshot_shader(width: u32, height: u32, buf_id: u32) -> GpuShader {
+    let mut params = gpu_params_wh(width, height);
+    gpu_params_push_u32(&mut params, 0);
+    gpu_params_push_u32(&mut params, 0);
+    let buf_size = (width as usize) * (height as usize) * 16; // vec4<f32> per pixel
+    GpuShader {
+        body: SNAPSHOT_WGSL.to_string(),
+        entry_point: "main",
+        workgroup_size: [16, 16, 1],
+        params,
+        extra_buffers: vec![],
+        reduction_buffers: vec![ReductionBuffer {
+            id: buf_id,
+            initial_data: vec![0u8; buf_size],
+            read_write: true,
+        }],
+    }
+}
+
+fn make_sub_shader(wgsl: &str, width: u32, height: u32, buf_id: u32) -> GpuShader {
+    let mut params = gpu_params_wh(width, height);
+    gpu_params_push_u32(&mut params, 0);
+    gpu_params_push_u32(&mut params, 0);
+    GpuShader {
+        body: wgsl.to_string(),
+        entry_point: "main",
+        workgroup_size: [16, 16, 1],
+        params,
+        extra_buffers: vec![],
+        reduction_buffers: vec![ReductionBuffer {
+            id: buf_id,
+            initial_data: vec![], // reuse existing allocation
+            read_write: false,    // read-only on this pass
+        }],
+    }
+}
+
 fn make_dilate_shader(width: u32, height: u32, radius: u32) -> GpuShader {
     let mut params = gpu_params_wh(width, height);
     gpu_params_push_u32(&mut params, radius);
@@ -274,6 +365,12 @@ impl Filter for MorphGradient {
         Ok(out)
     }
 
+    fn gpu_shader_passes(&self, _width: u32, _height: u32) -> Option<Vec<GpuShader>> {
+        // True gradient = dilate − erode requires two independent transforms from
+        // the same input, which needs two snapshot buffers. CPU-only for now.
+        None
+    }
+
     fn tile_overlap(&self) -> u32 { self.radius }
 }
 
@@ -303,6 +400,19 @@ impl Filter for MorphTophat {
         Ok(out)
     }
 
+    fn gpu_shader_passes(&self, width: u32, height: u32) -> Option<Vec<GpuShader>> {
+        // Pass 0: snapshot original → reduction buffer, passthrough to output
+        // Pass 1: erode
+        // Pass 2: dilate (open result)
+        // Pass 3: output = snapshot − open (original − opened)
+        Some(vec![
+            make_snapshot_shader(width, height, 0),
+            make_erode_shader(width, height, self.radius),
+            make_dilate_shader(width, height, self.radius),
+            make_sub_shader(SUB_SNAP_MINUS_CURRENT_WGSL, width, height, 0),
+        ])
+    }
+
     fn tile_overlap(&self) -> u32 { self.radius * 2 }
 }
 
@@ -330,6 +440,19 @@ impl Filter for MorphBlackhat {
             out[i + 3] = input[i + 3];
         }
         Ok(out)
+    }
+
+    fn gpu_shader_passes(&self, width: u32, height: u32) -> Option<Vec<GpuShader>> {
+        // Pass 0: snapshot original → reduction buffer, passthrough to output
+        // Pass 1: dilate
+        // Pass 2: erode (close result)
+        // Pass 3: output = close − snapshot (closed − original)
+        Some(vec![
+            make_snapshot_shader(width, height, 0),
+            make_dilate_shader(width, height, self.radius),
+            make_erode_shader(width, height, self.radius),
+            make_sub_shader(SUB_CURRENT_MINUS_SNAP_WGSL, width, height, 0),
+        ])
     }
 
     fn tile_overlap(&self) -> u32 { self.radius * 2 }
