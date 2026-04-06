@@ -4,7 +4,7 @@
 //! Edge detectors are spatial (need 3x3 neighborhood). Threshold filters are
 //! point ops on luminance. All have GPU shaders.
 
-use crate::node::PipelineError;
+use crate::node::{GpuShader, PipelineError};
 use crate::ops::Filter;
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -420,7 +420,64 @@ impl Filter for OtsuThreshold {
         }
         Ok(out)
     }
+
+    fn gpu_shader_passes(&self, width: u32, height: u32) -> Option<Vec<GpuShader>> {
+        use crate::gpu_shaders::reduction::GpuReduction;
+        let reduction = GpuReduction::histogram_256(256);
+        let passes = reduction.build_passes(width, height);
+        let total = width * height;
+        let mut params = Vec::with_capacity(16);
+        params.extend_from_slice(&width.to_le_bytes());
+        params.extend_from_slice(&height.to_le_bytes());
+        params.extend_from_slice(&total.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes());
+        let pass3 = GpuShader::new(
+            OTSU_APPLY_WGSL.to_string(), "main", [256, 1, 1], params,
+        ).with_reduction_buffers(vec![reduction.read_buffer(&passes)]);
+        Some(vec![passes.pass1, passes.pass2, pass3])
+    }
 }
+
+/// Otsu GPU apply shader — reads histogram, computes optimal threshold inline, applies.
+const OTSU_APPLY_WGSL: &str = r#"
+struct Params { width: u32, height: u32, total_pixels: u32, _pad: u32, }
+@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
+@group(0) @binding(2) var<uniform> params: Params;
+@group(0) @binding(3) var<storage, read> histogram: array<u32>;
+
+@compute @workgroup_size(256, 1, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    if (idx >= params.total_pixels) { return; }
+
+    // Compute Otsu threshold from luminance histogram (bins 0..255 of R channel)
+    var sum_total = 0.0;
+    for (var i = 0u; i < 256u; i++) { sum_total += f32(i) * f32(histogram[i]); }
+    var sum_bg = 0.0;
+    var w_bg = 0.0;
+    var max_var = 0.0;
+    var best_t = 0u;
+    let total = f32(params.total_pixels);
+    for (var t = 0u; t < 256u; t++) {
+        w_bg += f32(histogram[t]);
+        if (w_bg == 0.0) { continue; }
+        let w_fg = total - w_bg;
+        if (w_fg == 0.0) { break; }
+        sum_bg += f32(t) * f32(histogram[t]);
+        let mean_bg = sum_bg / w_bg;
+        let mean_fg = (sum_total - sum_bg) / w_fg;
+        let v = w_bg * w_fg * (mean_bg - mean_fg) * (mean_bg - mean_fg);
+        if (v > max_var) { max_var = v; best_t = t; }
+    }
+    let threshold = f32(best_t) / 255.0;
+
+    let pixel = input[idx];
+    let l = 0.2126 * pixel.x + 0.7152 * pixel.y + 0.0722 * pixel.z;
+    let v = select(0.0, 1.0, l >= threshold);
+    output[idx] = vec4(v, v, v, pixel.w);
+}
+"#;
 
 // ─── Triangle Threshold ────────────────────────────────────────────────────
 
@@ -467,7 +524,70 @@ impl Filter for TriangleThreshold {
         }
         Ok(out)
     }
+
+    fn gpu_shader_passes(&self, width: u32, height: u32) -> Option<Vec<GpuShader>> {
+        use crate::gpu_shaders::reduction::GpuReduction;
+        let reduction = GpuReduction::histogram_256(256);
+        let passes = reduction.build_passes(width, height);
+        let total = width * height;
+        let mut params = Vec::with_capacity(16);
+        params.extend_from_slice(&width.to_le_bytes());
+        params.extend_from_slice(&height.to_le_bytes());
+        params.extend_from_slice(&total.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes());
+        let pass3 = GpuShader::new(
+            TRIANGLE_APPLY_WGSL.to_string(), "main", [256, 1, 1], params,
+        ).with_reduction_buffers(vec![reduction.read_buffer(&passes)]);
+        Some(vec![passes.pass1, passes.pass2, pass3])
+    }
 }
+
+/// Triangle threshold GPU apply — reads histogram, finds peak/far, computes threshold.
+const TRIANGLE_APPLY_WGSL: &str = r#"
+struct Params { width: u32, height: u32, total_pixels: u32, _pad: u32, }
+@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
+@group(0) @binding(2) var<uniform> params: Params;
+@group(0) @binding(3) var<storage, read> histogram: array<u32>;
+
+@compute @workgroup_size(256, 1, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x;
+    if (idx >= params.total_pixels) { return; }
+
+    // Find peak bin in luminance histogram
+    var peak_idx = 0u;
+    var peak_val = 0u;
+    for (var i = 0u; i < 256u; i++) {
+        if (histogram[i] > peak_val) { peak_val = histogram[i]; peak_idx = i; }
+    }
+    // Find farthest non-zero bin
+    var far_idx = 0u;
+    if (peak_idx < 128u) {
+        for (var i = 255u; i > 0u; i--) { if (histogram[i] > 0u) { far_idx = i; break; } }
+    } else {
+        for (var i = 0u; i < 256u; i++) { if (histogram[i] > 0u) { far_idx = i; break; } }
+    }
+    // Line distance method
+    let x1 = f32(peak_idx); let y1 = f32(peak_val);
+    let x2 = f32(far_idx); let y2 = f32(histogram[far_idx]);
+    let line_len = max(sqrt((x2-x1)*(x2-x1) + (y2-y1)*(y2-y1)), 0.000001);
+    var best_t = peak_idx;
+    var max_dist = 0.0;
+    let lo = min(peak_idx, far_idx);
+    let hi = max(peak_idx, far_idx);
+    for (var t = lo; t <= hi; t++) {
+        let d = abs((y2-y1)*f32(t) - (x2-x1)*f32(histogram[t]) + x2*y1 - y2*x1) / line_len;
+        if (d > max_dist) { max_dist = d; best_t = t; }
+    }
+    let threshold = f32(best_t) / 255.0;
+
+    let pixel = input[idx];
+    let l = 0.2126 * pixel.x + 0.7152 * pixel.y + 0.0722 * pixel.z;
+    let v = select(0.0, 1.0, l >= threshold);
+    output[idx] = vec4(v, v, v, pixel.w);
+}
+"#;
 
 // ─── Adaptive Threshold ────────────────────────────────────────────────────
 
@@ -606,5 +726,21 @@ mod tests {
         for f in &["sobel", "scharr", "laplacian", "canny", "threshold_binary", "otsu_threshold", "triangle_threshold", "adaptive_threshold"] {
             assert!(names.contains(f), "{f} not registered");
         }
+    }
+
+    #[test]
+    fn otsu_has_gpu_3_pass() {
+        let f = OtsuThreshold;
+        let shaders = f.gpu_shader_passes(32, 32);
+        assert!(shaders.is_some(), "otsu should have GPU shaders");
+        assert_eq!(shaders.unwrap().len(), 3, "otsu should be 3-pass (hist reduce + hist merge + apply)");
+    }
+
+    #[test]
+    fn triangle_has_gpu_3_pass() {
+        let f = TriangleThreshold;
+        let shaders = f.gpu_shader_passes(32, 32);
+        assert!(shaders.is_some(), "triangle should have GPU shaders");
+        assert_eq!(shaders.unwrap().len(), 3, "triangle should be 3-pass");
     }
 }
