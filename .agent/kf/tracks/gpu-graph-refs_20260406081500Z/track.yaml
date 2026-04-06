@@ -5,78 +5,87 @@ status: pending
 created: '2026-04-06'
 updated: '2026-04-06'
 spec:
-  summary: |
-    Add named ref points to the V2 Graph DAG and expose via WIT. The fluent
+  summary: 'Add named ref points to the V2 Graph DAG and expose via WIT. The fluent
+
     SDK gets ref() and branch() methods for building forked pipelines.
-  context: |
-    The multi-output GPU pipeline design requires named branch points in the
+
+    '
+  context: 'The multi-output GPU pipeline design requires named branch points in the
+
     DAG so that multiple downstream consumers (viewport + scopes) can fork
+
     from the same computed node without re-executing the chain.
 
+
     The V2 Graph already supports DAG topology (nodes can have multiple
+
     downstream consumers). What is missing is named access points that the
+
     fluent API can use to fork the pipeline cursor.
-  codebase_analysis: |
-    Graph (graph.rs): nodes stored as Vec<Box<dyn Node>>, accessed by u32 ID.
+
+    '
+  codebase_analysis: 'Graph (graph.rs): nodes stored as Vec<Box<dyn Node>>, accessed by u32 ID.
+
     No named refs exist. add_node() returns a u32 ID.
+
 
     WIT (pipeline.wit): node-id = u32. No ref/branch methods.
 
+
     Fluent SDK (v2-fluent/index.ts): Pipeline class holds _pipe (raw) and
+
     _node (current cursor). branch() would create a new Pipeline instance
-    with cursor set to the ref's node ID.
+
+    with cursor set to the ref''s node ID.
+
 
     PipelineResource (lib.rs): wraps Graph in RefCell. Would need set_ref
+
     and get_ref methods that delegate to Graph.
+
+    '
   acceptance_criteria:
-    - Graph has refs HashMap storing name-to-node-id mappings
-    - set_ref(name, node_id) and get_ref(name) methods on Graph
-    - WIT methods set-ref and get-ref on image-pipeline-v2
-    - WASM adapter implements set-ref and get-ref
-    - Fluent SDK Pipeline.ref(name) marks current node
-    - Fluent SDK Pipeline.branch(name) returns new cursor at ref node
-    - Existing single-output pipeline unchanged (backward compatible)
-  out_of_scope: |
-    Multi-display targets. GPU plan extraction. Worker integration.
+  - Graph has refs HashMap storing name-to-node-id mappings
+  - set_ref(name, node_id) and get_ref(name) methods on Graph
+  - WIT methods set-ref and get-ref on image-pipeline-v2
+  - WASM adapter implements set-ref and get-ref
+  - Fluent SDK Pipeline.ref(name) marks current node
+  - Fluent SDK Pipeline.branch(name) returns new cursor at ref node
+  - Existing single-output pipeline unchanged (backward compatible)
+  out_of_scope: 'Multi-display targets. GPU plan extraction. Worker integration.
+
     These are separate tracks.
-  technical_notes: |
-    Minimal change to Graph:
-      refs: HashMap<String, u32>
-      pub fn set_ref(&mut self, name: &str, node_id: u32)
-      pub fn get_ref(&self, name: &str) -> Option<u32>
 
-    WIT:
-      set-ref: func(name: string, node: node-id);
-      get-ref: func(name: string) -> option<node-id>;
-
-    Fluent SDK branch() returns a new Pipeline object sharing the same
-    raw pipeline but with cursor at the ref node. The _displays and _refs
-    maps are shared across all branches.
+    '
+  technical_notes: "Minimal change to Graph:\n  refs: HashMap<String, u32>\n  pub fn set_ref(&mut self, name: &str, node_id:\
+    \ u32)\n  pub fn get_ref(&self, name: &str) -> Option<u32>\n\nWIT:\n  set-ref: func(name: string, node: node-id);\n  get-ref:\
+    \ func(name: string) -> option<node-id>;\n\nFluent SDK branch() returns a new Pipeline object sharing the same\nraw pipeline\
+    \ but with cursor at the ref node. The _displays and _refs\nmaps are shared across all branches.\n"
 plan:
-  - phase: Graph Refs
-    tasks:
-      - text: Add refs HashMap<String, u32> field to Graph struct
-        done: false
-      - text: Implement set_ref and get_ref methods on Graph
-        done: false
-      - text: Add set_ref and get_ref to PipelineResource
-        done: false
-      - text: Test ref creation and lookup in Graph
-        done: false
-  - phase: WIT and WASM Wiring
-    tasks:
-      - text: Add set-ref and get-ref to pipeline.wit
-        done: false
-      - text: Implement WIT bindings in rasmcore-v2-wasm
-        done: false
-  - phase: Fluent SDK
-    tasks:
-      - text: Add ref(name) method to Pipeline class
-        done: false
-      - text: Add branch(name) method returning new Pipeline cursor
-        done: false
-      - text: Test ref/branch produces correct node topology
-        done: false
-      - text: Verify backward compatibility — existing pipelines unchanged
-        done: false
+- phase: Graph Refs
+  tasks:
+  - text: Add refs HashMap<String, u32> field to Graph struct
+    done: true
+  - text: Implement set_ref and get_ref methods on Graph
+    done: true
+  - text: Add set_ref and get_ref to PipelineResource
+    done: true
+  - text: Test ref creation and lookup in Graph
+    done: true
+- phase: WIT and WASM Wiring
+  tasks:
+  - text: Add set-ref and get-ref to pipeline.wit
+    done: true
+  - text: Implement WIT bindings in rasmcore-v2-wasm
+    done: true
+- phase: Fluent SDK
+  tasks:
+  - text: Add ref(name) method to Pipeline class
+    done: true
+  - text: Add branch(name) method returning new Pipeline cursor
+    done: true
+  - text: Test ref/branch produces correct node topology
+    done: true
+  - text: Verify backward compatibility — existing pipelines unchanged
+    done: true
 extra: {}
