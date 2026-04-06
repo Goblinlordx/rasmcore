@@ -33,9 +33,10 @@ use std::rc::Rc;
 use rasmcore_pipeline_v2::{
     self as v2, Graph, LayerCache, NodeInfo, ParamMap, PipelineError,
     create_filter_node,
-    hash::{content_hash, source_hash},
+    hash::{content_hash, source_hash, source_hash_pixels},
 };
 use rasmcore_pipeline_v2::ColorSpace;
+use rasmcore_pipeline_v2::gpu_shaders::pixel_source::{self, HostPixelFormat};
 
 // ─── Error conversion ───────────────────────────────────────────────────────
 
@@ -82,10 +83,68 @@ impl v2::Node for SourceNode {
     }
 }
 
+// ─── Host-Decoded Pixel Source Node ─────────────────────────────────────────
+
+/// Source node for host-decoded raw pixel bytes.
+///
+/// Stores raw bytes in the host format (u8 sRGB, u16 linear, or f32 linear).
+/// For non-f32 formats, provides a GPU shader that converts to f32 linear as
+/// the first node in the GPU chain. CPU fallback converts in-place.
+struct SourceNodePixels {
+    raw_bytes: Vec<u8>,
+    format: HostPixelFormat,
+    info: NodeInfo,
+}
+
+impl v2::Node for SourceNodePixels {
+    fn info(&self) -> NodeInfo {
+        self.info.clone()
+    }
+
+    fn compute(
+        &self,
+        _request: v2::Rect,
+        _upstream: &mut dyn v2::Upstream,
+    ) -> Result<Vec<f32>, PipelineError> {
+        match self.format {
+            HostPixelFormat::Rgba8 => {
+                Ok(v2::color_math::srgb_rgba8_to_f32_linear(&self.raw_bytes))
+            }
+            HostPixelFormat::Rgba16 => {
+                let pixel_count = (self.info.width * self.info.height) as usize;
+                let mut out = Vec::with_capacity(pixel_count * 4);
+                for chunk in self.raw_bytes.chunks_exact(8) {
+                    let r = u16::from_le_bytes([chunk[0], chunk[1]]) as f32 / 65535.0;
+                    let g = u16::from_le_bytes([chunk[2], chunk[3]]) as f32 / 65535.0;
+                    let b = u16::from_le_bytes([chunk[4], chunk[5]]) as f32 / 65535.0;
+                    let a = u16::from_le_bytes([chunk[6], chunk[7]]) as f32 / 65535.0;
+                    out.extend_from_slice(&[r, g, b, a]);
+                }
+                Ok(out)
+            }
+            HostPixelFormat::RgbaF32 => {
+                let mut out = Vec::with_capacity(self.raw_bytes.len() / 4);
+                for chunk in self.raw_bytes.chunks_exact(4) {
+                    out.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+                }
+                Ok(out)
+            }
+        }
+    }
+
+    fn gpu_shader(&self, width: u32, height: u32) -> Option<v2::GpuShader> {
+        pixel_source::conversion_shader(self.format, &self.raw_bytes, width, height)
+    }
+
+    fn upstream_ids(&self) -> Vec<u32> {
+        vec![]
+    }
+}
+
 // ─── Source Resource ────────────────────────────────────────────────────────
 
 /// Decoded image source — created once, reused across pipeline chains.
-/// Holds decoded f32 pixel data and a shared buffer pool for zero-alloc
+/// Holds decoded pixel data and a shared buffer pool for zero-alloc
 /// rendering. Passing the same source to read_source() skips re-decoding.
 pub struct SourceResource {
     pixels: Vec<f32>,
@@ -93,6 +152,12 @@ pub struct SourceResource {
     /// Shared buffer pool — reusable pixel buffers for this image's dimensions.
     /// Persists across pipeline lifetimes, eliminating allocation churn.
     buffer_pool: Rc<RefCell<v2::BufferPool>>,
+    /// Raw host-decoded bytes (non-empty for from_pixels sources).
+    #[allow(dead_code)]
+    raw_pixels: Option<(Vec<u8>, HostPixelFormat)>,
+    /// Content hash for this source (precomputed).
+    #[allow(dead_code)]
+    src_hash: v2::hash::ContentHash,
 }
 
 impl SourceResource {
@@ -115,6 +180,7 @@ impl SourceResource {
             (d.pixels, d.info.width, d.info.height, d.info.color_space)
         };
 
+        let src_hash = source_hash(data);
         Ok(Self {
             pixels: decoded.0,
             info: NodeInfo {
@@ -123,7 +189,58 @@ impl SourceResource {
                 color_space: decoded.3,
             },
             buffer_pool: Rc::new(RefCell::new(v2::BufferPool::new())),
+            raw_pixels: None,
+            src_hash,
         })
+    }
+
+    /// Create a source from host-decoded raw pixel bytes.
+    pub fn from_pixels(data: Vec<u8>, width: u32, height: u32, format: HostPixelFormat) -> Self {
+        let format_tag = match format {
+            HostPixelFormat::Rgba8 => "source-rgba8",
+            HostPixelFormat::Rgba16 => "source-rgba16",
+            HostPixelFormat::RgbaF32 => "source-f32",
+        };
+        let src_hash = source_hash_pixels(format_tag, &data, width, height);
+
+        let color_space = match format {
+            HostPixelFormat::Rgba8 => ColorSpace::Srgb,
+            HostPixelFormat::Rgba16 | HostPixelFormat::RgbaF32 => ColorSpace::Linear,
+        };
+
+        // Eagerly convert to f32 for the read_source() path.
+        // The read_pixels() path uses SourceNodePixels directly for GPU conversion.
+        let pixels = match format {
+            HostPixelFormat::Rgba8 => {
+                v2::color_math::srgb_rgba8_to_f32_linear(&data)
+            }
+            HostPixelFormat::Rgba16 => {
+                let mut out = Vec::with_capacity((width * height * 4) as usize);
+                for chunk in data.chunks_exact(8) {
+                    let r = u16::from_le_bytes([chunk[0], chunk[1]]) as f32 / 65535.0;
+                    let g = u16::from_le_bytes([chunk[2], chunk[3]]) as f32 / 65535.0;
+                    let b = u16::from_le_bytes([chunk[4], chunk[5]]) as f32 / 65535.0;
+                    let a = u16::from_le_bytes([chunk[6], chunk[7]]) as f32 / 65535.0;
+                    out.extend_from_slice(&[r, g, b, a]);
+                }
+                out
+            }
+            HostPixelFormat::RgbaF32 => {
+                let mut out = Vec::with_capacity((width * height * 4) as usize);
+                for chunk in data.chunks_exact(4) {
+                    out.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+                }
+                out
+            }
+        };
+
+        Self {
+            pixels,
+            info: NodeInfo { width, height, color_space },
+            buffer_pool: Rc::new(RefCell::new(v2::BufferPool::new())),
+            raw_pixels: Some((data, format)),
+            src_hash,
+        }
     }
 
     pub fn info(&self) -> NodeInfo {
@@ -199,6 +316,47 @@ impl PipelineResource {
 
         let id = self.graph.borrow_mut().add_node_with_hash(Box::new(source), src_hash);
         Ok(id)
+    }
+
+    /// Add a source node from host-decoded raw pixel bytes.
+    ///
+    /// For u8/u16 formats, creates a SourceNodePixels that produces a GPU conversion
+    /// shader as the first node in the chain. For f32, creates a regular SourceNode.
+    pub fn read_pixels(&self, data: Vec<u8>, width: u32, height: u32, format: HostPixelFormat) -> u32 {
+        let format_tag = match format {
+            HostPixelFormat::Rgba8 => "source-rgba8",
+            HostPixelFormat::Rgba16 => "source-rgba16",
+            HostPixelFormat::RgbaF32 => "source-f32",
+        };
+        let src_hash = source_hash_pixels(format_tag, &data, width, height);
+
+        match format {
+            HostPixelFormat::RgbaF32 => {
+                // f32: reinterpret bytes as f32 and create a regular SourceNode
+                let mut pixels = Vec::with_capacity((width * height * 4) as usize);
+                for chunk in data.chunks_exact(4) {
+                    pixels.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+                }
+                let node = SourceNode {
+                    pixels,
+                    info: NodeInfo { width, height, color_space: ColorSpace::Linear },
+                };
+                self.graph.borrow_mut().add_node_with_hash(Box::new(node), src_hash)
+            }
+            _ => {
+                // u8/u16: create SourceNodePixels that carries raw bytes + GPU shader
+                let color_space = match format {
+                    HostPixelFormat::Rgba8 => ColorSpace::Srgb,
+                    _ => ColorSpace::Linear,
+                };
+                let node = SourceNodePixels {
+                    raw_bytes: data,
+                    format,
+                    info: NodeInfo { width, height, color_space },
+                };
+                self.graph.borrow_mut().add_node_with_hash(Box::new(node), src_hash)
+            }
+        }
     }
 
     /// Add a source node from a pre-decoded SourceResource.
@@ -383,8 +541,19 @@ impl wit::GuestSource for SourceResource {
                         color_space: ColorSpace::Srgb,
                     },
                     buffer_pool: Rc::new(RefCell::new(v2::BufferPool::new())),
+                    raw_pixels: None,
+                    src_hash: v2::hash::ZERO_HASH,
                 }
             })
+    }
+
+    fn from_pixels(data: Vec<u8>, width: u32, height: u32, format: wit::HostPixelFormat) -> wit::Source {
+        let fmt = match format {
+            wit::HostPixelFormat::Rgba8 => HostPixelFormat::Rgba8,
+            wit::HostPixelFormat::Rgba16 => HostPixelFormat::Rgba16,
+            wit::HostPixelFormat::RgbaF32 => HostPixelFormat::RgbaF32,
+        };
+        wit::Source::new(SourceResource::from_pixels(data, width, height, fmt))
     }
 
     fn info(&self) -> wit::NodeInfo {
@@ -497,6 +666,21 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
     fn read_source(&self, source: wit::SourceBorrow<'_>) -> Result<u32, RasmcoreError> {
         let source_res = source.get::<SourceResource>();
         Ok(PipelineResource::read_source(self, source_res))
+    }
+
+    fn read_pixels(
+        &self,
+        data: Vec<u8>,
+        width: u32,
+        height: u32,
+        format: wit::HostPixelFormat,
+    ) -> Result<u32, RasmcoreError> {
+        let fmt = match format {
+            wit::HostPixelFormat::Rgba8 => HostPixelFormat::Rgba8,
+            wit::HostPixelFormat::Rgba16 => HostPixelFormat::Rgba16,
+            wit::HostPixelFormat::RgbaF32 => HostPixelFormat::RgbaF32,
+        };
+        Ok(PipelineResource::read_pixels(self, data, width, height, fmt))
     }
 
     fn node_info(&self, node: u32) -> Result<wit::NodeInfo, RasmcoreError> {
