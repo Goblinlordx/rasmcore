@@ -1,17 +1,15 @@
 /**
  * Playground Web Worker — runs WASM pipeline off the main thread.
  *
- * All imports use dynamic import() with webpackIgnore to load from
- * the public folder at runtime. The Makefile rewrites bare specifiers
- * in the SDK JS to absolute paths so they resolve in worker context.
+ * CPU-only: renders f32 pixels in WASM, quantizes to u8, posts ImageData
+ * back to main thread. No GPU display — keeps the worker simple and avoids
+ * OffscreenCanvas/WebGPU complexity in the docs site.
  */
 
 // @ts-nocheck
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 
 let PipelineClass = null;
 let sourceClass = null;
-let gpuHandler = null;
 const sourceCache = new Map();
 
 let busy = false;
@@ -19,38 +17,12 @@ let queued = null;
 
 async function initWasm() {
   try {
-    // webpackIgnore: load from public/ at runtime, not bundled
     const sdk = await import(/* webpackIgnore: true */ '/sdk/v2/rasmcore-v2-image.js');
     PipelineClass = sdk.pipelineV2.ImagePipelineV2;
     sourceClass = sdk.pipelineV2.Source;
     self.postMessage({ type: 'ready' });
   } catch (e) {
     self.postMessage({ type: 'error', message: `WASM init failed: ${e.message}` });
-  }
-}
-
-async function initGpu() {
-  if (gpuHandler) return true;
-  try {
-    const mod = await import(/* webpackIgnore: true */ '/sdk/v2/lib/gpu-handler.js');
-    if (mod.GpuHandlerV2.isAvailable()) {
-      gpuHandler = new mod.GpuHandlerV2();
-      gpuHandler = new GpuHandlerV2();
-      return true;
-    }
-  } catch { /* GPU not available */ }
-  return false;
-}
-
-async function setDisplay(canvas, hdr) {
-  if (!gpuHandler) {
-    const ok = await initGpu();
-    if (!ok) return;
-  }
-  try {
-    await gpuHandler.setDisplayCanvas(canvas, hdr);
-  } catch (e) {
-    console.warn('[playground-worker] GPU display failed:', e?.message);
   }
 }
 
@@ -116,49 +88,19 @@ async function doRender(data) {
     const filterId = pipe.applyFilter(nodeId, filterName, paramBuf);
     const info = pipe.nodeInfo(filterId);
 
-    // Try GPU path
-    let gpuRendered = false;
-    if (gpuHandler?.hasDisplay && typeof pipe.renderGpuPlan === 'function') {
-      try {
-        const plan = pipe.renderGpuPlan(filterId);
-        if (plan) {
-          gpuHandler.updateViewport(0, 0, 1.0, info.width, info.height, info.width, info.height, 0);
-          const ops = plan.shaders.map(s => ({
-            source: s.source, entryPoint: s.entryPoint,
-            workgroupX: s.workgroupX, workgroupY: s.workgroupY, workgroupZ: s.workgroupZ,
-            params: new Uint8Array(s.params),
-            extraBuffers: s.extraBuffers.map(b => new Uint8Array(b)),
-          }));
-          await gpuHandler.prepare(ops);
-          const err = await gpuHandler.executeAndDisplay(ops, new Float32Array(plan.inputPixels), plan.width, plan.height);
-          if (!err) gpuRendered = true;
-        }
-      } catch { /* GPU failed */ }
-    }
-
-    if (!gpuRendered) {
-      if (gpuHandler?.hasDisplay) {
-        const pixels = pipe.render(filterId);
-        const f32 = pixels instanceof Float32Array ? pixels : new Float32Array(pixels);
-        gpuHandler.updateViewport(0, 0, 1.0, info.width, info.height, info.width, info.height, 0);
-        gpuHandler.displayFromCpu(f32, info.width, info.height);
-        gpuRendered = true;
-      } else {
-        const pixels = pipe.render(filterId);
-        const f32 = pixels instanceof Float32Array ? pixels : new Float32Array(pixels);
-        const u8 = new Uint8ClampedArray(f32.length);
-        for (let i = 0; i < f32.length; i++) u8[i] = f32[i] * 255;
-        self.postMessage(
-          { type: 'result', imageData: u8.buffer, width: info.width, height: info.height, totalMs: Math.round(performance.now() - t0) },
-          [u8.buffer],
-        );
-        return;
-      }
-    }
+    const pixels = pipe.render(filterId);
+    const f32 = pixels instanceof Float32Array ? pixels : new Float32Array(pixels);
+    const len = f32.length;
+    const u8 = new Uint8ClampedArray(len);
+    for (let i = 0; i < len; i++) u8[i] = f32[i] * 255;
 
     const totalMs = Math.round(performance.now() - t0);
-    console.log(`[playground-worker] ${filterName}: ${totalMs}ms (${gpuRendered ? 'gpu' : 'cpu'}) ${info.width}x${info.height}`);
-    self.postMessage({ type: 'displayed', width: info.width, height: info.height, totalMs });
+    console.log(`[playground-worker] ${filterName}: ${totalMs}ms ${info.width}x${info.height}`);
+
+    self.postMessage(
+      { type: 'result', imageData: u8.buffer, width: info.width, height: info.height, totalMs },
+      [u8.buffer],
+    );
   } catch (e) {
     const msg = e?.payload ? JSON.stringify(e.payload, null, 2) : (e?.message || String(e));
     self.postMessage({ type: 'error', message: msg });
@@ -179,7 +121,6 @@ async function processRender(data) {
 self.onmessage = (e) => {
   switch (e.data.type) {
     case 'init': initWasm(); break;
-    case 'set-display': setDisplay(e.data.canvas, e.data.hdr ?? false); break;
     case 'render':
       if (busy) { queued = e.data; }
       else { processRender(e.data); }

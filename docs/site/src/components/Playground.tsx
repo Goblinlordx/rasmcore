@@ -40,7 +40,6 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
   const readyRef = useRef(false);
   const imageLoadedRef = useRef(false);
   const imageBytesRef = useRef<ArrayBuffer | null>(null);
-  const displayTransferredRef = useRef(false);
 
   // Initialize worker on mount
   useEffect(() => {
@@ -56,16 +55,8 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
         return;
       }
 
-      if (msgType === 'displayed') {
-        setStaticUrl('');
-        setHasResult(true);
-        setStatus('ready');
-        setError('');
-        return;
-      }
-
       if (msgType === 'result') {
-        // CPU fallback: received ImageData from worker
+        // Worker rendered CPU pixels — draw to canvas via ImageData
         const canvas = afterCanvasRef.current;
         if (canvas) {
           const { width, height, imageData } = e.data;
@@ -92,21 +83,6 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
 
     return () => w.terminate();
   }, []);
-
-  // Transfer OffscreenCanvas to worker for GPU display
-  useEffect(() => {
-    if (displayTransferredRef.current) return;
-    const canvas = afterCanvasRef.current;
-    const w = workerRef.current;
-    if (!canvas || !w || !readyRef.current) return;
-    try {
-      const offscreen = canvas.transferControlToOffscreen();
-      w.postMessage({ type: 'set-display', canvas: offscreen, hdr: false }, [offscreen]);
-      displayTransferredRef.current = true;
-    } catch {
-      // transferControlToOffscreen not supported — worker will use CPU fallback
-    }
-  });
 
   const loadRefImage = useCallback(async () => {
     if (imageBytesRef.current) return imageBytesRef.current;
