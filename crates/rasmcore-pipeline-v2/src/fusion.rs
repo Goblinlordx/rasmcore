@@ -231,13 +231,108 @@ impl F32Lut {
     pub fn apply(&self, v: f32) -> f32 {
         let t = v * self.inv_step;
         let t_clamped = t.max(0.0).min(self.inv_step);
-        let idx = t_clamped as u32;
+        let idx = (t_clamped as u32).min((self.table.len() - 2) as u32);
         let frac = t_clamped - idx as f32;
         let idx = idx as usize;
-        // Safety: idx is in [0, F32_LUT_SIZE-1], idx+1 in [1, F32_LUT_SIZE]
+        // Safety: idx in [0, table.len()-2], idx+1 in [1, table.len()-1]
         let a = unsafe { *self.table.get_unchecked(idx) };
         let b = unsafe { *self.table.get_unchecked(idx + 1) };
         a + frac * (b - a)
+    }
+
+    /// Apply LUT to one RGBA pixel (RGB transformed, alpha preserved).
+    /// Exposes 3 independent lookup chains for ILP.
+    #[inline(always)]
+    pub fn apply_pixel(&self, pixel: &mut [f32; 4]) {
+        let inv = self.inv_step;
+        let max_idx = (self.table.len() - 2) as u32; // F32_LUT_SIZE - 1
+        let tr = (pixel[0] * inv).max(0.0).min(inv);
+        let tg = (pixel[1] * inv).max(0.0).min(inv);
+        let tb = (pixel[2] * inv).max(0.0).min(inv);
+
+        let ir = (tr as u32).min(max_idx) as usize;
+        let ig = (tg as u32).min(max_idx) as usize;
+        let ib = (tb as u32).min(max_idx) as usize;
+
+        let fr = tr - ir as f32;
+        let fg = tg - ig as f32;
+        let fb = tb - ib as f32;
+
+        unsafe {
+            let ar = *self.table.get_unchecked(ir);
+            let ag = *self.table.get_unchecked(ig);
+            let ab = *self.table.get_unchecked(ib);
+            let br = *self.table.get_unchecked(ir + 1);
+            let bg = *self.table.get_unchecked(ig + 1);
+            let bb = *self.table.get_unchecked(ib + 1);
+            pixel[0] = ar + fr * (br - ar);
+            pixel[1] = ag + fg * (bg - ag);
+            pixel[2] = ab + fb * (bb - ab);
+        }
+    }
+
+    /// Apply LUT to a buffer of RGBA pixels in batches of 4 pixels (16 floats).
+    /// Remainder pixels use per-pixel apply.
+    pub fn apply_buffer(&self, buf: &mut [f32]) {
+        let chunks = buf.len() / 16; // 4 pixels * 4 channels
+        let batch_end = chunks * 16;
+
+        // Process 4 pixels per iteration — 12 independent lookups for ILP
+        for base in (0..batch_end).step_by(16) {
+            let s = &mut buf[base..base + 16];
+            let inv = self.inv_step;
+
+            // Compute t values for all 12 RGB channels
+            let t0r = (s[0] * inv).max(0.0).min(inv);
+            let t0g = (s[1] * inv).max(0.0).min(inv);
+            let t0b = (s[2] * inv).max(0.0).min(inv);
+            let t1r = (s[4] * inv).max(0.0).min(inv);
+            let t1g = (s[5] * inv).max(0.0).min(inv);
+            let t1b = (s[6] * inv).max(0.0).min(inv);
+            let t2r = (s[8] * inv).max(0.0).min(inv);
+            let t2g = (s[9] * inv).max(0.0).min(inv);
+            let t2b = (s[10] * inv).max(0.0).min(inv);
+            let t3r = (s[12] * inv).max(0.0).min(inv);
+            let t3g = (s[13] * inv).max(0.0).min(inv);
+            let t3b = (s[14] * inv).max(0.0).min(inv);
+
+            // Integer indices (clamped to table bounds)
+            let mx = (self.table.len() - 2) as u32;
+            let i0r = (t0r as u32).min(mx) as usize; let i0g = (t0g as u32).min(mx) as usize; let i0b = (t0b as u32).min(mx) as usize;
+            let i1r = (t1r as u32).min(mx) as usize; let i1g = (t1g as u32).min(mx) as usize; let i1b = (t1b as u32).min(mx) as usize;
+            let i2r = (t2r as u32).min(mx) as usize; let i2g = (t2g as u32).min(mx) as usize; let i2b = (t2b as u32).min(mx) as usize;
+            let i3r = (t3r as u32).min(mx) as usize; let i3g = (t3g as u32).min(mx) as usize; let i3b = (t3b as u32).min(mx) as usize;
+
+            // Fractions
+            let f0r = t0r - i0r as f32; let f0g = t0g - i0g as f32; let f0b = t0b - i0b as f32;
+            let f1r = t1r - i1r as f32; let f1g = t1g - i1g as f32; let f1b = t1b - i1b as f32;
+            let f2r = t2r - i2r as f32; let f2g = t2g - i2g as f32; let f2b = t2b - i2b as f32;
+            let f3r = t3r - i3r as f32; let f3g = t3g - i3g as f32; let f3b = t3b - i3b as f32;
+
+            // Lookups + lerp (12 independent chains)
+            unsafe {
+                let tbl = &self.table;
+                s[0]  = tbl.get_unchecked(i0r).clone() + f0r * (tbl.get_unchecked(i0r + 1) - tbl.get_unchecked(i0r));
+                s[1]  = tbl.get_unchecked(i0g).clone() + f0g * (tbl.get_unchecked(i0g + 1) - tbl.get_unchecked(i0g));
+                s[2]  = tbl.get_unchecked(i0b).clone() + f0b * (tbl.get_unchecked(i0b + 1) - tbl.get_unchecked(i0b));
+                s[4]  = tbl.get_unchecked(i1r).clone() + f1r * (tbl.get_unchecked(i1r + 1) - tbl.get_unchecked(i1r));
+                s[5]  = tbl.get_unchecked(i1g).clone() + f1g * (tbl.get_unchecked(i1g + 1) - tbl.get_unchecked(i1g));
+                s[6]  = tbl.get_unchecked(i1b).clone() + f1b * (tbl.get_unchecked(i1b + 1) - tbl.get_unchecked(i1b));
+                s[8]  = tbl.get_unchecked(i2r).clone() + f2r * (tbl.get_unchecked(i2r + 1) - tbl.get_unchecked(i2r));
+                s[9]  = tbl.get_unchecked(i2g).clone() + f2g * (tbl.get_unchecked(i2g + 1) - tbl.get_unchecked(i2g));
+                s[10] = tbl.get_unchecked(i2b).clone() + f2b * (tbl.get_unchecked(i2b + 1) - tbl.get_unchecked(i2b));
+                s[12] = tbl.get_unchecked(i3r).clone() + f3r * (tbl.get_unchecked(i3r + 1) - tbl.get_unchecked(i3r));
+                s[13] = tbl.get_unchecked(i3g).clone() + f3g * (tbl.get_unchecked(i3g + 1) - tbl.get_unchecked(i3g));
+                s[14] = tbl.get_unchecked(i3b).clone() + f3b * (tbl.get_unchecked(i3b + 1) - tbl.get_unchecked(i3b));
+            }
+            // Alpha channels (s[3], s[7], s[11], s[15]) untouched
+        }
+
+        // Remainder: per-pixel
+        for pixel in buf[batch_end..].chunks_exact_mut(4) {
+            let p: &mut [f32; 4] = pixel.try_into().unwrap();
+            self.apply_pixel(p);
+        }
     }
 }
 
@@ -525,12 +620,7 @@ impl Node for FusedPointOpNode {
     ) -> Result<Vec<f32>, PipelineError> {
         let input = upstream.request(self.upstream, request)?;
         let mut output = input;
-        for pixel in output.chunks_exact_mut(4) {
-            pixel[0] = self.lut.apply(pixel[0]);
-            pixel[1] = self.lut.apply(pixel[1]);
-            pixel[2] = self.lut.apply(pixel[2]);
-            // alpha unchanged
-        }
+        self.lut.apply_buffer(&mut output);
         Ok(output)
     }
 
