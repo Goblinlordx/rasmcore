@@ -1,5 +1,5 @@
 title: Native SDK display targets — zero-copy GPU blit to wgpu surfaces
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-06'
