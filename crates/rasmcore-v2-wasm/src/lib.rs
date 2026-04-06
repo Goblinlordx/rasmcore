@@ -253,6 +253,34 @@ impl PipelineResource {
         Ok(id)
     }
 
+    pub fn use_lmt(&self, source: u32, data: &[u8]) -> Result<u32, PipelineError> {
+        let text = std::str::from_utf8(data).map_err(|_| {
+            PipelineError::InvalidParams("LMT data is not valid UTF-8".into())
+        })?;
+
+        // Auto-detect format from content
+        let lmt = if text.contains("LUT_3D_SIZE") || text.contains("LUT_1D_SIZE") {
+            rasmcore_pipeline_v2::parse_cube(text)?
+        } else if text.trim_start().starts_with("<?xml")
+            || text.contains("<ProcessList")
+            || text.contains("<CLF")
+        {
+            rasmcore_pipeline_v2::lmt::parse_clf(text)?
+        } else {
+            return Err(PipelineError::InvalidParams(
+                "unsupported LMT format — expected .cube or .clf content".into(),
+            ));
+        };
+
+        let info = self.graph.borrow().node_info(source)?;
+        let upstream_hash = self.graph.borrow().content_hash(source);
+        // Hash the raw LMT data for content-addressed caching
+        let lmt_hash = content_hash(&upstream_hash, "lmt", data);
+        let node = Box::new(rasmcore_pipeline_v2::LmtNode::new(source, info, lmt));
+        let id = self.graph.borrow_mut().add_node_with_hash(node, lmt_hash);
+        Ok(id)
+    }
+
     pub fn write(
         &self,
         node_id: u32,
@@ -526,6 +554,10 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
         _transform: wit::ViewTransform,
     ) -> Result<u32, RasmcoreError> {
         Err(RasmcoreError::NotImplemented)
+    }
+
+    fn use_lmt(&self, source: u32, data: Vec<u8>) -> Result<u32, RasmcoreError> {
+        self.use_lmt(source, &data).map_err(to_wit_error)
     }
 
     fn set_demand_strategy(&self, _strategy: wit::DemandStrategy) {}

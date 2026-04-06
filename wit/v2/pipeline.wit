@@ -249,6 +249,11 @@ interface pipeline-v2 {
         /// Insert a view transform (for display output).
         apply-view-transform: func(source: node-id, transform: view-transform) -> result<node-id, rasmcore-error>;
 
+        /// Apply a Look Modification Transform from raw file data.
+        /// Accepts .cube (3D LUT) and .clf (Common LUT Format) files.
+        /// Format is auto-detected from content.
+        use-lmt: func(source: node-id, data: buffer) -> result<node-id, rasmcore-error>;
+
         // ─── Configuration ───
         /// Set the demand strategy (tile sizing).
         set-demand-strategy: func(strategy: demand-strategy);

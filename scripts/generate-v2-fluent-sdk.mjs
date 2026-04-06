@@ -267,6 +267,18 @@ for (const op of filters) {
   ts += `  }\n\n`;
 }
 
+// LMT method — load .cube/.clf files as pipeline nodes
+ts += `  // ─── LMT ────────────────────────────────────────────────────────────────
+
+  /** Apply a Look Modification Transform from raw file data (.cube or .clf).
+   *  Format is auto-detected from content. */
+  useLmt(data: Uint8Array): Pipeline {
+    const node = this._pipe.useLmt(this._node, data);
+    return new Pipeline(this._pipe, node);
+  }
+
+`;
+
 // Generate write methods
 ts += `  // ─── Write methods ──────────────────────────────────────────────────────
 
