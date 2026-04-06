@@ -1694,4 +1694,34 @@ mod tests {
         // Input should be source pixels (2x2 = 16 floats)
         assert_eq!(plan.input_pixels.len(), 2 * 2 * 4);
     }
+
+    #[test]
+    fn multi_gpu_plan_with_shared_analysis() {
+        // Two targets branching from the same analysis source should share
+        // the analysis chain via PriorStage.
+        let mut g = Graph::new(0);
+        let src = g.add_node(Box::new(SolidColorNode { width: 2, height: 2, color: [0.5; 4] }));
+        let producer = g.add_node(Box::new(MockAnalysisProducer::new(
+            src, 2, 2, 0, crate::analysis_buffer::AnalysisBufferKind::Histogram256,
+        )));
+        // Target A: producer → consumer_a
+        let consumer_a = g.add_node(Box::new(MockAnalysisConsumer::new(producer, 2, 2, 0)));
+        // Target B: producer → plain_gpu (separate branch)
+        let plain_b = g.add_node(Box::new(MockGpuNode {
+            upstream: producer, width: 2, height: 2, shader_body: "// branch_b".into(),
+        }));
+
+        let plan = g.render_multi_gpu_plan(&[
+            ("target_a".into(), consumer_a),
+            ("target_b".into(), plain_b),
+        ]).unwrap();
+
+        assert_eq!(plan.stages.len(), 2);
+        assert_eq!(plan.stages[0].target_name, "target_a");
+        assert_eq!(plan.stages[1].target_name, "target_b");
+
+        // First stage gets pixels, second should use PriorStage (shared source)
+        assert!(matches!(plan.stages[0].input, StageInput::Pixels(_)));
+        assert!(matches!(plan.stages[1].input, StageInput::PriorStage(_)));
+    }
 }
