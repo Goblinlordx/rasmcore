@@ -598,8 +598,18 @@ impl Graph {
         width: u32,
         height: u32,
     ) -> Option<(u32, Vec<crate::node::GpuShader>)> {
-        let mut chain = Vec::new();
+        // Phase 1: Walk backwards, collect node IDs and their shaders.
+        // Track which nodes are analysis producers/consumers.
+        struct ChainEntry {
+            node_index: usize, // index in the nodes vec
+            shaders: Vec<crate::node::GpuShader>,
+            has_analysis_outputs: bool,
+            has_analysis_inputs: bool,
+        }
+
+        let mut entries: Vec<ChainEntry> = Vec::new();
         let mut current = node_id;
+        let mut has_any_analysis = false;
 
         loop {
             let node = self.nodes.get(current as usize)?;
@@ -608,22 +618,81 @@ impl Graph {
 
             match (shaders, upstream_ids.len()) {
                 (Some(s), 1) if !s.is_empty() => {
-                    // Prepend shaders (we're walking backwards)
-                    chain.splice(0..0, s);
+                    let ao = !node.analysis_outputs().is_empty();
+                    let ai = !node.analysis_inputs().is_empty();
+                    if ao || ai {
+                        has_any_analysis = true;
+                    }
+                    // Prepend (we're walking backwards)
+                    entries.insert(0, ChainEntry {
+                        node_index: current as usize,
+                        shaders: s,
+                        has_analysis_outputs: ao,
+                        has_analysis_inputs: ai,
+                    });
                     current = upstream_ids[0];
                 }
                 _ => {
-                    // Not GPU-capable or has multiple/no upstreams — stop here
                     break;
                 }
             }
         }
 
-        if chain.is_empty() {
-            None
-        } else {
-            Some((current, chain))
+        if entries.is_empty() {
+            return None;
         }
+
+        // Fast path: no analysis nodes — return shaders directly (zero overhead).
+        if !has_any_analysis {
+            let chain: Vec<crate::node::GpuShader> = entries
+                .into_iter()
+                .flat_map(|e| e.shaders)
+                .collect();
+            return Some((current, chain));
+        }
+
+        // Phase 2: Analysis nodes present — negotiate buffer IDs and rebuild shaders.
+        let chain_infos: Vec<crate::analysis_buffer::ChainNodeInfo<'_>> = entries
+            .iter()
+            .enumerate()
+            .map(|(i, e)| crate::analysis_buffer::ChainNodeInfo {
+                index: i,
+                outputs: self.nodes[e.node_index].analysis_outputs(),
+                inputs: self.nodes[e.node_index].analysis_inputs(),
+            })
+            .collect();
+
+        let ctx = match crate::analysis_buffer::negotiate_analysis_buffers(&chain_infos) {
+            Ok(c) => c,
+            Err(_) => {
+                // Negotiation failed — fall back to non-analysis chain
+                let chain: Vec<crate::node::GpuShader> = entries
+                    .into_iter()
+                    .flat_map(|e| e.shaders)
+                    .collect();
+                return Some((current, chain));
+            }
+        };
+
+        // Rebuild shaders for nodes that participate in analysis.
+        let mut chain = Vec::new();
+        for (i, entry) in entries.into_iter().enumerate() {
+            if entry.has_analysis_outputs || entry.has_analysis_inputs {
+                let mapping = ctx.node_mapping(i);
+                if let Some(resolved_shaders) = self.nodes[entry.node_index]
+                    .gpu_shaders_with_context(width, height, &mapping)
+                {
+                    chain.extend(resolved_shaders);
+                } else {
+                    // Node returned None from context-aware path — use original shaders
+                    chain.extend(entry.shaders);
+                }
+            } else {
+                chain.extend(entry.shaders);
+            }
+        }
+
+        Some((current, chain))
     }
 
     pub fn request_region(
@@ -1328,5 +1397,301 @@ mod tests {
 
         assert_eq!(new_hits, 1, "1 hit (node1 — closest unchanged ancestor)");
         assert_eq!(new_misses, 4, "4 misses (nodes 2-5 — changed + downstream)");
+    }
+
+    // ─── GPU Chain Collection Tests ────────────────────────────────────
+
+    /// A mock GPU node — returns a single shader with a given body.
+    struct MockGpuNode {
+        upstream: u32,
+        width: u32,
+        height: u32,
+        shader_body: String,
+    }
+
+    impl Node for MockGpuNode {
+        fn info(&self) -> NodeInfo {
+            NodeInfo { width: self.width, height: self.height, color_space: ColorSpace::Linear }
+        }
+        fn compute(&self, request: Rect, upstream: &mut dyn Upstream) -> Result<Vec<f32>, PipelineError> {
+            upstream.request(self.upstream, request)
+        }
+        fn upstream_ids(&self) -> Vec<u32> { vec![self.upstream] }
+        fn gpu_shaders(&self, _w: u32, _h: u32) -> Option<Vec<crate::node::GpuShader>> {
+            Some(vec![crate::node::GpuShader::new(
+                self.shader_body.clone(), "main", [8, 8, 1], vec![],
+            )])
+        }
+    }
+
+    /// Mock analysis producer — declares analysis_outputs and returns GPU shaders
+    /// with reduction buffers using logical IDs.
+    struct MockAnalysisProducer {
+        upstream: u32,
+        width: u32,
+        height: u32,
+        logical_id: u32,
+        kind: crate::analysis_buffer::AnalysisBufferKind,
+        outputs: Vec<crate::analysis_buffer::AnalysisBufferDecl>,
+    }
+
+    impl MockAnalysisProducer {
+        fn new(upstream: u32, w: u32, h: u32, logical_id: u32, kind: crate::analysis_buffer::AnalysisBufferKind) -> Self {
+            Self {
+                upstream, width: w, height: h, logical_id, kind,
+                outputs: vec![crate::analysis_buffer::AnalysisBufferDecl::new(logical_id, kind)],
+            }
+        }
+    }
+
+    impl Node for MockAnalysisProducer {
+        fn info(&self) -> NodeInfo {
+            NodeInfo { width: self.width, height: self.height, color_space: ColorSpace::Linear }
+        }
+        fn compute(&self, request: Rect, upstream: &mut dyn Upstream) -> Result<Vec<f32>, PipelineError> {
+            upstream.request(self.upstream, request)
+        }
+        fn upstream_ids(&self) -> Vec<u32> { vec![self.upstream] }
+        fn gpu_shaders(&self, _w: u32, _h: u32) -> Option<Vec<crate::node::GpuShader>> {
+            // Two reduction passes using logical buffer ID
+            Some(vec![
+                crate::node::GpuShader::new("// reduce_local".into(), "main", [8, 8, 1], vec![])
+                    .with_reduction_buffers(vec![crate::node::ReductionBuffer {
+                        id: self.logical_id,
+                        initial_data: vec![0u8; self.kind.typical_size()],
+                        read_write: true,
+                    }]),
+                crate::node::GpuShader::new("// reduce_global".into(), "main", [8, 8, 1], vec![])
+                    .with_reduction_buffers(vec![crate::node::ReductionBuffer {
+                        id: self.logical_id,
+                        initial_data: vec![],
+                        read_write: true,
+                    }]),
+            ])
+        }
+        fn gpu_shaders_with_context(
+            &self, _w: u32, _h: u32,
+            mapping: &crate::analysis_buffer::NodeBufferMapping,
+        ) -> Option<Vec<crate::node::GpuShader>> {
+            let resolved = mapping.resolve(self.logical_id);
+            Some(vec![
+                crate::node::GpuShader::new("// reduce_local".into(), "main", [8, 8, 1], vec![])
+                    .with_reduction_buffers(vec![crate::node::ReductionBuffer {
+                        id: resolved,
+                        initial_data: vec![0u8; self.kind.typical_size()],
+                        read_write: true,
+                    }]),
+                crate::node::GpuShader::new("// reduce_global".into(), "main", [8, 8, 1], vec![])
+                    .with_reduction_buffers(vec![crate::node::ReductionBuffer {
+                        id: resolved,
+                        initial_data: vec![],
+                        read_write: true,
+                    }]),
+            ])
+        }
+        fn analysis_outputs(&self) -> &[crate::analysis_buffer::AnalysisBufferDecl] {
+            &self.outputs
+        }
+    }
+
+    /// Mock analysis consumer — declares analysis_inputs and reads from
+    /// the analysis buffer in its apply shader.
+    struct MockAnalysisConsumer {
+        upstream: u32,
+        width: u32,
+        height: u32,
+        logical_id: u32,
+        inputs: Vec<crate::analysis_buffer::AnalysisBufferRef>,
+    }
+
+    impl MockAnalysisConsumer {
+        fn new(upstream: u32, w: u32, h: u32, logical_id: u32) -> Self {
+            Self {
+                upstream, width: w, height: h, logical_id,
+                inputs: vec![crate::analysis_buffer::AnalysisBufferRef::new(logical_id)],
+            }
+        }
+    }
+
+    impl Node for MockAnalysisConsumer {
+        fn info(&self) -> NodeInfo {
+            NodeInfo { width: self.width, height: self.height, color_space: ColorSpace::Linear }
+        }
+        fn compute(&self, request: Rect, upstream: &mut dyn Upstream) -> Result<Vec<f32>, PipelineError> {
+            upstream.request(self.upstream, request)
+        }
+        fn upstream_ids(&self) -> Vec<u32> { vec![self.upstream] }
+        fn gpu_shaders(&self, _w: u32, _h: u32) -> Option<Vec<crate::node::GpuShader>> {
+            // Apply shader that reads from logical buffer ID
+            Some(vec![
+                crate::node::GpuShader::new("// apply".into(), "main", [8, 8, 1], vec![])
+                    .with_reduction_buffers(vec![crate::node::ReductionBuffer {
+                        id: self.logical_id,
+                        initial_data: vec![],
+                        read_write: false,
+                    }]),
+            ])
+        }
+        fn gpu_shaders_with_context(
+            &self, _w: u32, _h: u32,
+            mapping: &crate::analysis_buffer::NodeBufferMapping,
+        ) -> Option<Vec<crate::node::GpuShader>> {
+            let resolved = mapping.resolve(self.logical_id);
+            Some(vec![
+                crate::node::GpuShader::new("// apply".into(), "main", [8, 8, 1], vec![])
+                    .with_reduction_buffers(vec![crate::node::ReductionBuffer {
+                        id: resolved,
+                        initial_data: vec![],
+                        read_write: false,
+                    }]),
+            ])
+        }
+        fn analysis_inputs(&self) -> &[crate::analysis_buffer::AnalysisBufferRef] {
+            &self.inputs
+        }
+    }
+
+    #[test]
+    fn collect_gpu_chain_plain_nodes_unchanged() {
+        // Regression: plain GPU nodes (no analysis) work exactly as before
+        let mut g = Graph::new(0);
+        let src = g.add_node(Box::new(SolidColorNode { width: 4, height: 4, color: [0.5; 4] }));
+        let n1 = g.add_node(Box::new(MockGpuNode {
+            upstream: src, width: 4, height: 4, shader_body: "// pass1".into(),
+        }));
+        let n2 = g.add_node(Box::new(MockGpuNode {
+            upstream: n1, width: 4, height: 4, shader_body: "// pass2".into(),
+        }));
+
+        let result = g.collect_gpu_chain(n2, 4, 4);
+        assert!(result.is_some());
+        let (source_id, shaders) = result.unwrap();
+        assert_eq!(source_id, src);
+        assert_eq!(shaders.len(), 2);
+        assert_eq!(shaders[0].body, "// pass1");
+        assert_eq!(shaders[1].body, "// pass2");
+    }
+
+    #[test]
+    fn collect_gpu_chain_stops_at_non_gpu() {
+        // Regression: chain stops at non-GPU node
+        let mut g = Graph::new(0);
+        let src = g.add_node(Box::new(SolidColorNode { width: 4, height: 4, color: [0.5; 4] }));
+        let info = g.node_info(src).unwrap();
+        let cpu_node = g.add_node(Box::new(ScaleNode { upstream: src, factor: 2.0, info }));
+        let gpu_node = g.add_node(Box::new(MockGpuNode {
+            upstream: cpu_node, width: 4, height: 4, shader_body: "// gpu".into(),
+        }));
+
+        let result = g.collect_gpu_chain(gpu_node, 4, 4);
+        assert!(result.is_some());
+        let (source_id, shaders) = result.unwrap();
+        assert_eq!(source_id, cpu_node, "should stop at CPU node");
+        assert_eq!(shaders.len(), 1);
+    }
+
+    #[test]
+    fn collect_gpu_chain_analysis_producer_consumer_merged() {
+        // Analysis producer → consumer should merge into one chain
+        // with resolved buffer IDs (starting from 1000)
+        let mut g = Graph::new(0);
+        let src = g.add_node(Box::new(SolidColorNode { width: 4, height: 4, color: [0.5; 4] }));
+        let producer = g.add_node(Box::new(MockAnalysisProducer::new(
+            src, 4, 4, 0, crate::analysis_buffer::AnalysisBufferKind::Histogram256,
+        )));
+        let consumer = g.add_node(Box::new(MockAnalysisConsumer::new(producer, 4, 4, 0)));
+
+        let result = g.collect_gpu_chain(consumer, 4, 4);
+        assert!(result.is_some());
+        let (source_id, shaders) = result.unwrap();
+        assert_eq!(source_id, src);
+        // 2 reduction passes from producer + 1 apply from consumer = 3 total
+        assert_eq!(shaders.len(), 3, "merged chain should have 3 shaders");
+
+        // All reduction buffers should use the same resolved ID (≥1000)
+        let buf_ids: Vec<u32> = shaders.iter()
+            .flat_map(|s| s.reduction_buffers.iter().map(|b| b.id))
+            .collect();
+        assert!(buf_ids.iter().all(|&id| id >= 1000), "resolved IDs should be ≥1000");
+        assert!(buf_ids.iter().all(|&id| id == buf_ids[0]), "all should share same resolved ID");
+    }
+
+    #[test]
+    fn collect_gpu_chain_two_analysis_pairs_distinct_ids() {
+        // Two independent analysis→render pairs should get different resolved IDs
+        let mut g = Graph::new(0);
+        let src = g.add_node(Box::new(SolidColorNode { width: 4, height: 4, color: [0.5; 4] }));
+        let prod1 = g.add_node(Box::new(MockAnalysisProducer::new(
+            src, 4, 4, 0, crate::analysis_buffer::AnalysisBufferKind::Histogram256,
+        )));
+        let cons1 = g.add_node(Box::new(MockAnalysisConsumer::new(prod1, 4, 4, 0)));
+        let prod2 = g.add_node(Box::new(MockAnalysisProducer::new(
+            cons1, 4, 4, 0, crate::analysis_buffer::AnalysisBufferKind::ChannelMinMax,
+        )));
+        let cons2 = g.add_node(Box::new(MockAnalysisConsumer::new(prod2, 4, 4, 0)));
+
+        let result = g.collect_gpu_chain(cons2, 4, 4);
+        assert!(result.is_some());
+        let (source_id, shaders) = result.unwrap();
+        assert_eq!(source_id, src);
+        // prod1: 2 passes, cons1: 1 pass, prod2: 2 passes, cons2: 1 pass = 6
+        assert_eq!(shaders.len(), 6);
+
+        // Extract buffer IDs from each pair
+        let pair1_ids: Vec<u32> = shaders[0..3].iter()
+            .flat_map(|s| s.reduction_buffers.iter().map(|b| b.id))
+            .collect();
+        let pair2_ids: Vec<u32> = shaders[3..6].iter()
+            .flat_map(|s| s.reduction_buffers.iter().map(|b| b.id))
+            .collect();
+
+        // Each pair should have consistent IDs
+        assert!(pair1_ids.iter().all(|&id| id == pair1_ids[0]));
+        assert!(pair2_ids.iter().all(|&id| id == pair2_ids[0]));
+        // But the two pairs should differ
+        assert_ne!(pair1_ids[0], pair2_ids[0], "two analysis pairs must have different resolved IDs");
+    }
+
+    #[test]
+    fn collect_gpu_chain_mixed_analysis_and_plain_gpu() {
+        // source → analysis_producer → plain_gpu → analysis_consumer
+        // All should merge into one chain
+        let mut g = Graph::new(0);
+        let src = g.add_node(Box::new(SolidColorNode { width: 4, height: 4, color: [0.5; 4] }));
+        let producer = g.add_node(Box::new(MockAnalysisProducer::new(
+            src, 4, 4, 0, crate::analysis_buffer::AnalysisBufferKind::ChannelSum,
+        )));
+        let plain = g.add_node(Box::new(MockGpuNode {
+            upstream: producer, width: 4, height: 4, shader_body: "// intermediate".into(),
+        }));
+        let consumer = g.add_node(Box::new(MockAnalysisConsumer::new(plain, 4, 4, 0)));
+
+        let result = g.collect_gpu_chain(consumer, 4, 4);
+        assert!(result.is_some());
+        let (source_id, shaders) = result.unwrap();
+        assert_eq!(source_id, src);
+        // producer: 2 passes + plain: 1 pass + consumer: 1 pass = 4
+        assert_eq!(shaders.len(), 4);
+    }
+
+    #[test]
+    fn gpu_plan_with_analysis_nodes() {
+        // gpu_plan() should use the analysis-aware collect_gpu_chain
+        let mut g = Graph::new(0);
+        let src = g.add_node(Box::new(SolidColorNode { width: 2, height: 2, color: [0.5; 4] }));
+        let producer = g.add_node(Box::new(MockAnalysisProducer::new(
+            src, 2, 2, 0, crate::analysis_buffer::AnalysisBufferKind::Histogram256,
+        )));
+        let consumer = g.add_node(Box::new(MockAnalysisConsumer::new(producer, 2, 2, 0)));
+
+        let plan = g.gpu_plan(consumer).unwrap();
+        assert!(plan.is_some());
+        let plan = plan.unwrap();
+        // Should be a merged chain: 2 reduce + 1 apply = 3 shaders
+        assert_eq!(plan.shaders.len(), 3);
+        assert_eq!(plan.width, 2);
+        assert_eq!(plan.height, 2);
+        // Input should be source pixels (2x2 = 16 floats)
+        assert_eq!(plan.input_pixels.len(), 2 * 2 * 4);
     }
 }
