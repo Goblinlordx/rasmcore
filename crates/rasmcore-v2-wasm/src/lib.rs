@@ -272,6 +272,11 @@ impl PipelineResource {
 
     /// Set the proxy scale factor for spatial param auto-scaling.
     /// Spatial params (hint = rc.pixels) are multiplied by this factor.
+    /// Set the graph-level working color space.
+    pub fn set_working_color_space(&self, cs: ColorSpace) {
+        self.graph.borrow_mut().set_working_color_space(cs);
+    }
+
     pub fn set_proxy_scale(&self, scale: f32) {
         self.proxy_scale.set(scale.max(0.01));
     }
@@ -779,6 +784,22 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
     fn set_layer_cache(&self, cache: wit::LayerCacheBorrow<'_>) {
         let cache_resource = cache.get::<LayerCacheResource>();
         self.set_layer_cache(cache_resource.inner.clone());
+    }
+
+    fn set_working_color_space(&self, cs: wit::ColorSpace) {
+        let domain_cs = match cs {
+            wit::ColorSpace::Linear => ColorSpace::Linear,
+            wit::ColorSpace::Srgb => ColorSpace::Srgb,
+            wit::ColorSpace::AcesCg => ColorSpace::AcesCg,
+            wit::ColorSpace::AcesCct => ColorSpace::AcesCct,
+            wit::ColorSpace::AcesCc => ColorSpace::AcesCc,
+            wit::ColorSpace::Aces2065 => ColorSpace::Aces2065_1,
+            wit::ColorSpace::DisplayP3 => ColorSpace::DisplayP3,
+            wit::ColorSpace::Rec709 => ColorSpace::Rec709,
+            wit::ColorSpace::Rec2020 => ColorSpace::Rec2020,
+            wit::ColorSpace::Unknown => ColorSpace::Unknown,
+        };
+        self.set_working_color_space(domain_cs);
     }
 
     fn set_proxy_scale(&self, scale: f32) {
