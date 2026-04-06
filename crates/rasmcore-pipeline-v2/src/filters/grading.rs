@@ -203,6 +203,10 @@ impl Filter for CurvesMaster {
         }
         Ok(out)
     }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
+    }
 }
 
 impl ClutOp for CurvesMaster {
@@ -233,6 +237,10 @@ impl Filter for CurvesRed {
         }
         Ok(out)
     }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
+    }
 }
 
 impl ClutOp for CurvesRed {
@@ -261,6 +269,10 @@ impl Filter for CurvesGreen {
         }
         Ok(out)
     }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
+    }
 }
 
 impl ClutOp for CurvesGreen {
@@ -288,6 +300,10 @@ impl Filter for CurvesBlue {
             pixel[2] = lut[idx];
         }
         Ok(out)
+    }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
     }
 }
 
@@ -326,6 +342,10 @@ impl Filter for AscCdl {
             pixel[2] = b;
         }
         Ok(out)
+    }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
     }
 }
 
@@ -371,6 +391,10 @@ impl Filter for LiftGammaGain {
             pixel[2] = b;
         }
         Ok(out)
+    }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
     }
 }
 
@@ -423,6 +447,10 @@ impl Filter for SplitToning {
         }
         Ok(out)
     }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
+    }
 }
 
 fn split_toning_pixel(r: f32, g: f32, b: f32, st: &SplitToning) -> (f32, f32, f32) {
@@ -468,6 +496,10 @@ impl Filter for HueVsSat {
         }
         Ok(out)
     }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
+    }
 }
 
 impl ClutOp for HueVsSat {
@@ -502,6 +534,10 @@ impl Filter for HueVsLum {
             pixel[2] = b;
         }
         Ok(out)
+    }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
     }
 }
 
@@ -538,6 +574,10 @@ impl Filter for LumVsSat {
         }
         Ok(out)
     }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
+    }
 }
 
 impl ClutOp for LumVsSat {
@@ -573,6 +613,10 @@ impl Filter for SatVsSat {
         }
         Ok(out)
     }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
+    }
 }
 
 impl ClutOp for SatVsSat {
@@ -602,6 +646,10 @@ impl Filter for ApplyCubeLut {
     fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
         Ok(self.clut.apply(input))
     }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
+    }
 }
 
 impl ClutOp for ApplyCubeLut {
@@ -621,6 +669,10 @@ pub struct ApplyHaldLut {
 impl Filter for ApplyHaldLut {
     fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
         Ok(self.clut.apply(input))
+    }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
     }
 }
 
@@ -647,6 +699,10 @@ impl Filter for TonemapReinhard {
             pixel[2] = pixel[2] / (1.0 + pixel[2]);
         }
         Ok(out)
+    }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
     }
 }
 
@@ -684,6 +740,10 @@ impl Filter for TonemapDrago {
             pixel[2] = drago(pixel[2]);
         }
         Ok(out)
+    }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
     }
 }
 
@@ -735,6 +795,10 @@ impl Filter for TonemapFilmic {
             pixel[2] = filmic(pixel[2]);
         }
         Ok(out)
+    }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
     }
 }
 

@@ -269,6 +269,16 @@ pub trait Node {
     fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> InputRectEstimate {
         InputRectEstimate::Exact(output.clamp(bounds_w, bounds_h))
     }
+
+    /// Build a 3D CLUT representing this node's color operation for fusion.
+    ///
+    /// If provided, the fusion optimizer can compose consecutive CLUT-capable
+    /// nodes into a single 3D LUT pass. Override for color grading operations
+    /// (curves, CDL, LGG, hue-vs-sat, tone mapping, etc.).
+    /// Default: None (not CLUT-fusable).
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        None
+    }
 }
 
 /// How a node estimates its required input region.

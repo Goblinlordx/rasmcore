@@ -135,12 +135,16 @@ impl<F: Filter + 'static> Node for FilterNode<F> {
             gpu: self.filter.gpu_shader_body().is_some(),
             analytic: false, // detected via analytic_expression() at runtime
             affine: false,
-            clut: false,
+            clut: self.filter.fusion_clut().is_some(),
         }
     }
 
     fn analytic_expression(&self) -> Option<crate::ops::PointOpExpr> {
         self.filter.analytic_expression()
+    }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        self.filter.fusion_clut()
     }
 
     fn tile_hint(&self) -> Option<TileHint> {

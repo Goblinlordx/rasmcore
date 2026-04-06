@@ -202,6 +202,10 @@ impl Filter for HueRotate {
         }
         Ok(out)
     }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
+    }
 }
 
 impl ClutOp for HueRotate {
@@ -237,6 +241,10 @@ impl Filter for Saturate {
         }
         Ok(out)
     }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
+    }
 }
 
 impl ClutOp for Saturate {
@@ -267,6 +275,10 @@ impl Filter for ChannelMixer {
             pixel[2] = m[6] * r + m[7] * g + m[8] * b;
         }
         Ok(out)
+    }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
     }
 }
 
@@ -316,6 +328,10 @@ impl Filter for Vibrance {
         }
         Ok(out)
     }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
+    }
 }
 
 impl ClutOp for Vibrance {
@@ -362,6 +378,10 @@ impl Filter for Sepia {
         }
         Ok(out)
     }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
+    }
 }
 
 impl ClutOp for Sepia {
@@ -405,6 +425,10 @@ impl Filter for Colorize {
             pixel[2] = pixel[2] + (luma * tb - pixel[2]) * amt;
         }
         Ok(out)
+    }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
     }
 }
 
@@ -455,6 +479,10 @@ impl Filter for Modulate {
             pixel[2] = b;
         }
         Ok(out)
+    }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
     }
 }
 
@@ -519,6 +547,10 @@ impl Filter for PhotoFilter {
             pixel[2] = nb;
         }
         Ok(out)
+    }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
     }
 }
 
@@ -591,6 +623,10 @@ impl Filter for SelectiveColor {
         }
         Ok(out)
     }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
+    }
 }
 
 fn selective_color_pixel(
@@ -662,6 +698,10 @@ impl Filter for WhiteBalanceTemperature {
         }
         Ok(out)
     }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
+    }
 }
 
 fn wb_temp_scales(temperature: f32, tint: f32) -> (f32, f32, f32) {
@@ -719,6 +759,10 @@ impl Filter for ReplaceColor {
             pixel[2] = b;
         }
         Ok(out)
+    }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
     }
 }
 
@@ -783,6 +827,10 @@ impl Filter for LabAdjust {
             pixel[2] = bi;
         }
         Ok(out)
+    }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(ClutOp::build_clut(self))
     }
 }
 

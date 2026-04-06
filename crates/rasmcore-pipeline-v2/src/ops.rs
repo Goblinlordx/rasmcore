@@ -96,6 +96,16 @@ pub trait Filter {
     fn analytic_expression(&self) -> Option<PointOpExpr> {
         None
     }
+
+    // ─── CLUT fusion ────────────────────────────────────────────────────
+
+    /// Build a 3D CLUT representing this color operation for fusion.
+    /// If provided, consecutive CLUT-capable filters are composed into a single
+    /// 3D LUT pass via `compose_cluts()` during fusion optimization.
+    /// Default: None (not CLUT-fusable).
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        None
+    }
 }
 
 /// GPU filter trait — provides WGSL shader for GPU execution.

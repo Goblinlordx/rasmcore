@@ -12,6 +12,8 @@ use crate::graph::Graph;
 use crate::node::{GpuShader, Node, NodeCapabilities, NodeInfo, PipelineError, Upstream};
 use crate::ops::PointOpExpr;
 use crate::rect::Rect;
+// TraceEventKind/TraceTimer used by callers (request_full, gpu_plan), not here
+#[allow(unused_imports)]
 use crate::trace::{TraceEventKind, TraceTimer};
 
 // ─── Expression Tree Optimizer ──────────────────────────────────────────────
@@ -702,22 +704,11 @@ impl Node for FusedClutNode {
 /// Detects chains of same-category fusable nodes and replaces them with
 /// single fused nodes. Runs in dependency order (bottom-up).
 pub fn optimize(graph: &mut Graph) {
-    let timer = if graph.is_tracing() {
-        Some(TraceTimer::new(TraceEventKind::Fusion, "optimize"))
-    } else {
-        None
-    };
-
-    let before = graph.node_count();
+    // Note: the caller (request_full, gpu_plan) emits the trace event.
+    // Don't emit here to avoid double-counting.
     fuse_analytical_chains(graph);
     fuse_affine_chains(graph);
     fuse_clut_chains(graph);
-    let after = graph.node_count();
-
-    if let Some(t) = timer {
-        let detail = format!("{before} nodes → {after} nodes ({} fused)", before - after);
-        graph.trace.push(t.with_detail(detail).finish());
-    }
 }
 
 /// Fuse chains of analytical (point op) nodes into single expression trees.
@@ -810,12 +801,82 @@ fn fuse_affine_chains(_graph: &mut Graph) {
 }
 
 /// Fuse chains of CLUT (color op) nodes into single composed 3D LUTs.
-fn fuse_clut_chains(_graph: &mut Graph) {
-    // TODO: Implement when V2 color op nodes expose CLUTs
-    // The pattern is the same as analytical fusion:
-    // 1. Walk graph finding chains of clut-capable nodes
-    // 2. Compose CLUTs: compose_cluts(outer, inner)
-    // 3. Replace chain with FusedClutNode
+///
+/// Walks the graph in reverse order, collecting consecutive nodes that
+/// implement `fusion_clut()`. Chains of 2+ nodes are composed via
+/// `compose_cluts()` and replaced with a single `FusedClutNode`.
+fn fuse_clut_chains(graph: &mut Graph) {
+    let n = graph.node_count() as usize;
+    let mut fused: Vec<bool> = vec![false; n];
+
+    for i in (0..n).rev() {
+        if fused[i] {
+            continue;
+        }
+        let node = graph.get_node(i as u32);
+        if node.fusion_clut().is_none() {
+            continue;
+        }
+
+        // Walk upstream collecting consecutive CLUT-capable nodes
+        let mut chain = vec![i];
+        let mut current = i;
+        loop {
+            let upstream_ids = graph.get_node(current as u32).upstream_ids();
+            if upstream_ids.len() != 1 {
+                break;
+            }
+            let up = upstream_ids[0] as usize;
+            if up >= n || fused[up] || graph.get_node(up as u32).fusion_clut().is_none() {
+                break;
+            }
+            chain.push(up);
+            current = up;
+        }
+
+        // Need at least 2 nodes to fuse (single CLUT nodes stay as-is)
+        if chain.len() < 2 {
+            continue;
+        }
+
+        // Build CLUTs: chain is [outermost, ..., innermost]
+        let cluts: Vec<Clut3D> = chain
+            .iter()
+            .filter_map(|&id| graph.get_node(id as u32).fusion_clut())
+            .collect();
+
+        if cluts.len() < 2 {
+            continue;
+        }
+
+        // Compose from innermost to outermost:
+        // result(v) = outer(inner(v))
+        // cluts[0] = outermost, cluts[last] = innermost
+        let mut composed = cluts.last().unwrap().clone();
+        for clut in cluts[..cluts.len() - 1].iter().rev() {
+            composed = compose_cluts(clut, &composed);
+        }
+
+        // Get the innermost node's upstream as the fused node's upstream
+        let innermost = *chain.last().unwrap();
+        let fused_upstream = graph
+            .get_node(innermost as u32)
+            .upstream_ids()
+            .first()
+            .copied()
+            .unwrap_or(0);
+
+        let info = graph.get_node(chain[0] as u32).info();
+        let fused_node = FusedClutNode::new(fused_upstream, info, composed);
+
+        // Replace the outermost node with the fused node
+        graph.replace_node(chain[0] as u32, Box::new(fused_node));
+
+        // Mark intermediate nodes as fused (they'll be skipped)
+        for &id in &chain[1..] {
+            fused[id] = true;
+        }
+    }
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
