@@ -593,6 +593,393 @@ impl Filter for DisplacementMap {
     }
 }
 
+// ─── Lens Blur ───────────────────────────────────────────────────────────────
+
+/// Lens blur — polygon/disc-shaped bokeh kernel convolution.
+///
+/// Simulates camera lens defocus with configurable aperture blade count.
+/// `blade_count=0` produces a circular disc; `blade_count>=3` produces a polygon.
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "lens_blur", category = "spatial", cost = "O(n * r^2)")]
+pub struct LensBlur {
+    #[param(min = 0, max = 50, default = 5)]
+    pub radius: u32,
+    /// Aperture blade count. 0 = disc, 5-8 = polygon.
+    #[param(min = 0, max = 12, default = 0)]
+    pub blade_count: u32,
+    /// Blade rotation in degrees.
+    #[param(min = 0.0, max = 360.0, default = 0.0)]
+    pub rotation: f32,
+}
+
+impl Filter for LensBlur {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        if self.radius == 0 {
+            return Ok(input.to_vec());
+        }
+        let kernel = if self.blade_count < 3 {
+            make_disc_kernel(self.radius)
+        } else {
+            make_polygon_kernel(self.radius, self.blade_count, self.rotation)
+        };
+        let ksize = (self.radius * 2 + 1) as usize;
+        let divisor: f32 = kernel.iter().sum();
+        let conv = Convolve {
+            kernel,
+            kernel_width: ksize as u32,
+            kernel_height: ksize as u32,
+            divisor: divisor.max(1e-6),
+        };
+        conv.compute(input, width, height)
+    }
+
+    fn tile_overlap(&self) -> u32 {
+        self.radius
+    }
+}
+
+// ─── Bokeh Blur ──────────────────────────────────────────────────────────────
+
+/// Bokeh blur — disc or hexagon-shaped kernel blur.
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "bokeh_blur", category = "spatial", cost = "O(n * r^2)")]
+pub struct BokehBlur {
+    #[param(min = 1, max = 50, default = 5)]
+    pub radius: u32,
+    /// Shape: 0 = disc, 1 = hexagon.
+    #[param(min = 0, max = 1, default = 0)]
+    pub shape: u32,
+}
+
+impl Filter for BokehBlur {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        let kernel = if self.shape == 1 {
+            make_polygon_kernel(self.radius, 6, 0.0) // hexagon
+        } else {
+            make_disc_kernel(self.radius)
+        };
+        let ksize = (self.radius * 2 + 1) as usize;
+        let divisor: f32 = kernel.iter().sum();
+        let conv = Convolve {
+            kernel,
+            kernel_width: ksize as u32,
+            kernel_height: ksize as u32,
+            divisor: divisor.max(1e-6),
+        };
+        conv.compute(input, width, height)
+    }
+
+    fn tile_overlap(&self) -> u32 {
+        self.radius
+    }
+}
+
+// ─── Tilt Shift ──────────────────────────────────────────────────────────────
+
+/// Tilt-shift — selective focus with gradient blur falloff.
+///
+/// Simulates miniature/tilt-shift photography by blurring areas outside
+/// a focus band and blending with the original via a smooth gradient mask.
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "tilt_shift", category = "spatial", cost = "O(n * radius) via gaussian_blur")]
+pub struct TiltShift {
+    /// Focus band center position (0.0 = top, 1.0 = bottom).
+    #[param(min = 0.0, max = 1.0, default = 0.5)]
+    pub focus_position: f32,
+    /// Focus band size as fraction of image height.
+    #[param(min = 0.0, max = 1.0, default = 0.2)]
+    pub band_size: f32,
+    /// Maximum blur radius for out-of-focus areas.
+    #[param(min = 0.0, max = 100.0, default = 8.0)]
+    pub blur_radius: f32,
+    /// Band rotation angle in degrees.
+    #[param(min = 0.0, max = 360.0, default = 0.0)]
+    pub angle: f32,
+}
+
+impl Filter for TiltShift {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        if self.blur_radius <= 0.0 || self.band_size >= 1.0 {
+            return Ok(input.to_vec());
+        }
+        let w = width as usize;
+        let h = height as usize;
+
+        // Generate fully blurred version
+        let blur = GaussianBlur { radius: self.blur_radius };
+        let blurred = blur.compute(input, width, height)?;
+
+        // Blend original and blurred based on distance from focus band
+        let angle_rad = self.angle.to_radians();
+        let cos_a = angle_rad.cos();
+        let sin_a = angle_rad.sin();
+        let focus_y = self.focus_position;
+        let half_band = self.band_size * 0.5;
+        let transition = half_band.max(0.05); // transition zone
+
+        let mut out = input.to_vec();
+        for y in 0..h {
+            for x in 0..w {
+                let nx = x as f32 / w as f32 - 0.5;
+                let ny = y as f32 / h as f32 - focus_y;
+                // Rotate to align with band angle
+                let dist = (nx * sin_a + ny * cos_a).abs();
+                // Compute mask: 0 inside band, 1 far outside
+                let t = if dist < half_band {
+                    0.0
+                } else {
+                    let d = (dist - half_band) / transition;
+                    let d = d.min(1.0);
+                    d * d * (3.0 - 2.0 * d) // smoothstep
+                };
+                let idx = (y * w + x) * 4;
+                for c in 0..4 {
+                    out[idx + c] = input[idx + c] + t * (blurred[idx + c] - input[idx + c]);
+                }
+            }
+        }
+        Ok(out)
+    }
+}
+
+// ─── Zoom Blur ───────────────────────────────────────────────────────────────
+
+/// Zoom blur — radial blur from a center point.
+///
+/// Samples along radial lines from each pixel toward the center,
+/// producing a camera zoom effect.
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "zoom_blur", category = "spatial", cost = "O(n * samples)")]
+pub struct ZoomBlur {
+    /// Center X position (0.0-1.0).
+    #[param(min = 0.0, max = 1.0, default = 0.5)]
+    pub center_x: f32,
+    /// Center Y position (0.0-1.0).
+    #[param(min = 0.0, max = 1.0, default = 0.5)]
+    pub center_y: f32,
+    /// Zoom factor. Larger = more blur.
+    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.1)]
+    pub factor: f32,
+}
+
+impl Filter for ZoomBlur {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        if self.factor.abs() < 1e-6 {
+            return Ok(input.to_vec());
+        }
+        let w = width as usize;
+        let h = height as usize;
+        let wi = w as i32;
+        let hi = h as i32;
+        let cx = self.center_x * w as f32;
+        let cy = self.center_y * h as f32;
+        let mut out = vec![0.0f32; w * h * 4];
+
+        for y in 0..h {
+            for x in 0..w {
+                let dx = cx - x as f32;
+                let dy = cy - y as f32;
+                let dist = (dx * dx + dy * dy).sqrt();
+                let samples = ((dist * self.factor.abs()).ceil() as usize).clamp(3, 64);
+                let inv_n = 1.0 / samples as f32;
+
+                let mut sum = [0.0f32; 4];
+                for s in 0..samples {
+                    let t = s as f32 * self.factor / samples as f32;
+                    let sx = (x as f32 + dx * t).round() as i32;
+                    let sy = (y as f32 + dy * t).round() as i32;
+                    let sx = sx.clamp(0, wi - 1) as usize;
+                    let sy = sy.clamp(0, hi - 1) as usize;
+                    let idx = (sy * w + sx) * 4;
+                    accum4_unit(&mut sum, &input[idx..]);
+                }
+                let out_idx = (y * w + x) * 4;
+                out[out_idx] = sum[0] * inv_n;
+                out[out_idx + 1] = sum[1] * inv_n;
+                out[out_idx + 2] = sum[2] * inv_n;
+                out[out_idx + 3] = sum[3] * inv_n;
+            }
+        }
+        Ok(out)
+    }
+}
+
+// ─── Spin Blur ───────────────────────────────────────────────────────────────
+
+/// Spin blur — rotational blur around a center point.
+///
+/// Samples along circular arcs around the center, producing a
+/// rotational motion effect.
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "spin_blur", category = "spatial", cost = "O(n * samples)")]
+pub struct SpinBlur {
+    /// Center X position (0.0-1.0).
+    #[param(min = 0.0, max = 1.0, default = 0.5)]
+    pub center_x: f32,
+    /// Center Y position (0.0-1.0).
+    #[param(min = 0.0, max = 1.0, default = 0.5)]
+    pub center_y: f32,
+    /// Maximum rotation angle in degrees.
+    #[param(min = 0.0, max = 360.0, default = 10.0)]
+    pub angle: f32,
+}
+
+impl Filter for SpinBlur {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        if self.angle.abs() < 1e-6 {
+            return Ok(input.to_vec());
+        }
+        let w = width as usize;
+        let h = height as usize;
+        let wi = w as i32;
+        let hi = h as i32;
+        let cx = self.center_x * w as f32;
+        let cy = self.center_y * h as f32;
+        let angle_rad = self.angle.to_radians();
+
+        // Sample count based on angle and max radius
+        let half_diag = ((w * w + h * h) as f32).sqrt() * 0.5;
+        let n = ((2.0 * angle_rad.abs() * half_diag).ceil() as usize + 2) | 1; // ensure odd
+        let n = n.clamp(3, 129);
+        let inv_n = 1.0 / n as f32;
+
+        // Precompute rotation table
+        let half = n / 2;
+        let cos_sin: Vec<(f32, f32)> = (0..n)
+            .map(|i| {
+                let offset = angle_rad * (i as f32 - half as f32) / n as f32;
+                (offset.cos(), offset.sin())
+            })
+            .collect();
+
+        let mut out = vec![0.0f32; w * h * 4];
+        for y in 0..h {
+            for x in 0..w {
+                let dx = x as f32 - cx;
+                let dy = y as f32 - cy;
+                let mut sum = [0.0f32; 4];
+                for &(cos_t, sin_t) in &cos_sin {
+                    let sx = (cx + dx * cos_t - dy * sin_t).round() as i32;
+                    let sy = (cy + dx * sin_t + dy * cos_t).round() as i32;
+                    let sx = sx.clamp(0, wi - 1) as usize;
+                    let sy = sy.clamp(0, hi - 1) as usize;
+                    let idx = (sy * w + sx) * 4;
+                    accum4_unit(&mut sum, &input[idx..]);
+                }
+                let out_idx = (y * w + x) * 4;
+                out[out_idx] = sum[0] * inv_n;
+                out[out_idx + 1] = sum[1] * inv_n;
+                out[out_idx + 2] = sum[2] * inv_n;
+                out[out_idx + 3] = sum[3] * inv_n;
+            }
+        }
+        Ok(out)
+    }
+}
+
+// ─── Smart Sharpen ───────────────────────────────────────────────────────────
+
+/// Smart sharpen — edge-preserving sharpening via bilateral unsharp mask.
+///
+/// Uses a bilateral filter (instead of Gaussian) for the blur step,
+/// preserving edges while sharpening. Formula:
+/// `output = input + amount * (input - bilateral_blur(input))`
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "smart_sharpen", category = "spatial", cost = "O(n * radius^2) via bilateral")]
+pub struct SmartSharpen {
+    /// Sharpening strength.
+    #[param(min = 0.0, max = 5.0, default = 1.0)]
+    pub amount: f32,
+    /// Bilateral filter radius.
+    #[param(min = 1, max = 20, default = 3)]
+    pub radius: u32,
+    /// Edge preservation threshold (bilateral sigma_color).
+    #[param(min = 0.01, max = 1.0, default = 0.1)]
+    pub threshold: f32,
+}
+
+impl Filter for SmartSharpen {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        if self.amount.abs() < 1e-6 {
+            return Ok(input.to_vec());
+        }
+        // Edge-preserving blur via bilateral
+        let bilateral = Bilateral {
+            diameter: self.radius * 2 + 1,
+            sigma_color: self.threshold,
+            sigma_space: self.radius as f32,
+        };
+        let blurred = bilateral.compute(input, width, height)?;
+
+        // Unsharp mask: output = input + amount * (input - blurred)
+        let amount = self.amount;
+        let mut out = input.to_vec();
+        for (i, pixel) in out.chunks_exact_mut(4).enumerate() {
+            let bi = i * 4;
+            pixel[0] += amount * (pixel[0] - blurred[bi]);
+            pixel[1] += amount * (pixel[1] - blurred[bi + 1]);
+            pixel[2] += amount * (pixel[2] - blurred[bi + 2]);
+            // alpha unchanged
+        }
+        Ok(out)
+    }
+
+    fn tile_overlap(&self) -> u32 {
+        self.radius + 4 // bilateral radius + safety margin
+    }
+}
+
+// ─── Kernel Generators ───────────────────────────────────────────────────────
+
+/// Generate a flat circular disc kernel.
+fn make_disc_kernel(radius: u32) -> Vec<f32> {
+    let r = radius as i32;
+    let ksize = (r * 2 + 1) as usize;
+    let threshold = (r as f32 + 0.5) * (r as f32 + 0.5);
+    let mut kernel = vec![0.0f32; ksize * ksize];
+    for ky in 0..ksize {
+        for kx in 0..ksize {
+            let dx = kx as f32 - r as f32;
+            let dy = ky as f32 - r as f32;
+            if dx * dx + dy * dy <= threshold {
+                kernel[ky * ksize + kx] = 1.0;
+            }
+        }
+    }
+    kernel
+}
+
+/// Generate a regular polygon kernel with N sides and rotation.
+fn make_polygon_kernel(radius: u32, sides: u32, rotation_deg: f32) -> Vec<f32> {
+    let r = radius as i32;
+    let ksize = (r * 2 + 1) as usize;
+    let rf = r as f32;
+    let rot = rotation_deg.to_radians();
+    let sides = sides.max(3) as usize;
+    let mut kernel = vec![0.0f32; ksize * ksize];
+
+    // Precompute half-plane normals for each edge of the polygon
+    let normals: Vec<(f32, f32)> = (0..sides)
+        .map(|i| {
+            let angle = rot + std::f32::consts::TAU * i as f32 / sides as f32;
+            (angle.cos(), angle.sin())
+        })
+        .collect();
+
+    for ky in 0..ksize {
+        for kx in 0..ksize {
+            let dx = kx as f32 - rf;
+            let dy = ky as f32 - rf;
+            // Point is inside polygon if it's inside ALL half-planes
+            let inside = normals.iter().all(|&(nx, ny)| dx * nx + dy * ny <= rf + 0.5);
+            if inside {
+                kernel[ky * ksize + kx] = 1.0;
+            }
+        }
+    }
+    kernel
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // GPU filter implementations — declarative via gpu_filter! macros
 // ═══════════════════════════════════════════════════════════════════════════════
