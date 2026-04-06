@@ -1,5 +1,5 @@
 title: GPU analysis→render chain fusion — zero-readback cross-node dispatch
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-06'
