@@ -187,6 +187,35 @@ export class Pipeline {
     return this._pipe.render(this._node);
   }
 
+  /** Get the current sink node ID (for GPU plan extraction). */
+  get sinkNode(): number {
+    return this._node;
+  }
+
+  // ─── Refs (DAG branch points) ─────────────────────────────────────────
+
+  /** Mark the current node as a named branch point.
+   *  Downstream consumers can fork from this ref via branch(). */
+  ref(name: string): Pipeline {
+    if (typeof this._pipe.setRef === 'function') {
+      this._pipe.setRef(name, this._node);
+    }
+    return this;
+  }
+
+  /** Fork from a named ref — returns a new Pipeline cursor at that node.
+   *  Both this pipeline and the branched one share the same underlying graph. */
+  branch(name: string): Pipeline {
+    let nodeId: number | undefined;
+    if (typeof this._pipe.getRef === 'function') {
+      nodeId = this._pipe.getRef(name);
+    }
+    if (nodeId == null) {
+      throw new Error(\`Unknown ref: \${name}\`);
+    }
+    return new Pipeline(this._pipe, nodeId);
+  }
+
   // ─── Filter methods (generated) ─────────────────────────────────────────
 
 `;

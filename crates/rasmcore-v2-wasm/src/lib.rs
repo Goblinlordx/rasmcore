@@ -291,6 +291,16 @@ impl PipelineResource {
         self.graph.borrow().reset_layer_cache_references();
         self.graph.borrow().cleanup_layer_cache();
     }
+
+    /// Set a named ref pointing to a node in the graph.
+    pub fn set_ref(&self, name: &str, node_id: u32) {
+        self.graph.borrow_mut().set_ref(name, node_id);
+    }
+
+    /// Get the node ID for a named ref, or None if not set.
+    pub fn get_ref(&self, name: &str) -> Option<u32> {
+        self.graph.borrow().get_ref(name)
+    }
 }
 
 // ─── WIT Bindings ���──────────────────────────────────────────────────────────
@@ -577,6 +587,14 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
 
     fn finalize_layer_cache(&self) {
         PipelineResource::finalize_layer_cache(self);
+    }
+
+    fn set_ref(&self, name: String, node: u32) {
+        self.set_ref(&name, node);
+    }
+
+    fn get_ref(&self, name: String) -> Option<u32> {
+        PipelineResource::get_ref(self, &name)
     }
 
     fn set_tracing(&self, enabled: bool) {

@@ -259,6 +259,14 @@ interface pipeline-v2 {
         /// Call after each render cycle to prevent stale entries from accumulating.
         finalize-layer-cache: func();
 
+        // ─── Named Refs (DAG branch points) ───
+        /// Set a named ref pointing to a node in the graph.
+        /// Refs are branch points: downstream consumers can fork from a ref
+        /// to build multiple output branches without re-executing upstream.
+        set-ref: func(name: string, node: node-id);
+        /// Get the node ID for a named ref.
+        get-ref: func(name: string) -> option<node-id>;
+
         // ─── Tracing ───
         /// Enable or disable pipeline tracing.
         set-tracing: func(enabled: bool);

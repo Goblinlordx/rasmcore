@@ -111,6 +111,9 @@ pub struct Graph {
     /// Shared reusable pixel buffer pool — avoids allocation churn in the CPU render path.
     /// Lives outside the graph (e.g. on Source or module instance) and is injected.
     buffer_pool: Option<Rc<RefCell<BufferPool>>>,
+    /// Named branch points in the DAG — ref name → node_id.
+    /// Used by the multi-output pipeline to fork computation from a named point.
+    refs: std::collections::HashMap<String, u32>,
 }
 
 impl Graph {
@@ -136,6 +139,7 @@ impl Graph {
             tracing: false,
             trace: PipelineTrace::new(),
             buffer_pool: None,
+            refs: std::collections::HashMap::new(),
         }
     }
 
@@ -153,6 +157,7 @@ impl Graph {
             tracing: false,
             trace: PipelineTrace::new(),
             buffer_pool: None,
+            refs: std::collections::HashMap::new(),
         }
     }
 
@@ -256,6 +261,22 @@ impl Graph {
     /// Whether tracing is currently enabled.
     pub fn is_tracing(&self) -> bool {
         self.tracing
+    }
+
+    // ─── Named refs (DAG branch points) ──────────────────────────────
+
+    /// Set a named ref pointing to a node ID.
+    ///
+    /// Refs are named branch points in the DAG. Downstream consumers can
+    /// fork from a ref to build multiple output branches (e.g., viewport
+    /// + scopes) without re-executing the upstream chain.
+    pub fn set_ref(&mut self, name: &str, node_id: u32) {
+        self.refs.insert(name.to_string(), node_id);
+    }
+
+    /// Get the node ID for a named ref, or None if not set.
+    pub fn get_ref(&self, name: &str) -> Option<u32> {
+        self.refs.get(name).copied()
     }
 
     /// Get node info for a given node ID.
