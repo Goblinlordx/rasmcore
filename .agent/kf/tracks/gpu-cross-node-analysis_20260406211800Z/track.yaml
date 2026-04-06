@@ -1,0 +1,155 @@
+id: gpu-cross-node-analysis_20260406211800Z
+title: "Pure GPU cross-node analysis — zero-readback analysis→render pipeline"
+type: feature
+status: pending
+created: 2026-04-06
+updated: 2026-04-06
+spec:
+  summary: |
+    Enable analysis node A's GPU reduction buffer to be directly readable by
+    render node B in a single queue.submit() — zero CPU readback for
+    analysis→render pairs like histogram→auto_levels.
+  context: |
+    The V2 pipeline has all the pieces for pure GPU analysis→render but they
+    don't connect across node boundaries yet:
+
+    - ReductionBuffer (node.rs:146-156): persistent GPU buffers within a single
+      gpu_shaders() chain. ID-based linking across multi-pass shaders works.
+    - GpuReduction (reduction.rs): 3-pass pattern (local reduce → global reduce
+      → apply) with Histogram256, ChannelSum, ChannelMinMax. All single-node.
+    - GpuExecutor::execute() (gpu.rs:43-93): allocates reduction buffers per
+      call, frees after. No cross-call persistence.
+    - collect_gpu_chain() (graph.rs:595-627): walks backward collecting
+      GPU-capable nodes with single upstream. Stops at node boundaries.
+    - render_multi_gpu_plan() (graph.rs:403-533): multi-stage GPU plan with
+      StageInput::PriorStage for pixel buffers — but NOT reduction buffers.
+    - StagedPipeline (staged.rs): AnalysisNode→ParamBinding→render. Currently
+      CPU-only typed results (Scalar, ScalarVec, etc.), no GPU buffer bridge.
+
+    The gap: when analysis node A finishes its reduction passes, the reduction
+    buffer lives in GPU memory. But the current architecture forces a CPU
+    readback (execute() returns Vec<f32>), then re-upload for render node B.
+    For histogram→auto_levels, this means: GPU histogram reduce → CPU readback
+    → extract min/max/percentiles on CPU → re-upload as uniform → GPU apply.
+
+    The fix: let the graph walker detect analysis→render pairs, concatenate
+    their GPU shader chains (analysis passes + render apply pass), and submit
+    as one executor call. The reduction buffer stays on GPU throughout.
+  codebase_analysis: |
+    Key files and current state:
+
+    1. node.rs — GpuShader has reduction_buffers: Vec<ReductionBuffer> field.
+       ReductionBuffer has id, initial_data, read_write fields. The id-based
+       linking already works within a single execute() call.
+
+    2. gpu.rs — GpuExecutor::execute() takes &[GpuShader]. Reduction buffers
+       are allocated per unique id across the entire ops slice. This means if
+       we simply concatenate analysis shaders + render shaders into one ops
+       slice, the reduction buffer sharing ALREADY WORKS via matching ids.
+
+    3. graph.rs — collect_gpu_chain() stops at node boundaries. Need a new
+       collector that recognizes analysis→render pairs and merges their chains.
+       render_multi_gpu_plan() needs a variant that handles merged chains.
+
+    4. reduction.rs — GpuReduction::read_buffer() returns a ReductionBuffer
+       with the same id but read_write: false. This is exactly what the render
+       node's apply shader needs to reference the analysis buffer.
+
+    5. staged.rs — StagedPipeline has the right orchestration pattern but
+       uses CPU AnalysisResult. Can be extended with a GpuAnalysisResult
+       variant that carries buffer IDs instead of scalar values.
+
+    6. WgpuExecutorV2 (gpu-native/src/lib.rs) — already handles reduction
+       buffers correctly within execute(). No changes needed to the executor
+       itself — the fix is in the graph walker and shader chain composition.
+
+    7. WASM executor (v2-wasm, web GPU handler) — same principle applies.
+       The host executor already handles reduction buffers per-call.
+
+    Critical insight: the executor ALREADY supports cross-node reduction
+    buffers — we just need to stop splitting the chain at node boundaries
+    when analysis→render pairs are detected.
+  acceptance_criteria:
+    - Graph walker detects analysis→render node pairs where analysis produces
+      reduction buffers and render consumes them via matching buffer IDs
+    - Analysis + render GPU shaders are concatenated into a single ops slice
+      and submitted via one execute() call
+    - Reduction buffers persist across the analysis→render boundary within
+      the merged chain (same buffer ID = same GPU allocation)
+    - Histogram→auto_levels example works end-to-end on GPU with zero CPU
+      readback of the histogram data
+    - ChannelMinMax→auto_contrast example works similarly
+    - CPU fallback path still works when GPU is unavailable (existing
+      StagedPipeline CPU path unchanged)
+    - No regression in existing single-node GPU chains
+    - WASM and native executors both support the merged chain pattern
+  out_of_scope: |
+    - Multi-analysis fan-in (multiple analysis nodes feeding one render node)
+    - Cross-tile reduction accumulation (separate gpu-tiled-streaming-poc track)
+    - New analysis algorithms beyond histogram/min-max/sum
+    - StagedPipeline CPU-side typed results (orthogonal, already works)
+  technical_notes: |
+    The approach is surprisingly simple because the executor already handles
+    reduction buffer ID-based linking within a single execute() call:
+
+    1. Add a trait method to Node: gpu_analysis_buffers() -> Option<Vec<ReductionBufferDecl>>
+       that declares what reduction buffers this node's GPU chain produces.
+    2. Add a trait method: gpu_consumes_buffers() -> Option<Vec<u32>> that declares
+       what buffer IDs this node's apply shader reads.
+    3. Extend collect_gpu_chain() (or add collect_analysis_render_chain()) to:
+       - Detect when downstream node B consumes buffer IDs that upstream node A produces
+       - Merge A's analysis passes + B's apply passes into one shader chain
+       - Ensure buffer IDs match across the boundary
+    4. The merged chain goes into a single execute() call — no executor changes needed.
+    5. Wire into render_gpu_plan() so the graph automatically uses merged chains
+       when analysis→render pairs are detected.
+
+    For the concrete histogram→auto_levels case:
+    - Analysis node: 2 passes (local reduce, global reduce) writing Histogram256
+      buffer with id=0
+    - Render node: 1 pass (apply) reading buffer id=0 to compute per-channel
+      stretch and apply to pixels
+    - Merged chain: 3 passes total, buffer id=0 persists across all three,
+      single execute() call, zero CPU readback
+plan:
+  - phase: "Foundation — cross-node buffer declarations"
+    tasks:
+      - text: "Add gpu_analysis_buffers() method to Node trait returning produced buffer IDs and sizes"
+        done: false
+      - text: "Add gpu_consumes_buffers() method to Node trait returning consumed buffer IDs"
+        done: false
+      - text: "Implement both methods on existing analysis filters (histogram, auto_levels, etc.)"
+        done: false
+      - text: "Unit tests: verify buffer ID declarations match between analysis/render pairs"
+        done: false
+  - phase: "Chain merger — analysis→render detection"
+    tasks:
+      - text: "Add collect_analysis_render_chain() to graph.rs that detects producible→consumable buffer ID matches"
+        done: false
+      - text: "Merge analysis passes + render passes into single GpuShader vec with shared buffer IDs"
+        done: false
+      - text: "Handle buffer ID collision avoidance when multiple independent analyses exist in graph"
+        done: false
+      - text: "Unit tests: merged chain has correct pass count, buffer IDs, and access modes"
+        done: false
+  - phase: "Integration — wire into GPU plan"
+    tasks:
+      - text: "Extend render_gpu_plan() to prefer merged analysis→render chains over separate execution"
+        done: false
+      - text: "Extend render_multi_gpu_plan() for multi-output scenarios with merged chains"
+        done: false
+      - text: "Ensure CPU fallback path is unchanged (separate analysis + param binding + render)"
+        done: false
+      - text: "Integration test: histogram→auto_levels on GPU produces identical output to CPU path"
+        done: false
+  - phase: "Concrete examples and verification"
+    tasks:
+      - text: "Implement GPU-merged histogram→auto_levels (3-pass: local reduce, global reduce, apply stretch)"
+        done: false
+      - text: "Implement GPU-merged min_max→auto_contrast (3-pass: local reduce, global reduce, apply normalize)"
+        done: false
+      - text: "Verify WASM executor handles merged chains correctly (same buffer ID semantics)"
+        done: false
+      - text: "Benchmark: merged chain vs separate execute() calls — measure eliminated readback overhead"
+        done: false
+extra: {}
