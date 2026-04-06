@@ -415,3 +415,6 @@ lmt-fusion_20260406071801Z:
   - lmt-foundation_20260406071800Z
 lmt-migrate-point-ops_20260406071802Z:
   - lmt-fusion_20260406071801Z
+
+# WIT use-lmt — depends on LMT foundation (already complete)
+wit-use-lmt_20260406075500Z: []
