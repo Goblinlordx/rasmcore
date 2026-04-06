@@ -38,6 +38,7 @@ pub mod aces;
 pub mod fusion;
 pub mod trace;
 pub mod staged;
+pub mod analysis_buffer;
 pub mod gpu_shaders;
 pub mod aces_audit;
 pub mod noise;
@@ -93,3 +94,10 @@ pub use color_math::{
 };
 pub use color_convert::{ColorConvertNode, ViewTransformNode, ViewTransform};
 pub use trace::{PipelineTrace, TraceEvent, TraceEventKind};
+
+// Re-export analysis buffer protocol
+pub use analysis_buffer::{
+    AnalysisBufferKind, AnalysisBufferDecl, AnalysisBufferRef,
+    AnalysisBufferContext, NodeBufferMapping,
+    negotiate_analysis_buffers, ChainNodeInfo,
+};
