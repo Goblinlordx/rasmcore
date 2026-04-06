@@ -9,4 +9,5 @@ pub mod enhancement;
 pub mod reduction;
 pub mod scan;
 pub mod spatial;
+pub mod grading;
 pub mod vignette;

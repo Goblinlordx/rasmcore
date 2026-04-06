@@ -177,62 +177,19 @@ impl Node for LmtNode {
 
 // ─── .cube Parser ────────────────────────────────────────────────────────────
 
-/// Parse an Adobe/Resolve .cube 3D LUT file into an `Lmt::Clut3D`.
+/// Parse an Adobe/Resolve .cube LUT file (1D or 3D) into an `Lmt::Clut3D`.
 ///
 /// Supports the standard .cube format:
 /// - `TITLE "..."` (optional, ignored)
-/// - `DOMAIN_MIN r g b` (optional, default 0 0 0)
-/// - `DOMAIN_MAX r g b` (optional, default 1 1 1)
-/// - `LUT_3D_SIZE N` (required)
-/// - N^3 lines of `r g b` triplets
+/// - `DOMAIN_MIN r g b` / `DOMAIN_MAX r g b` (optional)
+/// - `LUT_3D_SIZE N` — 3D LUT with N^3 entries
+/// - `LUT_1D_SIZE N` — 1D LUT with N per-channel entries (converted to 3D)
+///
+/// Delegates to `filters::grading::parse_cube_lut` for the actual parsing,
+/// then wraps the result in `Lmt::Clut3D`.
 pub fn parse_cube(text: &str) -> Result<Lmt, PipelineError> {
-    let mut grid_size: Option<usize> = None;
-    let mut data = Vec::new();
-
-    for line in text.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') || line.starts_with("TITLE") {
-            continue;
-        }
-        if line.starts_with("DOMAIN_MIN") || line.starts_with("DOMAIN_MAX") {
-            continue; // TODO: handle non-0..1 domains
-        }
-        if let Some(rest) = line.strip_prefix("LUT_3D_SIZE") {
-            grid_size = Some(
-                rest.trim()
-                    .parse::<usize>()
-                    .map_err(|_| PipelineError::InvalidParams("invalid LUT_3D_SIZE".into()))?,
-            );
-            continue;
-        }
-        // Data line — parse r g b
-        let parts: Vec<f32> = line
-            .split_whitespace()
-            .filter_map(|s| s.parse().ok())
-            .collect();
-        if parts.len() >= 3 {
-            data.push(parts[0]);
-            data.push(parts[1]);
-            data.push(parts[2]);
-        }
-    }
-
-    let n = grid_size.ok_or_else(|| {
-        PipelineError::InvalidParams("missing LUT_3D_SIZE in .cube file".into())
-    })?;
-
-    let expected = n * n * n * 3;
-    if data.len() != expected {
-        return Err(PipelineError::InvalidParams(format!(
-            ".cube LUT_3D_SIZE={n} expects {expected} entries, got {}",
-            data.len()
-        )));
-    }
-
-    Ok(Lmt::Clut3D(Clut3D {
-        grid_size: n as u32,
-        data,
-    }))
+    let clut = crate::filters::grading::parse_cube_lut(text)?;
+    Ok(Lmt::Clut3D(clut))
 }
 
 // ─── Basic CLF Parser ────────────────────────────────────────────────────────

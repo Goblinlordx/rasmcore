@@ -1149,10 +1149,10 @@ pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
         let field_doc = field.attrs.iter()
             .filter(|a| a.path().is_ident("doc"))
             .filter_map(|a| {
-                if let syn::Meta::NameValue(nv) = &a.meta {
-                    if let syn::Expr::Lit(syn::ExprLit { lit: Lit::Str(s), .. }) = &nv.value {
-                        return Some(s.value());
-                    }
+                if let syn::Meta::NameValue(nv) = &a.meta
+                    && let syn::Expr::Lit(syn::ExprLit { lit: Lit::Str(s), .. }) = &nv.value
+                {
+                    return Some(s.value());
                 }
                 None
             })

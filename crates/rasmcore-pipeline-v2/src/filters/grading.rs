@@ -658,6 +658,20 @@ impl ClutOp for ApplyCubeLut {
     }
 }
 
+impl GpuFilter for ApplyCubeLut {
+    fn shader_body(&self) -> &str {
+        crate::gpu_shaders::grading::LUT_3D_APPLY
+    }
+
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        clut_gpu_params(&self.clut, width, height)
+    }
+
+    fn extra_buffers(&self) -> Vec<Vec<u8>> {
+        vec![clut_to_f32_bytes(&self.clut)]
+    }
+}
+
 /// Apply a Hald CLUT image as a 3D LUT.
 ///
 /// The Clut3D is pre-built from parsed Hald image data.
@@ -680,6 +694,39 @@ impl ClutOp for ApplyHaldLut {
     fn build_clut(&self) -> Clut3D {
         self.clut.clone()
     }
+}
+
+impl GpuFilter for ApplyHaldLut {
+    fn shader_body(&self) -> &str {
+        crate::gpu_shaders::grading::LUT_3D_APPLY
+    }
+
+    fn params(&self, width: u32, height: u32) -> Vec<u8> {
+        clut_gpu_params(&self.clut, width, height)
+    }
+
+    fn extra_buffers(&self) -> Vec<Vec<u8>> {
+        vec![clut_to_f32_bytes(&self.clut)]
+    }
+}
+
+/// Serialize CLUT data to f32 little-endian bytes for GPU extra_buffer.
+fn clut_to_f32_bytes(clut: &Clut3D) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(clut.data.len() * 4);
+    for &v in &clut.data {
+        buf.extend_from_slice(&v.to_le_bytes());
+    }
+    buf
+}
+
+/// Build GPU uniform params for CLUT shader.
+fn clut_gpu_params(clut: &Clut3D, width: u32, height: u32) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(16);
+    buf.extend_from_slice(&width.to_le_bytes());
+    buf.extend_from_slice(&height.to_le_bytes());
+    buf.extend_from_slice(&clut.grid_size.to_le_bytes());
+    buf.extend_from_slice(&0u32.to_le_bytes()); // _pad
+    buf
 }
 
 // ─── Tone Mapping ──────────────────────────────────────────────────────────
@@ -964,11 +1011,18 @@ impl GpuFilter for FilmGrain {
 
 // ─── .cube LUT Parser ──────────────────────────────────────────────────────
 
-/// Parse a .cube format 3D LUT from text content into a Clut3D.
+/// Parse a .cube format LUT (1D or 3D) from text content into a Clut3D.
 ///
-/// Supports TITLE, DOMAIN_MIN, DOMAIN_MAX, LUT_3D_SIZE directives.
+/// Supports both `LUT_1D_SIZE` and `LUT_3D_SIZE` directives plus
+/// TITLE, DOMAIN_MIN, DOMAIN_MAX.
+///
+/// 1D LUTs are converted to 3D CLUTs by applying the per-channel transfer
+/// functions independently: `out(r,g,b) = (lut_r(r), lut_g(g), lut_b(b))`.
+/// The 3D grid size is clamped to a reasonable maximum (65) for 1D→3D
+/// conversion.
 pub fn parse_cube_lut(content: &str) -> Result<Clut3D, PipelineError> {
-    let mut grid_size: Option<u32> = None;
+    let mut grid_size_3d: Option<u32> = None;
+    let mut grid_size_1d: Option<u32> = None;
     let mut data: Vec<f32> = Vec::new();
     let mut domain_min = [0.0f32; 3];
     let mut domain_max = [1.0f32; 3];
@@ -979,10 +1033,18 @@ pub fn parse_cube_lut(content: &str) -> Result<Clut3D, PipelineError> {
             continue;
         }
         if let Some(rest) = line.strip_prefix("LUT_3D_SIZE") {
-            grid_size = Some(
+            grid_size_3d = Some(
                 rest.trim()
                     .parse::<u32>()
                     .map_err(|_| PipelineError::InvalidParams("invalid LUT_3D_SIZE".into()))?,
+            );
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("LUT_1D_SIZE") {
+            grid_size_1d = Some(
+                rest.trim()
+                    .parse::<u32>()
+                    .map_err(|_| PipelineError::InvalidParams("invalid LUT_1D_SIZE".into()))?,
             );
             continue;
         }
@@ -1020,17 +1082,134 @@ pub fn parse_cube_lut(content: &str) -> Result<Clut3D, PipelineError> {
         }
     }
 
-    let n = grid_size.ok_or_else(|| PipelineError::InvalidParams("missing LUT_3D_SIZE".into()))?;
-    let expected = (n * n * n * 3) as usize;
-    if data.len() != expected {
+    if let Some(n) = grid_size_3d {
+        // Standard 3D LUT
+        let expected = (n * n * n * 3) as usize;
+        if data.len() != expected {
+            return Err(PipelineError::InvalidParams(format!(
+                "expected {expected} values for {n}^3 LUT, got {}",
+                data.len()
+            )));
+        }
+        Ok(Clut3D { grid_size: n, data })
+    } else if let Some(n) = grid_size_1d {
+        // 1D LUT — N entries of (r, g, b) transfer values
+        let expected = (n * 3) as usize;
+        if data.len() != expected {
+            return Err(PipelineError::InvalidParams(format!(
+                "expected {expected} values for 1D LUT size {n}, got {}",
+                data.len()
+            )));
+        }
+        Ok(lut_1d_to_clut3d(&data, n))
+    } else {
+        Err(PipelineError::InvalidParams(
+            "missing LUT_3D_SIZE or LUT_1D_SIZE in .cube file".into(),
+        ))
+    }
+}
+
+/// Convert a 1D LUT (N entries × 3 channels) to a 3D CLUT.
+///
+/// The 1D transfer function is applied independently per channel:
+/// `out(r,g,b) = (lut_r(r), lut_g(g), lut_b(b))`.
+///
+/// Grid size for the 3D CLUT is min(n, 65) to keep memory reasonable.
+fn lut_1d_to_clut3d(data: &[f32], n: u32) -> Clut3D {
+    let n = n as usize;
+
+    // Separate into per-channel arrays for interpolation
+    let mut lut_r = Vec::with_capacity(n);
+    let mut lut_g = Vec::with_capacity(n);
+    let mut lut_b = Vec::with_capacity(n);
+    for i in 0..n {
+        lut_r.push(data[i * 3]);
+        lut_g.push(data[i * 3 + 1]);
+        lut_b.push(data[i * 3 + 2]);
+    }
+
+    // Sample 1D LUT with linear interpolation
+    let sample_1d = |lut: &[f32], t: f32| -> f32 {
+        let max = (lut.len() - 1) as f32;
+        let idx = (t * max).clamp(0.0, max);
+        let lo = idx.floor() as usize;
+        let hi = (lo + 1).min(lut.len() - 1);
+        let frac = idx - lo as f32;
+        lut[lo] + frac * (lut[hi] - lut[lo])
+    };
+
+    // Build 3D CLUT — grid size capped at 65 for memory
+    let grid = (n as u32).min(65);
+    Clut3D::from_fn(grid, |r, g, b| {
+        (sample_1d(&lut_r, r), sample_1d(&lut_g, g), sample_1d(&lut_b, b))
+    })
+}
+
+// ─── Hald CLUT Decoder ────────────────────────────────────────────────────
+
+/// Decode a Hald CLUT image into a Clut3D.
+///
+/// A Hald CLUT of level L is an image of dimensions L³ × L³ containing
+/// an L² × L² × L² color lookup table encoded as an identity-structure
+/// image. Each pixel's position maps to an (r, g, b) input coordinate,
+/// and the pixel's color is the output.
+///
+/// The input `pixels` must be f32 RGBA (4 channels per pixel).
+/// `width` and `height` must both equal L³ for some integer L ≥ 2.
+pub fn parse_hald_lut(pixels: &[f32], width: u32, height: u32) -> Result<Clut3D, PipelineError> {
+    if width != height {
+        return Err(PipelineError::InvalidParams(
+            "Hald CLUT image must be square".into(),
+        ));
+    }
+
+    // Find level L such that L^3 == width
+    let dim = width as usize;
+    let level = (dim as f64).cbrt().round() as usize;
+    if level * level * level != dim {
         return Err(PipelineError::InvalidParams(format!(
-            "expected {expected} values for {n}^3 LUT, got {}",
-            data.len()
+            "Hald image dimension {dim} is not a perfect cube (L^3)"
+        )));
+    }
+    if level < 2 {
+        return Err(PipelineError::InvalidParams(
+            "Hald level must be at least 2".into(),
+        ));
+    }
+
+    let grid_size = level * level; // L^2
+    let total = grid_size * grid_size * grid_size;
+
+    let pixel_count = (width as usize) * (height as usize);
+    if pixels.len() < pixel_count * 4 {
+        return Err(PipelineError::InvalidParams(format!(
+            "Hald image needs {} pixels ({} f32s), got {} f32s",
+            pixel_count,
+            pixel_count * 4,
+            pixels.len()
+        )));
+    }
+    if total > pixel_count {
+        return Err(PipelineError::InvalidParams(format!(
+            "Hald level {level} needs {total} entries but image has only {pixel_count} pixels"
         )));
     }
 
+    // Extract RGB from each pixel in scanline order.
+    // Hald layout: pixel index i maps to:
+    //   r = i % grid_size
+    //   g = (i / grid_size) % grid_size
+    //   b = i / (grid_size * grid_size)
+    let mut data = Vec::with_capacity(total * 3);
+    for i in 0..total {
+        let base = i * 4;
+        data.push(pixels[base]);     // R
+        data.push(pixels[base + 1]); // G
+        data.push(pixels[base + 2]); // B
+    }
+
     Ok(Clut3D {
-        grid_size: n,
+        grid_size: grid_size as u32,
         data,
     })
 }
@@ -1293,6 +1472,18 @@ inventory::submit! { &FilterFactoryRegistration { name: "lift_gamma_gain",
 inventory::submit! { &OperationRegistration { name: "lift_gamma_gain", display_name: "Lift/Gamma/Gain", category: "grading",
     kind: OperationKind::Filter, params: &LIFT_GAMMA_GAIN_PARAMS, doc_path: "", cost: "O(n)",
     capabilities: OperationCapabilities { gpu: false, analytic: false, affine: false, clut: true },
+} }
+
+// Apply Cube LUT (data-driven — used via use_lmt(), not apply-filter params)
+inventory::submit! { &OperationRegistration { name: "apply_cube_lut", display_name: "Apply .cube LUT", category: "grading",
+    kind: OperationKind::Filter, params: &[], doc_path: "", cost: "O(n)",
+    capabilities: OperationCapabilities { gpu: true, analytic: false, affine: false, clut: true },
+} }
+
+// Apply Hald LUT (data-driven — used via decoded Hald image pixels)
+inventory::submit! { &OperationRegistration { name: "apply_hald_lut", display_name: "Apply Hald CLUT", category: "grading",
+    kind: OperationKind::Filter, params: &[], doc_path: "", cost: "O(n)",
+    capabilities: OperationCapabilities { gpu: true, analytic: false, affine: false, clut: true },
 } }
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
@@ -1679,6 +1870,147 @@ LUT_3D_SIZE 2
         assert!((r).abs() < 0.01 && (g).abs() < 0.01 && (b).abs() < 0.01);
         let (r, g, b) = clut.sample(1.0, 1.0, 1.0);
         assert!((r - 1.0).abs() < 0.01 && (g - 1.0).abs() < 0.01 && (b - 1.0).abs() < 0.01);
+    }
+
+    // ── 1D Cube LUT ──
+
+    #[test]
+    fn parse_cube_1d_lut() {
+        // 1D LUT with 4 entries: simple gamma-like curve
+        let cube_text = "\
+TITLE \"Test 1D\"
+LUT_1D_SIZE 4
+0.0 0.0 0.0
+0.3 0.3 0.3
+0.7 0.7 0.7
+1.0 1.0 1.0
+";
+        let clut = parse_cube_lut(cube_text).unwrap();
+        // 1D LUT with 4 entries gets clamped to min(4, 65) = 4 grid size
+        assert!(clut.grid_size <= 65);
+        // Identity-ish: corners should map to themselves
+        let (r, g, b) = clut.sample(0.0, 0.0, 0.0);
+        assert!((r).abs() < 0.01 && (g).abs() < 0.01 && (b).abs() < 0.01, "black maps to black");
+        let (r, g, b) = clut.sample(1.0, 1.0, 1.0);
+        assert!((r - 1.0).abs() < 0.01 && (g - 1.0).abs() < 0.01 && (b - 1.0).abs() < 0.01, "white maps to white");
+    }
+
+    #[test]
+    fn parse_cube_1d_lut_with_domain() {
+        // 1D LUT with custom domain
+        let cube_text = "\
+LUT_1D_SIZE 3
+DOMAIN_MIN 0.0 0.0 0.0
+DOMAIN_MAX 2.0 2.0 2.0
+0.0 0.0 0.0
+1.0 1.0 1.0
+2.0 2.0 2.0
+";
+        let clut = parse_cube_lut(cube_text).unwrap();
+        // After domain normalization: values should be 0.0, 0.5, 1.0
+        let (r, _, _) = clut.sample(0.5, 0.0, 0.0);
+        assert!((r - 0.5).abs() < 0.05, "mid-domain should map to 0.5, got {r}");
+    }
+
+    #[test]
+    fn parse_cube_1d_channel_independent() {
+        // 1D LUT with different per-channel curves
+        let cube_text = "\
+LUT_1D_SIZE 3
+0.0 0.0 0.0
+1.0 0.5 0.25
+1.0 1.0 1.0
+";
+        let clut = parse_cube_lut(cube_text).unwrap();
+        // At input (0.5, 0.5, 0.5), each channel interpolates independently
+        let (r, g, b) = clut.sample(0.5, 0.5, 0.5);
+        // R channel: lerp(0→1 then 1→1) at t=0.5 → 1.0
+        // G channel: lerp(0→0.5 then 0.5→1) at t=0.5 → 0.5
+        // B channel: lerp(0→0.25 then 0.25→1) at t=0.5 → 0.25
+        // But since it's 3D CLUT conversion, the independence comes from
+        // the from_fn closure applying each 1D independently
+        assert!(r > g, "R should be brighter than G at midtone, r={r}, g={g}");
+        assert!(g > b, "G should be brighter than B at midtone, g={g}, b={b}");
+    }
+
+    // ── Hald CLUT ──
+
+    #[test]
+    fn parse_hald_lut_identity_level2() {
+        // Level 2: grid_size = 2^2 = 4, image = 2^3 x 2^3 = 8x8 = 64 pixels
+        let level: usize = 2;
+        let grid = level * level; // 4
+        let dim = level * level * level; // 8
+        let total = dim * dim; // 64 pixels
+
+        // Build identity Hald image: pixel i maps to (r, g, b) where
+        // r = i % grid, g = (i / grid) % grid, b = i / (grid * grid)
+        let mut pixels = Vec::with_capacity(total * 4);
+        for i in 0..total {
+            let r = (i % grid) as f32 / (grid - 1) as f32;
+            let g = ((i / grid) % grid) as f32 / (grid - 1) as f32;
+            let b = (i / (grid * grid)) as f32 / (grid - 1) as f32;
+            pixels.push(r);
+            pixels.push(g);
+            pixels.push(b);
+            pixels.push(1.0);
+        }
+
+        let clut = parse_hald_lut(&pixels, dim as u32, dim as u32).unwrap();
+        assert_eq!(clut.grid_size, grid as u32);
+
+        // Identity: corners should pass through
+        let (r, g, b) = clut.sample(0.0, 0.0, 0.0);
+        assert!((r).abs() < 0.01 && (g).abs() < 0.01 && (b).abs() < 0.01, "black");
+        let (r, g, b) = clut.sample(1.0, 1.0, 1.0);
+        assert!((r - 1.0).abs() < 0.01 && (g - 1.0).abs() < 0.01 && (b - 1.0).abs() < 0.01, "white");
+    }
+
+    #[test]
+    fn parse_hald_lut_non_square_rejected() {
+        let pixels = vec![0.0f32; 4 * 64];
+        assert!(parse_hald_lut(&pixels, 16, 4).is_err());
+    }
+
+    #[test]
+    fn parse_hald_lut_non_cube_dim_rejected() {
+        // 10x10 is not a perfect cube
+        let pixels = vec![0.0f32; 4 * 100];
+        assert!(parse_hald_lut(&pixels, 10, 10).is_err());
+    }
+
+    // ── GPU capability ──
+
+    #[test]
+    fn cube_lut_has_gpu_shader() {
+        let clut = Clut3D::identity(17);
+        let f = ApplyCubeLut { clut };
+        let shaders = f.gpu_shaders(100, 100);
+        assert!(!shaders.is_empty(), "ApplyCubeLut should have GPU shader");
+        assert!(!shaders[0].extra_buffers.is_empty(), "Should have CLUT extra buffer");
+    }
+
+    #[test]
+    fn hald_lut_has_gpu_shader() {
+        let clut = Clut3D::identity(4);
+        let f = ApplyHaldLut { clut };
+        let shaders = f.gpu_shaders(100, 100);
+        assert!(!shaders.is_empty(), "ApplyHaldLut should have GPU shader");
+        assert!(!shaders[0].extra_buffers.is_empty(), "Should have CLUT extra buffer");
+    }
+
+    #[test]
+    fn cube_lut_gpu_params_layout() {
+        let clut = Clut3D::identity(17);
+        let f = ApplyCubeLut { clut };
+        let params = f.params(200, 100);
+        assert_eq!(params.len(), 16, "GPU params: width, height, grid_size, _pad = 16 bytes");
+        let width = u32::from_le_bytes(params[0..4].try_into().unwrap());
+        let height = u32::from_le_bytes(params[4..8].try_into().unwrap());
+        let grid = u32::from_le_bytes(params[8..12].try_into().unwrap());
+        assert_eq!(width, 200);
+        assert_eq!(height, 100);
+        assert_eq!(grid, 17);
     }
 
     // ── Alpha preservation ──
