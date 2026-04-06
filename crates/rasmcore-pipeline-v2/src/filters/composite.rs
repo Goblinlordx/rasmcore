@@ -70,13 +70,13 @@ impl Filter for Unpremultiply {
     fn compute(&self, input: &[f32], _w: u32, _h: u32) -> Result<Vec<f32>, PipelineError> {
         let mut out = input.to_vec();
         for px in out.chunks_exact_mut(4) {
+            // Branchless: use select(a > eps, 1/a, 0) to avoid branch in the hot loop.
+            // LLVM can vectorize this to a masked divide.
             let a = px[3];
-            if a > 1e-7 {
-                let inv_a = 1.0 / a;
-                px[0] *= inv_a;
-                px[1] *= inv_a;
-                px[2] *= inv_a;
-            }
+            let inv_a = if a > 1e-7 { 1.0 / a } else { 0.0 };
+            px[0] *= inv_a;
+            px[1] *= inv_a;
+            px[2] *= inv_a;
         }
         Ok(out)
     }
@@ -133,42 +133,38 @@ pub struct Blend {
     pub opacity: f32,
 }
 
-/// Apply blend mode to a single channel.
-fn blend_channel(base: f32, mode: u32) -> f32 {
-    match mode {
-        0 => base,                                                      // normal (identity)
-        1 => base * base,                                               // multiply
-        2 => 1.0 - (1.0 - base) * (1.0 - base),                       // screen
-        3 => if base < 0.5 { 2.0 * base * base } else { 1.0 - 2.0 * (1.0 - base) * (1.0 - base) }, // overlay
-        4 => {                                                           // soft light
-            if base < 0.5 { base * (base + 0.5) }
-            else { 1.0 - (1.0 - base) * (1.5 - base) }
-        }
-        5 => if base < 0.5 { 2.0 * base * base } else { 1.0 - 2.0 * (1.0 - base) * (1.0 - base) }, // hard light (same as overlay for self-blend)
-        6 => if base < 1.0 { (base / (1.0 - base + 1e-6)).min(1.0) } else { 1.0 }, // color dodge
-        7 => if base > 0.0 { 1.0 - ((1.0 - base) / (base + 1e-6)).min(1.0) } else { 0.0 }, // color burn
-        8 => base.min(base),                                            // darken (identity for self-blend)
-        9 => base.max(base),                                            // lighten (identity for self-blend)
-        10 => (base - base).abs(),                                       // difference (zero for self-blend)
-        11 => base + base - 2.0 * base * base,                          // exclusion
-        12 => (base + base - 1.0).max(0.0),                             // linear burn
-        13 => (base + base).min(1.0),                                    // linear dodge (add)
-        _ => base,
-    }
-}
-
 impl Filter for Blend {
     fn compute(&self, input: &[f32], _w: u32, _h: u32) -> Result<Vec<f32>, PipelineError> {
-        let mode = self.mode;
         let opacity = self.opacity;
+        let inv_opacity = 1.0 - opacity;
         let mut out = input.to_vec();
+
+        // Hoist mode dispatch outside the loop so the inner loop is a single
+        // arithmetic expression that LLVM can auto-vectorize.
+        let blend_fn: fn(f32) -> f32 = match self.mode {
+            1 => |b: f32| b * b,
+            2 => |b: f32| 1.0 - (1.0 - b) * (1.0 - b),
+            3 => |b: f32| if b < 0.5 { 2.0 * b * b } else { 1.0 - 2.0 * (1.0 - b) * (1.0 - b) },
+            4 => |b: f32| if b < 0.5 { b * (b + 0.5) } else { 1.0 - (1.0 - b) * (1.5 - b) },
+            5 => |b: f32| if b < 0.5 { 2.0 * b * b } else { 1.0 - 2.0 * (1.0 - b) * (1.0 - b) },
+            6 => |b: f32| if b < 1.0 { (b / (1.0 - b + 1e-6)).min(1.0) } else { 1.0 },
+            7 => |b: f32| if b > 0.0 { 1.0 - ((1.0 - b) / (b + 1e-6)).min(1.0) } else { 0.0 },
+            8 => |b: f32| b,    // darken (identity for self-blend)
+            9 => |b: f32| b,    // lighten (identity for self-blend)
+            10 => |_: f32| 0.0, // difference (zero for self-blend)
+            11 => |b: f32| b + b - 2.0 * b * b,
+            12 => |b: f32| (b + b - 1.0).max(0.0),
+            13 => |b: f32| (b + b).min(1.0),
+            _ => |b: f32| b,    // normal (identity)
+        };
+
         for px in out.chunks_exact_mut(4) {
-            let br = blend_channel(px[0].clamp(0.0, 1.0), mode);
-            let bg = blend_channel(px[1].clamp(0.0, 1.0), mode);
-            let bb = blend_channel(px[2].clamp(0.0, 1.0), mode);
-            px[0] = px[0] * (1.0 - opacity) + br * opacity;
-            px[1] = px[1] * (1.0 - opacity) + bg * opacity;
-            px[2] = px[2] * (1.0 - opacity) + bb * opacity;
+            let r = px[0].clamp(0.0, 1.0);
+            let g = px[1].clamp(0.0, 1.0);
+            let b = px[2].clamp(0.0, 1.0);
+            px[0] = px[0] * inv_opacity + blend_fn(r) * opacity;
+            px[1] = px[1] * inv_opacity + blend_fn(g) * opacity;
+            px[2] = px[2] * inv_opacity + blend_fn(b) * opacity;
         }
         Ok(out)
     }
