@@ -975,10 +975,213 @@ pub fn parse_cube_lut(content: &str) -> Result<Clut3D, PipelineError> {
 
 use crate::filter_node::FilterNode;
 #[allow(unused_imports)]
-use crate::registry::{FilterFactoryRegistration, ParamMap};
+use crate::registry::{
+    FilterFactoryRegistration, OperationRegistration, OperationKind,
+    OperationCapabilities, ParamDescriptor, ParamMap, ParamType,
+};
 
+// ─── Helper: build curve from shadow/highlight params ──────────────────────
+
+/// Generate control points from simplified shadow/midtone/highlight params.
+/// Each param bends the curve: positive = brighten that range, negative = darken.
+fn curve_from_params(shadows: f32, midtones: f32, highlights: f32) -> Vec<(f32, f32)> {
+    vec![
+        (0.0, 0.0),
+        (0.25, (0.25 + shadows * 0.15).clamp(0.0, 1.0)),
+        (0.5, (0.5 + midtones * 0.2).clamp(0.0, 1.0)),
+        (0.75, (0.75 + highlights * 0.15).clamp(0.0, 1.0)),
+        (1.0, 1.0),
+    ]
+}
+
+/// Generate hue-indexed curve from a center/amount/width parameterization.
+fn hue_curve_from_params(center: f32, amount: f32, width: f32) -> Vec<(f32, f32)> {
+    // Default identity: all points at y=1 (no change)
+    let n = 12;
+    (0..=n).map(|i| {
+        let hue = i as f32 / n as f32;
+        let dist = ((hue - center / 360.0).abs()).min(1.0 - (hue - center / 360.0).abs());
+        let influence = (-dist * dist / (2.0 * (width / 360.0).max(0.01).powi(2))).exp();
+        (hue, (1.0 + amount * influence).clamp(0.0, 2.0))
+    }).collect()
+}
+
+// ─── Param descriptor arrays ───────────────────────────────────────────────
+
+macro_rules! pd_f32 {
+    ($name:expr, $min:expr, $max:expr, $step:expr, $default:expr) => {
+        ParamDescriptor {
+            name: $name, value_type: ParamType::F32,
+            min: Some($min), max: Some($max), step: Some($step), default: Some($default),
+            hint: None, description: "", constraints: &[],
+        }
+    };
+}
+
+static CURVE_PARAMS: [ParamDescriptor; 3] = [
+    pd_f32!("shadows", -1.0, 1.0, 0.05, 0.0),
+    pd_f32!("midtones", -1.0, 1.0, 0.05, 0.0),
+    pd_f32!("highlights", -1.0, 1.0, 0.05, 0.0),
+];
+
+static HUE_CURVE_PARAMS: [ParamDescriptor; 3] = [
+    pd_f32!("center", 0.0, 360.0, 5.0, 0.0),
+    pd_f32!("amount", -1.0, 1.0, 0.05, 0.0),
+    pd_f32!("width", 10.0, 180.0, 5.0, 60.0),
+];
+
+static NORM_CURVE_PARAMS: [ParamDescriptor; 3] = [
+    pd_f32!("shadows", -1.0, 1.0, 0.05, 0.0),
+    pd_f32!("midtones", -1.0, 1.0, 0.05, 0.0),
+    pd_f32!("highlights", -1.0, 1.0, 0.05, 0.0),
+];
+
+static ASC_CDL_PARAMS: [ParamDescriptor; 10] = [
+    pd_f32!("slope_r", 0.0, 4.0, 0.05, 1.0), pd_f32!("slope_g", 0.0, 4.0, 0.05, 1.0), pd_f32!("slope_b", 0.0, 4.0, 0.05, 1.0),
+    pd_f32!("offset_r", -1.0, 1.0, 0.02, 0.0), pd_f32!("offset_g", -1.0, 1.0, 0.02, 0.0), pd_f32!("offset_b", -1.0, 1.0, 0.02, 0.0),
+    pd_f32!("power_r", 0.1, 4.0, 0.05, 1.0), pd_f32!("power_g", 0.1, 4.0, 0.05, 1.0), pd_f32!("power_b", 0.1, 4.0, 0.05, 1.0),
+    pd_f32!("saturation", 0.0, 4.0, 0.05, 1.0),
+];
+
+static SPLIT_TONING_PARAMS: [ParamDescriptor; 4] = [
+    pd_f32!("shadow_hue", 0.0, 360.0, 5.0, 220.0),
+    pd_f32!("highlight_hue", 0.0, 360.0, 5.0, 40.0),
+    pd_f32!("shadow_strength", 0.0, 1.0, 0.05, 0.0),
+    pd_f32!("highlight_strength", 0.0, 1.0, 0.05, 0.0),
+];
+
+static LIFT_GAMMA_GAIN_PARAMS: [ParamDescriptor; 9] = [
+    pd_f32!("lift_r", -0.5, 0.5, 0.02, 0.0), pd_f32!("lift_g", -0.5, 0.5, 0.02, 0.0), pd_f32!("lift_b", -0.5, 0.5, 0.02, 0.0),
+    pd_f32!("gamma_r", 0.1, 4.0, 0.05, 1.0), pd_f32!("gamma_g", 0.1, 4.0, 0.05, 1.0), pd_f32!("gamma_b", 0.1, 4.0, 0.05, 1.0),
+    pd_f32!("gain_r", 0.0, 4.0, 0.05, 1.0), pd_f32!("gain_g", 0.0, 4.0, 0.05, 1.0), pd_f32!("gain_b", 0.0, 4.0, 0.05, 1.0),
+];
+
+// ─── Helper: HSL for split toning ──────────────────────────────────────────
+
+fn hsl_to_rgb_simple(h: f32, s: f32, l: f32) -> [f32; 3] {
+    if s < 1e-6 { return [l, l, l]; }
+    let q = if l < 0.5 { l * (1.0 + s) } else { l + s - l * s };
+    let p = 2.0 * l - q;
+    let h = h / 360.0;
+    let hue_to_rgb = |t: f32| -> f32 {
+        let t = ((t % 1.0) + 1.0) % 1.0;
+        if t < 1.0 / 6.0 { p + (q - p) * 6.0 * t }
+        else if t < 0.5 { q }
+        else if t < 2.0 / 3.0 { p + (q - p) * (2.0 / 3.0 - t) * 6.0 }
+        else { p }
+    };
+    [hue_to_rgb(h + 1.0 / 3.0), hue_to_rgb(h), hue_to_rgb(h - 1.0 / 3.0)]
+}
+
+// ─── Registrations ─────────────────────────────────────────────────────────
+
+// Curves Master
+inventory::submit! { &FilterFactoryRegistration { name: "curves_master",
+    display_name: "Curves (Master)", category: "grading", params: &CURVE_PARAMS, doc_path: "", cost: "O(n)",
+    factory: |upstream, info, params| {
+        let pts = curve_from_params(params.get_f32("shadows"), params.get_f32("midtones"), params.get_f32("highlights"));
+        Box::new(FilterNode::point_op(upstream, info, CurvesMaster { points: pts }))
+    },
+} }
+inventory::submit! { &OperationRegistration { name: "curves_master", display_name: "Curves (Master)", category: "grading",
+    kind: OperationKind::Filter, params: &CURVE_PARAMS, doc_path: "", cost: "O(n)",
+    capabilities: OperationCapabilities { gpu: false, analytic: false, affine: false, clut: true },
+} }
+
+// Curves Red
+inventory::submit! { &FilterFactoryRegistration { name: "curves_red",
+    display_name: "Curves (Red)", category: "grading", params: &CURVE_PARAMS, doc_path: "", cost: "O(n)",
+    factory: |upstream, info, params| {
+        let pts = curve_from_params(params.get_f32("shadows"), params.get_f32("midtones"), params.get_f32("highlights"));
+        Box::new(FilterNode::point_op(upstream, info, CurvesRed { points: pts }))
+    },
+} }
+inventory::submit! { &OperationRegistration { name: "curves_red", display_name: "Curves (Red)", category: "grading",
+    kind: OperationKind::Filter, params: &CURVE_PARAMS, doc_path: "", cost: "O(n)",
+    capabilities: OperationCapabilities { gpu: false, analytic: false, affine: false, clut: true },
+} }
+
+// Curves Green
+inventory::submit! { &FilterFactoryRegistration { name: "curves_green",
+    display_name: "Curves (Green)", category: "grading", params: &CURVE_PARAMS, doc_path: "", cost: "O(n)",
+    factory: |upstream, info, params| {
+        let pts = curve_from_params(params.get_f32("shadows"), params.get_f32("midtones"), params.get_f32("highlights"));
+        Box::new(FilterNode::point_op(upstream, info, CurvesGreen { points: pts }))
+    },
+} }
+inventory::submit! { &OperationRegistration { name: "curves_green", display_name: "Curves (Green)", category: "grading",
+    kind: OperationKind::Filter, params: &CURVE_PARAMS, doc_path: "", cost: "O(n)",
+    capabilities: OperationCapabilities { gpu: false, analytic: false, affine: false, clut: true },
+} }
+
+// Curves Blue
+inventory::submit! { &FilterFactoryRegistration { name: "curves_blue",
+    display_name: "Curves (Blue)", category: "grading", params: &CURVE_PARAMS, doc_path: "", cost: "O(n)",
+    factory: |upstream, info, params| {
+        let pts = curve_from_params(params.get_f32("shadows"), params.get_f32("midtones"), params.get_f32("highlights"));
+        Box::new(FilterNode::point_op(upstream, info, CurvesBlue { points: pts }))
+    },
+} }
+inventory::submit! { &OperationRegistration { name: "curves_blue", display_name: "Curves (Blue)", category: "grading",
+    kind: OperationKind::Filter, params: &CURVE_PARAMS, doc_path: "", cost: "O(n)",
+    capabilities: OperationCapabilities { gpu: false, analytic: false, affine: false, clut: true },
+} }
+
+// Hue vs Saturation
+inventory::submit! { &FilterFactoryRegistration { name: "hue_vs_sat",
+    display_name: "Hue vs Sat", category: "grading", params: &HUE_CURVE_PARAMS, doc_path: "", cost: "O(n)",
+    factory: |upstream, info, params| {
+        let pts = hue_curve_from_params(params.get_f32("center"), params.get_f32("amount"), params.get_f32("width"));
+        Box::new(FilterNode::point_op(upstream, info, HueVsSat { points: pts }))
+    },
+} }
+inventory::submit! { &OperationRegistration { name: "hue_vs_sat", display_name: "Hue vs Sat", category: "grading",
+    kind: OperationKind::Filter, params: &HUE_CURVE_PARAMS, doc_path: "", cost: "O(n)",
+    capabilities: OperationCapabilities { gpu: false, analytic: false, affine: false, clut: true },
+} }
+
+// Hue vs Luminance
+inventory::submit! { &FilterFactoryRegistration { name: "hue_vs_lum",
+    display_name: "Hue vs Lum", category: "grading", params: &HUE_CURVE_PARAMS, doc_path: "", cost: "O(n)",
+    factory: |upstream, info, params| {
+        let pts = hue_curve_from_params(params.get_f32("center"), params.get_f32("amount"), params.get_f32("width"));
+        Box::new(FilterNode::point_op(upstream, info, HueVsLum { points: pts }))
+    },
+} }
+inventory::submit! { &OperationRegistration { name: "hue_vs_lum", display_name: "Hue vs Lum", category: "grading",
+    kind: OperationKind::Filter, params: &HUE_CURVE_PARAMS, doc_path: "", cost: "O(n)",
+    capabilities: OperationCapabilities { gpu: false, analytic: false, affine: false, clut: true },
+} }
+
+// Lum vs Saturation
+inventory::submit! { &FilterFactoryRegistration { name: "lum_vs_sat",
+    display_name: "Lum vs Sat", category: "grading", params: &NORM_CURVE_PARAMS, doc_path: "", cost: "O(n)",
+    factory: |upstream, info, params| {
+        let pts = curve_from_params(params.get_f32("shadows"), params.get_f32("midtones"), params.get_f32("highlights"));
+        Box::new(FilterNode::point_op(upstream, info, LumVsSat { points: pts }))
+    },
+} }
+inventory::submit! { &OperationRegistration { name: "lum_vs_sat", display_name: "Lum vs Sat", category: "grading",
+    kind: OperationKind::Filter, params: &NORM_CURVE_PARAMS, doc_path: "", cost: "O(n)",
+    capabilities: OperationCapabilities { gpu: false, analytic: false, affine: false, clut: true },
+} }
+
+// Sat vs Saturation
+inventory::submit! { &FilterFactoryRegistration { name: "sat_vs_sat",
+    display_name: "Sat vs Sat", category: "grading", params: &NORM_CURVE_PARAMS, doc_path: "", cost: "O(n)",
+    factory: |upstream, info, params| {
+        let pts = curve_from_params(params.get_f32("shadows"), params.get_f32("midtones"), params.get_f32("highlights"));
+        Box::new(FilterNode::point_op(upstream, info, SatVsSat { points: pts }))
+    },
+} }
+inventory::submit! { &OperationRegistration { name: "sat_vs_sat", display_name: "Sat vs Sat", category: "grading",
+    kind: OperationKind::Filter, params: &NORM_CURVE_PARAMS, doc_path: "", cost: "O(n)",
+    capabilities: OperationCapabilities { gpu: false, analytic: false, affine: false, clut: true },
+} }
+
+// ASC CDL (with proper params)
 inventory::submit! { &FilterFactoryRegistration { name: "asc_cdl",
-        display_name: "", category: "", params: &[], doc_path: "", cost: "O(n)",
+    display_name: "ASC CDL", category: "grading", params: &ASC_CDL_PARAMS, doc_path: "", cost: "O(n)",
     factory: |upstream, info, params| {
         Box::new(FilterNode::point_op(upstream, info, AscCdl {
             slope: [params.get_f32("slope_r"), params.get_f32("slope_g"), params.get_f32("slope_b")],
@@ -988,18 +1191,31 @@ inventory::submit! { &FilterFactoryRegistration { name: "asc_cdl",
         }))
     },
 } }
+inventory::submit! { &OperationRegistration { name: "asc_cdl", display_name: "ASC CDL", category: "grading",
+    kind: OperationKind::Filter, params: &ASC_CDL_PARAMS, doc_path: "", cost: "O(n)",
+    capabilities: OperationCapabilities { gpu: false, analytic: false, affine: false, clut: true },
+} }
+
+// Split Toning (with hue-based params instead of raw RGB)
 inventory::submit! { &FilterFactoryRegistration { name: "split_toning",
-        display_name: "", category: "", params: &[], doc_path: "", cost: "O(n)",
+    display_name: "Split Toning", category: "grading", params: &SPLIT_TONING_PARAMS, doc_path: "", cost: "O(n)",
     factory: |upstream, info, params| {
+        let sh = hsl_to_rgb_simple(params.get_f32("shadow_hue"), 0.7, 0.3);
+        let hh = hsl_to_rgb_simple(params.get_f32("highlight_hue"), 0.7, 0.7);
         Box::new(FilterNode::point_op(upstream, info, SplitToning {
-            shadow_color: [params.get_f32("shadow_r"), params.get_f32("shadow_g"), params.get_f32("shadow_b")],
-            highlight_color: [params.get_f32("highlight_r"), params.get_f32("highlight_g"), params.get_f32("highlight_b")],
-            balance: params.get_f32("balance"), strength: params.get_f32("strength"),
+            shadow_color: sh, highlight_color: hh,
+            balance: 0.5, strength: (params.get_f32("shadow_strength") + params.get_f32("highlight_strength")) * 0.5,
         }))
     },
 } }
+inventory::submit! { &OperationRegistration { name: "split_toning", display_name: "Split Toning", category: "grading",
+    kind: OperationKind::Filter, params: &SPLIT_TONING_PARAMS, doc_path: "", cost: "O(n)",
+    capabilities: OperationCapabilities { gpu: false, analytic: false, affine: false, clut: true },
+} }
+
+// Lift/Gamma/Gain (with proper params)
 inventory::submit! { &FilterFactoryRegistration { name: "lift_gamma_gain",
-        display_name: "", category: "", params: &[], doc_path: "", cost: "O(n)",
+    display_name: "Lift/Gamma/Gain", category: "grading", params: &LIFT_GAMMA_GAIN_PARAMS, doc_path: "", cost: "O(n)",
     factory: |upstream, info, params| {
         Box::new(FilterNode::point_op(upstream, info, LiftGammaGain {
             lift: [params.get_f32("lift_r"), params.get_f32("lift_g"), params.get_f32("lift_b")],
@@ -1007,6 +1223,10 @@ inventory::submit! { &FilterFactoryRegistration { name: "lift_gamma_gain",
             gain: [params.get_f32("gain_r"), params.get_f32("gain_g"), params.get_f32("gain_b")],
         }))
     },
+} }
+inventory::submit! { &OperationRegistration { name: "lift_gamma_gain", display_name: "Lift/Gamma/Gain", category: "grading",
+    kind: OperationKind::Filter, params: &LIFT_GAMMA_GAIN_PARAMS, doc_path: "", cost: "O(n)",
+    capabilities: OperationCapabilities { gpu: false, analytic: false, affine: false, clut: true },
 } }
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
