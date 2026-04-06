@@ -183,6 +183,12 @@ impl std::fmt::Display for BindingError {
     }
 }
 
+/// A function that creates a new node with an analysis result applied to a parameter.
+type ParamUpdaterFn = Box<dyn Fn(&dyn Node, &AnalysisResult) -> Box<dyn Node>>;
+
+/// Map from (target_node, target_param) to updater function.
+type ParamUpdaterMap = std::collections::HashMap<(u32, String), ParamUpdaterFn>;
+
 // ─── Execution Waves ─────────────────────────────────────────────────────────
 
 /// A single step in the staged execution plan.
@@ -213,10 +219,7 @@ pub struct StagedPipeline {
     bindings: Vec<ParamBinding>,
     /// Param updaters — how to apply a bound value to a node.
     /// Keyed by (target_node, target_param).
-    param_updaters: std::collections::HashMap<
-        (u32, String),
-        Box<dyn Fn(&dyn Node, &AnalysisResult) -> Box<dyn Node>>,
-    >,
+    param_updaters: ParamUpdaterMap,
 }
 
 impl StagedPipeline {
