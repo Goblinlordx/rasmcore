@@ -5,109 +5,105 @@ status: pending
 created: '2026-04-06'
 updated: '2026-04-06'
 spec:
-  summary: |
-    Integration tests that run WGSL shaders on real GPU hardware via
+  summary: 'Integration tests that run WGSL shaders on real GPU hardware via
+
     cargo test. Validates scan primitives, filter GPU shaders, and
+
     reduction passes produce correct output by comparing against CPU
+
     reference implementations.
-  context: |
-    Current GPU shader tests only verify WGSL string generation (pass
-    count, struct presence). They don't test that the shaders produce
+
+    '
+  context: 'Current GPU shader tests only verify WGSL string generation (pass
+
+    count, struct presence). They don''t test that the shaders produce
+
     correct output. With a native wgpu executor available as a dev-dep,
+
     we can run actual GPU compute in cargo test.
 
+
     This enables: feed known input → run WGSL shader on GPU → read back
+
     output → assert against CPU reference. True GPU correctness testing.
-  codebase_analysis: |
-    Existing test patterns:
+
+    '
+  codebase_analysis: 'Existing test patterns:
+
     - gpu_shaders/scan.rs: tests pass count and WGSL string content only
+
     - gpu_shaders/reduction.rs: tests pass structure only
+
     - filters: test CPU compute() only, not GPU shader output
+
     - gpu_parity.rs (rasmcore-image): full GPU parity tests exist for V1
 
+
     What we need:
+
     - For each scan primitive: feed [1,2,3,4], verify prefix sum [1,3,6,10]
+
     - For each filter GPU shader: compare output against CPU compute()
+
     - For reduction passes: verify histogram, channel sum, min/max
+
     - Skip gracefully on CI without GPU (check adapter availability)
+
+    '
   acceptance_criteria:
-    - Scan primitive tests run on real GPU and verify numeric output
-    - Filter GPU parity tests compare GPU vs CPU for representative filters
-    - Reduction pass tests verify histogram bins match CPU computation
-    - Tests skip gracefully on machines without GPU (not fail)
-    - At least 20 filters tested for GPU/CPU parity
-    - All scan primitives tested with known input/output pairs
-  out_of_scope: |
-    Performance benchmarks (separate from correctness).
+  - Scan primitive tests run on real GPU and verify numeric output
+  - Filter GPU parity tests compare GPU vs CPU for representative filters
+  - Reduction pass tests verify histogram bins match CPU computation
+  - Tests skip gracefully on machines without GPU (not fail)
+  - At least 20 filters tested for GPU/CPU parity
+  - All scan primitives tested with known input/output pairs
+  out_of_scope: 'Performance benchmarks (separate from correctness).
+
     Browser WebGPU testing (this is native wgpu only).
-  technical_notes: |
-    Test location: crates/rasmcore-pipeline-v2/tests/gpu_correctness.rs
-    or crates/rasmcore-sdk/tests/gpu_parity.rs
 
-    Test pattern:
-      #[test]
-      fn scan_prefix_sum_correctness() {
-          let executor = match WgpuExecutorV2::try_new() {
-              Some(e) => e,
-              None => { eprintln!("No GPU — skipping"); return; }
-          };
-
-          let input = [1u32, 2, 3, 4, 5, 6, 7, 8];
-          let scan = BlellochScan::new(ScanOp::Sum, ScanMode::Inclusive, 256);
-          let passes = scan.build_passes(input.len() as u32);
-          // ... upload input, execute passes, readback ...
-          assert_eq!(output, [1, 3, 6, 10, 15, 21, 28, 36]);
-      }
-
-    Filter parity pattern:
-      #[test]
-      fn brightness_gpu_matches_cpu() {
-          let executor = try_gpu();
-          let input = gradient_image(32, 32);
-          let filter = Brightness { amount: 0.3 };
-
-          let cpu_out = filter.compute(&input, 32, 32).unwrap();
-
-          let mut graph = Graph::new(0);
-          graph.set_gpu_executor(Rc::new(executor));
-          // ... add source + filter nodes, request_full ...
-
-          assert_pixels_close(&gpu_out, &cpu_out, 1e-5);
-      }
-
-    Graceful skip: check WgpuExecutorV2::try_new().is_some() at test start.
-    CI runners without GPU see "skipping" message, not test failure.
+    '
+  technical_notes: "Test location: crates/rasmcore-pipeline-v2/tests/gpu_correctness.rs\nor crates/rasmcore-sdk/tests/gpu_parity.rs\n\
+    \nTest pattern:\n  #[test]\n  fn scan_prefix_sum_correctness() {\n      let executor = match WgpuExecutorV2::try_new()\
+    \ {\n          Some(e) => e,\n          None => { eprintln!(\"No GPU — skipping\"); return; }\n      };\n\n      let input\
+    \ = [1u32, 2, 3, 4, 5, 6, 7, 8];\n      let scan = BlellochScan::new(ScanOp::Sum, ScanMode::Inclusive, 256);\n      let\
+    \ passes = scan.build_passes(input.len() as u32);\n      // ... upload input, execute passes, readback ...\n      assert_eq!(output,\
+    \ [1, 3, 6, 10, 15, 21, 28, 36]);\n  }\n\nFilter parity pattern:\n  #[test]\n  fn brightness_gpu_matches_cpu() {\n   \
+    \   let executor = try_gpu();\n      let input = gradient_image(32, 32);\n      let filter = Brightness { amount: 0.3\
+    \ };\n\n      let cpu_out = filter.compute(&input, 32, 32).unwrap();\n\n      let mut graph = Graph::new(0);\n      graph.set_gpu_executor(Rc::new(executor));\n\
+    \      // ... add source + filter nodes, request_full ...\n\n      assert_pixels_close(&gpu_out, &cpu_out, 1e-5);\n  }\n\
+    \nGraceful skip: check WgpuExecutorV2::try_new().is_some() at test start.\nCI runners without GPU see \"skipping\" message,\
+    \ not test failure.\n"
 plan:
-  - phase: Test Infrastructure
-    tasks:
-      - text: Create test module with GPU availability check + skip helper
-        done: false
-      - text: Helper to create wgpu executor or skip test
-        done: false
-      - text: Helper to upload/readback u32 and f32 arrays via wgpu
-        done: false
-  - phase: Scan Primitive Tests
-    tasks:
-      - text: Test Hillis-Steele inclusive sum with known input
-        done: false
-      - text: Test Blelloch exclusive sum with multi-workgroup array
-        done: false
-      - text: Test ParallelReduce sum/min/max against sequential reference
-        done: false
-  - phase: Filter Parity Tests
-    tasks:
-      - text: Test 5 adjustment filters (brightness, contrast, gamma, exposure, levels)
-        done: false
-      - text: Test 5 spatial filters (sobel, gaussian_blur, sharpen, box_blur, canny)
-        done: false
-      - text: Test 5 color filters (hue_rotate, saturate, sepia, colorize, vibrance)
-        done: false
-      - text: Test 5 effect filters (film_grain, emboss, pixelate, halftone, charcoal)
-        done: false
-  - phase: Reduction Tests
-    tasks:
-      - text: Test Histogram256 bins match CPU histogram
-        done: false
-      - text: Test ChannelSum matches CPU sum
-        done: false
+- phase: Test Infrastructure
+  tasks:
+  - text: Create test module with GPU availability check + skip helper
+    done: true
+  - text: Helper to create wgpu executor or skip test
+    done: true
+  - text: Helper to upload/readback u32 and f32 arrays via wgpu
+    done: true
+- phase: Scan Primitive Tests
+  tasks:
+  - text: Test Hillis-Steele inclusive sum with known input
+    done: true
+  - text: Test Blelloch exclusive sum with multi-workgroup array
+    done: true
+  - text: Test ParallelReduce sum/min/max against sequential reference
+    done: true
+- phase: Filter Parity Tests
+  tasks:
+  - text: Test 5 adjustment filters (brightness, contrast, gamma, exposure, levels)
+    done: true
+  - text: Test 5 spatial filters (sobel, gaussian_blur, sharpen, box_blur, canny)
+    done: true
+  - text: Test 5 color filters (hue_rotate, saturate, sepia, colorize, vibrance)
+    done: true
+  - text: Test 5 effect filters (film_grain, emboss, pixelate, halftone, charcoal)
+    done: true
+- phase: Reduction Tests
+  tasks:
+  - text: Test Histogram256 bins match CPU histogram
+    done: true
+  - text: Test ChannelSum matches CPU sum
+    done: true
 extra: {}
