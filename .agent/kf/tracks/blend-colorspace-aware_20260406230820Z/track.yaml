@@ -3,87 +3,72 @@ title: Color-space-aware blend modes with ISO 32000-2 formula corrections
 type: bug
 status: pending
 created: 2026-04-07
-updated: 2026-04-07
+updated: '2026-04-06'
 spec:
-  summary: |
-    Fix blend HSL modes and BlendIf to use color-space-derived luma coefficients
+  summary: 'Fix blend HSL modes and BlendIf to use color-space-derived luma coefficients
+
     instead of hardcoded Rec.601/709. Fix soft_light formula to match PDF spec
+
     (ISO 32000-2). Add doc citations for all blend mode formulas.
-  context: |
-    Current blend modes have two bugs:
-    1. HSL modes (hue/saturation/color/luminosity) use Rec.601 weights
-       (0.299/0.587/0.114) while BlendIf uses Rec.709 (0.2126/0.7152/0.0722)
-       — inconsistent within the same file. Both should derive from the working
-       color space.
-    2. Soft light formula is a simplified approximation that matches neither
-       Photoshop, W3C, nor PDF spec. Should use ISO 32000-2 Section 11.3.5.
 
-    After the filter-nodeinfo-access track, filters can read their working
-    color space via compute_with_info(). This track uses that to fix blend.
-  codebase_analysis: |
-    Files to change:
-    - composite.rs: css_lum() uses 0.299/0.587/0.114, bt709_luma() uses
-      0.2126/0.7152/0.0722. Both should use info.color_space.luma_coefficients().
-    - blend.wgsl: hardcoded 0.299/0.587/0.114 in lum() function. Need to pass
-      luma coefficients as uniform params (3 extra f32 = 12 bytes).
-    - Blend struct: override compute_with_info() to pass color-space luma.
-    - BlendIf struct: override compute_with_info() similarly.
-
-    ISO 32000-2 Section 11.3.5 defines the canonical blend mode formulas.
-    The PDF spec is the primary source — W3C and Photoshop both derive from it.
-    Soft light formula (PDF spec) uses a D(x) helper function with sqrt
-    branch at x > 0.25.
+    '
+  context: "Current blend modes have two bugs:\n1. HSL modes (hue/saturation/color/luminosity) use Rec.601 weights\n   (0.299/0.587/0.114)\
+    \ while BlendIf uses Rec.709 (0.2126/0.7152/0.0722)\n   — inconsistent within the same file. Both should derive from the\
+    \ working\n   color space.\n2. Soft light formula is a simplified approximation that matches neither\n   Photoshop, W3C,\
+    \ nor PDF spec. Should use ISO 32000-2 Section 11.3.5.\n\nAfter the filter-nodeinfo-access track, filters can read their\
+    \ working\ncolor space via compute_with_info(). This track uses that to fix blend.\n"
+  codebase_analysis: "Files to change:\n- composite.rs: css_lum() uses 0.299/0.587/0.114, bt709_luma() uses\n  0.2126/0.7152/0.0722.\
+    \ Both should use info.color_space.luma_coefficients().\n- blend.wgsl: hardcoded 0.299/0.587/0.114 in lum() function.\
+    \ Need to pass\n  luma coefficients as uniform params (3 extra f32 = 12 bytes).\n- Blend struct: override compute_with_info()\
+    \ to pass color-space luma.\n- BlendIf struct: override compute_with_info() similarly.\n\nISO 32000-2 Section 11.3.5 defines\
+    \ the canonical blend mode formulas.\nThe PDF spec is the primary source — W3C and Photoshop both derive from it.\nSoft\
+    \ light formula (PDF spec) uses a D(x) helper function with sqrt\nbranch at x > 0.25.\n"
   acceptance_criteria:
-    - Blend HSL modes use luma coefficients from working color space
-    - BlendIf uses same working-space-derived coefficients
-    - GPU shader receives luma coefficients as uniform params
-    - Soft light matches ISO 32000-2 Section 11.3.5 formula exactly
-    - Doc comments cite ISO 32000-2 section numbers for each formula
-    - Parity test against known Photoshop output for soft_light mode
-    - Test that ACEScg working space produces different results than Linear
-  out_of_scope: |
-    Fixing luma weights in other filters (edge detection, grading, analysis).
-    Those are separate work that can follow the same pattern.
-  technical_notes: |
-    PDF spec soft light formula (ISO 32000-2 Section 11.3.5):
-      D(x) = if x <= 0.25: ((16*x - 12)*x + 4)*x
-              else: sqrt(x)
-      SoftLight(Cb, Cs) = if Cs <= 0.5:
-          Cb - (1 - 2*Cs) * Cb * (1 - Cb)
-        else:
-          Cb + (2*Cs - 1) * (D(Cb) - Cb)
+  - Blend HSL modes use luma coefficients from working color space
+  - BlendIf uses same working-space-derived coefficients
+  - GPU shader receives luma coefficients as uniform params
+  - Soft light matches ISO 32000-2 Section 11.3.5 formula exactly
+  - Doc comments cite ISO 32000-2 section numbers for each formula
+  - Parity test against known Photoshop output for soft_light mode
+  - Test that ACEScg working space produces different results than Linear
+  out_of_scope: 'Fixing luma weights in other filters (edge detection, grading, analysis).
 
-    GPU uniform layout change: add 3 f32 (luma_r, luma_g, luma_b) after
-    existing params. WGSL Params struct gains luma_r/g/b fields.
+    Those are separate work that can follow the same pattern.
+
+    '
+  technical_notes: "PDF spec soft light formula (ISO 32000-2 Section 11.3.5):\n  D(x) = if x <= 0.25: ((16*x - 12)*x + 4)*x\n\
+    \          else: sqrt(x)\n  SoftLight(Cb, Cs) = if Cs <= 0.5:\n      Cb - (1 - 2*Cs) * Cb * (1 - Cb)\n    else:\n    \
+    \  Cb + (2*Cs - 1) * (D(Cb) - Cb)\n\nGPU uniform layout change: add 3 f32 (luma_r, luma_g, luma_b) after\nexisting params.\
+    \ WGSL Params struct gains luma_r/g/b fields.\n"
 plan:
-  - phase: Formula Corrections
-    tasks:
-      - text: Fix soft_light to match ISO 32000-2 with D(x) helper
-        done: false
-      - text: Replace css_lum/bt709_luma with ColorSpace::luma_coefficients()
-        done: false
-      - text: Override compute_with_info for Blend and BlendIf
-        done: false
-  - phase: GPU Shader Update
-    tasks:
-      - text: Add luma coefficients to blend.wgsl Params struct
-        done: false
-      - text: Update gpu_params_with_info to serialize luma coefficients
-        done: false
-      - text: Update WGSL lum() to use uniform coefficients instead of constants
-        done: false
-  - phase: Documentation
-    tasks:
-      - text: Add ISO 32000-2 citations to each blend mode formula
-        done: false
-      - text: Document which formula variant was chosen and why
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Test soft_light against PDF spec reference values
-        done: false
-      - text: Test HSL modes produce different results in ACEScg vs Linear
-        done: false
-      - text: Verify GPU and CPU paths produce matching results
-        done: false
+- phase: Formula Corrections
+  tasks:
+  - text: Fix soft_light to match ISO 32000-2 with D(x) helper
+    done: true
+  - text: Replace css_lum/bt709_luma with ColorSpace::luma_coefficients()
+    done: true
+  - text: Override compute_with_info for Blend and BlendIf
+    done: true
+- phase: GPU Shader Update
+  tasks:
+  - text: Add luma coefficients to blend.wgsl Params struct
+    done: true
+  - text: Update gpu_params_with_info to serialize luma coefficients
+    done: true
+  - text: Update WGSL lum() to use uniform coefficients instead of constants
+    done: true
+- phase: Documentation
+  tasks:
+  - text: Add ISO 32000-2 citations to each blend mode formula
+    done: true
+  - text: Document which formula variant was chosen and why
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test soft_light against PDF spec reference values
+    done: true
+  - text: Test HSL modes produce different results in ACEScg vs Linear
+    done: true
+  - text: Verify GPU and CPU paths produce matching results
+    done: true
 extra: {}
