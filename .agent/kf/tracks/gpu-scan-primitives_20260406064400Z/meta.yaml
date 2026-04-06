@@ -1,0 +1,6 @@
+title: GPU parallel scan/reduce primitives (Blelloch, Hillis-Steele, decoupled lookback)
+status: pending
+type: feature
+approved: false
+created: '2026-04-06'
+updated: '2026-04-06'

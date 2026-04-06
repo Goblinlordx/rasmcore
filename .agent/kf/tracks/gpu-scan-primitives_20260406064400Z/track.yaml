@@ -1,0 +1,136 @@
+id: gpu-scan-primitives_20260406064400Z
+title: GPU parallel scan/reduce primitives (Blelloch, Hillis-Steele, decoupled lookback)
+type: feature
+status: pending
+created: '2026-04-06'
+updated: '2026-04-06'
+spec:
+  summary: |
+    Reusable GPU compute primitives for parallel scan (prefix sum), reduce,
+    and sort. WGSL shaders + Rust builder API in gpu_shaders/ module.
+    Dead-code eliminated when unused — zero cost if not referenced.
+  context: |
+    The pipeline already has histogram reduction (3-pass zero-atomic) as a
+    GPU primitive in gpu_shaders/reduction.rs. But there are no general-purpose
+    scan (prefix sum) or sort primitives. These are needed for:
+
+    - Integral image (2D prefix sum) for adaptive threshold at large radii
+    - Exclusive scan for stream compaction (sparse filter output)
+    - Parallel CDF computation (equalize, Otsu — currently O(n) per-pixel)
+    - Future: parallel sort for median filter, k-means, quantization
+
+    Standard GPU algorithms:
+    1. Blelloch scan — O(n) work, O(log n) steps, two-pass (upsweep + downsweep)
+    2. Hillis-Steele scan — O(n log n) work but fewer barriers, good for small arrays
+    3. Decoupled lookback scan (Merrill & Garland 2016) — single-pass, uses atomics
+       for workgroup chaining. Best throughput for large arrays.
+    4. Parallel reduce — simpler than scan, produces single aggregate value
+    5. Radix sort — built on scan, enables parallel median, quantization
+
+    WebGPU supports atomic<u32> in storage buffers — all algorithms are feasible.
+    Workgroup shared memory (var<workgroup>) available for local reductions.
+  codebase_analysis: |
+    gpu_shaders/reduction.rs (847 lines):
+    - ReductionKind enum: ChannelSum, ChannelMinMax, Histogram256
+    - GpuReduction builder: build_passes(width, height) -> ReductionPasses
+    - 3-pass pattern: local reduce -> global merge -> apply
+    - ReductionBuffer for persistent cross-pass storage
+    - result_reader_wgsl() generates WGSL helper functions
+
+    Pattern for new primitives: same module structure.
+    Each primitive gets a builder (like GpuReduction) that generates
+    GpuShader passes. Filters compose primitives via gpu_shader_passes().
+
+    WebGPU limits relevant:
+    - Max workgroup size: 256 (safe default)
+    - Max storage buffer: 128MB (plenty for scan arrays)
+    - Atomics: atomicLoad, atomicStore, atomicAdd, atomicMax, atomicMin,
+      atomicAnd, atomicOr, atomicXor on atomic<u32> and atomic<i32>
+    - No atomic<f32> — float reductions need u32 bit-cast trick
+  acceptance_criteria:
+    - Blelloch inclusive/exclusive scan for u32 and f32 arrays
+    - Hillis-Steele scan for small arrays (single workgroup)
+    - Decoupled lookback scan using WebGPU atomics
+    - Parallel reduce (sum, min, max) for u32 and f32
+    - 2D prefix sum (row scan + column scan) for integral image
+    - Builder API matching GpuReduction pattern (build_passes -> GpuShader list)
+    - All primitives tested with known inputs (identity, sorted, random)
+    - Zero binary cost when unused (dead code eliminated)
+  out_of_scope: |
+    Radix sort (future track built on scan).
+    Filters that use these primitives (separate tracks).
+    Non-WebGPU backends (CPU scan is trivial sequential code).
+  technical_notes: |
+    Module: gpu_shaders/scan.rs (new, alongside existing reduction.rs)
+
+    API pattern:
+      let scan = GpuScan::blelloch_exclusive(workgroup_size);
+      let passes = scan.build_passes(array_length);
+      // passes.pass1 = upsweep, passes.pass2 = downsweep
+      // Result in same buffer as input (in-place)
+
+      let scan = GpuScan::decoupled_lookback(workgroup_size);
+      let passes = scan.build_passes(array_length);
+      // Single pass with atomic status flags
+
+    Blelloch scan WGSL:
+      - Upsweep: tree reduce within workgroup (shared memory)
+      - Store workgroup aggregate to global array
+      - Downsweep: propagate prefix within workgroup
+
+    Decoupled lookback WGSL:
+      - Each workgroup computes local inclusive scan
+      - Atomically publishes status: AGGREGATE or PREFIX
+      - Looks back at preceding workgroups to chain prefix
+      - Requires atomic<u32> flags array (3 states: invalid/aggregate/prefix)
+
+    2D prefix sum:
+      - Pass 1: row-wise scan (each row is independent — full parallelism)
+      - Pass 2: column-wise scan (each column is independent)
+      - Result: integral image for O(1) rectangle sum queries
+
+    Float reductions via u32 bit-cast:
+      - atomicMax on u32-encoded f32 (works for positive floats)
+      - For signed floats: flip sign bit before atomicMax, flip back after
+plan:
+  - phase: Core Scan Primitives
+    tasks:
+      - text: Implement Blelloch exclusive scan (upsweep + downsweep) for u32
+        done: false
+      - text: Implement Blelloch inclusive scan variant
+        done: false
+      - text: Implement Hillis-Steele scan for small arrays (single workgroup)
+        done: false
+      - text: Add f32 support via u32 bit-cast for non-negative values
+        done: false
+  - phase: Decoupled Lookback
+    tasks:
+      - text: Implement decoupled lookback scan with atomic status flags
+        done: false
+      - text: Handle edge cases (single workgroup, non-power-of-2 sizes)
+        done: false
+      - text: Test correctness against sequential reference implementation
+        done: false
+  - phase: Parallel Reduce
+    tasks:
+      - text: Implement parallel reduce (sum, min, max) for u32 and f32
+        done: false
+      - text: Add to GpuReduction API alongside existing histogram reduction
+        done: false
+  - phase: 2D Prefix Sum
+    tasks:
+      - text: Implement row-wise scan pass
+        done: false
+      - text: Implement column-wise scan pass
+        done: false
+      - text: Test 2D prefix sum produces correct integral image
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test all scan variants with identity, sorted, random inputs
+        done: false
+      - text: Test large arrays (1M+ elements) for multi-workgroup correctness
+        done: false
+      - text: Verify zero binary cost when unused (check WASM size with/without)
+        done: false
+extra: {}
