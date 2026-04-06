@@ -3,6 +3,8 @@
 //! Takes `&[GpuShader]` (V2 node.rs types) and returns `Vec<f32>`.
 //! Shares the same wgpu device/buffer pooling pattern as the V1 executor.
 
+pub mod display;
+
 use rasmcore_pipeline_v2::gpu::{GpuError, GpuExecutor};
 use rasmcore_pipeline_v2::node::GpuShader;
 use std::collections::HashMap;
@@ -80,6 +82,16 @@ impl WgpuExecutorV2 {
     /// GPU adapter name (e.g., "Apple M1 Pro").
     pub fn adapter_name(&self) -> &str {
         &self.adapter_name
+    }
+
+    /// Access the wgpu device (for display target creation).
+    pub fn device(&self) -> &wgpu::Device {
+        &self.device
+    }
+
+    /// Access the wgpu queue (for display target submission).
+    pub fn queue(&self) -> &wgpu::Queue {
+        &self.queue
     }
 
     fn get_shader(&self, source: &str) -> Result<wgpu::ShaderModule, GpuError> {
