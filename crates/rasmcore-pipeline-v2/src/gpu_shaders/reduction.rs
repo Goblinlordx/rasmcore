@@ -41,6 +41,9 @@ pub enum ReductionKind {
 pub struct GpuReduction {
     pub kind: ReductionKind,
     pub workgroup_size: u32,
+    /// Buffer ID for the reduction result. Default 0.
+    /// Use different IDs when chaining multiple reductions.
+    pub buffer_id: u32,
 }
 
 /// Output of `build_passes()` — the two reduction shaders + buffer metadata.
@@ -55,26 +58,23 @@ pub struct ReductionPasses {
 impl GpuReduction {
     /// Create a ChannelSum reduction with the given workgroup size.
     pub fn channel_sum(workgroup_size: u32) -> Self {
-        Self {
-            kind: ReductionKind::ChannelSum,
-            workgroup_size,
-        }
+        Self { kind: ReductionKind::ChannelSum, workgroup_size, buffer_id: 0 }
     }
 
     /// Create a ChannelMinMax reduction with the given workgroup size.
     pub fn channel_min_max(workgroup_size: u32) -> Self {
-        Self {
-            kind: ReductionKind::ChannelMinMax,
-            workgroup_size,
-        }
+        Self { kind: ReductionKind::ChannelMinMax, workgroup_size, buffer_id: 0 }
     }
 
     /// Create a Histogram256 reduction with the given workgroup size.
     pub fn histogram_256(workgroup_size: u32) -> Self {
-        Self {
-            kind: ReductionKind::Histogram256,
-            workgroup_size,
-        }
+        Self { kind: ReductionKind::Histogram256, workgroup_size, buffer_id: 0 }
+    }
+
+    /// Set a custom buffer ID (for chaining multiple reductions).
+    pub fn with_buffer_id(mut self, id: u32) -> Self {
+        self.buffer_id = id;
+        self
     }
 
     /// Generate passes 1 and 2 (local reduce + global reduce).
@@ -144,7 +144,7 @@ impl GpuReduction {
         let wg = self.workgroup_size;
         // Buffer: num_wg × vec4<f32> (16 bytes each)
         let buf_size = num_wg as usize * 16;
-        let buf_id = 0;
+        let buf_id = self.buffer_id;
 
         let pass1_wgsl = generate_channel_sum_local(wg);
         let pass2_wgsl = generate_channel_sum_global(wg);
@@ -204,7 +204,7 @@ impl GpuReduction {
         let wg = self.workgroup_size;
         // Buffer: num_wg × 2 × vec4<f32> (32 bytes per workgroup: min + max)
         let buf_size = num_wg as usize * 32;
-        let buf_id = 1; // different from ChannelSum so both can coexist
+        let buf_id = self.buffer_id;
 
         let pass1_wgsl = generate_channel_min_max_local(wg);
         let pass2_wgsl = generate_channel_min_max_global(wg);
@@ -265,7 +265,7 @@ impl GpuReduction {
         // Buffer: num_wg × 768 u32 (3 channels × 256 bins × 4 bytes) for pass 1
         // After pass 2: first 768 u32s = final merged histogram
         let buf_size = num_wg as usize * 768 * 4;
-        let buf_id = 2; // distinct from ChannelSum(0) and ChannelMinMax(1)
+        let buf_id = self.buffer_id;
 
         let pass1_wgsl = generate_histogram_256_local(wg);
         let pass2_wgsl = generate_histogram_256_global(wg);
