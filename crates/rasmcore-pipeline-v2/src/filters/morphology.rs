@@ -738,7 +738,9 @@ impl Filter for Skeletonize {
             passes.push(GpuShader::new(BINARIZE_WGSL.to_string(), "main", [16, 16, 1], params));
         }
 
-        // Passes 1..N: Zhang-Suen sub-iterations with convergence check
+        // Passes 1..N: Zhang-Suen sub-iterations
+        // Each iteration = step1 + step2. Both write to the same atomic counter.
+        // Convergence check only on step2 — checks combined changes from both steps.
         for _ in 0..self.iterations {
             for sub in 0..2u32 {
                 let mut params = gpu_params_wh(width, height);
@@ -756,7 +758,8 @@ impl Filter for Skeletonize {
                         initial_data: vec![0u8; change_buf_size],
                         read_write: true,
                     }],
-                    convergence_check: Some(change_buf_id),
+                    // Only check after step2 — both steps accumulate into same counter
+                    convergence_check: if sub == 1 { Some(change_buf_id) } else { None },
                 };
                 passes.push(shader);
             }
