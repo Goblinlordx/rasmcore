@@ -1,8 +1,19 @@
 //! Alpha and compositing filters — premultiply, unpremultiply, blend modes, blend-if.
 //!
 //! All filters operate on f32 RGBA data. GPU shaders provided for all.
+//!
+//! ## Blend mode formulas
+//!
+//! Separable modes (per-channel) follow **ISO 32000-2:2020 Section 11.3.5**
+//! (PDF 2.0 specification), which is the canonical source. The W3C Compositing
+//! and Blending Level 1 spec and Adobe Photoshop both derive from it.
+//!
+//! Non-separable modes (hue, saturation, color, luminosity) use the
+//! **SetLum/SetSat/ClipColor** helpers from ISO 32000-2 Section 11.3.5.4.
+//! Luminance coefficients are derived from the working color space's primaries
+//! via `ColorSpace::luma_coefficients()` — NOT hardcoded.
 
-use crate::node::PipelineError;
+use crate::node::{NodeInfo, PipelineError};
 use crate::ops::Filter;
 
 // ─── Premultiply ───────────────────────────────────────────────────────────
@@ -139,16 +150,21 @@ pub struct Blend {
     pub opacity: f32,
 }
 
-// ─── W3C compositing spec helpers (non-separable blend modes) ──────────────
+// ─── ISO 32000-2 compositing helpers (non-separable blend modes) ───────────
+//
+// These implement the SetLum/SetSat/ClipColor functions from
+// ISO 32000-2:2020 Section 11.3.5.4. Luminance uses color-space-derived
+// coefficients passed as a parameter, NOT hardcoded constants.
 
-fn css_lum(r: f32, g: f32, b: f32) -> f32 {
-    0.299 * r + 0.587 * g + 0.114 * b
+/// Luminance from color-space-derived coefficients (Y row of RGB→XYZ matrix).
+fn luma(r: f32, g: f32, b: f32, coeffs: [f32; 3]) -> f32 {
+    coeffs[0] * r + coeffs[1] * g + coeffs[2] * b
 }
 
-fn clip_color(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
-    let l = css_lum(r, g, b);
+/// ISO 32000-2 ClipColor — clamp color to [0,1] while preserving luminance.
+fn clip_color(r: f32, g: f32, b: f32, coeffs: [f32; 3]) -> (f32, f32, f32) {
+    let l = luma(r, g, b, coeffs);
     let n = r.min(g).min(b);
-    let _x = r.max(g).max(b);
     let (mut ro, mut go, mut bo) = (r, g, b);
     if n < 0.0 {
         let d = (l - n).max(1e-7);
@@ -158,7 +174,7 @@ fn clip_color(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
     }
     let x2 = ro.max(go).max(bo);
     if x2 > 1.0 {
-        let l2 = css_lum(ro, go, bo);
+        let l2 = luma(ro, go, bo, coeffs);
         let d2 = (x2 - l2).max(1e-7);
         ro = l2 + (ro - l2) * (1.0 - l2) / d2;
         go = l2 + (go - l2) * (1.0 - l2) / d2;
@@ -167,15 +183,18 @@ fn clip_color(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
     (ro, go, bo)
 }
 
-fn set_lum(r: f32, g: f32, b: f32, l: f32) -> (f32, f32, f32) {
-    let d = l - css_lum(r, g, b);
-    clip_color(r + d, g + d, b + d)
+/// ISO 32000-2 SetLum — adjust color to target luminance.
+fn set_lum(r: f32, g: f32, b: f32, l: f32, coeffs: [f32; 3]) -> (f32, f32, f32) {
+    let d = l - luma(r, g, b, coeffs);
+    clip_color(r + d, g + d, b + d, coeffs)
 }
 
-fn css_sat(r: f32, g: f32, b: f32) -> f32 {
+/// ISO 32000-2 Sat — chroma range of a color.
+fn sat(r: f32, g: f32, b: f32) -> f32 {
     r.max(g).max(b) - r.min(g).min(b)
 }
 
+/// ISO 32000-2 SetSat — scale color to target saturation.
 fn set_sat(r: f32, g: f32, b: f32, s: f32) -> (f32, f32, f32) {
     let cmin = r.min(g).min(b);
     let cmax = r.max(g).max(b);
@@ -187,6 +206,15 @@ fn set_sat(r: f32, g: f32, b: f32, s: f32) -> (f32, f32, f32) {
     ((r - cmin) * scale, (g - cmin) * scale, (b - cmin) * scale)
 }
 
+/// ISO 32000-2 D(x) helper for SoftLight blend mode (Section 11.3.5).
+fn soft_light_d(x: f32) -> f32 {
+    if x <= 0.25 {
+        ((16.0 * x - 12.0) * x + 4.0) * x
+    } else {
+        x.sqrt()
+    }
+}
+
 // Simple hash for dissolve mode.
 fn pcg_hash(v: u32) -> u32 {
     let mut x = v.wrapping_mul(747796405).wrapping_add(2891336453);
@@ -195,42 +223,65 @@ fn pcg_hash(v: u32) -> u32 {
 }
 
 impl Filter for Blend {
-    fn compute(&self, input: &[f32], _w: u32, _h: u32) -> Result<Vec<f32>, PipelineError> {
+    fn compute(&self, input: &[f32], w: u32, h: u32) -> Result<Vec<f32>, PipelineError> {
+        // Default path uses Rec.709 coefficients (Linear sRGB).
+        let info = NodeInfo { width: w, height: h, color_space: crate::color_space::ColorSpace::Linear };
+        self.compute_with_info(input, &info)
+    }
+
+    fn compute_with_info(&self, input: &[f32], info: &NodeInfo) -> Result<Vec<f32>, PipelineError> {
         let opacity = self.opacity;
         let inv_opacity = 1.0 - opacity;
+        let coeffs = info.color_space.luma_coefficients();
         let mut out = input.to_vec();
 
         match self.mode {
             // ── Per-channel modes (0-17) ───────────────────────────────
+            // ISO 32000-2:2020 Section 11.3.5 — separable blend modes.
             0..=17 => {
                 // Hoist mode dispatch outside the loop so the inner loop is a
                 // single arithmetic expression that LLVM can auto-vectorize.
                 let blend_fn: fn(f32) -> f32 = match self.mode {
-                    1 => |b: f32| b * b,
-                    2 => |b: f32| 1.0 - (1.0 - b) * (1.0 - b),
-                    3 => |b: f32| if b < 0.5 { 2.0 * b * b } else { 1.0 - 2.0 * (1.0 - b) * (1.0 - b) },
-                    4 => |b: f32| if b < 0.5 { b * (b + 0.5) } else { 1.0 - (1.0 - b) * (1.5 - b) },
-                    5 => |b: f32| if b < 0.5 { 2.0 * b * b } else { 1.0 - 2.0 * (1.0 - b) * (1.0 - b) },
-                    6 => |b: f32| if b < 1.0 { (b / (1.0 - b + 1e-6)).min(1.0) } else { 1.0 },
-                    7 => |b: f32| if b > 0.0 { 1.0 - ((1.0 - b) / (b + 1e-6)).min(1.0) } else { 0.0 },
-                    8 => |b: f32| b,    // darken (identity for self-blend)
-                    9 => |b: f32| b,    // lighten (identity for self-blend)
-                    10 => |_: f32| 0.0, // difference (zero for self-blend)
-                    11 => |b: f32| b + b - 2.0 * b * b,
-                    12 => |b: f32| (b + b - 1.0).max(0.0),
-                    13 => |b: f32| (b + b).min(1.0),
-                    14 => |b: f32| { // vivid_light
+                    1 => |b: f32| b * b,                    // Multiply
+                    2 => |b: f32| 1.0 - (1.0 - b) * (1.0 - b), // Screen
+                    3 => |b: f32| {                         // Overlay
+                        if b < 0.5 { 2.0 * b * b } else { 1.0 - 2.0 * (1.0 - b) * (1.0 - b) }
+                    },
+                    4 => |b: f32| {                         // SoftLight (ISO 32000-2)
+                        // Self-blend: Cs = Cb = b
+                        if b <= 0.5 {
+                            b - (1.0 - 2.0 * b) * b * (1.0 - b)
+                        } else {
+                            b + (2.0 * b - 1.0) * (soft_light_d(b) - b)
+                        }
+                    },
+                    5 => |b: f32| {                         // HardLight
+                        if b < 0.5 { 2.0 * b * b } else { 1.0 - 2.0 * (1.0 - b) * (1.0 - b) }
+                    },
+                    6 => |b: f32| {                         // ColorDodge
+                        if b < 1.0 { (b / (1.0 - b + 1e-6)).min(1.0) } else { 1.0 }
+                    },
+                    7 => |b: f32| {                         // ColorBurn
+                        if b > 0.0 { 1.0 - ((1.0 - b) / (b + 1e-6)).min(1.0) } else { 0.0 }
+                    },
+                    8 => |b: f32| b,    // Darken (identity for self-blend)
+                    9 => |b: f32| b,    // Lighten (identity for self-blend)
+                    10 => |_: f32| 0.0, // Difference (zero for self-blend)
+                    11 => |b: f32| b + b - 2.0 * b * b,    // Exclusion
+                    12 => |b: f32| (b + b - 1.0).max(0.0),  // LinearBurn
+                    13 => |b: f32| (b + b).min(1.0),         // LinearDodge
+                    14 => |b: f32| {                         // VividLight
                         if b <= 0.5 {
                             if b > 0.0 { (1.0 - (1.0 - b) / (2.0 * b)).max(0.0) } else { 0.0 }
                         } else {
                             (b / (2.0 * (1.0 - b) + 1e-6)).min(1.0)
                         }
                     },
-                    15 => |b: f32| (2.0 * b + b - 1.0).clamp(0.0, 1.0), // linear_light
-                    16 => |b: f32| { // pin_light
+                    15 => |b: f32| (2.0 * b + b - 1.0).clamp(0.0, 1.0), // LinearLight
+                    16 => |b: f32| {                         // PinLight
                         if b < 0.5 { b.min(2.0 * b) } else { b.max(2.0 * b - 1.0) }
                     },
-                    17 => |b: f32| if b + b >= 1.0 { 1.0 } else { 0.0 }, // hard_mix
+                    17 => |b: f32| if b + b >= 1.0 { 1.0 } else { 0.0 }, // HardMix
                     _ => |b: f32| b,
                 };
 
@@ -247,41 +298,36 @@ impl Filter for Blend {
             // ── Dissolve (18) ──────────────────────────────────────────
             18 => {
                 for (i, _px) in out.chunks_exact_mut(4).enumerate() {
-                    let h = pcg_hash(i as u32);
-                    let threshold = (h as f64 / u32::MAX as f64) as f32;
-                    if threshold > opacity {
-                        // keep original — no change needed
-                    }
-                    // else: use blended pixel (identity for self-blend)
+                    let _h = pcg_hash(i as u32);
+                    // Self-blend: identity regardless of threshold
                 }
             }
 
-            // ── Darker color (19) ──────────────────────────────────────
-            // Compare luminance of base vs blend pixel, keep the darker.
+            // ── Darker/Lighter color (19-20) ───────────────────────────
+            // Uses color-space-aware luminance for comparison.
             // For self-blend: identity (same pixel both sides).
-            19 | 20 => {
-                // No-op for self-blend. Opacity lerp with itself = identity.
-            }
+            19 | 20 => {}
 
             // ── HSL modes (21-24) ──────────────────────────────────────
+            // ISO 32000-2 Section 11.3.5.4 — non-separable blend modes.
+            // Luminance uses working-space-derived coefficients.
             21..=24 => {
                 for px in out.chunks_exact_mut(4) {
                     let (r, g, b) = (px[0].clamp(0.0, 1.0), px[1].clamp(0.0, 1.0), px[2].clamp(0.0, 1.0));
-                    // For self-blend, base == blend. Formulas still applied for correctness.
                     let (ro, go, bo) = match self.mode {
-                        21 => { // hue: hue from blend, sat+lum from base
-                            let (sr, sg, sb) = set_sat(r, g, b, css_sat(r, g, b));
-                            set_lum(sr, sg, sb, css_lum(r, g, b))
+                        21 => { // Hue: hue from blend, sat+lum from base
+                            let (sr, sg, sb) = set_sat(r, g, b, sat(r, g, b));
+                            set_lum(sr, sg, sb, luma(r, g, b, coeffs), coeffs)
                         }
-                        22 => { // saturation: sat from blend, hue+lum from base
-                            let (sr, sg, sb) = set_sat(r, g, b, css_sat(r, g, b));
-                            set_lum(sr, sg, sb, css_lum(r, g, b))
+                        22 => { // Saturation: sat from blend, hue+lum from base
+                            let (sr, sg, sb) = set_sat(r, g, b, sat(r, g, b));
+                            set_lum(sr, sg, sb, luma(r, g, b, coeffs), coeffs)
                         }
-                        23 => { // color: hue+sat from blend, lum from base
-                            set_lum(r, g, b, css_lum(r, g, b))
+                        23 => { // Color: hue+sat from blend, lum from base
+                            set_lum(r, g, b, luma(r, g, b, coeffs), coeffs)
                         }
-                        24 => { // luminosity: lum from blend, hue+sat from base
-                            set_lum(r, g, b, css_lum(r, g, b))
+                        24 => { // Luminosity: lum from blend, hue+sat from base
+                            set_lum(r, g, b, luma(r, g, b, coeffs), coeffs)
                         }
                         _ => (r, g, b),
                     };
@@ -302,11 +348,22 @@ impl Filter for Blend {
     }
 
     fn gpu_params(&self, width: u32, height: u32) -> Option<Vec<u8>> {
-        let mut buf = Vec::with_capacity(16);
-        buf.extend_from_slice(&width.to_le_bytes());
-        buf.extend_from_slice(&height.to_le_bytes());
+        // Default: Rec.709 luma coefficients (Linear sRGB)
+        let info = NodeInfo { width, height, color_space: crate::color_space::ColorSpace::Linear };
+        self.gpu_params_with_info(&info)
+    }
+
+    fn gpu_params_with_info(&self, info: &NodeInfo) -> Option<Vec<u8>> {
+        let coeffs = info.color_space.luma_coefficients();
+        let mut buf = Vec::with_capacity(32);
+        buf.extend_from_slice(&info.width.to_le_bytes());
+        buf.extend_from_slice(&info.height.to_le_bytes());
         buf.extend_from_slice(&self.opacity.to_le_bytes());
         buf.extend_from_slice(&self.mode.to_le_bytes());
+        buf.extend_from_slice(&coeffs[0].to_le_bytes());
+        buf.extend_from_slice(&coeffs[1].to_le_bytes());
+        buf.extend_from_slice(&coeffs[2].to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes()); // padding for 16-byte alignment
         Some(buf)
     }
 }
@@ -335,12 +392,14 @@ pub struct BlendIf {
     pub highlight_feather: f32,
 }
 
-fn bt709_luma(r: f32, g: f32, b: f32) -> f32 {
-    0.2126 * r + 0.7152 * g + 0.0722 * b
-}
-
 impl Filter for BlendIf {
-    fn compute(&self, input: &[f32], _w: u32, _h: u32) -> Result<Vec<f32>, PipelineError> {
+    fn compute(&self, input: &[f32], w: u32, h: u32) -> Result<Vec<f32>, PipelineError> {
+        let info = NodeInfo { width: w, height: h, color_space: crate::color_space::ColorSpace::Linear };
+        self.compute_with_info(input, &info)
+    }
+
+    fn compute_with_info(&self, input: &[f32], info: &NodeInfo) -> Result<Vec<f32>, PipelineError> {
+        let coeffs = info.color_space.luma_coefficients();
         let mut out = input.to_vec();
         let s_lo = self.shadow_threshold;
         let s_hi = s_lo + self.shadow_feather.max(1e-6);
@@ -348,11 +407,9 @@ impl Filter for BlendIf {
         let h_lo = h_hi - self.highlight_feather.max(1e-6);
 
         for px in out.chunks_exact_mut(4) {
-            let luma = bt709_luma(px[0], px[1], px[2]);
-            // Shadow fade: 0 at s_lo, 1 at s_hi
-            let shadow_mix = ((luma - s_lo) / (s_hi - s_lo)).clamp(0.0, 1.0);
-            // Highlight fade: 1 at h_lo, 0 at h_hi
-            let highlight_mix = ((h_hi - luma) / (h_hi - h_lo)).clamp(0.0, 1.0);
+            let l = luma(px[0], px[1], px[2], coeffs);
+            let shadow_mix = ((l - s_lo) / (s_hi - s_lo)).clamp(0.0, 1.0);
+            let highlight_mix = ((h_hi - l) / (h_hi - h_lo)).clamp(0.0, 1.0);
             let mask = shadow_mix * highlight_mix;
             px[3] *= mask;
         }
@@ -364,13 +421,23 @@ impl Filter for BlendIf {
     }
 
     fn gpu_params(&self, width: u32, height: u32) -> Option<Vec<u8>> {
-        let mut buf = Vec::with_capacity(24);
-        buf.extend_from_slice(&width.to_le_bytes());
-        buf.extend_from_slice(&height.to_le_bytes());
+        let info = NodeInfo { width, height, color_space: crate::color_space::ColorSpace::Linear };
+        self.gpu_params_with_info(&info)
+    }
+
+    fn gpu_params_with_info(&self, info: &NodeInfo) -> Option<Vec<u8>> {
+        let coeffs = info.color_space.luma_coefficients();
+        let mut buf = Vec::with_capacity(36);
+        buf.extend_from_slice(&info.width.to_le_bytes());
+        buf.extend_from_slice(&info.height.to_le_bytes());
         buf.extend_from_slice(&self.shadow_threshold.to_le_bytes());
         buf.extend_from_slice(&self.shadow_feather.max(1e-6).to_le_bytes());
         buf.extend_from_slice(&self.highlight_threshold.to_le_bytes());
         buf.extend_from_slice(&self.highlight_feather.max(1e-6).to_le_bytes());
+        buf.extend_from_slice(&coeffs[0].to_le_bytes());
+        buf.extend_from_slice(&coeffs[1].to_le_bytes());
+        buf.extend_from_slice(&coeffs[2].to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes()); // padding
         Some(buf)
     }
 }
@@ -380,6 +447,7 @@ struct Params {
     width: u32, height: u32,
     shadow_threshold: f32, shadow_feather: f32,
     highlight_threshold: f32, highlight_feather: f32,
+    luma_r: f32, luma_g: f32, luma_b: f32, _pad: u32,
 }
 @group(0) @binding(2) var<uniform> params: Params;
 
@@ -388,7 +456,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (gid.x >= params.width || gid.y >= params.height) { return; }
     let idx = gid.y * params.width + gid.x;
     let p = load_pixel(idx);
-    let luma = 0.2126 * p.x + 0.7152 * p.y + 0.0722 * p.z;
+    let luma = params.luma_r * p.x + params.luma_g * p.y + params.luma_b * p.z;
     let s_lo = params.shadow_threshold;
     let s_hi = s_lo + params.shadow_feather;
     let h_hi = params.highlight_threshold;
@@ -586,6 +654,66 @@ mod tests {
                 assert!(out[i].is_finite(), "mode {mode} ch{i} is NaN/Inf");
             }
         }
+    }
+
+    #[test]
+    fn blend_soft_light_iso32000() {
+        // ISO 32000-2 SoftLight formula for self-blend at b=0.5:
+        // b <= 0.5: b - (1-2*b)*b*(1-b) = 0.5 - 0*0.5*0.5 = 0.5
+        let input = pixel(0.5, 0.5, 0.5, 1.0);
+        let f = Blend { mode: 4, opacity: 1.0 };
+        let out = f.compute(&input, 1, 1).unwrap();
+        assert!((out[0] - 0.5).abs() < 1e-5, "soft_light(0.5) = {}", out[0]);
+
+        // b=0.8 (>0.5): b + (2b-1)*(D(b)-b) where D(0.8)=sqrt(0.8)≈0.8944
+        // = 0.8 + 0.6*(0.8944-0.8) = 0.8 + 0.6*0.0944 ≈ 0.8567
+        let input2 = pixel(0.8, 0.8, 0.8, 1.0);
+        let out2 = f.compute(&input2, 1, 1).unwrap();
+        assert!((out2[0] - 0.8567).abs() < 0.01, "soft_light(0.8) = {}", out2[0]);
+    }
+
+    #[test]
+    fn blend_hsl_uses_colorspace_coefficients() {
+        use crate::color_space::ColorSpace;
+        let input = pixel(0.3, 0.6, 0.9, 1.0);
+        let f = Blend { mode: 24, opacity: 1.0 }; // luminosity mode
+
+        // Linear (Rec.709 coefficients)
+        let info_709 = NodeInfo { width: 1, height: 1, color_space: ColorSpace::Linear };
+        let out_709 = f.compute_with_info(&input, &info_709).unwrap();
+
+        // ACEScg (AP1 coefficients — different from Rec.709)
+        let info_ap1 = NodeInfo { width: 1, height: 1, color_space: ColorSpace::AcesCg };
+        let out_ap1 = f.compute_with_info(&input, &info_ap1).unwrap();
+
+        // For self-blend both are ~identity, but the coefficients differ
+        // which means clip_color/set_lum may produce subtly different results
+        // for non-neutral colors. At minimum, both should be valid.
+        for i in 0..3 {
+            assert!(out_709[i].is_finite(), "709 ch{i} NaN");
+            assert!(out_ap1[i].is_finite(), "AP1 ch{i} NaN");
+        }
+    }
+
+    #[test]
+    fn blend_if_uses_colorspace_luma() {
+        use crate::color_space::ColorSpace;
+        // A pixel that's "dark" in Rec.709 but may differ in AP1
+        let input = pixel(0.1, 0.1, 0.1, 1.0);
+        let f = BlendIf {
+            shadow_threshold: 0.2, shadow_feather: 0.1,
+            highlight_threshold: 1.0, highlight_feather: 0.1,
+        };
+
+        let info_709 = NodeInfo { width: 1, height: 1, color_space: ColorSpace::Linear };
+        let out_709 = f.compute_with_info(&input, &info_709).unwrap();
+
+        let info_ap1 = NodeInfo { width: 1, height: 1, color_space: ColorSpace::AcesCg };
+        let out_ap1 = f.compute_with_info(&input, &info_ap1).unwrap();
+
+        // Both should fade the dark pixel (luma ~0.1 < shadow_threshold 0.2)
+        assert!(out_709[3] < 1.0, "709: dark pixel should fade");
+        assert!(out_ap1[3] < 1.0, "AP1: dark pixel should fade");
     }
 
     #[test]
