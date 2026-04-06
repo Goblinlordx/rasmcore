@@ -56,6 +56,7 @@ members = [
     "crates/rasmcore-ffi",
     "crates/rasmcore-gpu-native",
     "crates/rasmcore-gpu-shaders",
+    "crates/rasmcore-sdk-v2",
 ]
 
 [workspace.package]
