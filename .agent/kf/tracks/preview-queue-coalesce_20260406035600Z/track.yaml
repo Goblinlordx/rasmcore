@@ -1,0 +1,115 @@
+id: preview-queue-coalesce_20260406035600Z
+title: Fix preview render queue to coalesce stale requests
+type: bug
+status: pending
+created: 2026-04-06
+updated: 2026-04-06
+spec:
+  summary: |
+    The single-slot queue in usePreviewWorker drains after every render
+    completion, causing sequential rendering of intermediate slider values.
+    After releasing a slow-filter slider, the UI renders many stale states
+    instead of jumping to the latest. Fix with generation-counter staleness
+    detection and rAF-based input coalescing.
+  context: |
+    When dragging a slider on a slow filter (e.g., bilateral, NLM denoise),
+    the UI continues rendering intermediate values sequentially after the
+    slider is released. Expected behavior: at most 2 renders after release
+    (the one currently executing + the latest queued state).
+
+    Professional image editors solve this with either:
+    1. Generation counters (Photoshop) — each request gets a monotonic ID,
+       worker skips any request whose generation is not the latest
+    2. rAF coalescing (Figma) — slider input events are batched per frame,
+       only the last value per frame dispatches a render request
+
+    Both approaches are complementary and should be applied together.
+  codebase_analysis: |
+    usePreviewWorker.ts (lines 34, 99-106, 202-215):
+      Single-slot queue via queuedChainRef. When processing completes,
+      queue drains immediately. Each slider onChange replaces the queued
+      chain, but if the render is fast enough, the queue drains before
+      the next event arrives — causing sequential execution of values
+      that arrived while the previous render was in flight.
+
+    EffectStack.tsx (line 70):
+      onParamChange calls onSchedulePreview() immediately — no debounce.
+
+    App.tsx (lines 226-231):
+      schedulePreview() calls preview.processMulti() directly. Comment
+      says "single-slot queue handles backpressure" but this is only
+      true when renders are fast relative to input rate.
+
+    useWorker.ts (lines 29, 156-176):
+      Full-resolution pipeline worker has same single-slot pattern.
+
+    v2-preview-worker.ts (lines 571-611):
+      Worker processes each message synchronously, no generation check.
+  acceptance_criteria:
+    - After releasing a slider, at most 2 renders execute (current + latest queued)
+    - Slider drag on slow filters (bilateral, NLM) feels responsive — no stale render cascade
+    - Fast filters (brightness, contrast) still render on every frame (no added latency)
+    - Generation counter visible in worker message protocol for debugging
+    - useWorker.ts (full-res pipeline) gets the same fix
+  out_of_scope: |
+    - Proxy/downscale rendering during drag (separate optimization)
+    - GPU acceleration of slow filters (separate track)
+    - Cancellation of in-flight WASM computation (not possible without threads)
+  technical_notes: |
+    Two complementary fixes:
+
+    1. rAF coalescing on the dispatch side (App.tsx / schedulePreview):
+       Instead of calling processMulti() on every onChange, set a dirty
+       flag and schedule a rAF callback. The rAF callback reads the
+       latest state and dispatches once per frame. This limits dispatch
+       to ~60Hz regardless of input event rate.
+
+       let rafId = 0;
+       const schedulePreview = () => {
+         if (rafId) return; // already scheduled
+         rafId = requestAnimationFrame(() => {
+           rafId = 0;
+           preview.processMulti(serializeChain(), [selectedScope]);
+         });
+       };
+
+    2. Generation counter on the queue side (usePreviewWorker.ts):
+       Add a monotonic generation counter. Each processMulti() call
+       increments the generation and includes it in the message. When
+       a render completes and the queue is drained, check if the queued
+       generation matches the current generation. If not, skip it and
+       drain again until latest.
+
+       Actually simpler: the single-slot queue already replaces previous
+       entries. The real fix is ensuring the queue is ONLY drained once
+       after completion, not re-entered. The rAF coalescing is the
+       primary fix — it prevents the queue from being filled faster
+       than it drains.
+
+    The rAF approach is sufficient alone but the generation counter
+    adds defense in depth for edge cases (e.g., programmatic param
+    changes that bypass rAF).
+plan:
+  - phase: Core Fix
+    tasks:
+      - text: Add rAF-based coalescing to schedulePreview in App.tsx
+        done: false
+      - text: Add generation counter to usePreviewWorker processChain/processMulti
+        done: false
+      - text: Add generation counter to useWorker sendMessage (full-res pipeline)
+        done: false
+      - text: Clean up rAF on unmount to prevent leaks
+        done: false
+  - phase: Worker Side
+    tasks:
+      - text: Add generation field to worker message protocol in v2-preview-worker.ts
+        done: false
+      - text: Log skipped stale renders for debugging (console.debug)
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Manual test with bilateral filter slider drag — verify at most 2 renders after release
+        done: false
+      - text: Manual test with brightness slider — verify no added latency on fast filters
+        done: false
+extra: {}

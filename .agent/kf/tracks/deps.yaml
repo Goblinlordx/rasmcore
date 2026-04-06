@@ -387,3 +387,6 @@ filter-cost-docs_20260405231500Z: []
 audit-docs-playground_20260406034901Z: []
 filter-parity-validation_20260406034902Z:
   - audit-docs-playground_20260406034901Z
+
+# Preview queue coalesce — no deps (web-ui only)
+preview-queue-coalesce_20260406035600Z: []
