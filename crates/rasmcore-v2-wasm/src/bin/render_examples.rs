@@ -65,15 +65,97 @@ fn showcase_params(name: &str, params: &[v2::ParamDescriptor]) -> ParamMap {
     let mut map = ParamMap::new();
     for p in params {
         let v: f64 = match (name, p.name) {
-            ("brightness", "amount") => 0.15, ("contrast", "amount") => 0.4,
-            ("gamma", "gamma") => 1.5, ("exposure", "ev") => 1.0,
-            ("saturation", _) => 0.5, ("vibrance", _) => 0.5,
+            // Adjustment — visible but not extreme
+            ("brightness", "amount") => 0.15,
+            ("contrast", "amount") => 0.4,
+            ("gamma", "gamma") => 1.5,
+            ("exposure", "ev") => 1.0,
             ("posterize", "levels") => 6.0,
-            ("sigmoidal_contrast", "contrast") => 5.0, ("sigmoidal_contrast", "midpoint") => 0.5,
-            ("gaussian_blur", "radius") => 3.0, ("box_blur", "radius") => 3.0,
+            ("sigmoidal_contrast", "contrast") => 5.0,
+            ("sigmoidal_contrast", "midpoint") => 0.5,
+            ("levels", "black_point") => 0.05,
+            ("levels", "white_point") => 0.95,
+            ("burn", "amount") => 0.3,
+            ("dodge", "amount") => 0.3,
+            ("solarize", "threshold") => 0.5,
+
+            // Spatial — moderate blur/sharpen
+            ("gaussian_blur", "radius") => 3.0,
+            ("box_blur", "radius") => 3.0,
+            ("motion_blur", "radius") => 5.0,
+            ("motion_blur", "angle") => 45.0,
             ("sharpen", "amount") => 1.5,
-            ("unsharp_mask", "amount") => 1.5, ("unsharp_mask", "radius") => 2.0,
-            ("hue_rotate", _) => 90.0, ("sepia", _) => 0.8, ("vignette", "sigma") => 0.4,
+            ("bilateral", "sigma_spatial") => 5.0,
+            ("bilateral", "sigma_range") => 0.1,
+            ("median", "radius") => 2.0,
+
+            // Color — clearly visible shifts
+            ("hue_rotate", _) => 90.0,
+            ("sepia", _) => 0.8,
+            ("saturate", "amount") => 0.5,
+            ("vibrance", _) => 0.5,
+            ("colorize", "hue") => 200.0,
+            ("colorize", "saturation") => 0.6,
+            ("colorize", "strength") => 0.5,
+            ("white_balance_temperature", "temperature") => 7500.0,
+            ("photo_filter", "hue") => 30.0,
+            ("photo_filter", "strength") => 0.4,
+            ("lab_adjust", "lightness") => 10.0,
+            ("modulate", "hue") => 30.0,
+            ("selective_color", "target_hue") => 0.0,
+            ("selective_color", "hue_shift") => 30.0,
+            ("selective_color", "range") => 60.0,
+
+            // Enhancement — dramatic enough to see
+            ("vignette", "sigma") => 0.15,
+            ("vignette", "x_inset") => 50.0,
+            ("vignette", "y_inset") => 50.0,
+            ("vignette_powerlaw", "strength") => 0.8,
+            ("vignette_powerlaw", "falloff") => 2.5,
+            ("clarity", "amount") => 0.6,
+            ("clarity", "radius") => 15.0,
+            ("shadow_highlight", "shadows") => 0.4,
+            ("shadow_highlight", "highlights") => -0.3,
+            ("dehaze", "strength") => 0.5,
+            ("clahe", "clip_limit") => 3.0,
+
+            // Effect — obvious visual change
+            ("film_grain", "amount") => 0.15,
+            ("film_grain_grading", "amount") => 0.15,
+            ("chromatic_aberration", "amount") => 5.0,
+            ("pixelate", "size") => 8.0,
+            ("emboss", "strength") => 1.0,
+            ("oil_paint", "radius") => 3.0,
+            ("halftone", "dot_size") => 4.0,
+            ("glitch", "amount") => 0.3,
+            ("light_leak", "intensity") => 0.5,
+
+            // Grading
+            ("split_toning", "shadow_hue") => 220.0,
+            ("split_toning", "highlight_hue") => 40.0,
+            ("split_toning", "shadow_strength") => 0.3,
+            ("split_toning", "highlight_strength") => 0.3,
+            ("asc_cdl", "slope_r") => 1.2,
+            ("asc_cdl", "power_r") => 0.9,
+            ("lift_gamma_gain", "lift_r") => -0.05,
+            ("lift_gamma_gain", "gain_r") => 1.1,
+            ("tonemap_reinhard", "exposure") => 1.5,
+            ("tonemap_filmic", "exposure") => 1.5,
+            ("tonemap_drago", "exposure") => 1.5,
+
+            // Dither/quantize — visible pattern
+            ("dither_ordered", "levels") => 4.0,
+            ("dither_floyd_steinberg", "levels") => 4.0,
+            ("quantize", "levels") => 4.0,
+            ("kmeans_quantize", "k") => 8.0,
+
+            // Scope — use smaller size for faster examples
+            ("scope_histogram", "scope_size") => 256.0,
+            ("scope_waveform", "scope_size") => 256.0,
+            ("scope_parade", "scope_size") => 256.0,
+            ("scope_vectorscope", "scope_size") => 256.0,
+
+            // Fallback: use default or 30% of range
             _ => p.default.filter(|d| d.abs() > 1e-6).unwrap_or_else(|| {
                 match (p.min, p.max) { (Some(lo), Some(hi)) => lo + (hi - lo) * 0.3, _ => 0.3 }
             }),
