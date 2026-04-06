@@ -1,0 +1,102 @@
+id: auto-colorspace-pipeline_20260406230821Z
+title: Auto color-space conversion with filter preferences and graph-level working space
+type: feature
+status: pending
+created: 2026-04-07
+updated: 2026-04-07
+spec:
+  summary: |
+    Add Filter::preferred_color_space() trait method and a graph-level working
+    color space setting. The graph auto-inserts ColorConvertNode pairs when a
+    filter declares a preference that differs from the current space, or when
+    the graph has a default working space set.
+  context: |
+    Professional pipelines commonly switch color spaces within a single graph.
+    Compositing needs linear light (ACEScg). Grading needs log (ACEScct).
+    Perceptual adjustments need a perceptual space. Currently users must
+    manually insert convert_color_space nodes. This track adds automation.
+
+    Two levels:
+    1. Filter-declared: Filter says "I prefer ACEScct" and the graph wraps
+       it with convert-to → filter → convert-back automatically.
+    2. Graph-level: User sets a default working space (e.g., ACEScg).
+       All filters without explicit preferences auto-convert to this space.
+
+    This matches how Baselight and DaVinci Resolve handle color management.
+  codebase_analysis: |
+    Node trait already has expected_input_color_space() (color_convert.rs).
+    Graph walker checks this and can insert conversions. The infrastructure
+    for auto-insertion exists — we extend it.
+
+    Filter trait (ops.rs) needs preferred_color_space() -> Option<ColorSpace>.
+    Default None = use whatever upstream provides.
+
+    Graph struct (graph.rs) needs a working_color_space: Option<ColorSpace>
+    field set via set_working_color_space(). The WIT API needs a new method.
+
+    When building the graph, if a filter has preferred_color_space() = Some(cs)
+    and upstream output != cs, insert: convert(upstream→cs) → filter → convert(cs→upstream).
+    The convert-back restores the original space so downstream nodes are unaffected.
+
+    For the graph-level default: at render/write time, if working_color_space
+    is set, insert conversions at the source boundary (after decode) and at
+    the output boundary (before encode/display).
+  acceptance_criteria:
+    - Filter trait has preferred_color_space() -> Option<ColorSpace> with default None
+    - Graph auto-inserts convert-to and convert-back around filters with preferences
+    - Graph has set_working_color_space() method
+    - WIT interface exposes set-working-color-space on image-pipeline-v2
+    - Auto-conversions are visible in trace events
+    - Test that a grading filter declaring ACEScct preference auto-converts in a Linear pipeline
+    - Test that graph working space auto-converts source output
+    - No-op when preferred space matches current space (no redundant conversions)
+  out_of_scope: |
+    Setting preferred_color_space on existing filters (future work per category).
+    OKLab or CIE Lab as color spaces (would need new ColorSpace variants).
+    OCIO integration.
+  technical_notes: |
+    The auto-insertion happens at graph build time (apply_filter/apply_transform),
+    not at execution time. This means the conversion nodes participate in
+    fusion and GPU chain optimization like any other node.
+
+    The convert-back is important: if filter A prefers ACEScct and filter B
+    prefers Linear, the chain is:
+      ...→ convert(Linear→ACEScct) → A → convert(ACEScct→Linear) → B → ...
+
+    For the graph-level working space:
+    - set_working_color_space(ColorSpace::AcesCg) on the pipeline
+    - At read/read_source: source outputs are converted to AcesCg
+    - At write/render: final output converts from AcesCg to target
+    - Filters operate in AcesCg unless they declare a different preference
+plan:
+  - phase: Filter Trait Extension
+    tasks:
+      - text: Add preferred_color_space() -> Option<ColorSpace> to Filter trait
+        done: false
+      - text: Update FilterNode to check preference and wrap with conversions
+        done: false
+  - phase: Graph-Level Working Space
+    tasks:
+      - text: Add working_color_space field and set_working_color_space() to Graph
+        done: false
+      - text: Auto-insert source-boundary conversion when working space is set
+        done: false
+      - text: Auto-insert output-boundary conversion at write/render
+        done: false
+  - phase: WIT and Host Integration
+    tasks:
+      - text: Add set-working-color-space method to pipeline.wit
+        done: false
+      - text: Implement in WASM adapter (rasmcore-v2-wasm)
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test filter with preferred ACEScct auto-converts in Linear pipeline
+        done: false
+      - text: Test graph working space applies to full pipeline
+        done: false
+      - text: Test no redundant conversions when spaces already match
+        done: false
+      - text: Test auto-conversions appear in trace events
+        done: false
+extra: {}

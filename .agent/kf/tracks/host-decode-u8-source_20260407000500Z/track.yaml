@@ -1,0 +1,110 @@
+id: host-decode-u8-source_20260407000500Z
+title: Host-delegated image decoding via u8 source with GPU conversion
+type: feature
+status: pending
+created: '2026-04-06'
+updated: '2026-04-06'
+spec:
+  summary: 'Add WIT interface for host to provide pre-decoded u8 RGBA sRGB pixels, with GPU u8-to-f32 sRGB-to-linear conversion
+    shader as first pipeline node. Zero-copy path: u8 bytes upload to GPU, convert on GPU, pipeline continues without CPU
+    f32 round-trip.'
+  context: The pipeline currently requires all image data as f32 RGBA. Source decoding happens inside WASM via compiled Rust
+    codecs. Host environments (browser, native) have fast platform-native decoders (createImageBitmap, ImageIO, WIC) that
+    produce u8 RGBA sRGB. There is no way for the host to provide pre-decoded pixels — it must pass encoded bytes and let
+    WASM decode. This forces double-decode in scenarios where the host already has decoded pixels (e.g., browser already decoded
+    for thumbnail), wastes binary size shipping codecs the host can handle natively, and misses hardware-accelerated decode
+    paths. The goal is a clean read-side-only interface where the host optionally provides u8 RGBA sRGB pixels, and the guest
+    uploads them directly to GPU for conversion to f32 linear — zero CPU-side f32 allocation.
+  codebase_analysis: 'Source resource (crates/rasmcore-v2-wasm/src/lib.rs:90-127): SourceResource stores Vec<f32> pixels +
+    NodeInfo. Constructor decodes from bytes via registry. Needs a from_pixels_u8 variant that stores Vec<u8> and produces
+    a GPU plan for conversion instead of CPU decode.
+
+
+    GPU plan path (crates/rasmcore-pipeline-v2/src/graph.rs:356-394): gpu_plan() collects GPU-capable nodes into a shader
+    chain. The u8-to-f32 conversion shader would be prepended as the first shader in the chain, with the u8 data passed as
+    an extra_buffer (since input is array<vec4<f32>> but source is u8).
+
+
+    Cache hashing (crates/rasmcore-pipeline-v2/src/hash.rs:26-37): source_hash() hashes first/last 4KB of encoded bytes. For
+    host-decoded u8 pixels, need a new hash function that hashes the u8 pixel data directly (or a caller-provided hash).
+
+
+    sRGB transfer functions (crates/rasmcore-pipeline-v2/src/color_math.rs:11-27): CPU-side srgb_to_linear() exists. No GPU
+    equivalent. Need a WGSL compute shader implementing the same IEC 61966-2-1 transfer function.
+
+
+    WIT interface (wit/v2/pipeline.wit:217-222): source resource has constructor(data, format-hint). Need static from-pixels-u8(list<u8>,
+    u32, u32) and pipeline read-pixels-u8(list<u8>, u32, u32, color-space) method.'
+  acceptance_criteria:
+  - source::from-pixels-u8 WIT static constructor accepts list<u8> + width + height, creates source with sRGB color space
+  - pipeline read-pixels-u8 WIT method creates source node from u8 pixels without decoding
+  - GPU compute shader converts u8 sRGB to f32 linear matching CPU srgb_to_linear() within 1 ULP
+  - u8 source GPU plan prepends conversion shader — data stays on GPU through entire pipeline
+  - CPU fallback path works when GPU unavailable using existing srgb_rgba8_to_f32_linear()
+  - Layer cache works with u8 sources — cache hit skips both u8 upload and conversion
+  - Native SDK exposes Pipeline::open_pixels_u8(pixels, width, height) convenience method
+  - cargo build and cargo-component build succeed for both native and wasm32-wasip2 targets
+  out_of_scope: Host-side encoding (write path) — read-only feature. Host capability discovery/negotiation — host simply calls
+    from-pixels-u8 when it has decoded pixels. f32 pixel input variant (from-pixels with f32 data) — existing source constructor
+    handles f32 internally, could be a follow-up. Browser/native host implementation — this track is guest-side only (WIT
+    + Rust + WGSL).
+  technical_notes: 'Architecture: The u8 source stores raw u8 pixels and metadata. When the GPU plan is requested, a u8-to-f32
+    sRGB-to-linear compute shader is prepended to the shader chain. The u8 data is passed as a packed u32 storage buffer (4
+    bytes per pixel packed into u32). The shader unpacks, normalizes to 0-1, applies sRGB EOTF, and writes vec4<f32> to the
+    output buffer. This output feeds directly into the next shader in the chain — data never leaves GPU.
+
+
+    For CPU fallback: the existing srgb_rgba8_to_f32_linear() function handles conversion. The source node compute() method
+    performs CPU conversion when GPU is unavailable.
+
+
+    Cache key: hash the u8 pixel data using blake3 with a ''source-u8'' domain separator. The conversion shader output (f32
+    linear) gets the normal content_hash chain treatment downstream.
+
+
+    The WIT from-pixels-u8 method implies sRGB color space (u8 is always display-referred). A separate from-pixels method
+    accepting f32 + color-space could be added later for hosts that do their own linearization.'
+plan:
+  - phase: "WIT Interface"
+    tasks:
+      - text: "Add from-pixels-u8 static constructor to source resource in wit/v2/pipeline.wit — accepts list<u8>, u32 width, u32 height, returns source"
+        done: false
+      - text: "Add read-pixels-u8 convenience method to image-pipeline-v2 in wit/v2/pipeline.wit — accepts list<u8>, u32 width, u32 height, returns node-id"
+        done: false
+      - text: "Regenerate WIT bindings via cargo-component and verify compilation"
+        done: false
+  - phase: "GPU Conversion Shader"
+    tasks:
+      - text: "Create src/shaders/u8_srgb_to_f32_linear.wgsl — reads packed u32 storage buffer (4x u8 per pixel), unpacks, normalizes, applies IEC 61966-2-1 sRGB EOTF, writes vec4<f32> output"
+        done: false
+      - text: "Add u8_source module in gpu_shaders/ that returns GpuShader with the WGSL body, binding the u8 data as extra_buffer[0] typed as array<u32>"
+        done: false
+  - phase: "Source Implementation"
+    tasks:
+      - text: "Add source_hash_u8(pixels, width, height) to hash.rs — blake3 with source-u8 domain separator + dimensions + pixel data"
+        done: false
+      - text: "Add SourceResource::from_pixels_u8(pixels, width, height) — stores raw u8, sets color_space=Srgb, computes u8 source hash"
+        done: false
+      - text: "Add SourceNodeU8 that wraps u8 pixels — implements Node with gpu_shader() returning the u8-to-f32 conversion shader, and compute() using CPU srgb_rgba8_to_f32_linear() fallback"
+        done: false
+      - text: "Wire SourceResource::from_pixels_u8 into the WIT binding layer in crates/rasmcore-v2-wasm/src/lib.rs"
+        done: false
+  - phase: "Pipeline Integration"
+    tasks:
+      - text: "Add read_pixels_u8() method to PipelineResource — creates SourceNodeU8, adds to graph with u8 source hash, returns node-id"
+        done: false
+      - text: "Verify GPU plan collection includes the u8-to-f32 conversion shader as first shader when source is u8"
+        done: false
+      - text: "Verify layer cache integration — u8 source hash chains correctly with downstream content hashes, cache hit skips conversion"
+        done: false
+  - phase: "SDK and Verification"
+    tasks:
+      - text: "Add Pipeline::open_pixels_u8(pixels, width, height) to native SDK in crates/rasmcore-sdk-v2/src/lib.rs"
+        done: false
+      - text: "Write test — u8 source with known sRGB pixel values produces correct f32 linear output (CPU path)"
+        done: false
+      - text: "Write test — u8 source GPU shader output matches CPU srgb_rgba8_to_f32_linear() within tolerance"
+        done: false
+      - text: "Verify cargo build + cargo-component build for native and wasm32-wasip2 targets"
+        done: false
+extra: {}

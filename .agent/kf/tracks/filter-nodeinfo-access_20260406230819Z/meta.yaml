@@ -1,0 +1,8 @@
+title: Give filters access to NodeInfo via backwards-compatible trait method
+status: pending
+type: refactor
+approved: false
+created: '2026-04-06'
+updated: '2026-04-06'
+deps:
+- colorspace-properties_20260406230818Z

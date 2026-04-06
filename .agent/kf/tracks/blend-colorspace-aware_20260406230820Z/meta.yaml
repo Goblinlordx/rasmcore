@@ -1,0 +1,8 @@
+title: Color-space-aware blend modes with ISO 32000-2 formula corrections
+status: pending
+type: bug
+approved: false
+created: '2026-04-06'
+updated: '2026-04-06'
+deps:
+- filter-nodeinfo-access_20260406230819Z

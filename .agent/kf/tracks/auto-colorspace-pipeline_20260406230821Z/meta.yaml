@@ -1,0 +1,8 @@
+title: Auto color-space conversion with filter preferences and graph working space
+status: pending
+type: feature
+approved: false
+created: '2026-04-06'
+updated: '2026-04-06'
+deps:
+- filter-nodeinfo-access_20260406230819Z
