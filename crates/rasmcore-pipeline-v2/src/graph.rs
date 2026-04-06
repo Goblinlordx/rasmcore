@@ -190,8 +190,13 @@ impl Graph {
     ///
     /// The node gets ZERO_HASH as its content hash. Use `add_node_with_hash`
     /// to provide a content hash for layer cache integration.
+    ///
+    /// # Panics
+    /// Panics if any upstream ID references a node that doesn't exist yet
+    /// (forward reference), which would create a cycle in the DAG.
     pub fn add_node(&mut self, node: Box<dyn Node>) -> u32 {
         let id = self.nodes.len() as u32;
+        self.assert_no_forward_refs(&node, id);
         self.nodes.push(node);
         self.content_hashes.push(ZERO_HASH);
         self.optimized = false; // new node invalidates fusion
@@ -203,12 +208,28 @@ impl Graph {
     /// The content hash encodes the full computation lineage:
     /// `hash(upstream_hash || op_name || param_bytes)`.
     /// Used by the pipeline resource to enable layer cache lookups.
+    ///
+    /// # Panics
+    /// Panics if any upstream ID references a node that doesn't exist yet.
     pub fn add_node_with_hash(&mut self, node: Box<dyn Node>, hash: ContentHash) -> u32 {
         let id = self.nodes.len() as u32;
+        self.assert_no_forward_refs(&node, id);
         self.nodes.push(node);
         self.content_hashes.push(hash);
         self.optimized = false;
         id
+    }
+
+    /// Verify that all upstream IDs reference existing (earlier) nodes.
+    /// The graph is append-only — nodes can only depend on lower IDs.
+    /// This is sufficient to guarantee acyclicity.
+    fn assert_no_forward_refs(&self, node: &Box<dyn Node>, new_id: u32) {
+        for up in node.upstream_ids() {
+            assert!(
+                up < new_id,
+                "cycle detected: node {new_id} references upstream {up} which is >= {new_id}"
+            );
+        }
     }
 
     /// Get the content hash for a node.
