@@ -1,11 +1,63 @@
 //! GPU parallel scan (prefix sum) and reduce primitives.
 //!
-//! Three scan algorithms:
-//! - **Hillis-Steele**: O(n log n) work, single workgroup, best for small arrays (≤ 256)
-//! - **Blelloch**: O(n) work, two-pass (upsweep + downsweep), good general-purpose
-//! - **Decoupled lookback**: O(n) work, single-pass with atomics, best throughput for large arrays
+//! # Which primitive to use
 //!
-//! Plus parallel reduce (sum, min, max) and 2D prefix sum (integral image).
+//! | Need | Primitive | Why |
+//! |------|-----------|-----|
+//! | **Running total** (prefix sum, CDF, integral image row/col) | `BlellochScan` | O(n) work, multi-workgroup, general-purpose |
+//! | **Small array scan** (histogram CDF ≤256 bins, LUT build) | `HillisSteeleScan` | Single workgroup, lowest latency for ≤256 elements |
+//! | **Single aggregate** (total pixel count, global min/max) | `ParallelReduce` | 2-pass tree reduce, produces one value |
+//! | **Integral image** (adaptive threshold, local statistics) | `BlellochScan` × 2 | Row-wise scan then column-wise scan |
+//! | **Stream compaction** (sparse filter output) | `BlellochScan` (exclusive) + scatter | Exclusive scan gives write offsets |
+//!
+//! # Decision flow
+//!
+//! ```text
+//! Need per-element prefix?
+//!   ├─ No → ParallelReduce (sum/min/max → single value)
+//!   └─ Yes → Array ≤ 256?
+//!       ├─ Yes → HillisSteeleScan (single workgroup, lowest latency)
+//!       └─ No → BlellochScan (multi-workgroup, O(n) work)
+//! ```
+//!
+//! # Operations
+//!
+//! All primitives support three associative operations via `ScanOp`:
+//! - `Sum` — addition (identity: 0). For prefix sums, CDF, integral image.
+//! - `Min` — minimum (identity: u32::MAX). For range queries, erosion.
+//! - `Max` — maximum (identity: 0). For range queries, dilation.
+//!
+//! # Scan modes
+//!
+//! - `Inclusive`: `output[i] = op(input[0], ..., input[i])` — element i is included
+//! - `Exclusive`: `output[i] = op(input[0], ..., input[i-1])` — element i excluded, output[0] = identity
+//!
+//! Use **exclusive** for write offsets (stream compaction, histogram CDF).
+//! Use **inclusive** for running totals (integral image).
+//!
+//! # Example
+//!
+//! ```rust,ignore
+//! use crate::gpu_shaders::scan::{BlellochScan, ScanOp, ScanMode};
+//!
+//! // Exclusive prefix sum over 10000 u32 elements
+//! let scan = BlellochScan::new(ScanOp::Sum, ScanMode::Exclusive, 256);
+//! let passes = scan.build_passes(10000);
+//! // passes.passes is a Vec<GpuShader> — add to your filter's gpu_shader_passes()
+//!
+//! // Reduce to find max value
+//! use crate::gpu_shaders::scan::ParallelReduce;
+//! let reduce = ParallelReduce::new(ScanOp::Max, 256);
+//! let passes = reduce.build_passes(10000);
+//! // passes.passes[0] = local reduce, passes.passes[1] = global merge
+//! ```
+//!
+//! # Future primitives (not yet implemented)
+//!
+//! - **Decoupled lookback scan**: single-pass with atomics, ~2x faster than Blelloch
+//!   for 1M+ elements. Uses Merrill & Garland (2016) chained scan technique.
+//! - **2D prefix sum**: row scan + column scan → integral image primitive.
+//! - **Radix sort**: built on exclusive scan, enables parallel median/quantization.
 //!
 //! All primitives generate `GpuShader` passes via a builder API matching the
 //! existing `GpuReduction` pattern. Unused primitives are dead-code eliminated.
