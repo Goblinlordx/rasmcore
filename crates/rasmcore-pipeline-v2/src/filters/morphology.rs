@@ -182,6 +182,33 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
+/// Erode reading from a snapshot reduction buffer (binding 3) instead of input.
+const ERODE_FROM_SNAP_WGSL: &str = r#"
+struct Params { width: u32, height: u32, radius: u32, _pad: u32, }
+@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
+@group(0) @binding(2) var<uniform> params: Params;
+@group(0) @binding(3) var<storage, read> snapshot: array<vec4<f32>>;
+@compute @workgroup_size(16, 16, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let x = i32(gid.x); let y = i32(gid.y);
+  let w = i32(params.width); let h = i32(params.height);
+  if (x >= w || y >= h) { return; }
+  let r = i32(params.radius);
+  var mn = vec4<f32>(1e30);
+  for (var dy = -r; dy <= r; dy = dy + 1) {
+    for (var dx = -r; dx <= r; dx = dx + 1) {
+      let sx = clamp(x + dx, 0, w - 1);
+      let sy = clamp(y + dy, 0, h - 1);
+      mn = min(mn, snapshot[u32(sx) + u32(sy) * params.width]);
+    }
+  }
+  let orig = snapshot[u32(x) + u32(y) * params.width];
+  mn.w = orig.w;
+  output[u32(x) + u32(y) * params.width] = mn;
+}
+"#;
+
 use crate::node::ReductionBuffer;
 
 fn make_snapshot_shader(width: u32, height: u32, buf_id: u32) -> GpuShader {
@@ -217,6 +244,25 @@ fn make_sub_shader(wgsl: &str, width: u32, height: u32, buf_id: u32) -> GpuShade
             id: buf_id,
             initial_data: vec![], // reuse existing allocation
             read_write: false,    // read-only on this pass
+        }],
+    }
+}
+
+/// Erode reading from a snapshot buffer instead of ping-pong input.
+fn make_erode_from_snap_shader(width: u32, height: u32, radius: u32, snap_id: u32) -> GpuShader {
+    let mut params = gpu_params_wh(width, height);
+    gpu_params_push_u32(&mut params, radius);
+    gpu_params_push_u32(&mut params, 0);
+    GpuShader {
+        body: ERODE_FROM_SNAP_WGSL.to_string(),
+        entry_point: "main",
+        workgroup_size: [16, 16, 1],
+        params,
+        extra_buffers: vec![],
+        reduction_buffers: vec![ReductionBuffer {
+            id: snap_id,
+            initial_data: vec![],
+            read_write: false,
         }],
     }
 }
@@ -365,10 +411,46 @@ impl Filter for MorphGradient {
         Ok(out)
     }
 
-    fn gpu_shader_passes(&self, _width: u32, _height: u32) -> Option<Vec<GpuShader>> {
-        // True gradient = dilate − erode requires two independent transforms from
-        // the same input, which needs two snapshot buffers. CPU-only for now.
-        None
+    fn gpu_shader_passes(&self, width: u32, height: u32) -> Option<Vec<GpuShader>> {
+        let buf_size = (width as usize) * (height as usize) * 16;
+        // Pass 0: snapshot original → buffer 0
+        // Pass 1: dilate
+        // Pass 2: snapshot dilated → buffer 1
+        // Pass 3: erode from buffer 0 (erode the original, not the dilated)
+        // Pass 4: diff(buffer 1 [dilate], buffer 0... wait)
+        //
+        // Actually simpler: after pass 3, erode result is in ping-pong.
+        // We need |dilate − erode|. Dilate is in buffer 1. Erode is current input.
+        // Use sub shader: |buffer1 − current|
+        Some(vec![
+            // Pass 0: snapshot original → buf 0
+            make_snapshot_shader(width, height, 0),
+            // Pass 1: dilate (from original via passthrough)
+            make_dilate_shader(width, height, self.radius),
+            // Pass 2: snapshot dilate result → buf 1, passthrough
+            {
+                let mut params = gpu_params_wh(width, height);
+                gpu_params_push_u32(&mut params, 0);
+                gpu_params_push_u32(&mut params, 0);
+                GpuShader {
+                    body: SNAPSHOT_WGSL.to_string(),
+                    entry_point: "main",
+                    workgroup_size: [16, 16, 1],
+                    params,
+                    extra_buffers: vec![],
+                    reduction_buffers: vec![ReductionBuffer {
+                        id: 1,
+                        initial_data: vec![0u8; buf_size],
+                        read_write: true,
+                    }],
+                }
+            },
+            // Pass 3: erode from original (buf 0)
+            make_erode_from_snap_shader(width, height, self.radius, 0),
+            // Pass 4: |dilate (buf 1) − erode (current ping-pong input)|
+            // Uses SUB_SNAP_MINUS_CURRENT: |snapshot − input| where snapshot=buf1=dilate
+            make_sub_shader(SUB_SNAP_MINUS_CURRENT_WGSL, width, height, 1),
+        ])
     }
 
     fn tile_overlap(&self) -> u32 { self.radius }
