@@ -1,0 +1,8 @@
+title: GPU shader correctness tests via native wgpu executor
+status: pending
+type: chore
+approved: false
+created: '2026-04-06'
+updated: '2026-04-06'
+deps:
+- native-gpu-executor_20260406070100Z

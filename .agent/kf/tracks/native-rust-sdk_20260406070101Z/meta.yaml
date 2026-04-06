@@ -1,0 +1,8 @@
+title: Native Rust SDK with codegen fluent API + wgpu host integration
+status: pending
+type: feature
+approved: false
+created: '2026-04-06'
+updated: '2026-04-06'
+deps:
+- native-gpu-executor_20260406070100Z

@@ -1,0 +1,6 @@
+title: Extract native wgpu GPU executor into standalone crate
+status: pending
+type: refactor
+approved: false
+created: '2026-04-06'
+updated: '2026-04-06'
