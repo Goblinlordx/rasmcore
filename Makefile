@@ -41,8 +41,8 @@ $(DOCS_SDK): sdk/typescript/v2-generated/rasmcore-v2-image.js $(DOCS_NODE_MODULE
 	cp -r sdk/typescript/v2-generated/interfaces $(DOCS_SITE)/public/sdk/v2/ 2>/dev/null || true
 	mkdir -p $(DOCS_SITE)/public/sdk/v2/preview2-shim
 	cp $(DOCS_SITE)/node_modules/@bytecodealliance/preview2-shim/lib/browser/*.js $(DOCS_SITE)/public/sdk/v2/preview2-shim/ 2>/dev/null || true
-	@# Rewrite bare @bytecodealliance/preview2-shim/* to absolute paths for Web Worker compat
-	sed -i '' "s|from '@bytecodealliance/preview2-shim/|from '/sdk/v2/preview2-shim/|g" $(DOCS_SITE)/public/sdk/v2/rasmcore-v2-image.js
+	@# Rewrite bare @bytecodealliance/preview2-shim/* to absolute paths with .js extension
+	sed -i '' "s|from '@bytecodealliance/preview2-shim/\([a-z]*\)'|from '/sdk/v2/preview2-shim/\1.js'|g" $(DOCS_SITE)/public/sdk/v2/rasmcore-v2-image.js
 
 ## Copy example images to public
 .PHONY: docs-copy-examples
