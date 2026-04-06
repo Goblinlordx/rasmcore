@@ -19,7 +19,7 @@ use rasmcore_pipeline_v2::registry::{
 };
 
 #[cfg(feature = "gpu")]
-mod gpu_executor_v2;
+use rasmcore_gpu_native as gpu_executor_v2;
 
 // ─── CLI Command Types ─────────────────────────────────────────────────────
 

@@ -2708,10 +2708,8 @@ dependencies = [
 name = "rasmcore-cli"
 version = "0.1.0"
 dependencies = [
- "bytemuck",
- "pollster",
+ "rasmcore-gpu-native",
  "rasmcore-pipeline-v2",
- "wgpu",
 ]
 
 [[package]]
@@ -2978,6 +2976,16 @@ name = "rasmcore-fits"
 version = "0.1.0"
 
 [[package]]
+name = "rasmcore-gpu-native"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "pollster",
+ "rasmcore-pipeline-v2",
+ "wgpu",
+]
+
+[[package]]
 name = "rasmcore-gpu-shaders"
 version = "0.1.0"
 
@@ -3094,6 +3102,7 @@ dependencies = [
  "blake3",
  "criterion",
  "inventory",
+ "rasmcore-gpu-native",
  "rasmcore-macros",
  "serde",
 ]

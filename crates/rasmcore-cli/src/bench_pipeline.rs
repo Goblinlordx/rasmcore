@@ -8,7 +8,7 @@
 //! Defaults: 7 nodes, 1920x1080
 
 #[cfg(feature = "gpu")]
-mod gpu_executor_v2;
+use rasmcore_gpu_native as gpu_executor_v2;
 
 use rasmcore_pipeline_v2::color_space::ColorSpace;
 use rasmcore_pipeline_v2::filter_node::FilterNode;
