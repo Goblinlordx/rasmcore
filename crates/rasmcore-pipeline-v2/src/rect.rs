@@ -211,9 +211,96 @@ impl Overlap {
     }
 }
 
+/// Iterate over non-overlapping tiles covering a region.
+///
+/// Tiles are row-major (left→right, top→bottom). Edge tiles are clipped
+/// to the image bounds — they may be smaller than `tile_w × tile_h`.
+pub fn tiles(image_w: u32, image_h: u32, tile_w: u32, tile_h: u32) -> Vec<Rect> {
+    let mut result = Vec::new();
+    let mut y = 0u32;
+    while y < image_h {
+        let h = tile_h.min(image_h - y);
+        let mut x = 0u32;
+        while x < image_w {
+            let w = tile_w.min(image_w - x);
+            result.push(Rect::new(x, y, w, h));
+            x += tile_w;
+        }
+        y += tile_h;
+    }
+    result
+}
+
+/// Extract a tile's f32 pixel data from a full image buffer.
+///
+/// `image` is `image_w × image_h × 4` floats. Returns `tile.width × tile.height × 4` floats.
+pub fn extract_tile(image: &[f32], image_w: u32, tile: Rect) -> Vec<f32> {
+    let stride = image_w as usize * 4;
+    let tw = tile.width as usize * 4;
+    let mut out = Vec::with_capacity(tile.width as usize * tile.height as usize * 4);
+    for row in 0..tile.height as usize {
+        let src = (tile.y as usize + row) * stride + tile.x as usize * 4;
+        out.extend_from_slice(&image[src..src + tw]);
+    }
+    out
+}
+
+/// Place a tile's f32 pixel data into a full image buffer.
+pub fn place_tile(image: &mut [f32], image_w: u32, tile: Rect, tile_data: &[f32]) {
+    let stride = image_w as usize * 4;
+    let tw = tile.width as usize * 4;
+    for row in 0..tile.height as usize {
+        let dst = (tile.y as usize + row) * stride + tile.x as usize * 4;
+        let src = row * tw;
+        image[dst..dst + tw].copy_from_slice(&tile_data[src..src + tw]);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tiles_covers_image() {
+        let ts = tiles(256, 256, 64, 64);
+        assert_eq!(ts.len(), 16); // 4x4 grid
+        // All tiles cover the image
+        let total_area: u64 = ts.iter().map(|t| t.area()).sum();
+        assert_eq!(total_area, 256 * 256);
+    }
+
+    #[test]
+    fn tiles_handles_non_divisible() {
+        let ts = tiles(100, 100, 64, 64);
+        assert_eq!(ts.len(), 4); // 2x2 grid
+        assert_eq!(ts[0], Rect::new(0, 0, 64, 64));
+        assert_eq!(ts[1], Rect::new(64, 0, 36, 64)); // clipped width
+        assert_eq!(ts[2], Rect::new(0, 64, 64, 36)); // clipped height
+        assert_eq!(ts[3], Rect::new(64, 64, 36, 36)); // both clipped
+    }
+
+    #[test]
+    fn extract_place_roundtrip() {
+        let w = 4u32;
+        let h = 4u32;
+        let image: Vec<f32> = (0..w * h * 4).map(|i| i as f32).collect();
+        let tile = Rect::new(1, 1, 2, 2);
+        let extracted = extract_tile(&image, w, tile);
+        assert_eq!(extracted.len(), 2 * 2 * 4);
+
+        let mut output = vec![0.0f32; (w * h * 4) as usize];
+        place_tile(&mut output, w, tile, &extracted);
+        // Check that the tile region matches
+        for row in 0..2usize {
+            for col in 0..2usize {
+                for ch in 0..4usize {
+                    let img_idx = ((1 + row) * w as usize + (1 + col)) * 4 + ch;
+                    let tile_idx = (row * 2 + col) * 4 + ch;
+                    assert_eq!(output[img_idx], extracted[tile_idx]);
+                }
+            }
+        }
+    }
 
     #[test]
     fn rect_basic() {
