@@ -4,7 +4,7 @@
 //! for fusion optimizer). These are per-channel operations: f(v) applied
 //! independently to R, G, B. Alpha is preserved unchanged.
 
-use crate::lmt::Lmt;
+use crate::lmt::{self, Lmt};
 use crate::node::PipelineError;
 use crate::ops::{Filter, PointOpExpr};
 
@@ -21,7 +21,7 @@ pub struct Brightness {
 
 impl Brightness {
     pub fn to_lmt(&self) -> Lmt {
-        Lmt::Analytical(PointOpExpr::Add(
+        lmt::analytical_uniform(PointOpExpr::Add(
             Box::new(PointOpExpr::Input),
             Box::new(PointOpExpr::Constant(self.amount)),
         ))
@@ -33,7 +33,7 @@ impl Filter for Brightness {
         Ok(self.to_lmt().apply(input))
     }
 
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
+    fn analytic_expression_per_channel(&self) -> Option<[PointOpExpr; 3]> {
         self.to_lmt().to_analytical()
     }
 }
@@ -52,7 +52,7 @@ pub struct Contrast {
 impl Contrast {
     pub fn to_lmt(&self) -> Lmt {
         let factor = 1.0 + self.amount;
-        Lmt::Analytical(PointOpExpr::Add(
+        lmt::analytical_uniform(PointOpExpr::Add(
             Box::new(PointOpExpr::Mul(
                 Box::new(PointOpExpr::Sub(
                     Box::new(PointOpExpr::Input),
@@ -70,7 +70,7 @@ impl Filter for Contrast {
         Ok(self.to_lmt().apply(input))
     }
 
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
+    fn analytic_expression_per_channel(&self) -> Option<[PointOpExpr; 3]> {
         self.to_lmt().to_analytical()
     }
 }
@@ -87,7 +87,7 @@ pub struct Gamma {
 
 impl Gamma {
     pub fn to_lmt(&self) -> Lmt {
-        Lmt::Analytical(PointOpExpr::Pow(
+        lmt::analytical_uniform(PointOpExpr::Pow(
             Box::new(PointOpExpr::Max(
                 Box::new(PointOpExpr::Input),
                 Box::new(PointOpExpr::Constant(0.0)),
@@ -102,7 +102,7 @@ impl Filter for Gamma {
         Ok(self.to_lmt().apply(input))
     }
 
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
+    fn analytic_expression_per_channel(&self) -> Option<[PointOpExpr; 3]> {
         self.to_lmt().to_analytical()
     }
 }
@@ -127,7 +127,7 @@ pub struct Exposure {
 impl Exposure {
     pub fn to_lmt(&self) -> Lmt {
         let multiplier = 2.0f32.powf(self.ev);
-        Lmt::Analytical(PointOpExpr::Mul(
+        lmt::analytical_uniform(PointOpExpr::Mul(
             Box::new(PointOpExpr::Input),
             Box::new(PointOpExpr::Constant(multiplier)),
         ))
@@ -139,7 +139,7 @@ impl Filter for Exposure {
         Ok(self.to_lmt().apply(input))
     }
 
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
+    fn analytic_expression_per_channel(&self) -> Option<[PointOpExpr; 3]> {
         self.to_lmt().to_analytical()
     }
 }
@@ -153,7 +153,7 @@ pub struct Invert;
 
 impl Invert {
     pub fn to_lmt(&self) -> Lmt {
-        Lmt::Analytical(PointOpExpr::Sub(
+        lmt::analytical_uniform(PointOpExpr::Sub(
             Box::new(PointOpExpr::Constant(1.0)),
             Box::new(PointOpExpr::Input),
         ))
@@ -165,7 +165,7 @@ impl Filter for Invert {
         Ok(self.to_lmt().apply(input))
     }
 
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
+    fn analytic_expression_per_channel(&self) -> Option<[PointOpExpr; 3]> {
         self.to_lmt().to_analytical()
     }
 }
@@ -190,7 +190,7 @@ pub struct Levels {
 impl Levels {
     pub fn to_lmt(&self) -> Lmt {
         let range = (self.white - self.black).max(1e-6);
-        Lmt::Analytical(PointOpExpr::Pow(
+        lmt::analytical_uniform(PointOpExpr::Pow(
             Box::new(PointOpExpr::Max(
                 Box::new(PointOpExpr::Div(
                     Box::new(PointOpExpr::Sub(
@@ -211,7 +211,7 @@ impl Filter for Levels {
         Ok(self.to_lmt().apply(input))
     }
 
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
+    fn analytic_expression_per_channel(&self) -> Option<[PointOpExpr; 3]> {
         self.to_lmt().to_analytical()
     }
 }
@@ -230,7 +230,7 @@ impl Posterize {
     pub fn to_lmt(&self) -> Lmt {
         let n = self.levels as f32;
         let inv = 1.0 / (n - 1.0).max(1.0);
-        Lmt::Analytical(PointOpExpr::Mul(
+        lmt::analytical_uniform(PointOpExpr::Mul(
             Box::new(PointOpExpr::Min(
                 Box::new(PointOpExpr::Floor(Box::new(PointOpExpr::Mul(
                     Box::new(PointOpExpr::Input),
@@ -248,7 +248,7 @@ impl Filter for Posterize {
         Ok(self.to_lmt().apply(input))
     }
 
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
+    fn analytic_expression_per_channel(&self) -> Option<[PointOpExpr; 3]> {
         self.to_lmt().to_analytical()
     }
 }
@@ -272,7 +272,7 @@ pub struct SigmoidalContrast {
 
 impl SigmoidalContrast {
     pub fn to_lmt(&self) -> Lmt {
-        Lmt::Analytical(self.build_expr())
+        lmt::analytical_uniform(self.build_expr())
     }
 
     fn build_expr(&self) -> PointOpExpr {
@@ -355,7 +355,7 @@ impl Filter for SigmoidalContrast {
         Ok(self.to_lmt().apply(input))
     }
 
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
+    fn analytic_expression_per_channel(&self) -> Option<[PointOpExpr; 3]> {
         self.to_lmt().to_analytical()
     }
 }
@@ -395,7 +395,7 @@ pub struct Dodge {
 impl Dodge {
     pub fn to_lmt(&self) -> Lmt {
         let divisor = (1.0 - self.amount).max(1e-6);
-        Lmt::Analytical(PointOpExpr::Div(
+        lmt::analytical_uniform(PointOpExpr::Div(
             Box::new(PointOpExpr::Input),
             Box::new(PointOpExpr::Constant(divisor)),
         ))
@@ -407,7 +407,7 @@ impl Filter for Dodge {
         Ok(self.to_lmt().apply(input))
     }
 
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
+    fn analytic_expression_per_channel(&self) -> Option<[PointOpExpr; 3]> {
         self.to_lmt().to_analytical()
     }
 }
@@ -425,7 +425,7 @@ pub struct Burn {
 impl Burn {
     pub fn to_lmt(&self) -> Lmt {
         let amt = self.amount.max(1e-6);
-        Lmt::Analytical(PointOpExpr::Sub(
+        lmt::analytical_uniform(PointOpExpr::Sub(
             Box::new(PointOpExpr::Constant(1.0)),
             Box::new(PointOpExpr::Div(
                 Box::new(PointOpExpr::Sub(
@@ -443,7 +443,7 @@ impl Filter for Burn {
         Ok(self.to_lmt().apply(input))
     }
 
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
+    fn analytic_expression_per_channel(&self) -> Option<[PointOpExpr; 3]> {
         self.to_lmt().to_analytical()
     }
 }
@@ -460,7 +460,7 @@ pub struct Solarize {
 
 impl Solarize {
     pub fn to_lmt(&self) -> Lmt {
-        Lmt::Analytical(PointOpExpr::Select(
+        lmt::analytical_uniform(PointOpExpr::Select(
             Box::new(PointOpExpr::Sub(
                 Box::new(PointOpExpr::Input),
                 Box::new(PointOpExpr::Constant(self.threshold)),
@@ -479,7 +479,7 @@ impl Filter for Solarize {
         Ok(self.to_lmt().apply(input))
     }
 
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
+    fn analytic_expression_per_channel(&self) -> Option<[PointOpExpr; 3]> {
         self.to_lmt().to_analytical()
     }
 }
@@ -525,12 +525,12 @@ mod tests {
     #[test]
     fn brightness_expression_matches_compute() {
         let b = Brightness { amount: 0.2 };
-        let expr = b.analytic_expression().unwrap();
+        let expr = b.analytic_expression_per_channel().unwrap();
         let input = test_pixels();
         let computed = b.compute(&input, 2, 2).unwrap();
         for i in (0..input.len()).step_by(4) {
             for c in 0..3 {
-                let from_expr = expr.evaluate(input[i + c] as f64) as f32;
+                let from_expr = expr[c].evaluate(input[i + c] as f64) as f32;
                 assert!(
                     (from_expr - computed[i + c]).abs() < 1e-5,
                     "mismatch at pixel {}, channel {}: expr={from_expr} compute={}",
@@ -545,12 +545,12 @@ mod tests {
     #[test]
     fn contrast_expression_matches_compute() {
         let c = Contrast { amount: 0.5 };
-        let expr = c.analytic_expression().unwrap();
+        let expr = c.analytic_expression_per_channel().unwrap();
         let input = test_pixels();
         let computed = c.compute(&input, 2, 2).unwrap();
         for i in (0..input.len()).step_by(4) {
             for ch in 0..3 {
-                let from_expr = expr.evaluate(input[i + ch] as f64) as f32;
+                let from_expr = expr[ch].evaluate(input[i + ch] as f64) as f32;
                 assert!(
                     (from_expr - computed[i + ch]).abs() < 1e-4,
                     "mismatch at pixel {}, channel {ch}",
@@ -563,10 +563,10 @@ mod tests {
     #[test]
     fn gamma_expression_matches_compute() {
         let g = Gamma { gamma: 2.2 };
-        let expr = g.analytic_expression().unwrap();
+        let expr = g.analytic_expression_per_channel().unwrap();
         let input = vec![0.5, 0.5, 0.5, 1.0];
         let computed = g.compute(&input, 1, 1).unwrap();
-        let from_expr = expr.evaluate(0.5) as f32;
+        let from_expr = expr[0].evaluate(0.5) as f32;
         assert!((from_expr - computed[0]).abs() < 1e-4);
     }
 
@@ -597,9 +597,10 @@ mod tests {
         // Compose brightness(+0.1) → contrast(1.5)
         let b = Brightness { amount: 0.1 };
         let c = Contrast { amount: 0.5 }; // factor = 1.5
-        let b_expr = b.analytic_expression().unwrap();
-        let c_expr = c.analytic_expression().unwrap();
-        let fused = PointOpExpr::compose(&c_expr, &b_expr);
+        let b_expr = b.analytic_expression_per_channel().unwrap();
+        let c_expr = c.analytic_expression_per_channel().unwrap();
+        // Compose per-channel (uniform, so just test channel 0)
+        let fused = PointOpExpr::compose(&c_expr[0], &b_expr[0]);
 
         // For v=0.5: brightness gives 0.6, contrast gives (0.6-0.5)*1.5+0.5 = 0.65
         let result = fused.evaluate(0.5);
@@ -632,11 +633,11 @@ mod tests {
             midpoint: 0.5,
             sharpen: true,
         };
-        let expr = sc.analytic_expression().unwrap();
+        let expr = sc.analytic_expression_per_channel().unwrap();
         let input = vec![0.3, 0.5, 0.7, 1.0];
         let computed = sc.compute(&input, 1, 1).unwrap();
         for ch in 0..3 {
-            let from_expr = expr.evaluate(input[ch] as f64) as f32;
+            let from_expr = expr[ch].evaluate(input[ch] as f64) as f32;
             assert!(
                 (from_expr - computed[ch]).abs() < 0.01,
                 "sigmoidal mismatch ch {ch}: expr={from_expr:.4} compute={:.4}",
@@ -648,11 +649,11 @@ mod tests {
     #[test]
     fn solarize_expression_matches_compute() {
         let s = Solarize { threshold: 0.5 };
-        let expr = s.analytic_expression().unwrap();
+        let expr = s.analytic_expression_per_channel().unwrap();
         for v in [0.2, 0.5, 0.7, 0.0, 1.0] {
             let input = vec![v, v, v, 1.0];
             let computed = s.compute(&input, 1, 1).unwrap();
-            let from_expr = expr.evaluate(v as f64) as f32;
+            let from_expr = expr[0].evaluate(v as f64) as f32;
             assert!(
                 (from_expr - computed[0]).abs() < 1e-5,
                 "solarize mismatch at {v}: expr={from_expr:.4} compute={:.4}",
@@ -670,7 +671,9 @@ mod tests {
             sharpen: true,
         };
         let sol = Solarize { threshold: 0.5 };
-        let composed = PointOpExpr::compose(&sol.analytic_expression().unwrap(), &sc.analytic_expression().unwrap());
+        let sol_exprs = sol.analytic_expression_per_channel().unwrap();
+        let sc_exprs = sc.analytic_expression_per_channel().unwrap();
+        let composed = PointOpExpr::compose(&sol_exprs[0], &sc_exprs[0]);
         let wgsl = lower_to_wgsl(&composed);
         assert!(wgsl.contains("exp("), "Fused WGSL should contain exp()");
         assert!(wgsl.contains("select("), "Fused WGSL should contain select()");
@@ -733,12 +736,12 @@ mod tests {
     #[test]
     fn exposure_expression_matches_compute() {
         let exp = Exposure { ev: 1.5 };
-        let expr = exp.analytic_expression().unwrap();
+        let expr = exp.analytic_expression_per_channel().unwrap();
         let input = test_pixels();
         let computed = exp.compute(&input, 2, 2).unwrap();
         for i in (0..input.len()).step_by(4) {
             for c in 0..3 {
-                let from_expr = expr.evaluate(input[i + c] as f64) as f32;
+                let from_expr = expr[c].evaluate(input[i + c] as f64) as f32;
                 assert!(
                     (from_expr - computed[i + c]).abs() < 1e-5,
                     "mismatch at pixel {}, channel {c}",
@@ -752,17 +755,17 @@ mod tests {
     fn exposure_expression_is_simple_mul() {
         // Verify the expression is just Mul(Input, Constant) — trivially fusable
         let exp = Exposure { ev: 2.0 };
-        let expr = exp.analytic_expression().unwrap();
-        match expr {
+        let exprs = exp.analytic_expression_per_channel().unwrap();
+        match &exprs[0] {
             PointOpExpr::Mul(lhs, rhs) => {
-                assert!(matches!(*lhs, PointOpExpr::Input));
-                if let PointOpExpr::Constant(c) = *rhs {
+                assert!(matches!(**lhs, PointOpExpr::Input));
+                if let PointOpExpr::Constant(c) = **rhs {
                     assert!((c - 4.0).abs() < 1e-6, "2^2 = 4.0, got {c}");
                 } else {
                     panic!("expected Constant, got {:?}", rhs);
                 }
             }
-            _ => panic!("expected Mul(Input, Constant), got {:?}", expr),
+            other => panic!("expected Mul(Input, Constant), got {:?}", other),
         }
     }
 }

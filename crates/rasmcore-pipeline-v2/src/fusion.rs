@@ -346,6 +346,15 @@ pub fn lower_to_f32_lut(expr: &PointOpExpr) -> F32Lut {
     F32Lut::build(expr)
 }
 
+/// Lower per-channel expressions to 3 f32 LUTs.
+pub fn lower_to_f32_luts(exprs: &[PointOpExpr; 3]) -> [F32Lut; 3] {
+    [
+        F32Lut::build(&exprs[0]),
+        F32Lut::build(&exprs[1]),
+        F32Lut::build(&exprs[2]),
+    ]
+}
+
 /// Lower an expression to WGSL shader source (for GPU kernel fusion).
 ///
 /// Emits an inline WGSL expression that can be composed into a compute shader.
@@ -389,7 +398,18 @@ pub fn lower_to_wgsl(expr: &PointOpExpr) -> String {
 /// The shader reads f32 RGBA pixels, applies the expression to R, G, B channels
 /// (preserving alpha), and writes the result.
 pub fn lower_to_wgsl_shader(expr: &PointOpExpr) -> String {
-    let expr_wgsl = lower_to_wgsl(expr);
+    let exprs = [expr.clone(), expr.clone(), expr.clone()];
+    lower_to_wgsl_shader_per_channel(&exprs)
+}
+
+/// Generate a per-channel WGSL compute shader with 3 inlined apply functions.
+///
+/// Each channel gets its own `apply_r`, `apply_g`, `apply_b` function.
+/// Single shader dispatch — all 3 functions are inlined in one kernel.
+pub fn lower_to_wgsl_shader_per_channel(exprs: &[PointOpExpr; 3]) -> String {
+    let wgsl_r = lower_to_wgsl(&exprs[0]);
+    let wgsl_g = lower_to_wgsl(&exprs[1]);
+    let wgsl_b = lower_to_wgsl(&exprs[2]);
     format!(
         r#"struct Params {{
   width: u32,
@@ -400,8 +420,16 @@ pub fn lower_to_wgsl_shader(expr: &PointOpExpr) -> String {
 @group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
 @group(0) @binding(2) var<uniform> params: Params;
 
-fn apply_expr(v: f32) -> f32 {{
-  return {expr_wgsl};
+fn apply_r(v: f32) -> f32 {{
+  return {wgsl_r};
+}}
+
+fn apply_g(v: f32) -> f32 {{
+  return {wgsl_g};
+}}
+
+fn apply_b(v: f32) -> f32 {{
+  return {wgsl_b};
 }}
 
 @compute @workgroup_size(16, 16, 1)
@@ -412,9 +440,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {{
   let idx = gid.x + gid.y * params.width;
   let pixel = input[idx];
   output[idx] = vec4<f32>(
-    apply_expr(pixel.x),
-    apply_expr(pixel.y),
-    apply_expr(pixel.z),
+    apply_r(pixel.x),
+    apply_g(pixel.y),
+    apply_b(pixel.z),
     pixel.w,
   );
 }}"#
@@ -584,28 +612,28 @@ pub fn compose_cluts(outer: &Clut3D, inner: &Clut3D) -> Clut3D {
 
 // ─── Fused Nodes ────────────────────────────────────────────────────────────
 
-/// Fused point-op node — applies a composed expression tree as a single pass.
+/// Fused point-op node — applies composed per-channel expression trees as a single pass.
 pub struct FusedPointOpNode {
     upstream: u32,
     info: NodeInfo,
     #[allow(dead_code)]
-    expr: PointOpExpr,
+    exprs: [PointOpExpr; 3],
     /// Pre-compiled WGSL shader (cached on creation).
     gpu_shader_src: String,
-    /// Pre-built f32 LUT (cached on creation — avoids rebuilding on every compute).
-    lut: F32Lut,
+    /// Pre-built f32 LUTs per channel (cached on creation).
+    luts: [F32Lut; 3],
 }
 
 impl FusedPointOpNode {
-    pub fn new(upstream: u32, info: NodeInfo, expr: PointOpExpr) -> Self {
-        let gpu_shader_src = lower_to_wgsl_shader(&expr);
-        let lut = lower_to_f32_lut(&expr);
+    pub fn new(upstream: u32, info: NodeInfo, exprs: [PointOpExpr; 3]) -> Self {
+        let gpu_shader_src = lower_to_wgsl_shader_per_channel(&exprs);
+        let luts = lower_to_f32_luts(&exprs);
         Self {
             upstream,
             info,
-            expr,
+            exprs,
             gpu_shader_src,
-            lut,
+            luts,
         }
     }
 }
@@ -622,7 +650,14 @@ impl Node for FusedPointOpNode {
     ) -> Result<Vec<f32>, PipelineError> {
         let input = upstream.request(self.upstream, request)?;
         let mut output = input;
-        self.lut.apply_buffer(&mut output);
+        // Apply per-channel LUTs
+        for pixel in output.chunks_exact_mut(4) {
+            let p: &mut [f32; 4] = pixel.try_into().unwrap();
+            p[0] = self.luts[0].apply(p[0]);
+            p[1] = self.luts[1].apply(p[1]);
+            p[2] = self.luts[2].apply(p[2]);
+            // alpha unchanged
+        }
         Ok(output)
     }
 
@@ -729,7 +764,7 @@ fn flatten_lmt_chains(_graph: &mut Graph) {
     // For now, chains execute correctly without cross-node fusion.
 }
 
-/// Fuse chains of analytical (point op) nodes into single expression trees.
+/// Fuse chains of analytical (point op) nodes into single per-channel expression trees.
 fn fuse_analytical_chains(graph: &mut Graph) {
     let n = graph.node_count() as usize;
     let mut fused: Vec<bool> = vec![false; n];
@@ -739,7 +774,7 @@ fn fuse_analytical_chains(graph: &mut Graph) {
             continue;
         }
         let node = graph.get_node(i as u32);
-        if node.analytic_expression().is_none() {
+        if node.analytic_expression_per_channel().is_none() {
             continue;
         }
 
@@ -752,7 +787,7 @@ fn fuse_analytical_chains(graph: &mut Graph) {
                 break;
             }
             let up = upstream_ids[0] as usize;
-            if up >= n || fused[up] || graph.get_node(up as u32).analytic_expression().is_none() {
+            if up >= n || fused[up] || graph.get_node(up as u32).analytic_expression_per_channel().is_none() {
                 break;
             }
             chain.push(up);
@@ -762,28 +797,35 @@ fn fuse_analytical_chains(graph: &mut Graph) {
         // Even single-node chains get fused — this gives them a GPU shader
         // (FusedPointOpNode emits WGSL) and the LUT-based CPU fast path.
 
-        // Compose expressions: chain is [outermost, ..., innermost]
-        // For single-node chains, the expression is used as-is.
-        let exprs: Vec<PointOpExpr> = chain
+        // Collect per-channel expressions: chain is [outermost, ..., innermost]
+        let per_channel_exprs: Vec<[PointOpExpr; 3]> = chain
             .iter()
-            .filter_map(|&id| graph.get_node(id as u32).analytic_expression())
+            .filter_map(|&id| graph.get_node(id as u32).analytic_expression_per_channel())
             .collect();
 
-        if exprs.is_empty() {
+        if per_channel_exprs.is_empty() {
             continue;
         }
 
-        // Compose from innermost to outermost
-        let mut composed = exprs.last().unwrap().clone();
-        for expr in exprs[..exprs.len() - 1].iter().rev() {
-            composed = PointOpExpr::compose(expr, &composed);
+        // Compose per-channel from innermost to outermost
+        let mut composed = per_channel_exprs.last().unwrap().clone();
+        for exprs in per_channel_exprs[..per_channel_exprs.len() - 1].iter().rev() {
+            composed = [
+                PointOpExpr::compose(&exprs[0], &composed[0]),
+                PointOpExpr::compose(&exprs[1], &composed[1]),
+                PointOpExpr::compose(&exprs[2], &composed[2]),
+            ];
         }
 
-        // Optimize the composed expression
-        let optimized = constant_fold(&composed);
+        // Optimize each channel's composed expression
+        let optimized = [
+            constant_fold(&composed[0]),
+            constant_fold(&composed[1]),
+            constant_fold(&composed[2]),
+        ];
 
-        // If it's identity, skip (could remove nodes entirely, but for now just skip)
-        if is_identity(&optimized) {
+        // If all channels are identity, skip
+        if is_identity(&optimized[0]) && is_identity(&optimized[1]) && is_identity(&optimized[2]) {
             continue;
         }
 
@@ -1043,7 +1085,9 @@ mod tests {
         );
         let shader = lower_to_wgsl_shader(&expr);
         assert!(shader.contains("@compute @workgroup_size"));
-        assert!(shader.contains("fn apply_expr(v: f32) -> f32"));
+        assert!(shader.contains("fn apply_r(v: f32) -> f32"));
+        assert!(shader.contains("fn apply_g(v: f32) -> f32"));
+        assert!(shader.contains("fn apply_b(v: f32) -> f32"));
         assert!(shader.contains("return (v + 0.1)"));
         assert!(shader.contains("pixel.w")); // alpha preserved
     }

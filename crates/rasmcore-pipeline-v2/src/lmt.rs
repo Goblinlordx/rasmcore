@@ -22,49 +22,54 @@ use crate::rect::Rect;
 /// A Look Modification Transform — any per-pixel color operation.
 #[derive(Debug, Clone)]
 pub enum Lmt {
-    /// Per-channel analytical expression (fusable symbolically).
-    /// Example: exposure → Mul(Input, Constant(2.0))
-    Analytical(PointOpExpr),
+    /// Per-channel analytical expressions [R, G, B] (fusable symbolically).
+    /// Each channel has its own expression tree, composed independently.
+    /// For uniform operations (same formula all channels), all 3 are identical.
+    /// Example: exposure → [Mul(Input, 2.0), Mul(Input, 2.0), Mul(Input, 2.0)]
+    /// Example: CDL → [pow(s[0]*x+o[0], p[0]), pow(s[1]*x+o[1], p[1]), pow(s[2]*x+o[2], p[2])]
+    Analytical([PointOpExpr; 3]),
 
     /// 3D Color Lookup Table (tetrahedral interpolation).
     /// Loaded from .cube files or baked from analytical chains.
     Clut3D(Clut3D),
-
-    /// ASC CDL — slope, offset, power per channel.
-    /// slope * input + offset, then pow(result, power).
-    Cdl {
-        slope: [f32; 3],
-        offset: [f32; 3],
-        power: [f32; 3],
-    },
 
     /// Chain of LMTs applied sequentially.
     /// Produced by CLF containers or user-assembled pipelines.
     Chain(Vec<Lmt>),
 }
 
+/// Convenience: create a uniform Analytical LMT (same expression all channels).
+pub fn analytical_uniform(expr: PointOpExpr) -> Lmt {
+    Lmt::Analytical([expr.clone(), expr.clone(), expr])
+}
+
+/// Build per-channel CDL expressions: pow(slope * x + offset, power) per channel.
+pub fn analytical_cdl(slope: [f32; 3], offset: [f32; 3], power: [f32; 3]) -> Lmt {
+    let build = |s: f32, o: f32, p: f32| -> PointOpExpr {
+        PointOpExpr::Pow(
+            Box::new(PointOpExpr::Add(
+                Box::new(PointOpExpr::Mul(
+                    Box::new(PointOpExpr::Input),
+                    Box::new(PointOpExpr::Constant(s)),
+                )),
+                Box::new(PointOpExpr::Constant(o)),
+            )),
+            Box::new(PointOpExpr::Constant(p)),
+        )
+    };
+    Lmt::Analytical([
+        build(slope[0], offset[0], power[0]),
+        build(slope[1], offset[1], power[1]),
+        build(slope[2], offset[2], power[2]),
+    ])
+}
+
 impl Lmt {
-    /// Convert this LMT to a PointOpExpr if it's analytical or CDL.
-    /// Returns None for Clut3D and Chain (not per-channel algebraic).
-    pub fn to_analytical(&self) -> Option<PointOpExpr> {
+    /// Extract per-channel analytical expressions if this is an Analytical LMT.
+    /// Returns None for Clut3D and Chain.
+    pub fn to_analytical(&self) -> Option<[PointOpExpr; 3]> {
         match self {
-            Lmt::Analytical(expr) => Some(expr.clone()),
-            Lmt::Cdl { slope, offset, power } => {
-                // CDL as per-channel expression: pow(slope * x + offset, power)
-                // We use channel 0 (R) since PointOpExpr is per-channel.
-                // For per-channel CDL, the fusion optimizer handles each channel.
-                // For uniform CDL (same values across channels), this is exact.
-                Some(PointOpExpr::Pow(
-                    Box::new(PointOpExpr::Add(
-                        Box::new(PointOpExpr::Mul(
-                            Box::new(PointOpExpr::Input),
-                            Box::new(PointOpExpr::Constant(slope[0])),
-                        )),
-                        Box::new(PointOpExpr::Constant(offset[0])),
-                    )),
-                    Box::new(PointOpExpr::Constant(power[0])),
-                ))
-            }
+            Lmt::Analytical(exprs) => Some(exprs.clone()),
             _ => None,
         }
     }
@@ -80,27 +85,17 @@ impl Lmt {
     /// Apply this LMT to f32 RGBA pixel data.
     pub fn apply(&self, pixels: &[f32]) -> Vec<f32> {
         match self {
-            Lmt::Analytical(expr) => {
+            Lmt::Analytical([expr_r, expr_g, expr_b]) => {
                 let mut out = pixels.to_vec();
                 for pixel in out.chunks_exact_mut(4) {
-                    pixel[0] = expr.evaluate(pixel[0] as f64) as f32;
-                    pixel[1] = expr.evaluate(pixel[1] as f64) as f32;
-                    pixel[2] = expr.evaluate(pixel[2] as f64) as f32;
+                    pixel[0] = expr_r.evaluate(pixel[0] as f64) as f32;
+                    pixel[1] = expr_g.evaluate(pixel[1] as f64) as f32;
+                    pixel[2] = expr_b.evaluate(pixel[2] as f64) as f32;
                     // alpha unchanged
                 }
                 out
             }
             Lmt::Clut3D(clut) => clut.apply(pixels),
-            Lmt::Cdl { slope, offset, power } => {
-                let mut out = pixels.to_vec();
-                for pixel in out.chunks_exact_mut(4) {
-                    for c in 0..3 {
-                        let v = (slope[c] * pixel[c] + offset[c]).max(0.0);
-                        pixel[c] = v.powf(power[c]);
-                    }
-                }
-                out
-            }
             Lmt::Chain(stages) => {
                 let mut data = pixels.to_vec();
                 for stage in stages {
@@ -162,7 +157,7 @@ impl Node for LmtNode {
         }
     }
 
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
+    fn analytic_expression_per_channel(&self) -> Option<[PointOpExpr; 3]> {
         self.lmt.to_analytical()
     }
 
@@ -256,7 +251,7 @@ mod tests {
             Box::new(PointOpExpr::Input),
             Box::new(PointOpExpr::Constant(2.0)),
         );
-        let lmt = Lmt::Analytical(expr.clone());
+        let lmt = analytical_uniform(expr.clone());
         let pixels = vec![0.25, 0.5, 0.125, 1.0];
         let result = lmt.apply(&pixels);
         assert!((result[0] - 0.5).abs() < 1e-6);
@@ -271,7 +266,7 @@ mod tests {
             Box::new(PointOpExpr::Input),
             Box::new(PointOpExpr::Constant(0.1)),
         );
-        let lmt = Lmt::Analytical(expr);
+        let lmt = analytical_uniform(expr);
         assert!(lmt.to_analytical().is_some());
     }
 
@@ -297,15 +292,11 @@ mod tests {
         assert!(lmt.to_analytical().is_none());
     }
 
-    // ── Lmt::Cdl tests ──────────────────────────────────────────────────
+    // ── CDL via Analytical tests ──────────────────────────────────────
 
     #[test]
     fn cdl_identity_preserves_pixels() {
-        let lmt = Lmt::Cdl {
-            slope: [1.0, 1.0, 1.0],
-            offset: [0.0, 0.0, 0.0],
-            power: [1.0, 1.0, 1.0],
-        };
+        let lmt = analytical_cdl([1.0; 3], [0.0; 3], [1.0; 3]);
         let pixels = vec![0.5, 0.3, 0.7, 1.0];
         let result = lmt.apply(&pixels);
         assert!((result[0] - 0.5).abs() < 1e-6);
@@ -315,11 +306,7 @@ mod tests {
 
     #[test]
     fn cdl_slope_doubles() {
-        let lmt = Lmt::Cdl {
-            slope: [2.0, 2.0, 2.0],
-            offset: [0.0, 0.0, 0.0],
-            power: [1.0, 1.0, 1.0],
-        };
+        let lmt = analytical_cdl([2.0; 3], [0.0; 3], [1.0; 3]);
         let pixels = vec![0.25, 0.5, 0.125, 1.0];
         let result = lmt.apply(&pixels);
         assert!((result[0] - 0.5).abs() < 1e-6);
@@ -328,15 +315,21 @@ mod tests {
 
     #[test]
     fn cdl_converts_to_analytical() {
-        let lmt = Lmt::Cdl {
-            slope: [1.5, 1.5, 1.5],
-            offset: [0.1, 0.1, 0.1],
-            power: [1.0, 1.0, 1.0],
-        };
-        let expr = lmt.to_analytical().unwrap();
+        let lmt = analytical_cdl([1.5; 3], [0.1; 3], [1.0; 3]);
+        let exprs = lmt.to_analytical().unwrap();
         // Should be pow((1.5 * x + 0.1), 1.0) = 1.5 * x + 0.1
-        let v = expr.evaluate(0.5);
+        let v = exprs[0].evaluate(0.5);
         assert!((v - 0.85).abs() < 1e-6); // 1.5 * 0.5 + 0.1
+    }
+
+    #[test]
+    fn cdl_per_channel_different_slopes() {
+        let lmt = analytical_cdl([2.0, 1.0, 0.5], [0.0; 3], [1.0; 3]);
+        let pixels = vec![0.5, 0.5, 0.5, 1.0];
+        let result = lmt.apply(&pixels);
+        assert!((result[0] - 1.0).abs() < 1e-6, "R: 0.5 * 2.0 = 1.0");
+        assert!((result[1] - 0.5).abs() < 1e-6, "G: 0.5 * 1.0 = 0.5");
+        assert!((result[2] - 0.25).abs() < 1e-6, "B: 0.5 * 0.5 = 0.25");
     }
 
     // ── Lmt::Chain tests ─────────────────────────────────────────────────
@@ -344,11 +337,11 @@ mod tests {
     #[test]
     fn chain_applies_sequentially() {
         let chain = Lmt::Chain(vec![
-            Lmt::Analytical(PointOpExpr::Add(
+            analytical_uniform(PointOpExpr::Add(
                 Box::new(PointOpExpr::Input),
                 Box::new(PointOpExpr::Constant(0.1)),
             )),
-            Lmt::Analytical(PointOpExpr::Mul(
+            analytical_uniform(PointOpExpr::Mul(
                 Box::new(PointOpExpr::Input),
                 Box::new(PointOpExpr::Constant(2.0)),
             )),
@@ -368,7 +361,7 @@ mod tests {
             w: 2, h: 2, color: [0.5, 0.3, 0.1, 1.0],
         }));
         let info = g.node_info(src).unwrap();
-        let lmt = Lmt::Analytical(PointOpExpr::Mul(
+        let lmt = analytical_uniform(PointOpExpr::Mul(
             Box::new(PointOpExpr::Input),
             Box::new(PointOpExpr::Constant(2.0)),
         ));
@@ -380,12 +373,12 @@ mod tests {
 
     #[test]
     fn lmt_node_exposes_analytic_for_fusion() {
-        let lmt = Lmt::Analytical(PointOpExpr::Add(
+        let lmt = analytical_uniform(PointOpExpr::Add(
             Box::new(PointOpExpr::Input),
             Box::new(PointOpExpr::Constant(0.1)),
         ));
         let node = LmtNode::new(0, test_info(1, 1), lmt);
-        assert!(node.analytic_expression().is_some());
+        assert!(node.analytic_expression_per_channel().is_some());
         assert!(node.capabilities().analytic);
     }
 
@@ -414,7 +407,7 @@ mod tests {
         // LmtNode: multiply by 2
         let lmt_node = g.add_node(Box::new(LmtNode::new(
             src, info.clone(),
-            Lmt::Analytical(PointOpExpr::Mul(
+            analytical_uniform(PointOpExpr::Mul(
                 Box::new(PointOpExpr::Input),
                 Box::new(PointOpExpr::Constant(2.0)),
             )),
@@ -484,7 +477,7 @@ LUT_3D_SIZE 2
         // LMT 1: multiply by 2 (exposure +1 EV)
         let n1 = g.add_node(Box::new(LmtNode::new(
             src, info.clone(),
-            Lmt::Analytical(PointOpExpr::Mul(
+            analytical_uniform(PointOpExpr::Mul(
                 Box::new(PointOpExpr::Input),
                 Box::new(PointOpExpr::Constant(2.0)),
             )),
@@ -493,7 +486,7 @@ LUT_3D_SIZE 2
         // LMT 2: multiply by 0.5 (exposure -1 EV)
         let n2 = g.add_node(Box::new(LmtNode::new(
             n1, info,
-            Lmt::Analytical(PointOpExpr::Mul(
+            analytical_uniform(PointOpExpr::Mul(
                 Box::new(PointOpExpr::Input),
                 Box::new(PointOpExpr::Constant(0.5)),
             )),
@@ -517,17 +510,13 @@ LUT_3D_SIZE 2
         // CDL: slope=2, offset=0, power=1 → just doubles (like exposure +1 EV)
         let n1 = g.add_node(Box::new(LmtNode::new(
             src, info.clone(),
-            Lmt::Cdl {
-                slope: [2.0, 2.0, 2.0],
-                offset: [0.0, 0.0, 0.0],
-                power: [1.0, 1.0, 1.0],
-            },
+            analytical_cdl([2.0; 3], [0.0; 3], [1.0; 3]),
         )));
 
         // Analytical: add 0.1
         let n2 = g.add_node(Box::new(LmtNode::new(
             n1, info,
-            Lmt::Analytical(PointOpExpr::Add(
+            analytical_uniform(PointOpExpr::Add(
                 Box::new(PointOpExpr::Input),
                 Box::new(PointOpExpr::Constant(0.1)),
             )),
@@ -551,11 +540,12 @@ LUT_3D_SIZE 2
                     if i % 4 == 3 { v } else { v + self.amount }
                 }).collect())
             }
-            fn analytic_expression(&self) -> Option<PointOpExpr> {
-                Some(PointOpExpr::Add(
+            fn analytic_expression_per_channel(&self) -> Option<[PointOpExpr; 3]> {
+                let expr = PointOpExpr::Add(
                     Box::new(PointOpExpr::Input),
                     Box::new(PointOpExpr::Constant(self.amount)),
-                ))
+                );
+                Some([expr.clone(), expr.clone(), expr])
             }
         }
 
@@ -573,7 +563,7 @@ LUT_3D_SIZE 2
         // LmtNode: multiply by 2
         let l1 = g.add_node(Box::new(LmtNode::new(
             f1, info.clone(),
-            Lmt::Analytical(PointOpExpr::Mul(
+            analytical_uniform(PointOpExpr::Mul(
                 Box::new(PointOpExpr::Input),
                 Box::new(PointOpExpr::Constant(2.0)),
             )),
@@ -592,7 +582,7 @@ LUT_3D_SIZE 2
     #[test]
     fn lmt_node_as_lmt_returns_value() {
         use crate::node::Node;
-        let lmt = Lmt::Analytical(PointOpExpr::Input);
+        let lmt = analytical_uniform(PointOpExpr::Input);
         let node = LmtNode::new(0, test_info(1, 1), lmt);
         assert!(node.as_lmt().is_some());
         assert!(matches!(node.as_lmt().unwrap(), Lmt::Analytical(_)));

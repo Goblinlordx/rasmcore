@@ -112,10 +112,11 @@ pub trait Filter {
 
     // ─── Analytic fusion ─────────────────────────────────────────────────
 
-    /// Algebraic expression for this filter (per-channel point ops only).
+    /// Per-channel algebraic expressions [R, G, B] for this filter.
     /// If provided, consecutive analytic filters are composed and constant-folded.
+    /// For uniform operations, all 3 expressions are identical.
     /// Default: None (not fusable).
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
+    fn analytic_expression_per_channel(&self) -> Option<[PointOpExpr; 3]> {
         None
     }
 

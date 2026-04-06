@@ -83,7 +83,7 @@ pub use ops::{
 pub use filter_node::{FilterNode, GpuFilterNode, compose_shader, IO_F32};
 
 // Re-export LMT types
-pub use lmt::{Lmt, LmtNode, parse_cube};
+pub use lmt::{Lmt, LmtNode, parse_cube, analytical_uniform, analytical_cdl};
 
 // Re-export color pipeline
 pub use color_math::{

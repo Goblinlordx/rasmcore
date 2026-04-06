@@ -266,8 +266,9 @@ pub trait Node {
     /// algebraic expression tree, return it. The fusion optimizer composes
     /// consecutive analytic expressions and constant-folds them.
     ///
+    /// Returns [R, G, B] expressions — one per channel.
     /// Default: None (not an analytic point op).
-    fn analytic_expression(&self) -> Option<crate::ops::PointOpExpr> {
+    fn analytic_expression_per_channel(&self) -> Option<[crate::ops::PointOpExpr; 3]> {
         None
     }
 

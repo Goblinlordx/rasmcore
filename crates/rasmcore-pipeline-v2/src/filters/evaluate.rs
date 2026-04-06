@@ -30,11 +30,12 @@ impl Filter for EvaluateAdd {
         Ok(out)
     }
 
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
-        Some(PointOpExpr::Add(
+    fn analytic_expression_per_channel(&self) -> Option<[PointOpExpr; 3]> {
+        let expr = PointOpExpr::Add(
             Box::new(PointOpExpr::Input),
             Box::new(PointOpExpr::Constant(self.value)),
-        ))
+        );
+        Some([expr.clone(), expr.clone(), expr])
     }
 }
 
@@ -61,11 +62,12 @@ impl Filter for EvaluateSubtract {
         Ok(out)
     }
 
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
-        Some(PointOpExpr::Sub(
+    fn analytic_expression_per_channel(&self) -> Option<[PointOpExpr; 3]> {
+        let expr = PointOpExpr::Sub(
             Box::new(PointOpExpr::Input),
             Box::new(PointOpExpr::Constant(self.value)),
-        ))
+        );
+        Some([expr.clone(), expr.clone(), expr])
     }
 }
 
@@ -92,11 +94,12 @@ impl Filter for EvaluateMultiply {
         Ok(out)
     }
 
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
-        Some(PointOpExpr::Mul(
+    fn analytic_expression_per_channel(&self) -> Option<[PointOpExpr; 3]> {
+        let expr = PointOpExpr::Mul(
             Box::new(PointOpExpr::Input),
             Box::new(PointOpExpr::Constant(self.value)),
-        ))
+        );
+        Some([expr.clone(), expr.clone(), expr])
     }
 }
 
@@ -123,11 +126,12 @@ impl Filter for EvaluateDivide {
         Ok(out)
     }
 
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
-        Some(PointOpExpr::Div(
+    fn analytic_expression_per_channel(&self) -> Option<[PointOpExpr; 3]> {
+        let expr = PointOpExpr::Div(
             Box::new(PointOpExpr::Input),
             Box::new(PointOpExpr::Constant(self.value)),
-        ))
+        );
+        Some([expr.clone(), expr.clone(), expr])
     }
 }
 
@@ -181,11 +185,12 @@ impl Filter for EvaluatePow {
         Ok(out)
     }
 
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
-        Some(PointOpExpr::Pow(
+    fn analytic_expression_per_channel(&self) -> Option<[PointOpExpr; 3]> {
+        let expr = PointOpExpr::Pow(
             Box::new(PointOpExpr::Input),
             Box::new(PointOpExpr::Constant(self.exponent)),
-        ))
+        );
+        Some([expr.clone(), expr.clone(), expr])
     }
 }
 
@@ -214,15 +219,16 @@ impl Filter for EvaluateLog {
         Ok(out)
     }
 
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
+    fn analytic_expression_per_channel(&self) -> Option<[PointOpExpr; 3]> {
         // ln(1 + v) * scale
-        Some(PointOpExpr::Mul(
+        let expr = PointOpExpr::Mul(
             Box::new(PointOpExpr::Ln(Box::new(PointOpExpr::Add(
                 Box::new(PointOpExpr::Constant(1.0)),
                 Box::new(PointOpExpr::Input),
             )))),
             Box::new(PointOpExpr::Constant(self.scale)),
-        ))
+        );
+        Some([expr.clone(), expr.clone(), expr])
     }
 }
 
@@ -251,11 +257,12 @@ impl Filter for EvaluateMax {
         Ok(out)
     }
 
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
-        Some(PointOpExpr::Max(
+    fn analytic_expression_per_channel(&self) -> Option<[PointOpExpr; 3]> {
+        let expr = PointOpExpr::Max(
             Box::new(PointOpExpr::Input),
             Box::new(PointOpExpr::Constant(self.threshold)),
-        ))
+        );
+        Some([expr.clone(), expr.clone(), expr])
     }
 }
 
@@ -284,11 +291,12 @@ impl Filter for EvaluateMin {
         Ok(out)
     }
 
-    fn analytic_expression(&self) -> Option<PointOpExpr> {
-        Some(PointOpExpr::Min(
+    fn analytic_expression_per_channel(&self) -> Option<[PointOpExpr; 3]> {
+        let expr = PointOpExpr::Min(
             Box::new(PointOpExpr::Input),
             Box::new(PointOpExpr::Constant(self.threshold)),
-        ))
+        );
+        Some([expr.clone(), expr.clone(), expr])
     }
 }
 
@@ -336,8 +344,8 @@ mod tests {
     #[test]
     fn pow_has_analytic_expression() {
         let f = EvaluatePow { exponent: 2.2 };
-        let expr = f.analytic_expression();
-        assert!(expr.is_some(), "evaluate_pow should have analytic expression for fusion");
+        let exprs = f.analytic_expression_per_channel();
+        assert!(exprs.is_some(), "evaluate_pow should have analytic expression for fusion");
     }
 
     #[test]

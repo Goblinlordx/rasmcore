@@ -151,8 +151,8 @@ impl<F: Filter + 'static> Node for FilterNode<F> {
         }
     }
 
-    fn analytic_expression(&self) -> Option<crate::ops::PointOpExpr> {
-        self.filter.analytic_expression()
+    fn analytic_expression_per_channel(&self) -> Option<[crate::ops::PointOpExpr; 3]> {
+        self.filter.analytic_expression_per_channel()
     }
 
     fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
