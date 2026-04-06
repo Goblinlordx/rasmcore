@@ -549,6 +549,22 @@ impl Filter for MorphBlackhat {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Zhang-Suen thinning shader — f32 RGBA variant.
+///
+/// ## Convergence detection — future optimization
+///
+/// Currently uses a single `atomic<u32>` change counter. All threads that
+/// delete a pixel atomicAdd to the same address, which serializes under
+/// contention. At 4K (~32K workgroups), this adds ~5-10% overhead per pass.
+///
+/// Optimization path: **per-workgroup flags** with host-side reduction.
+/// 1. Allocate `change_flags[num_workgroups]` buffer (one u32 per workgroup)
+/// 2. Each workgroup uses `var<workgroup> wg_changed: u32` (shared memory)
+/// 3. Any thread that deletes sets `wg_changed = 1u` (no atomic — any write wins)
+/// 4. After `workgroupBarrier()`, thread (0,0) writes `change_flags[wg_id] = wg_changed`
+/// 5. Host checks if any element is non-zero (scan 128KB for 4K image — trivial)
+///
+/// This eliminates all atomic contention. Estimated improvement: ~5-10% per pass,
+/// compounding over 50-100 iterations → ~5-10ms saved on a ~100ms 4K skeletonize.
 /// Operates on luminance: pixel "on" if luma > threshold.
 /// Uses atomic change counter in reduction buffer for convergence detection.
 /// `sub_iteration` param selects step 1 (0) or step 2 (1).
