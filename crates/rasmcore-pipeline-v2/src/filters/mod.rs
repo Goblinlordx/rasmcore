@@ -11,6 +11,7 @@ pub mod alpha;
 pub mod color;
 pub mod composite;
 pub mod distortion;
+pub mod draw;
 pub mod edge;
 pub mod effect;
 pub mod enhancement;
