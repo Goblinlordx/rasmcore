@@ -3,133 +3,165 @@ title: Host-delegated image decoding via from-pixels with GPU format conversion
 type: feature
 status: pending
 created: '2026-04-07'
-updated: '2026-04-07'
+updated: '2026-04-06'
 spec:
-  summary: |
-    Add WIT interface for host to provide pre-decoded pixels in any common format
+  summary: 'Add WIT interface for host to provide pre-decoded pixels in any common format
+
     (u8 sRGB, u16 linear, f32) via a host-pixel-format variant. GPU compute shaders
+
     handle format conversion to f32 linear as the first pipeline node. Zero-copy path:
+
     raw bytes upload to GPU, convert on GPU, pipeline continues without CPU round-trip.
-  context: |
-    The pipeline currently requires all image data as f32 RGBA. Source decoding happens
+
+    '
+  context: 'The pipeline currently requires all image data as f32 RGBA. Source decoding happens
+
     inside WASM via compiled Rust codecs. Host environments (browser, native) have fast
+
     platform-native decoders (createImageBitmap, ImageIO, WIC) that produce decoded pixels
+
     in various formats — most commonly u8 RGBA sRGB, but also u16 for 16-bit sources and
+
     f32 for HDR content.
 
+
     There is no way for the host to provide pre-decoded pixels. It must pass encoded bytes
+
     and let WASM decode. This forces double-decode when the host already has pixels, wastes
+
     binary size shipping codecs the host handles natively, and misses hardware-accelerated
+
     decode paths.
 
+
     The goal is a clean read-side-only interface where the host provides raw pixel bytes in
+
     any supported format, and the guest uploads them directly to GPU for conversion to f32
+
     linear — zero CPU-side f32 allocation.
-  codebase_analysis: |
-    Source resource (crates/rasmcore-v2-wasm/src/lib.rs:90-127): SourceResource stores
+
+    '
+  codebase_analysis: 'Source resource (crates/rasmcore-v2-wasm/src/lib.rs:90-127): SourceResource stores
+
     Vec<f32> pixels + NodeInfo. Constructor decodes from bytes via registry. Needs a
+
     from_pixels variant that stores raw bytes + format and produces a GPU plan for
+
     conversion instead of CPU decode.
 
+
     GPU plan path (crates/rasmcore-pipeline-v2/src/graph.rs:356-394): gpu_plan() collects
+
     GPU-capable nodes into a shader chain. Format conversion shaders would be prepended as
+
     the first shader, with raw pixel data passed as extra_buffer (packed for u8/u16).
 
+
     Cache hashing (crates/rasmcore-pipeline-v2/src/hash.rs:26-37): source_hash() hashes
+
     first/last 4KB of encoded bytes. For host-decoded pixels, need a hash function that
+
     includes format + dimensions + pixel data.
 
+
     sRGB transfer functions (crates/rasmcore-pipeline-v2/src/color_math.rs:11-27): CPU-side
+
     srgb_to_linear() exists. No GPU equivalent. Need WGSL compute shaders for each format.
 
+
     WIT interface (wit/v2/pipeline.wit:217-222): source resource has constructor(data,
+
     format-hint). Need from-pixels static constructor with format variant.
+
+    '
   acceptance_criteria:
-    - WIT host-pixel-format variant defines rgba8 (u8 sRGB), rgba16 (u16 linear), and rgba-f32 (f32 linear)
-    - source::from-pixels WIT static constructor accepts list<u8> + width + height + host-pixel-format
-    - pipeline read-pixels WIT method creates source node from raw pixel bytes without decoding
-    - GPU compute shader for rgba8 converts u8 sRGB to f32 linear matching CPU srgb_to_linear() within 1 ULP
-    - GPU compute shader for rgba16 converts u16 linear to f32 linear via simple normalization
-    - rgba-f32 format is passthrough — no conversion shader needed, direct f32 buffer upload
-    - Format conversion shader is first in GPU plan chain — data stays on GPU through entire pipeline
-    - CPU fallback path works for all three formats when GPU unavailable
-    - Layer cache works with pixel sources — cache hit skips upload and conversion
-    - Native SDK exposes Pipeline::open_pixels(bytes, width, height, format) convenience method
-    - cargo build and cargo-component build succeed for both native and wasm32-wasip2 targets
-  out_of_scope: |
-    Host-side encoding (write path) — read-only feature. Host capability discovery or
+  - WIT host-pixel-format variant defines rgba8 (u8 sRGB), rgba16 (u16 linear), and rgba-f32 (f32 linear)
+  - source::from-pixels WIT static constructor accepts list<u8> + width + height + host-pixel-format
+  - pipeline read-pixels WIT method creates source node from raw pixel bytes without decoding
+  - GPU compute shader for rgba8 converts u8 sRGB to f32 linear matching CPU srgb_to_linear() within 1 ULP
+  - GPU compute shader for rgba16 converts u16 linear to f32 linear via simple normalization
+  - rgba-f32 format is passthrough — no conversion shader needed, direct f32 buffer upload
+  - Format conversion shader is first in GPU plan chain — data stays on GPU through entire pipeline
+  - CPU fallback path works for all three formats when GPU unavailable
+  - Layer cache works with pixel sources — cache hit skips upload and conversion
+  - Native SDK exposes Pipeline::open_pixels(bytes, width, height, format) convenience method
+  - cargo build and cargo-component build succeed for both native and wasm32-wasip2 targets
+  out_of_scope: 'Host-side encoding (write path) — read-only feature. Host capability discovery or
+
     format negotiation — host simply calls from-pixels with whatever format it has.
+
     Browser/native host implementation — this track is guest-side only (WIT + Rust + WGSL).
+
     Additional formats (f16, YUV, planar) — can be added as new variant cases later.
-  technical_notes: |
-    WIT design: A host-pixel-format variant (rgba8, rgba16, rgba-f32) tells the guest how
-    to interpret the raw byte buffer. All data arrives as list<u8> regardless of format —
-    the variant determines interpretation.
 
-    GPU shaders per format:
-    - rgba8: extra_buffer as array<u32> (4 packed u8s per element). Shader unpacks,
-      normalizes to 0-1, applies IEC 61966-2-1 sRGB EOTF, writes vec4<f32>.
-    - rgba16: extra_buffer as array<u32> (2 packed u16s per element, 2 elements per pixel).
-      Shader unpacks, normalizes to 0-65535, writes vec4<f32>. Already linear.
-    - rgba-f32: no conversion shader. Data is already f32 — upload directly as input buffer.
-
-    CPU fallback: existing srgb_rgba8_to_f32_linear() for u8, simple division for u16,
-    passthrough for f32.
-
-    Cache key: blake3 hash with domain separator per format (source-rgba8, source-rgba16,
-    source-f32) + dimensions + pixel data prefix/suffix (same 4KB strategy as source_hash).
-
-    SourceNodePixels implements Node trait — gpu_shader() returns the appropriate conversion
-    shader based on stored format, compute() uses the CPU fallback path.
+    '
+  technical_notes: "WIT design: A host-pixel-format variant (rgba8, rgba16, rgba-f32) tells the guest how\nto interpret the\
+    \ raw byte buffer. All data arrives as list<u8> regardless of format —\nthe variant determines interpretation.\n\nGPU\
+    \ shaders per format:\n- rgba8: extra_buffer as array<u32> (4 packed u8s per element). Shader unpacks,\n  normalizes to\
+    \ 0-1, applies IEC 61966-2-1 sRGB EOTF, writes vec4<f32>.\n- rgba16: extra_buffer as array<u32> (2 packed u16s per element,\
+    \ 2 elements per pixel).\n  Shader unpacks, normalizes to 0-65535, writes vec4<f32>. Already linear.\n- rgba-f32: no conversion\
+    \ shader. Data is already f32 — upload directly as input buffer.\n\nCPU fallback: existing srgb_rgba8_to_f32_linear()\
+    \ for u8, simple division for u16,\npassthrough for f32.\n\nCache key: blake3 hash with domain separator per format (source-rgba8,\
+    \ source-rgba16,\nsource-f32) + dimensions + pixel data prefix/suffix (same 4KB strategy as source_hash).\n\nSourceNodePixels\
+    \ implements Node trait — gpu_shader() returns the appropriate conversion\nshader based on stored format, compute() uses\
+    \ the CPU fallback path.\n"
 plan:
-  - phase: "WIT Interface"
-    tasks:
-      - text: "Add host-pixel-format variant (rgba8, rgba16, rgba-f32) to wit/v2/pipeline.wit"
-        done: false
-      - text: "Add from-pixels static constructor to source resource — accepts list<u8>, u32 width, u32 height, host-pixel-format"
-        done: false
-      - text: "Add read-pixels convenience method to image-pipeline-v2 — accepts list<u8>, u32 width, u32 height, host-pixel-format, returns node-id"
-        done: false
-      - text: "Regenerate WIT bindings via cargo-component and verify compilation"
-        done: false
-  - phase: "GPU Conversion Shaders"
-    tasks:
-      - text: "Create src/shaders/rgba8_srgb_to_f32.wgsl — reads packed u32 storage buffer, unpacks 4x u8, normalizes, applies sRGB EOTF, writes vec4<f32>"
-        done: false
-      - text: "Create src/shaders/rgba16_to_f32.wgsl — reads packed u32 storage buffer (2x u16 per u32), unpacks, normalizes to 0-1, writes vec4<f32>"
-        done: false
-      - text: "Add pixel_source module in gpu_shaders/ that returns the correct GpuShader based on host-pixel-format, binding raw data as extra_buffer[0]"
-        done: false
-  - phase: "Source Implementation"
-    tasks:
-      - text: "Add source_hash_pixels(format, pixels, width, height) to hash.rs — blake3 with format-specific domain separator + dimensions + pixel data"
-        done: false
-      - text: "Add SourceResource::from_pixels(data, width, height, format) — stores raw bytes + format, sets appropriate color_space, computes pixel source hash"
-        done: false
-      - text: "Add SourceNodePixels that wraps raw bytes + format — implements Node with gpu_shader() dispatching to correct conversion shader per format, compute() using CPU fallback"
-        done: false
-      - text: "Wire SourceResource::from_pixels into the WIT binding layer in crates/rasmcore-v2-wasm/src/lib.rs"
-        done: false
-  - phase: "Pipeline Integration"
-    tasks:
-      - text: "Add read_pixels() method to PipelineResource — creates SourceNodePixels, adds to graph with pixel source hash, returns node-id"
-        done: false
-      - text: "Verify GPU plan collection includes format conversion shader as first shader when source is non-f32"
-        done: false
-      - text: "Verify rgba-f32 format skips conversion shader entirely — direct passthrough to pipeline"
-        done: false
-      - text: "Verify layer cache integration — pixel source hash chains correctly with downstream content hashes"
-        done: false
-  - phase: "SDK and Verification"
-    tasks:
-      - text: "Add Pipeline::open_pixels(bytes, width, height, format) to native SDK in crates/rasmcore-sdk-v2/src/lib.rs"
-        done: false
-      - text: "Write test — rgba8 source with known sRGB values produces correct f32 linear output (CPU and GPU paths)"
-        done: false
-      - text: "Write test — rgba16 source with known 16-bit values produces correct f32 output"
-        done: false
-      - text: "Write test — rgba-f32 source passes through without modification"
-        done: false
-      - text: "Verify cargo build + cargo-component build for native and wasm32-wasip2 targets"
-        done: false
+- phase: WIT Interface
+  tasks:
+  - text: Add host-pixel-format variant (rgba8, rgba16, rgba-f32) to wit/v2/pipeline.wit
+    done: true
+  - text: Add from-pixels static constructor to source resource — accepts list<u8>, u32 width, u32 height, host-pixel-format
+    done: true
+  - text: Add read-pixels convenience method to image-pipeline-v2 — accepts list<u8>, u32 width, u32 height, host-pixel-format,
+      returns node-id
+    done: true
+  - text: Regenerate WIT bindings via cargo-component and verify compilation
+    done: true
+- phase: GPU Conversion Shaders
+  tasks:
+  - text: Create src/shaders/rgba8_srgb_to_f32.wgsl — reads packed u32 storage buffer, unpacks 4x u8, normalizes, applies
+      sRGB EOTF, writes vec4<f32>
+    done: true
+  - text: Create src/shaders/rgba16_to_f32.wgsl — reads packed u32 storage buffer (2x u16 per u32), unpacks, normalizes to
+      0-1, writes vec4<f32>
+    done: true
+  - text: Add pixel_source module in gpu_shaders/ that returns the correct GpuShader based on host-pixel-format, binding raw
+      data as extra_buffer[0]
+    done: true
+- phase: Source Implementation
+  tasks:
+  - text: Add source_hash_pixels(format, pixels, width, height) to hash.rs — blake3 with format-specific domain separator
+      + dimensions + pixel data
+    done: true
+  - text: Add SourceResource::from_pixels(data, width, height, format) — stores raw bytes + format, sets appropriate color_space,
+      computes pixel source hash
+    done: true
+  - text: Add SourceNodePixels that wraps raw bytes + format — implements Node with gpu_shader() dispatching to correct conversion
+      shader per format, compute() using CPU fallback
+    done: true
+  - text: Wire SourceResource::from_pixels into the WIT binding layer in crates/rasmcore-v2-wasm/src/lib.rs
+    done: true
+- phase: Pipeline Integration
+  tasks:
+  - text: Add read_pixels() method to PipelineResource — creates SourceNodePixels, adds to graph with pixel source hash, returns
+      node-id
+    done: true
+  - text: Verify GPU plan collection includes format conversion shader as first shader when source is non-f32
+    done: true
+  - text: Verify rgba-f32 format skips conversion shader entirely — direct passthrough to pipeline
+    done: true
+  - text: Verify layer cache integration — pixel source hash chains correctly with downstream content hashes
+    done: true
+- phase: SDK and Verification
+  tasks:
+  - text: Add Pipeline::open_pixels(bytes, width, height, format) to native SDK in crates/rasmcore-sdk-v2/src/lib.rs
+    done: true
+  - text: Write test — rgba8 source with known sRGB values produces correct f32 linear output (CPU and GPU paths)
+    done: true
+  - text: Write test — rgba16 source with known 16-bit values produces correct f32 output
+    done: true
+  - text: Write test — rgba-f32 source passes through without modification
+    done: true
+  - text: Verify cargo build + cargo-component build for native and wasm32-wasip2 targets
+    done: true
 extra: {}
