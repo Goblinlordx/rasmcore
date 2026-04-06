@@ -1,0 +1,44 @@
+id: v2-alpha-ops_2026040604440007Z
+title: "V2 alpha and color match filters (5 filters)"
+type: feature
+status: pending
+created: 2026-04-06
+updated: 2026-04-06
+spec:
+  summary: |
+    Port add_alpha, remove_alpha, flatten, match_color, channel_mixer. GPU via trivial per-pixel ops and histogram matching.
+  context: |
+    GPU-first implementation (WGSL compute shaders primary).
+    SIMD-optimized CPU fallback (production quality, not throwaway).
+    From V1-V2 filter gap analysis: these filters existed in V1 but
+    were not ported to V2 during the pipeline rewrite.
+  acceptance_criteria:
+    - All filters registered in V2 registry with proper params
+    - GPU shader (gpu_shader_body) implemented for each filter
+    - CPU fallback with SIMD-friendly loop patterns
+    - Docs playground renders each filter correctly
+    - Param annotations complete (min, max, step, default)
+  out_of_scope: |
+    Parity validation against reference tools (separate track)
+  technical_notes: |
+    Filters: add_alpha, remove_alpha, flatten, match_color, channel_mixer
+    Each filter implements the V2 Filter trait with gpu_shader_body()
+    and compute(). Use derive(V2Filter) macro for registration.
+plan:
+  - phase: GPU Shaders
+    tasks:
+      - text: Implement WGSL compute shaders for all filters in this batch
+        done: false
+  - phase: CPU Fallback
+    tasks:
+      - text: Implement SIMD-optimized CPU compute() for all filters
+        done: false
+  - phase: Registration
+    tasks:
+      - text: Register all filters with derive(V2Filter) and param annotations
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Verify all filters appear in registry dump and docs playground
+        done: false
+extra: {}

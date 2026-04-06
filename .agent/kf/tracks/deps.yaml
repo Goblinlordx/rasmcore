@@ -393,3 +393,18 @@ preview-queue-coalesce_20260406035600Z: []
 
 # V1-V2 filter gap research — no deps
 research-v1v2-filter-gap_20260406041500Z: []
+
+# V2 filter gap implementation tracks — all independent, can run in parallel
+v2-grading-curves_2026040604440000Z: []
+v2-distortion-filters_2026040604440001Z: []
+v2-spatial-advanced_2026040604440002Z: []
+v2-alpha-composite_2026040604440003Z: []
+v2-morphology_2026040604440004Z: []
+v2-edge-threshold_2026040604440005Z: []
+v2-mask-ops_2026040604440006Z: []
+v2-alpha-ops_2026040604440007Z: []
+v2-draw-ops_2026040604440008Z: []
+v2-generators_2026040604440009Z: []
+v2-evaluate-math_2026040604440010Z: []
+v2-tools_2026040604440011Z: []
+v2-analysis-transform_2026040604440012Z: []
