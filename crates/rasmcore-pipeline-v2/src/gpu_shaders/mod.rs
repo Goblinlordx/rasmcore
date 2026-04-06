@@ -6,6 +6,7 @@
 
 pub mod analysis;
 pub mod enhancement;
+pub mod pixel_source;
 pub mod reduction;
 pub mod scan;
 pub mod spatial;

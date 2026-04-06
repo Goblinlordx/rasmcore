@@ -90,6 +90,19 @@ interface pipeline-v2 {
         adaptive-vram(tuple<u64, u32>),
     }
 
+    /// Pixel format for host-decoded pixel data.
+    ///
+    /// Hosts provide raw pixel bytes in one of these formats. The guest
+    /// handles conversion to f32 linear (GPU shader or CPU fallback).
+    enum host-pixel-format {
+        /// u8 RGBA sRGB (4 bytes/pixel). Most common host format.
+        rgba8,
+        /// u16 RGBA linear (8 bytes/pixel, little-endian).
+        rgba16,
+        /// f32 RGBA linear (16 bytes/pixel, little-endian).
+        rgba-f32,
+    }
+
     /// Opaque handle to a node in the pipeline graph.
     type node-id = u32;
 
@@ -217,6 +230,8 @@ interface pipeline-v2 {
     resource source {
         /// Create a source from encoded image bytes. Decodes immediately.
         constructor(data: buffer, format-hint: option<string>);
+        /// Create a source from host-decoded raw pixel bytes.
+        from-pixels: static func(data: buffer, width: u32, height: u32, format: host-pixel-format) -> source;
         /// Get the decoded image dimensions and color space.
         info: func() -> node-info;
     }
@@ -238,6 +253,8 @@ interface pipeline-v2 {
         /// Add a source node from a pre-decoded Source object. Skips decode
         /// on repeated calls — the Source caches its decoded pixels.
         read-source: func(source: borrow<source>) -> result<node-id, rasmcore-error>;
+        /// Add a source node from host-decoded raw pixel bytes.
+        read-pixels: func(data: buffer, width: u32, height: u32, format: host-pixel-format) -> result<node-id, rasmcore-error>;
         /// Get node output metadata.
         node-info: func(node: node-id) -> result<node-info, rasmcore-error>;
         /// Apply a named filter to a source node.

@@ -35,3 +35,23 @@ pub fn source_hash(data: &[u8]) -> ContentHash {
     }
     *hasher.finalize().as_bytes()
 }
+
+/// Compute a source hash from host-decoded pixel bytes.
+///
+/// Includes a format-specific domain separator so that the same raw bytes
+/// in different formats produce distinct hashes. Uses the same prefix/suffix
+/// strategy as `source_hash` for speed on large pixel buffers.
+pub fn source_hash_pixels(format_tag: &str, pixels: &[u8], width: u32, height: u32) -> ContentHash {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(format_tag.as_bytes());
+    hasher.update(&width.to_le_bytes());
+    hasher.update(&height.to_le_bytes());
+    hasher.update(&(pixels.len() as u64).to_le_bytes());
+    let prefix = &pixels[..pixels.len().min(4096)];
+    hasher.update(prefix);
+    if pixels.len() > 4096 {
+        let suffix_start = pixels.len().saturating_sub(4096);
+        hasher.update(&pixels[suffix_start..]);
+    }
+    *hasher.finalize().as_bytes()
+}
