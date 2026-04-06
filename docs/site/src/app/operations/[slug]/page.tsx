@@ -52,6 +52,30 @@ export default async function OperationPage({ params }: { params: Promise<{ slug
       <div className="op-meta">
         <p><strong>Category:</strong> {snakeToTitle(op.category || 'uncategorized')}</p>
         <p><strong>Registry name:</strong> <code>{op.name}</code></p>
+        {op.cost && (
+          <p>
+            <strong>Cost:</strong>{' '}
+            <code>{op.cost}</code>
+            <span className="cost-legend"> where n = pixels{
+              op.cost.includes(' r') ? ', r = radius' : ''
+            }{
+              op.cost.includes(' d') ? ', d = diameter' : ''
+            }{
+              op.cost.includes('sigma') ? ', σ = sigma' : ''
+            }{
+              op.cost.includes('sr') ? ', sr = search radius' : ''
+            }{
+              op.cost.includes('pr') ? ', pr = patch radius' : ''
+            }{
+              op.cost.includes('length') ? ', length = blur length' : ''
+            }{
+              op.cost.includes('levels') ? ', levels = pyramid levels' : ''
+            }</span>
+          </p>
+        )}
+        {op.gpuCost && (
+          <p><strong>GPU Cost:</strong> <code>{op.gpuCost}</code></p>
+        )}
       </div>
     </>
   );

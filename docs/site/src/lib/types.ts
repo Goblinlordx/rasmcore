@@ -15,6 +15,10 @@ export interface FilterInfo {
   category: string;
   docPath: string;
   params: ParamDescriptor[];
+  /** Algorithmic cost relative to pixel count (n). e.g. "O(n)", "O(n * r) separable" */
+  cost?: string;
+  /** GPU-specific cost if different from CPU. */
+  gpuCost?: string;
 }
 
 export interface EncoderInfo {
