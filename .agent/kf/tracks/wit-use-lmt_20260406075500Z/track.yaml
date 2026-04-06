@@ -1,94 +1,105 @@
 id: wit-use-lmt_20260406075500Z
-title: "WIT use-lmt method — load .cube/.clf LMTs into pipeline"
+title: WIT use-lmt method — load .cube/.clf LMTs into pipeline
 type: feature
 status: pending
 created: 2026-04-06
-updated: 2026-04-06
+updated: '2026-04-06'
 spec:
-  summary: |
-    Add use-lmt method to the WIT pipeline resource so hosts can load
+  summary: 'Add use-lmt method to the WIT pipeline resource so hosts can load
+
     .cube and .clf LMT files directly into the pipeline graph. Auto-detects
+
     format from content. SDK fluent API gets a .useLmt() chain method.
-  context: |
-    The Lmt type and LmtNode exist in the pipeline engine, and parse_cube()
+
+    '
+  context: 'The Lmt type and LmtNode exist in the pipeline engine, and parse_cube()
+
     can parse .cube files. But there is no WIT interface to expose this to
+
     WASM hosts. Hosts need a single method to pass raw LMT file bytes and
+
     get a node-id back, just like apply-filter works for named filters.
 
+
     The API should be as simple as possible: one method, auto-detect format,
+
     chain-friendly in the SDK.
-  codebase_analysis: |
-    WIT pipeline resource: wit/v2/pipeline.wit line 225
+
+    '
+  codebase_analysis: 'WIT pipeline resource: wit/v2/pipeline.wit line 225
+
     - apply-filter(source, name, params) -> node-id already exists
+
     - use-lmt(source, data) -> node-id follows the same pattern
 
+
     WASM adapter: crates/rasmcore-v2-wasm/src/lib.rs
+
     - Implements GuestImagePipelineV2 trait
+
     - Each WIT method maps to a Rust function that manipulates the Graph
 
+
     SDK fluent API: sdk/typescript/v2-fluent/index.ts (generated)
+
     - Each filter has .filterName(config) chain method
+
     - .useLmt(bytes) follows the same pattern
 
+
     Format detection:
+
     - .cube: text file, contains LUT_3D_SIZE keyword
+
     - .clf: XML file, starts with <?xml or <ProcessList
 
+
     Existing parsers:
+
     - parse_cube() in lmt.rs — returns Lmt::Clut3D
+
     - parse_clf() in lmt.rs — stubbed, returns error
+
+    '
   acceptance_criteria:
-    - WIT pipeline resource has use-lmt method accepting (source, data) returning node-id
-    - .cube files parsed and added as LmtNode to graph
-    - Format auto-detected from content (no format parameter needed)
-    - SDK fluent API has .useLmt(bytes) chain method
-    - LMT nodes participate in fusion (already works via LmtNode)
-    - Error returned for unsupported formats
-  out_of_scope: |
-    - Full CLF spec parsing (parse_clf is stubbed)
+  - WIT pipeline resource has use-lmt method accepting (source, data) returning node-id
+  - .cube files parsed and added as LmtNode to graph
+  - Format auto-detected from content (no format parameter needed)
+  - SDK fluent API has .useLmt(bytes) chain method
+  - LMT nodes participate in fusion (already works via LmtNode)
+  - Error returned for unsupported formats
+  out_of_scope: '- Full CLF spec parsing (parse_clf is stubbed)
+
     - LMT export (write .cube/.clf from pipeline nodes)
+
     - UI for LMT file browser (app-layer concern)
-  technical_notes: |
-    WIT addition to pipeline resource:
-      use-lmt: func(source: node-id, data: buffer) -> result<node-id, rasmcore-error>;
 
-    Adapter implementation:
-      fn use_lmt(&self, source: u32, data: Vec<u8>) -> Result<u32, RasmcoreError> {
-        let text = String::from_utf8(data).map_err(...)?;
-        let lmt = if text.contains("LUT_3D_SIZE") {
-          parse_cube(&text)?
-        } else if text.trim_start().starts_with("<?xml") || text.contains("<ProcessList") {
-          parse_clf(&text)?
-        } else {
-          return Err("unsupported LMT format");
-        };
-        let info = self.graph.node_info(source)?;
-        let node_id = self.graph.add_node(Box::new(LmtNode::new(source, info, lmt)));
-        Ok(node_id)
-      }
-
-    SDK fluent method:
-      useLmt(data: Uint8Array): this {
-        this.head = this.pipe.useLmt(this.head, data);
-        return this;
-      }
+    '
+  technical_notes: "WIT addition to pipeline resource:\n  use-lmt: func(source: node-id, data: buffer) -> result<node-id,\
+    \ rasmcore-error>;\n\nAdapter implementation:\n  fn use_lmt(&self, source: u32, data: Vec<u8>) -> Result<u32, RasmcoreError>\
+    \ {\n    let text = String::from_utf8(data).map_err(...)?;\n    let lmt = if text.contains(\"LUT_3D_SIZE\") {\n      parse_cube(&text)?\n\
+    \    } else if text.trim_start().starts_with(\"<?xml\") || text.contains(\"<ProcessList\") {\n      parse_clf(&text)?\n\
+    \    } else {\n      return Err(\"unsupported LMT format\");\n    };\n    let info = self.graph.node_info(source)?;\n\
+    \    let node_id = self.graph.add_node(Box::new(LmtNode::new(source, info, lmt)));\n    Ok(node_id)\n  }\n\nSDK fluent\
+    \ method:\n  useLmt(data: Uint8Array): this {\n    this.head = this.pipe.useLmt(this.head, data);\n    return this;\n\
+    \  }\n"
 plan:
-  - phase: WIT + Adapter
-    tasks:
-      - text: Add use-lmt method to WIT pipeline resource definition
-        done: false
-      - text: Implement use_lmt in WASM adapter (rasmcore-v2-wasm/src/lib.rs)
-        done: false
-      - text: Add format auto-detection (cube vs clf from content)
-        done: false
-  - phase: SDK
-    tasks:
-      - text: Add .useLmt(bytes) to fluent SDK pipeline builder
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Test use-lmt with .cube file via native pipeline (unit test)
-        done: false
-      - text: Verify WASM component build includes use-lmt in WIT exports
-        done: false
+- phase: WIT + Adapter
+  tasks:
+  - text: Add use-lmt method to WIT pipeline resource definition
+    done: true
+  - text: Implement use_lmt in WASM adapter (rasmcore-v2-wasm/src/lib.rs)
+    done: true
+  - text: Add format auto-detection (cube vs clf from content)
+    done: true
+- phase: SDK
+  tasks:
+  - text: Add .useLmt(bytes) to fluent SDK pipeline builder
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test use-lmt with .cube file via native pipeline (unit test)
+    done: true
+  - text: Verify WASM component build includes use-lmt in WIT exports
+    done: true
 extra: {}
