@@ -329,6 +329,27 @@ pub trait Node {
         None
     }
 
+    /// Run analysis on input pixels, producing a typed result.
+    ///
+    /// Analysis nodes override this to return `Some(result)`. The staged
+    /// pipeline calls this via `graph.analyze_node()` after materializing
+    /// the upstream pixels.
+    ///
+    /// Default: None (not an analysis node).
+    fn analyze(
+        &self,
+        _input: &[f32],
+        _width: u32,
+        _height: u32,
+    ) -> Option<Result<crate::staged::AnalysisResult, PipelineError>> {
+        None
+    }
+
+    /// Whether this node is an analysis node (has an analyze() implementation).
+    fn is_analysis_node(&self) -> bool {
+        false
+    }
+
     // ─── Cross-Node Analysis Buffer Protocol ────────────────────────────
 
     /// Analysis buffers this node produces (for cross-node GPU sharing).

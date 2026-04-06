@@ -902,6 +902,61 @@ impl Graph {
         self.cache.invalidate(node_id);
     }
 
+    /// Run analysis on a node: fetches full upstream pixels, calls node.analyze().
+    ///
+    /// Returns `None` if the node is not an analysis node.
+    /// Returns `Some(Err(_))` if the upstream fetch or analysis fails.
+    pub fn analyze_node(
+        &mut self,
+        node_id: u32,
+    ) -> Option<Result<crate::staged::AnalysisResult, PipelineError>> {
+        let node = self.nodes.get(node_id as usize)?;
+        if !node.is_analysis_node() {
+            return None;
+        }
+
+        // Get the upstream IDs for this analysis node
+        let upstream_ids = node.upstream_ids();
+        if upstream_ids.is_empty() {
+            return Some(Err(PipelineError::ComputeError(
+                format!("analysis node {node_id} has no upstream"),
+            )));
+        }
+
+        // Fetch full pixels from the first upstream
+        let upstream_id = upstream_ids[0];
+        let pixels = match self.request_full(upstream_id) {
+            Ok(p) => p,
+            Err(e) => return Some(Err(e)),
+        };
+
+        let info = match self.node_info(upstream_id) {
+            Ok(i) => i,
+            Err(e) => return Some(Err(e)),
+        };
+
+        // Call analyze on the node (re-borrow after request_full)
+        self.nodes[node_id as usize].analyze(&pixels, info.width, info.height)
+    }
+
+    /// Set a parameter on a node by replacing it with an updated version.
+    ///
+    /// The `updater` function receives the current node and returns the new node.
+    /// Cache for this node is invalidated after replacement.
+    pub fn set_node_param(
+        &mut self,
+        node_id: u32,
+        updater: impl FnOnce(&dyn Node) -> Box<dyn Node>,
+    ) -> Result<(), PipelineError> {
+        let node = self.nodes.get(node_id as usize)
+            .ok_or(PipelineError::NodeNotFound(node_id))?;
+        let new_node = updater(&**node);
+        self.nodes[node_id as usize] = new_node;
+        self.cache.invalidate(node_id);
+        self.optimized = false; // params changed, re-fuse
+        Ok(())
+    }
+
     /// Get the analytic expression for a node (if it has one).
     ///
     /// Returns `Err` if the node doesn't support analytic expressions.
