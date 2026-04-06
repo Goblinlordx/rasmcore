@@ -95,53 +95,53 @@ plan:
 - phase: Add AnalyticalPerChannel variant
   tasks:
   - text: Add Lmt::AnalyticalPerChannel([PointOpExpr; 3]) variant to lmt.rs
-    done: false
+    done: true
   - text: Add to_analytical_per_channel() method returning Option<[PointOpExpr; 3]>
-    done: false
+    done: true
   - text: Update Lmt::apply() to handle AnalyticalPerChannel (evaluate per-channel)
-    done: false
+    done: true
   - text: Update LmtNode capabilities/analytic_expression for new variant
-    done: false
+    done: true
 - phase: Update fusion for per-channel
   tasks:
   - text: Add compose_per_channel([PointOpExpr;3], [PointOpExpr;3]) to fusion.rs
-    done: false
+    done: true
   - text: Update fuse_analytical_chains to collect [PointOpExpr;3] from both variants
-    done: false
+    done: true
   - text: Update lower_to_wgsl_shader to generate single shader with 3 inlined per-channel fns (apply_r/g/b)
-    done: false
+    done: true
   - text: Update FusedPointOpNode to hold [F32Lut; 3], update compute() for per-channel
-    done: false
+    done: true
   - text: Update constant_fold to work per-channel (fold each independently)
-    done: false
+    done: true
 - phase: Migrate filters and subsume Cdl
   tasks:
   - text: Migrate all 11 adjustment filter to_lmt() to return AnalyticalPerChannel([expr; 3])
-    done: false
+    done: true
   - text: Update Filter::analytic_expression() return type or add analytic_expression_per_channel()
-    done: false
+    done: true
   - text: Subsume Lmt::Cdl as AnalyticalPerChannel with per-channel pow(slope*x+offset, power)
-    done: false
+    done: true
   - text: Update all Cdl constructors (grading.rs AscCdl, lmt.rs tests) to use Analytical
-    done: false
+    done: true
 - phase: Cleanup and rename
   tasks:
   - text: Remove old Lmt::Analytical(PointOpExpr) variant
-    done: false
+    done: true
   - text: Remove Lmt::Cdl variant
-    done: false
+    done: true
   - text: Rename AnalyticalPerChannel -> Analytical throughout
-    done: false
+    done: true
   - text: Update all tests referencing old variant names
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: All existing LMT tests pass
-    done: false
+    done: true
   - text: All existing fusion tests pass (brightness cancel, chain compose)
-    done: false
+    done: true
   - text: WASM component build succeeds
-    done: false
+    done: true
   - text: New test - per-channel CDL fuses correctly (different slope per channel)
-    done: false
+    done: true
 extra: {}
