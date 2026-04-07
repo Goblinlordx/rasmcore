@@ -622,18 +622,23 @@ pub struct FusedPointOpNode {
     gpu_shader_src: String,
     /// Pre-built f32 LUTs per channel (cached on creation).
     luts: [F32Lut; 3],
+    /// True if all 3 channels use identical LUTs (common for grayscale ops).
+    /// Precomputed to avoid per-frame comparison.
+    uniform_luts: bool,
 }
 
 impl FusedPointOpNode {
     pub fn new(upstream: u32, info: NodeInfo, exprs: [PointOpExpr; 3]) -> Self {
         let gpu_shader_src = lower_to_wgsl_shader_per_channel(&exprs);
         let luts = lower_to_f32_luts(&exprs);
+        let uniform_luts = luts[0].table == luts[1].table && luts[1].table == luts[2].table;
         Self {
             upstream,
             info,
             exprs,
             gpu_shader_src,
             luts,
+            uniform_luts,
         }
     }
 }
@@ -650,13 +655,21 @@ impl Node for FusedPointOpNode {
     ) -> Result<Vec<f32>, PipelineError> {
         let input = upstream.request(self.upstream, request)?;
         let mut output = input;
-        // Apply per-channel LUTs
-        for pixel in output.chunks_exact_mut(4) {
-            let p: &mut [f32; 4] = pixel.try_into().unwrap();
-            p[0] = self.luts[0].apply(p[0]);
-            p[1] = self.luts[1].apply(p[1]);
-            p[2] = self.luts[2].apply(p[2]);
-            // alpha unchanged
+        // Fast path: if all 3 channels use the same LUT (common for grayscale
+        // ops like brightness/contrast/gamma), use the single-LUT ILP path
+        // which exposes 3 independent lookup chains for superscalar execution.
+        if self.uniform_luts {
+            // Single LUT for all channels — use batch ILP path
+            // (12 independent lookups per iteration for superscalar execution)
+            self.luts[0].apply_buffer(&mut output);
+        } else {
+            // Per-channel LUTs — separate lookups
+            for pixel in output.chunks_exact_mut(4) {
+                let p: &mut [f32; 4] = pixel.try_into().unwrap();
+                p[0] = self.luts[0].apply(p[0]);
+                p[1] = self.luts[1].apply(p[1]);
+                p[2] = self.luts[2].apply(p[2]);
+            }
         }
         Ok(output)
     }
