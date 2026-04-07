@@ -290,6 +290,12 @@ interface pipeline-v2 {
         /// Format is auto-detected from content.
         use-lmt: func(source: node-id, data: buffer) -> result<node-id, rasmcore-error>;
 
+        /// Draw text onto a source node using a Font resource.
+        ///
+        /// The font is passed directly — no pipeline-level state needed.
+        /// Multiple nodes can share the same Font reference (parsed once).
+        draw-text: func(source: node-id, font: borrow<font>, params: buffer) -> result<node-id, rasmcore-error>;
+
         // ─── ML Operations ───
         /// Apply an ML model to a source node.
         ///
@@ -317,9 +323,6 @@ interface pipeline-v2 {
         /// When set, filters without an explicit preferred color space auto-convert
         /// to this space. Used for pipeline-wide color management (e.g., ACEScg for VFX).
         set-working-color-space: func(cs: color-space);
-        /// Set the font for text rendering operations.
-        /// Must be called before draw_text. The font persists across pipeline chains.
-        set-font: func(font: borrow<font>);
         /// Set the proxy scale factor for spatial param auto-scaling.
         /// Spatial params (hint = rc.pixels) are multiplied by this factor.
         /// Default 1.0 = full resolution. Use 0.5 for half-res proxy.

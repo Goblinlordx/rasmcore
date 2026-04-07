@@ -259,8 +259,6 @@ pub struct PipelineResource {
     /// Default 1.0 = full resolution. Values < 1.0 indicate proxy resolution;
     /// spatial params (hint = rc.pixels) are multiplied by this factor.
     proxy_scale: std::cell::Cell<f32>,
-    /// Font resource for text rendering.
-    font: RefCell<Option<std::rc::Rc<v2::font::Font>>>,
 }
 
 impl PipelineResource {
@@ -269,7 +267,6 @@ impl PipelineResource {
             graph: RefCell::new(Graph::new(16 * 1024 * 1024)),
             layer_cache: RefCell::new(None),
             proxy_scale: std::cell::Cell::new(1.0),
-            font: RefCell::new(None),
         }
     }
 
@@ -278,16 +275,6 @@ impl PipelineResource {
     /// Set the graph-level working color space.
     pub fn set_working_color_space(&self, cs: ColorSpace) {
         self.graph.borrow_mut().set_working_color_space(cs);
-    }
-
-    /// Set the font for text rendering.
-    pub fn set_font(&self, font: std::rc::Rc<v2::font::Font>) {
-        *self.font.borrow_mut() = Some(font);
-    }
-
-    /// Get the current font (if set).
-    pub fn font(&self) -> Option<std::rc::Rc<v2::font::Font>> {
-        self.font.borrow().clone()
     }
 
     pub fn set_proxy_scale(&self, scale: f32) {
@@ -422,27 +409,6 @@ impl PipelineResource {
         hash_input.extend_from_slice(&scale.to_le_bytes());
         let filter_hash = content_hash(&upstream_hash, name, &hash_input);
 
-        // Special case: draw_text needs Font resource
-        if name == "draw_text" {
-            let font = self.font().ok_or_else(|| {
-                PipelineError::InvalidParams("draw_text requires a font — call set_font() first".into())
-            })?;
-            let text = scaled_params.strings.get("text").cloned().unwrap_or_default();
-            let x = scaled_params.floats.get("x").copied().unwrap_or(0.0);
-            let y = scaled_params.floats.get("y").copied().unwrap_or(0.0);
-            let size = scaled_params.floats.get("size").copied().unwrap_or(24.0);
-            let cr = scaled_params.floats.get("color_r").copied().unwrap_or(1.0);
-            let cg = scaled_params.floats.get("color_g").copied().unwrap_or(1.0);
-            let cb = scaled_params.floats.get("color_b").copied().unwrap_or(1.0);
-            let ca = scaled_params.floats.get("color_a").copied().unwrap_or(1.0);
-
-            let node = v2::filters::draw::DrawTextNode::new(
-                source, info, font, text, x, y, size, [cr, cg, cb, ca],
-            );
-            let id = self.graph.borrow_mut().add_node_with_hash(Box::new(node), filter_hash);
-            return Ok(id);
-        }
-
         // Create filter to check its preferred color space
         let node = create_filter_node(name, source, info.clone(), &scaled_params).ok_or_else(|| {
             PipelineError::InvalidParams(format!("unknown filter: {name}"))
@@ -503,6 +469,33 @@ impl PipelineResource {
         let lmt_hash = content_hash(&upstream_hash, "lmt", data);
         let node = Box::new(rasmcore_pipeline_v2::LmtNode::new(source, info, lmt));
         let id = self.graph.borrow_mut().add_node_with_hash(node, lmt_hash);
+        Ok(id)
+    }
+
+    /// Draw text using an externally-provided Font resource.
+    pub fn draw_text(
+        &self,
+        source: u32,
+        font: std::rc::Rc<v2::font::Font>,
+        params: &ParamMap,
+    ) -> Result<u32, PipelineError> {
+        let info = self.graph.borrow().node_info(source)?;
+        let text = params.strings.get("text").cloned().unwrap_or_default();
+        let x = params.floats.get("x").copied().unwrap_or(0.0);
+        let y = params.floats.get("y").copied().unwrap_or(0.0);
+        let size = params.floats.get("size").copied().unwrap_or(24.0);
+        let cr = params.floats.get("color_r").copied().unwrap_or(1.0);
+        let cg = params.floats.get("color_g").copied().unwrap_or(1.0);
+        let cb = params.floats.get("color_b").copied().unwrap_or(1.0);
+        let ca = params.floats.get("color_a").copied().unwrap_or(1.0);
+
+        let upstream_hash = self.graph.borrow().content_hash(source);
+        let filter_hash = content_hash(&upstream_hash, "draw_text", &params.to_hash_bytes());
+
+        let node = v2::filters::draw::DrawTextNode::new(
+            source, info, font, text, x, y, size, [cr, cg, cb, ca],
+        );
+        let id = self.graph.borrow_mut().add_node_with_hash(Box::new(node), filter_hash);
         Ok(id)
     }
 
@@ -844,6 +837,18 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
         self.use_lmt(source, &data).map_err(to_wit_error)
     }
 
+    fn draw_text(
+        &self,
+        source: u32,
+        font: wit::FontBorrow<'_>,
+        params: Vec<u8>,
+    ) -> Result<u32, RasmcoreError> {
+        let font_res = font.get::<FontResource>();
+        let param_map = deserialize_params(&params);
+        self.draw_text(source, font_res.inner.clone(), &param_map)
+            .map_err(to_wit_error)
+    }
+
     fn set_demand_strategy(&self, _strategy: wit::DemandStrategy) {}
 
     fn set_gpu_available(&self, _available: bool) {}
@@ -867,11 +872,6 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
             wit::ColorSpace::Unknown => ColorSpace::Unknown,
         };
         self.set_working_color_space(domain_cs);
-    }
-
-    fn set_font(&self, font: wit::FontBorrow<'_>) {
-        let font_res = font.get::<FontResource>();
-        self.set_font(font_res.inner.clone());
     }
 
     fn set_proxy_scale(&self, scale: f32) {
