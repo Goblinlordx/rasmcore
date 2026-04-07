@@ -1,0 +1,141 @@
+id: validate-ml-upscale-poc_20260407003600Z
+title: "Validate ML upscale: native ONNX Runtime + browser WebNN/ORT prototypes"
+type: chore
+status: pending
+created: 2026-04-07
+updated: 2026-04-07
+spec:
+  summary: |
+    Two self-contained runnable prototypes proving Real-ESRGAN x4plus
+    inference works end-to-end. Native (Rust + onnxruntime crate) and
+    browser (HTML + ONNX Runtime Web + optional WebNN). Gate for all
+    ML pipeline integration work.
+  context: |
+    Before building ML into the pipeline (WIT interface, graph node, SDK
+    host), we need to prove the execution path works. This track produces
+    two standalone prototypes — one Rust binary, one HTML page — that
+    download, load, and run a real super-resolution model.
+
+    Models to test:
+    - Real-ESRGAN x4plus (~64MB, BSD-3, best perceptual quality, NCHW f32)
+    - ESPCN x4 (~100KB, from ONNX Model Zoo, real-time capable)
+
+    The prototypes validate:
+    - Model download and loading actually works
+    - Tensor format conversion (RGBA HWC f32 -> RGB NCHW f32) is correct
+    - Inference produces valid 4x upscaled output
+    - Timing is acceptable for interactive use
+    - WebNN works (when flag enabled) vs ORT WebGPU vs ORT WASM fallback
+    - Native auto-detects CoreML (macOS) / CUDA (NVIDIA) / CPU
+
+    This track has NO dependencies and blocks all ML implementation tracks.
+  codebase_analysis: |
+    Location for prototypes: examples/ml-upscale/ (new directory)
+    - examples/ml-upscale/native/ — Rust binary with Cargo.toml
+    - examples/ml-upscale/browser/ — HTML + JS, servable with any HTTP server
+
+    No existing ML code in the codebase to build on. The onnxruntime crate
+    (crates.io) provides Rust bindings. ONNX Runtime Web is loaded from CDN.
+
+    Model sources (pre-built ONNX, no conversion needed):
+    - Real-ESRGAN x4plus: HuggingFace xinntao or qualcomm namespace
+    - ESPCN x4: ONNX Model Zoo (onnx/models repo)
+
+    Input format for both: NCHW float32, RGB [0,1].
+    Output: NCHW float32, RGB [0,1], 4x spatial dimensions.
+    ESPCN caveat: ONNX Zoo version uses Y-channel only (luminance).
+    We should find or create an RGB variant, or handle YCbCr conversion.
+  acceptance_criteria:
+    - Native prototype runs on macOS (M4) and produces correct 4x PNG output
+    - Browser prototype runs in Chrome and displays 4x canvas output
+    - Both prototypes handle RGBA -> RGB NCHW tensor conversion correctly
+    - Real-ESRGAN x4plus produces visually plausible upscale (not garbage)
+    - Timing breakdown printed (download, model load, inference, postprocess)
+    - Browser reports which backend was used (WebNN GPU, ORT WebGPU, ORT WASM)
+    - Browser shows WebNN status (available/unavailable, flag hint)
+    - Each prototype is self-contained and runnable with 1-2 commands
+    - README with exact run instructions for both
+  out_of_scope: |
+    Pipeline integration. WIT changes. SDK changes. Tiled inference for
+    large images (prototype uses small test images). Model caching in
+    IndexedDB (prototype re-downloads each time for simplicity).
+  technical_notes: |
+    Native prototype (examples/ml-upscale/native/):
+      cargo run -- input.png output.png
+    - Cargo.toml with onnxruntime = "0.30" (or latest), image = "0.25"
+    - Downloads model to ~/.cache/rasmcore/models/ on first run
+    - Loads PNG, converts RGBA u8 -> RGB f32 NCHW [0,1]
+    - Creates ORT session, runs inference
+    - Converts output RGB f32 NCHW -> RGBA u8 HWC, saves PNG
+    - On macOS: auto-selects CoreML EP if available, else CPU
+    - On Linux/Windows: auto-selects CUDA if available, else CPU
+    - Prints timing for each step
+
+    Browser prototype (examples/ml-upscale/browser/):
+      npx serve examples/ml-upscale/browser/
+    - Single index.html with embedded JS (no build step)
+    - Loads ort from cdn.jsdelivr.net (onnxruntime-web)
+    - File picker for input image (or built-in 64x64 test image)
+    - Backend detection:
+      1. Check navigator.ml (WebNN) — report status, try if available
+      2. Try ORT WebGPU EP (ort.InferenceSession.create with webgpu)
+      3. Fallback: ORT WASM
+    - Canvas display of input and output side-by-side
+    - Status panel showing backend used, model size, inference time
+
+    Tensor conversion (shared logic, both prototypes):
+    - Input: RGBA [H, W, 4] float32, range [0, 1]
+    - Step 1: Drop alpha -> RGB [H, W, 3]
+    - Step 2: Transpose HWC -> CHW -> [1, 3, H, W] (NCHW with batch=1)
+    - Step 3: Run inference
+    - Step 4: Output [1, 3, H*4, W*4] -> transpose CHW -> HWC
+    - Step 5: Add alpha=1.0 -> RGBA [H*4, W*4, 4]
+
+    Model download URLs (to verify during implementation):
+    - Real-ESRGAN: https://huggingface.co/qualcomm/Real-ESRGAN-x4plus/resolve/main/Real-ESRGAN-x4plus.onnx
+      (or alternative: search HuggingFace for exact URL)
+    - ESPCN: https://github.com/onnx/models/raw/main/validated/vision/super_resolution/sub_pixel_cnn_2016/model/super-resolution-10.onnx
+plan:
+  - phase: Native Prototype
+    tasks:
+      - text: Create examples/ml-upscale/native/Cargo.toml with onnxruntime and image deps
+        done: false
+      - text: Implement model download to cache directory (~/.cache/rasmcore/models/)
+        done: false
+      - text: Implement PNG load and RGBA-to-RGB-NCHW tensor conversion
+        done: false
+      - text: Implement ORT session creation with CoreML/CUDA/CPU auto-detection
+        done: false
+      - text: Run Real-ESRGAN x4plus inference and save 4x output PNG
+        done: false
+      - text: Print timing breakdown (download, load, preprocess, inference, postprocess, total)
+        done: false
+      - text: Verify output is visually correct 4x upscale on a test image
+        done: false
+  - phase: Browser Prototype
+    tasks:
+      - text: Create examples/ml-upscale/browser/index.html with embedded JS (no build step)
+        done: false
+      - text: Implement backend detection (WebNN status, ORT WebGPU, ORT WASM fallback)
+        done: false
+      - text: Implement model fetch from HuggingFace CDN
+        done: false
+      - text: Implement canvas-based image input (file picker + built-in test image)
+        done: false
+      - text: Implement RGBA-to-RGB-NCHW tensor conversion in JS
+        done: false
+      - text: Run Real-ESRGAN inference via detected backend
+        done: false
+      - text: Display input and 4x output side-by-side with timing panel
+        done: false
+      - text: Test with WebNN flag enabled (report whether it works on macOS M4)
+        done: false
+  - phase: Documentation and Validation
+    tasks:
+      - text: README.md with exact run instructions for both prototypes
+        done: false
+      - text: Document findings (which backends work, timing, any issues)
+        done: false
+      - text: Confirm this validates the ML execution path for pipeline integration
+        done: false
+extra: {}
