@@ -65,13 +65,30 @@ spec:
 
     enum ml-padding-mode { mirror, zero, clamp }
 
-    // Model input requirements — host uses this to decide tiling strategy.
-    // If fixed-size is set, the host tiles the image into chunks of that size.
-    // Concurrency is NOT here — host decides based on hardware.
+    // Model input requirements — pipeline uses this for tiling strategy.
+    // tileMode distinguishes convolutional models (can tile) from global
+    // context models (need full image). Pipeline handles tiling; host
+    // just runs single-tile inference via ml-execute.
+    //
+    // Validated via Real-ESRGAN PoC (April 2026):
+    // - Qualcomm ONNX export: fixed 128x128 (tileable)
+    // - RMBG-1.4: full-image (1024x1024 resize)
+    // - MiDaS: full-image (384x384 resize)
+
+    enum ml-tile-mode {
+      tileable,    // convolutional — can be split, overlap blends seams
+      full-image,  // needs global context — resize to target-size, run once
+    }
+
     record ml-input-spec {
-      fixed-size: option<tuple<u32, u32>>,  // None = dynamic dims, Some = fixed tile size
-      overlap: u32,                          // pixels of overlap between tiles (for seam blending)
-      padding: ml-padding-mode,              // how to pad edge tiles
+      tile-mode: ml-tile-mode,
+      // For tileable: preferred tile size, minimum tile size
+      preferred-size: option<tuple<u32, u32>>,
+      min-size: option<tuple<u32, u32>>,
+      // For full-image: target resize dimensions
+      target-size: option<tuple<u32, u32>>,
+      overlap: u32,
+      padding: ml-padding-mode,
     }
 
     record ml-capability-info {
