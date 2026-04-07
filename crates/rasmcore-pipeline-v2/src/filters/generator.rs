@@ -458,6 +458,367 @@ fn fbm_cpu(x: f32, y: f32, octaves: u32, persistence: f32) -> f32 {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Solid Color
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Generate a solid color fill — useful as mask, background, or pipeline building block.
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "solid_color", category = "generator")]
+pub struct SolidColor {
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)] pub r: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)] pub g: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)] pub b: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)] pub a: f32,
+}
+
+const SOLID_COLOR_WGSL: &str = r#"
+struct Params { width: u32, height: u32, r: f32, g: f32, b: f32, a: f32, _p1: u32, _p2: u32, }
+@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
+@group(0) @binding(2) var<uniform> params: Params;
+@compute @workgroup_size(256, 1, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let idx = gid.x;
+  if (idx >= params.width * params.height) { return; }
+  output[idx] = vec4<f32>(params.r, params.g, params.b, params.a);
+}
+"#;
+
+impl Filter for SolidColor {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        let _ = input;
+        let n = (width * height) as usize;
+        let mut out = Vec::with_capacity(n * 4);
+        for _ in 0..n {
+            out.extend_from_slice(&[self.r, self.g, self.b, self.a]);
+        }
+        Ok(out)
+    }
+
+    fn gpu_shader_passes(&self, w: u32, h: u32) -> Option<Vec<GpuShader>> {
+        let mut p = gpu_params_wh(w, h);
+        gpu_push_f32(&mut p, self.r); gpu_push_f32(&mut p, self.g);
+        gpu_push_f32(&mut p, self.b); gpu_push_f32(&mut p, self.a);
+        gpu_push_u32(&mut p, 0); gpu_push_u32(&mut p, 0);
+        Some(vec![GpuShader::new(SOLID_COLOR_WGSL.to_string(), "main", [256, 1, 1], p)])
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Fractal Noise (fBm with lacunarity)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Generate fractal Brownian motion noise with lacunarity and persistence controls.
+/// More control than perlin_noise — lacunarity sets frequency multiplier per octave.
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "fractal_noise", category = "generator")]
+pub struct FractalNoise {
+    #[param(min = 1.0, max = 200.0, step = 1.0, default = 50.0)] pub scale: f32,
+    #[param(min = 1, max = 10, step = 1, default = 6)] pub octaves: u32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)] pub persistence: f32,
+    #[param(min = 1.0, max = 4.0, step = 0.1, default = 2.0)] pub lacunarity: f32,
+    #[param(min = 0, max = 99999, step = 1, default = 42, hint = "rc.seed")] pub seed: u32,
+}
+
+const FRACTAL_NOISE_WGSL: &str = r#"
+struct Params { width: u32, height: u32, scale: f32, octaves: u32, persistence: f32, lacunarity: f32, seed: u32, _pad: u32, }
+@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
+@group(0) @binding(2) var<uniform> params: Params;
+
+fn hash2(p: vec2<f32>) -> f32 {
+  let k = vec2<f32>(0.3183099, 0.3678794);
+  let pp = p * k + k.yx;
+  return fract(16.0 * k.x * fract(pp.x * pp.y * (pp.x + pp.y)));
+}
+
+fn noise2(p: vec2<f32>) -> f32 {
+  let i = floor(p); let f = fract(p);
+  let u = f * f * (3.0 - 2.0 * f);
+  return mix(
+    mix(hash2(i + vec2<f32>(0.0, 0.0)), hash2(i + vec2<f32>(1.0, 0.0)), u.x),
+    mix(hash2(i + vec2<f32>(0.0, 1.0)), hash2(i + vec2<f32>(1.0, 1.0)), u.x),
+    u.y
+  );
+}
+
+@compute @workgroup_size(256, 1, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let idx = gid.x;
+  if (idx >= params.width * params.height) { return; }
+  let x = f32(idx % params.width); let y = f32(idx / params.width);
+  let base = vec2<f32>(x, y) / params.scale + vec2<f32>(f32(params.seed) * 0.1, f32(params.seed) * 0.07);
+  var value = 0.0; var amplitude = 1.0; var frequency = 1.0; var total_amp = 0.0;
+  for (var i = 0u; i < params.octaves; i++) {
+    value += noise2(base * frequency) * amplitude;
+    total_amp += amplitude;
+    amplitude *= params.persistence;
+    frequency *= params.lacunarity;
+  }
+  let v = value / total_amp;
+  output[idx] = vec4<f32>(v, v, v, 1.0);
+}
+"#;
+
+impl Filter for FractalNoise {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        let _ = input;
+        let mut out = vec![0.0f32; (width * height * 4) as usize];
+        let sx = self.seed as f32 * 0.1;
+        let sy = self.seed as f32 * 0.07;
+        for y in 0..height {
+            for x in 0..width {
+                let px = x as f32 / self.scale + sx;
+                let py = y as f32 / self.scale + sy;
+                let v = fbm_lacunarity_cpu(px, py, self.octaves, self.persistence, self.lacunarity);
+                let i = ((y * width + x) * 4) as usize;
+                out[i] = v; out[i+1] = v; out[i+2] = v; out[i+3] = 1.0;
+            }
+        }
+        Ok(out)
+    }
+
+    fn gpu_shader_passes(&self, w: u32, h: u32) -> Option<Vec<GpuShader>> {
+        let mut p = gpu_params_wh(w, h);
+        gpu_push_f32(&mut p, self.scale);
+        gpu_push_u32(&mut p, self.octaves);
+        gpu_push_f32(&mut p, self.persistence);
+        gpu_push_f32(&mut p, self.lacunarity);
+        gpu_push_u32(&mut p, self.seed);
+        gpu_push_u32(&mut p, 0);
+        Some(vec![GpuShader::new(FRACTAL_NOISE_WGSL.to_string(), "main", [256, 1, 1], p)])
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Cloud Noise (Worley + value noise blend)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Generate cloud-like noise by blending Worley (cellular) noise with value noise.
+/// The worley_blend parameter controls the mix: 0 = pure value, 1 = pure Worley.
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "cloud_noise", category = "generator")]
+pub struct CloudNoise {
+    #[param(min = 1.0, max = 200.0, step = 1.0, default = 60.0)] pub scale: f32,
+    #[param(min = 1, max = 8, step = 1, default = 5)] pub octaves: u32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)] pub persistence: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.4)] pub worley_blend: f32,
+    #[param(min = 0, max = 99999, step = 1, default = 42, hint = "rc.seed")] pub seed: u32,
+}
+
+const CLOUD_NOISE_WGSL: &str = r#"
+struct Params { width: u32, height: u32, scale: f32, octaves: u32, persistence: f32, worley_blend: f32, seed: u32, _pad: u32, }
+@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
+@group(0) @binding(2) var<uniform> params: Params;
+
+fn hash2(p: vec2<f32>) -> f32 {
+  let k = vec2<f32>(0.3183099, 0.3678794);
+  let pp = p * k + k.yx;
+  return fract(16.0 * k.x * fract(pp.x * pp.y * (pp.x + pp.y)));
+}
+
+fn hash2v(p: vec2<f32>) -> vec2<f32> {
+  return vec2<f32>(hash2(p), hash2(p + vec2<f32>(127.1, 311.7)));
+}
+
+fn noise2(p: vec2<f32>) -> f32 {
+  let i = floor(p); let f = fract(p);
+  let u = f * f * (3.0 - 2.0 * f);
+  return mix(
+    mix(hash2(i), hash2(i + vec2<f32>(1.0, 0.0)), u.x),
+    mix(hash2(i + vec2<f32>(0.0, 1.0)), hash2(i + vec2<f32>(1.0, 1.0)), u.x),
+    u.y
+  );
+}
+
+fn worley(p: vec2<f32>) -> f32 {
+  let i = floor(p); let f = fract(p);
+  var min_dist = 1.0;
+  for (var dy = -1; dy <= 1; dy++) {
+    for (var dx = -1; dx <= 1; dx++) {
+      let neighbor = vec2<f32>(f32(dx), f32(dy));
+      let point = hash2v(i + neighbor);
+      let diff = neighbor + point - f;
+      min_dist = min(min_dist, length(diff));
+    }
+  }
+  return min_dist;
+}
+
+@compute @workgroup_size(256, 1, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let idx = gid.x;
+  if (idx >= params.width * params.height) { return; }
+  let x = f32(idx % params.width); let y = f32(idx / params.width);
+  let base = vec2<f32>(x, y) / params.scale + vec2<f32>(f32(params.seed) * 0.1, f32(params.seed) * 0.07);
+
+  var val = 0.0; var wor = 0.0;
+  var amp = 1.0; var freq = 1.0; var total = 0.0;
+  for (var i = 0u; i < params.octaves; i++) {
+    val += noise2(base * freq) * amp;
+    wor += (1.0 - worley(base * freq)) * amp;
+    total += amp;
+    amp *= params.persistence;
+    freq *= 2.0;
+  }
+  val /= total; wor /= total;
+  let v = mix(val, wor, params.worley_blend);
+  output[idx] = vec4<f32>(v, v, v, 1.0);
+}
+"#;
+
+impl Filter for CloudNoise {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        let _ = input;
+        let mut out = vec![0.0f32; (width * height * 4) as usize];
+        let sx = self.seed as f32 * 0.1;
+        let sy = self.seed as f32 * 0.07;
+        for y in 0..height {
+            for x in 0..width {
+                let px = x as f32 / self.scale + sx;
+                let py = y as f32 / self.scale + sy;
+                let val = fbm_cpu(px, py, self.octaves, self.persistence);
+                let wor = worley_fbm_cpu(px, py, self.octaves, self.persistence);
+                let v = val * (1.0 - self.worley_blend) + wor * self.worley_blend;
+                let i = ((y * width + x) * 4) as usize;
+                out[i] = v; out[i+1] = v; out[i+2] = v; out[i+3] = 1.0;
+            }
+        }
+        Ok(out)
+    }
+
+    fn gpu_shader_passes(&self, w: u32, h: u32) -> Option<Vec<GpuShader>> {
+        let mut p = gpu_params_wh(w, h);
+        gpu_push_f32(&mut p, self.scale);
+        gpu_push_u32(&mut p, self.octaves);
+        gpu_push_f32(&mut p, self.persistence);
+        gpu_push_f32(&mut p, self.worley_blend);
+        gpu_push_u32(&mut p, self.seed);
+        gpu_push_u32(&mut p, 0);
+        Some(vec![GpuShader::new(CLOUD_NOISE_WGSL.to_string(), "main", [256, 1, 1], p)])
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Pattern Fill (tile a repeating pattern)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Tile the input image as a repeating pattern. Useful for creating seamless backgrounds.
+/// tile_w/tile_h control the pattern repeat period in pixels.
+#[derive(Clone, rasmcore_macros::V2Filter)]
+#[filter(name = "pattern_fill", category = "generator")]
+pub struct PatternFill {
+    #[param(min = 4.0, max = 512.0, step = 1.0, default = 64.0)] pub tile_w: f32,
+    #[param(min = 4.0, max = 512.0, step = 1.0, default = 64.0)] pub tile_h: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)] pub offset_x: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)] pub offset_y: f32,
+}
+
+const PATTERN_FILL_WGSL: &str = r#"
+struct Params { width: u32, height: u32, tile_w: f32, tile_h: f32, offset_x: f32, offset_y: f32, _p1: u32, _p2: u32, }
+@group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
+@group(0) @binding(2) var<uniform> params: Params;
+@compute @workgroup_size(256, 1, 1)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let idx = gid.x;
+  let total = params.width * params.height;
+  if (idx >= total) { return; }
+  let x = f32(idx % params.width);
+  let y = f32(idx / params.width);
+  let ox = params.offset_x * params.tile_w;
+  let oy = params.offset_y * params.tile_h;
+  let src_x = u32(((x + ox) % params.tile_w + params.tile_w) % params.tile_w) % params.width;
+  let src_y = u32(((y + oy) % params.tile_h + params.tile_h) % params.tile_h) % params.height;
+  let src_idx = src_y * params.width + src_x;
+  output[idx] = input[src_idx];
+}
+"#;
+
+impl Filter for PatternFill {
+    fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
+        let tw = self.tile_w;
+        let th = self.tile_h;
+        let ox = self.offset_x * tw;
+        let oy = self.offset_y * th;
+        let mut out = vec![0.0f32; (width * height * 4) as usize];
+        for y in 0..height {
+            for x in 0..width {
+                let sx = ((x as f32 + ox) % tw + tw) % tw;
+                let sy = ((y as f32 + oy) % th + th) % th;
+                let src_x = (sx as u32).min(width - 1);
+                let src_y = (sy as u32).min(height - 1);
+                let src_i = ((src_y * width + src_x) * 4) as usize;
+                let dst_i = ((y * width + x) * 4) as usize;
+                out[dst_i..dst_i + 4].copy_from_slice(&input[src_i..src_i + 4]);
+            }
+        }
+        Ok(out)
+    }
+
+    fn gpu_shader_passes(&self, w: u32, h: u32) -> Option<Vec<GpuShader>> {
+        let mut p = gpu_params_wh(w, h);
+        gpu_push_f32(&mut p, self.tile_w); gpu_push_f32(&mut p, self.tile_h);
+        gpu_push_f32(&mut p, self.offset_x); gpu_push_f32(&mut p, self.offset_y);
+        gpu_push_u32(&mut p, 0); gpu_push_u32(&mut p, 0);
+        Some(vec![GpuShader::new(PATTERN_FILL_WGSL.to_string(), "main", [256, 1, 1], p)])
+    }
+}
+
+// ─── CPU noise helpers (Worley + lacunarity) ──────────────────────────────
+
+fn hash2v_cpu(x: f32, y: f32) -> (f32, f32) {
+    (hash2_cpu(x, y), hash2_cpu(x + 127.1, y + 311.7))
+}
+
+fn worley_cpu(px: f32, py: f32) -> f32 {
+    let ix = px.floor();
+    let iy = py.floor();
+    let fx = px - ix;
+    let fy = py - iy;
+    let mut min_dist = 1.0f32;
+    for dy in -1..=1 {
+        for dx in -1..=1 {
+            let (hx, hy) = hash2v_cpu(ix + dx as f32, iy + dy as f32);
+            let diff_x = dx as f32 + hx - fx;
+            let diff_y = dy as f32 + hy - fy;
+            let d = (diff_x * diff_x + diff_y * diff_y).sqrt();
+            min_dist = min_dist.min(d);
+        }
+    }
+    min_dist
+}
+
+fn worley_fbm_cpu(x: f32, y: f32, octaves: u32, persistence: f32) -> f32 {
+    let mut value = 0.0f32;
+    let mut amplitude = 1.0f32;
+    let mut frequency = 1.0f32;
+    let mut total = 0.0f32;
+    for _ in 0..octaves {
+        value += (1.0 - worley_cpu(x * frequency, y * frequency)) * amplitude;
+        total += amplitude;
+        amplitude *= persistence;
+        frequency *= 2.0;
+    }
+    value / total
+}
+
+fn fbm_lacunarity_cpu(x: f32, y: f32, octaves: u32, persistence: f32, lacunarity: f32) -> f32 {
+    let mut value = 0.0f32;
+    let mut amplitude = 1.0f32;
+    let mut frequency = 1.0f32;
+    let mut total = 0.0f32;
+    for _ in 0..octaves {
+        value += noise2_cpu(x * frequency, y * frequency) * amplitude;
+        total += amplitude;
+        amplitude *= persistence;
+        frequency *= lacunarity;
+    }
+    value / total
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -469,7 +830,8 @@ mod tests {
     fn all_generator_filters_registered() {
         let factories = crate::registered_filter_factories();
         for name in &["checkerboard", "gradient_linear", "gradient_radial",
-                       "perlin_noise", "simplex_noise", "plasma"] {
+                       "perlin_noise", "simplex_noise", "plasma",
+                       "solid_color", "fractal_noise", "cloud_noise", "pattern_fill"] {
             assert!(factories.contains(name), "{name} not registered");
         }
     }
@@ -494,8 +856,77 @@ mod tests {
         let input = vec![0.0f32; 32 * 32 * 4];
         let f = Plasma { scale: 10.0, time: 0.0 };
         let out = f.compute(&input, 32, 32).unwrap();
-        // Should produce non-zero color values
         let has_color = out.chunks(4).any(|px| px[0] > 0.01 || px[1] > 0.01 || px[2] > 0.01);
         assert!(has_color, "plasma should produce visible color");
+    }
+
+    #[test]
+    fn solid_color_fills_constant() {
+        let input = vec![0.0f32; 8 * 8 * 4];
+        let f = SolidColor { r: 0.3, g: 0.6, b: 0.9, a: 1.0 };
+        let out = f.compute(&input, 8, 8).unwrap();
+        // Every pixel should be the same
+        for px in out.chunks(4) {
+            assert!((px[0] - 0.3).abs() < 1e-6);
+            assert!((px[1] - 0.6).abs() < 1e-6);
+            assert!((px[2] - 0.9).abs() < 1e-6);
+            assert!((px[3] - 1.0).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn fractal_noise_deterministic() {
+        let input = vec![0.0f32; 32 * 32 * 4];
+        let f = FractalNoise { scale: 20.0, octaves: 4, persistence: 0.5, lacunarity: 2.0, seed: 42 };
+        let out1 = f.compute(&input, 32, 32).unwrap();
+        let out2 = f.compute(&input, 32, 32).unwrap();
+        assert_eq!(out1, out2, "same params should produce identical output");
+    }
+
+    #[test]
+    fn fractal_noise_lacunarity_differs_from_perlin() {
+        let input = vec![0.0f32; 16 * 16 * 4];
+        let frac = FractalNoise { scale: 20.0, octaves: 4, persistence: 0.5, lacunarity: 3.0, seed: 42 };
+        let perl = PerlinNoise { scale: 20.0, octaves: 4, persistence: 0.5, seed: 42 };
+        let out_frac = frac.compute(&input, 16, 16).unwrap();
+        let out_perl = perl.compute(&input, 16, 16).unwrap();
+        // With lacunarity=3 vs implicit 2, results should differ
+        assert_ne!(out_frac, out_perl);
+    }
+
+    #[test]
+    fn cloud_noise_produces_visible_output() {
+        let input = vec![0.0f32; 32 * 32 * 4];
+        let f = CloudNoise { scale: 20.0, octaves: 3, persistence: 0.5, worley_blend: 0.4, seed: 7 };
+        let out = f.compute(&input, 32, 32).unwrap();
+        let has_visible = out.chunks(4).any(|px| px[0] > 0.01);
+        assert!(has_visible, "cloud noise should produce visible output");
+    }
+
+    #[test]
+    fn cloud_noise_deterministic() {
+        let input = vec![0.0f32; 16 * 16 * 4];
+        let f = CloudNoise { scale: 20.0, octaves: 3, persistence: 0.5, worley_blend: 0.4, seed: 7 };
+        let out1 = f.compute(&input, 16, 16).unwrap();
+        let out2 = f.compute(&input, 16, 16).unwrap();
+        assert_eq!(out1, out2);
+    }
+
+    #[test]
+    fn pattern_fill_tiles_input() {
+        // Create a 4x4 image with known values, tile at 2x2
+        let mut input = vec![0.0f32; 4 * 4 * 4];
+        // Set pixel (0,0) to red
+        input[0] = 1.0; input[3] = 1.0;
+        // Set pixel (1,0) to green
+        input[4+1] = 1.0; input[4+3] = 1.0;
+        let f = PatternFill { tile_w: 2.0, tile_h: 2.0, offset_x: 0.0, offset_y: 0.0 };
+        let out = f.compute(&input, 4, 4).unwrap();
+        // (2,0) should match (0,0) = red
+        let i = (0 * 4 + 2) * 4;
+        assert!((out[i] - 1.0).abs() < 1e-6, "tiled pixel should be red");
+        // (3,0) should match (1,0) = green
+        let j = (0 * 4 + 3) * 4;
+        assert!((out[j+1] - 1.0).abs() < 1e-6, "tiled pixel should be green");
     }
 }
