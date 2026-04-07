@@ -28,6 +28,17 @@ pub enum OperationKind {
 
 // ─── Parameter Descriptors ────────────────────────────────────────────────────
 
+/// Typed resource reference in a param map.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TypedRef {
+    /// Reference to another graph node.
+    Node(u32),
+    /// Reference to a registered Font resource.
+    Font(u32),
+    /// Reference to a registered LUT resource.
+    Lut(u32),
+}
+
 /// Type of a parameter value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParamType {
@@ -40,6 +51,12 @@ pub enum ParamType {
     String,
     /// Rectangle (x, y, width, height).
     Rect,
+    /// Reference to another graph node.
+    NodeRef,
+    /// Reference to a registered Font resource.
+    FontRef,
+    /// Reference to a registered LUT resource.
+    LutRef,
 }
 
 /// Description of a single parameter on an operation.

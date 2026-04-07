@@ -12,6 +12,9 @@ fn param_type_str(t: v2::ParamType) -> &'static str {
         v2::ParamType::U32 => "u32", v2::ParamType::I32 => "i32",
         v2::ParamType::Bool => "bool", v2::ParamType::String => "string",
         v2::ParamType::Rect => "rect",
+        v2::ParamType::NodeRef => "node_ref",
+        v2::ParamType::FontRef => "font_ref",
+        v2::ParamType::LutRef => "lut_ref",
     }
 }
 

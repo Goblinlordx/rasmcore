@@ -734,6 +734,7 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
                             v2::ParamType::Bool => wit::ParamType::BoolVal,
                             v2::ParamType::String => wit::ParamType::StringVal,
                             v2::ParamType::Rect => wit::ParamType::RectVal,
+                            v2::ParamType::NodeRef | v2::ParamType::FontRef | v2::ParamType::LutRef => wit::ParamType::U32Val,
                         },
                         min: p.min,
                         max: p.max,

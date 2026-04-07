@@ -59,6 +59,10 @@ fn serialize_params_binary(params: &[v2::ParamDescriptor]) -> Vec<u8> {
                 buf.push(if v > 0.5 { 1 } else { 0 });
             }
             ParamType::String | ParamType::Rect => {}
+            ParamType::NodeRef | ParamType::FontRef | ParamType::LutRef => {
+                buf.push(3); // ref types use u32 payload
+                buf.extend_from_slice(&(v as u32).to_le_bytes());
+            }
         }
     }
     buf

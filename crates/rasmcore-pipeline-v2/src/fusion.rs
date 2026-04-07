@@ -734,6 +734,30 @@ impl Node for FusedClutNode {
         Ok(self.clut.apply(&input))
     }
 
+    fn gpu_shader(&self, width: u32, height: u32) -> Option<GpuShader> {
+        let mut params = Vec::with_capacity(16);
+        params.extend_from_slice(&width.to_le_bytes());
+        params.extend_from_slice(&height.to_le_bytes());
+        params.extend_from_slice(&self.clut.grid_size.to_le_bytes());
+        params.extend_from_slice(&0u32.to_le_bytes()); // padding
+
+        // Pass 3D LUT grid as extra read-only storage buffer
+        let lut_bytes: Vec<u8> = self.clut.data.iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+
+        Some(GpuShader {
+            body: crate::filter_node::compose_shader(include_str!("shaders/clut3d.wgsl")),
+            entry_point: "main",
+            workgroup_size: [16, 16, 1],
+            params,
+            extra_buffers: vec![lut_bytes],
+            reduction_buffers: vec![],
+            convergence_check: None,
+            loop_dispatch: None,
+        })
+    }
+
     fn upstream_ids(&self) -> Vec<u32> {
         vec![self.upstream]
     }
@@ -741,7 +765,7 @@ impl Node for FusedClutNode {
     fn capabilities(&self) -> NodeCapabilities {
         NodeCapabilities {
             clut: true,
-            gpu: true, // TODO: GPU CLUT shader
+            gpu: true,
             ..Default::default()
         }
     }
