@@ -934,19 +934,36 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
 
     fn apply_ml(
         &self,
-        _source: u32,
-        _model_name: String,
-        _params: Vec<u8>,
+        source: u32,
+        model_name: String,
+        params: Vec<u8>,
     ) -> Result<u32, RasmcoreError> {
-        // Stub — ML node implementation is in the ml-graph-node track.
-        // Returns not-available until the host provides an ML runtime.
-        Err(RasmcoreError::NotImplemented)
+        use rasmcore_pipeline_v2::ml_node::*;
+
+        let info = self.graph.borrow().node_info(source).map_err(to_wit_error)?;
+
+        // TODO: Query host ml-capabilities to get model info for tiling/output.
+        // For now, create a basic MlNode with defaults.
+        // The actual ml-execute callback will be wired in the ml-sdk-host track.
+        let node = MlNode::new(
+            source,
+            info,
+            model_name,
+            "1.0".to_string(),
+            params,
+            MlInputSpec::Dynamic,
+            MlOutputKind::Image,
+            1, // no upscale by default
+            TensorLayout::Nchw,
+            TensorDtype::Float32,
+        );
+        let id = self.graph.borrow_mut().add_node(Box::new(node));
+        Ok(id)
     }
 
     fn list_ml_models(&self) -> Vec<wit::MlModelInfo> {
-        // Stub — returns empty list until host provides ML runtime.
-        // The host's ml-capabilities() would be called here to discover
-        // available models and translate to MlModelInfo records.
+        // TODO: Call host ml-capabilities() when available and translate
+        // to MlModelInfo records. For now returns empty.
         Vec::new()
     }
 }
