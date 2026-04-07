@@ -12,3 +12,4 @@ pub mod scan;
 pub mod spatial;
 pub mod grading;
 pub mod vignette;
+pub mod brush;
