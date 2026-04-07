@@ -24,40 +24,40 @@ spec:
   out_of_scope: Undo. Presets. Advanced compositing modes beyond standard blend. Wet paint mixing.
   technical_notes: ''
 plan:
-  - phase: Shader Foundation
-    tasks:
-      - text: Create gpu_shaders/brush.rs with DabInstance struct layout for GPU uniform
-        done: false
-      - text: Write WGSL stamp shader - per-pixel iterates over dab instances, samples tip texture, composites
-        done: false
-      - text: Support parametric circle tip in shader (hardness-based falloff, no texture needed)
-        done: false
-  - phase: Accumulation Buffer
-    tasks:
-      - text: Extend GpuShader/BufferPool to support persistent accumulation buffer across dispatches
-        done: false
-      - text: Implement incremental dispatch - track last_rendered_dab_index, only process new dabs
-        done: false
-      - text: Write WGSL composite shader - blend accumulation buffer onto layer with blend mode
-        done: false
-  - phase: Texture Tips
-    tasks:
-      - text: Support custom brush tip texture via extra_buffers (grayscale f32, bilinear sampled)
-        done: false
-      - text: Per-dab rotation of tip texture using 2D rotation matrix in shader
-        done: false
-  - phase: Integration
-    tasks:
-      - text: Wire GpuFilter impl for StrokeNode - serialize dab instances to extra_buffers
-        done: false
-      - text: Multi-pass dispatch - pass 1 stamp dabs, pass 2 composite onto layer
-        done: false
-  - phase: Verification
-    tasks:
-      - text: GPU output matches CPU reference engine within tolerance for same stroke
-        done: false
-      - text: Incremental rendering produces same result as full re-render
-        done: false
-      - text: Custom texture tip renders correctly with rotation
-        done: false
+- phase: Shader Foundation
+  tasks:
+  - text: Create gpu_shaders/brush.rs with DabInstance struct layout for GPU uniform
+    done: true
+  - text: Write WGSL stamp shader - per-pixel iterates over dab instances, samples tip texture, composites
+    done: true
+  - text: Support parametric circle tip in shader (hardness-based falloff, no texture needed)
+    done: true
+- phase: Accumulation Buffer
+  tasks:
+  - text: Extend GpuShader/BufferPool to support persistent accumulation buffer across dispatches
+    done: true
+  - text: Implement incremental dispatch - track last_rendered_dab_index, only process new dabs
+    done: true
+  - text: Write WGSL composite shader - blend accumulation buffer onto layer with blend mode
+    done: true
+- phase: Texture Tips
+  tasks:
+  - text: Support custom brush tip texture via extra_buffers (grayscale f32, bilinear sampled)
+    done: true
+  - text: Per-dab rotation of tip texture using 2D rotation matrix in shader
+    done: true
+- phase: Integration
+  tasks:
+  - text: Wire GpuFilter impl for StrokeNode - serialize dab instances to extra_buffers
+    done: true
+  - text: Multi-pass dispatch - pass 1 stamp dabs, pass 2 composite onto layer
+    done: true
+- phase: Verification
+  tasks:
+  - text: GPU output matches CPU reference engine within tolerance for same stroke
+    done: true
+  - text: Incremental rendering produces same result as full re-render
+    done: true
+  - text: Custom texture tip renders correctly with rotation
+    done: true
 extra: {}
