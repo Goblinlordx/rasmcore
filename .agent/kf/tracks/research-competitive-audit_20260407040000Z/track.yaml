@@ -1,0 +1,82 @@
+id: research-competitive-audit_20260407040000Z
+title: "Research: competitive feature audit vs Lightroom, Photoshop, DaVinci Resolve, Nuke"
+type: research
+status: pending
+created: '2026-04-07'
+updated: '2026-04-07'
+spec:
+  summary: |
+    Systematic feature-by-feature comparison of rasmcore against Adobe Lightroom,
+    Adobe Photoshop, DaVinci Resolve, The Foundry Nuke, and Affinity Photo.
+    Identifies gaps, parity achievements, and areas where rasmcore exceeds competitors.
+    Produces a structured gap report with prioritized recommendations.
+  context: |
+    rasmcore has reached 679 completed tracks covering 140+ filters, GPU pipeline,
+    WASM portability, color management, brush engine, text rendering, ML integration,
+    and analysis protocols. Time for a rigorous competitive assessment to identify
+    what's missing for professional parity and where to focus next.
+  acceptance_criteria:
+    - Feature matrix covering all products across all categories
+    - Gap analysis identifying missing features per competitor
+    - Priority ranking of gaps (P0 critical, P1 important, P2 nice-to-have)
+    - Architectural assessment of what gaps require new infrastructure vs filter additions
+    - Recommendations for next development phase
+  out_of_scope: |
+    Implementation of identified gaps (separate tracks).
+    Performance benchmarking (separate effort).
+    UI/UX comparison (rasmcore is an engine, not an app).
+  technical_notes: |
+    Assessment categories should cover:
+    - Adjustment/correction (levels, curves, exposure, WB, HSL, tone mapping)
+    - Color grading (CDL, LGG, color wheels, LUT support, ACES pipeline)
+    - Spatial filters (blur, sharpen, denoise, detail enhancement)
+    - Transform/geometry (crop, resize, perspective, lens correction, warp)
+    - Compositing (blend modes, masking, alpha, keying)
+    - Retouching (clone, heal, frequency separation, content-aware)
+    - Drawing/paint (brush engine, shapes, text, patterns)
+    - Analysis (histogram, scopes, focus peaking, zebra)
+    - I/O (codec support, metadata, batch, RAW)
+    - Color management (ICC, ACES, OCIO, working spaces)
+    - GPU/performance (real-time preview, tiling, caching)
+    - Automation (scripting, actions, presets, batch)
+    - ML/AI (upscaling, denoise, segmentation, style transfer)
+plan:
+  - phase: "Catalog existing rasmcore capabilities"
+    tasks:
+      - text: "Enumerate all registered filters, codecs, and operations from the codebase"
+        done: false
+      - text: "Map each to its professional equivalent (PS filter name, LR slider, etc.)"
+        done: false
+      - text: "Note GPU status, quality level, and any known limitations per operation"
+        done: false
+  - phase: "Competitor feature inventories"
+    tasks:
+      - text: "Adobe Photoshop — full filter/adjustment/tool inventory"
+        done: false
+      - text: "Adobe Lightroom — develop module slider and tool inventory"
+        done: false
+      - text: "DaVinci Resolve — color page node types and tools"
+        done: false
+      - text: "The Foundry Nuke — node categories and key operations"
+        done: false
+      - text: "Affinity Photo — filter and adjustment inventory"
+        done: false
+  - phase: "Gap analysis and prioritization"
+    tasks:
+      - text: "Build feature matrix (rasmcore vs each competitor per category)"
+        done: false
+      - text: "Identify P0 gaps (blockers for professional adoption)"
+        done: false
+      - text: "Identify P1 gaps (important for competitive parity)"
+        done: false
+      - text: "Identify P2 gaps (differentiation opportunities)"
+        done: false
+      - text: "Assess infrastructure requirements for each gap"
+        done: false
+  - phase: "Recommendations"
+    tasks:
+      - text: "Prioritized roadmap recommendations for next development phase"
+        done: false
+      - text: "Write final report to .agent/kf/tracks/{trackId}/competitive-audit.md"
+        done: false
+extra: {}
