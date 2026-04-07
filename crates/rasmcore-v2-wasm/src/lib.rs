@@ -38,6 +38,46 @@ use rasmcore_pipeline_v2::{
 use rasmcore_pipeline_v2::ColorSpace;
 use rasmcore_pipeline_v2::gpu_shaders::pixel_source::{self, HostPixelFormat};
 
+// ─── Instance-Level Resource Registry ────────────────────────────────────────
+
+thread_local! {
+    static RESOURCE_FONTS: RefCell<std::collections::HashMap<u32, std::rc::Rc<v2::font::Font>>> = RefCell::new(std::collections::HashMap::new());
+    static RESOURCE_LUTS: RefCell<std::collections::HashMap<u32, v2::lmt::Lmt>> = RefCell::new(std::collections::HashMap::new());
+    static NEXT_RESOURCE_ID: std::cell::Cell<u32> = const { std::cell::Cell::new(1) };
+}
+
+fn instance_register_font(data: &[u8]) -> Result<u32, PipelineError> {
+    let font = v2::font::Font::from_bytes(data)
+        .map_err(|e| PipelineError::ComputeError(e))?;
+    let id = NEXT_RESOURCE_ID.with(|c| { let id = c.get(); c.set(id + 1); id });
+    RESOURCE_FONTS.with(|m| m.borrow_mut().insert(id, std::rc::Rc::new(font)));
+    Ok(id)
+}
+
+fn instance_register_lut(data: &[u8]) -> Result<u32, PipelineError> {
+    let text = std::str::from_utf8(data).map_err(|_|
+        PipelineError::InvalidParams("LUT data is not valid UTF-8".into())
+    )?;
+    let lmt = if text.contains("LUT_3D_SIZE") || text.contains("LUT_1D_SIZE") {
+        v2::parse_cube(text)?
+    } else if text.trim_start().starts_with("<?xml") || text.contains("<ProcessList") || text.contains("<CLF") {
+        v2::lmt::parse_clf(text)?
+    } else {
+        return Err(PipelineError::InvalidParams("unsupported LUT format".into()));
+    };
+    let id = NEXT_RESOURCE_ID.with(|c| { let id = c.get(); c.set(id + 1); id });
+    RESOURCE_LUTS.with(|m| m.borrow_mut().insert(id, lmt));
+    Ok(id)
+}
+
+fn instance_get_font(id: u32) -> Option<std::rc::Rc<v2::font::Font>> {
+    RESOURCE_FONTS.with(|m| m.borrow().get(&id).cloned())
+}
+
+fn instance_get_lut(id: u32) -> Option<v2::lmt::Lmt> {
+    RESOURCE_LUTS.with(|m| m.borrow().get(&id).cloned())
+}
+
 // ─── Error conversion ───────────────────────────────────────────────────────
 
 #[cfg(target_arch = "wasm32")]
@@ -659,18 +699,9 @@ impl LayerCacheResource {
 }
 
 /// WASM-exported font resource.
-pub struct FontResource {
-    #[allow(dead_code)]
-    pub(crate) inner: std::rc::Rc<v2::font::Font>,
-}
 
-impl FontResource {
-    pub fn new(data: &[u8]) -> Result<Self, PipelineError> {
-        let font = v2::font::Font::from_bytes(data)
-            .map_err(|e| PipelineError::ComputeError(e))?;
-        Ok(Self { inner: std::rc::Rc::new(font) })
-    }
-}
+
+
 
 /// Placeholder stroke node — passes through source unchanged.
 ///
@@ -741,8 +772,15 @@ impl wit::Guest for Component {
     type ImagePipelineV2 = PipelineResource;
     type LayerCache = LayerCacheResource;
     type Source = SourceResource;
-    type Font = FontResource;
     type StrokeInput = StrokeInputResource;
+
+    fn register_font(data: Vec<u8>) -> Result<u32, RasmcoreError> {
+        instance_register_font(&data).map_err(to_wit_error)
+    }
+
+    fn register_lut(data: Vec<u8>) -> Result<u32, RasmcoreError> {
+        instance_register_lut(&data).map_err(to_wit_error)
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -797,24 +835,6 @@ impl wit::GuestSource for SourceResource {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
-impl wit::GuestFont for FontResource {
-    fn new(data: Vec<u8>) -> Self {
-        FontResource::new(&data).unwrap_or_else(|e| {
-            panic!("Font parse failed: {e}");
-        })
-    }
-
-    fn info(&self) -> wit::FontInfo {
-        let i = self.inner.info();
-        wit::FontInfo {
-            units_per_em: i.units_per_em,
-            ascender: i.ascender,
-            descender: i.descender,
-            num_glyphs: i.num_glyphs,
-        }
-    }
-}
 
 #[cfg(target_arch = "wasm32")]
 impl wit::GuestStrokeInput for StrokeInputResource {
@@ -1029,16 +1049,35 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
         self.use_lmt(source, &data).map_err(to_wit_error)
     }
 
-    fn draw_text(
-        &self,
-        source: u32,
-        font: wit::FontBorrow<'_>,
-        params: Vec<u8>,
-    ) -> Result<u32, RasmcoreError> {
-        let font_res = font.get::<FontResource>();
-        let param_map = deserialize_params(&params);
-        self.draw_text(source, font_res.inner.clone(), &param_map)
-            .map_err(to_wit_error)
+
+
+    fn list_brush_presets(&self) -> Vec<wit::BrushPresetInfo> {
+        v2::brush::registered_presets().into_iter().map(|p| wit::BrushPresetInfo {
+            name: p.name.to_string(),
+            display_name: p.display_name.to_string(),
+            category: p.category.to_string(),
+            description: p.description.to_string(),
+        }).collect()
+    }
+
+    fn get_brush_preset(&self, name: String) -> Option<wit::BrushParams> {
+        v2::brush::find_preset(&name).map(|p| wit::BrushParams {
+            diameter: p.params.diameter,
+            spacing: p.params.spacing,
+            hardness: p.params.hardness,
+            flow: p.params.flow,
+            opacity: p.params.opacity,
+            angle: p.params.angle,
+            roundness: p.params.roundness,
+            scatter: p.params.scatter,
+            smoothing: p.params.smoothing,
+            dynamics: wit::DynamicsCurves {
+                pressure_size: convert_curve(&p.params.dynamics.pressure_size),
+                pressure_opacity: convert_curve(&p.params.dynamics.pressure_opacity),
+                velocity_size: convert_curve(&p.params.dynamics.velocity_size),
+                tilt_angle: convert_curve(&p.params.dynamics.tilt_angle),
+            },
+        })
     }
 
     fn apply_stroke(

@@ -220,24 +220,16 @@ interface pipeline-v2 {
         set-cache-quality: func(quality: cache-quality);
     }
 
-    /// Font metadata.
-    record font-info {
-        units-per-em: u16,
-        ascender: s16,
-        descender: s16,
-        num-glyphs: u16,
-    }
 
-    /// Parsed font resource — created from TTF/OTF bytes, cached glyph atlas.
-    ///
-    /// No fonts are embedded in the binary. The consumer provides font data
-    /// externally. Glyph rasterization is cached per (char, size) pair.
-    resource font {
-        /// Parse a TTF/OTF font from raw bytes.
-        constructor(data: buffer);
-        /// Get font metadata.
-        info: func() -> font-info;
-    }
+    // ─── Instance-Level Resource Registry ─────────────────────────────
+
+    /// Parse TTF/OTF font bytes and register at instance level.
+    /// Returns a font ID for use as a FontRef param in filters.
+    register-font: func(data: buffer) -> result<u32, rasmcore-error>;
+
+    /// Parse .cube/.clf LUT bytes and register at instance level.
+    /// Returns a LUT ID for use as a LutRef param in filters.
+    register-lut: func(data: buffer) -> result<u32, rasmcore-error>;
 
     // ─── Source Resource ────────────────────────────────────────────────
 
@@ -253,6 +245,18 @@ interface pipeline-v2 {
         from-pixels: static func(data: buffer, width: u32, height: u32, format: host-pixel-format) -> source;
         /// Get the decoded image dimensions and color space.
         info: func() -> node-info;
+    }
+
+    /// Brush preset info — metadata for UI display.
+    record brush-preset-info {
+        /// Preset identifier.
+        name: string,
+        /// Human-readable display name.
+        display-name: string,
+        /// Category (drawing, painting, effects).
+        category: string,
+        /// Description of the brush feel.
+        description: string,
     }
 
     /// The V2 pipeline resource.
@@ -290,11 +294,6 @@ interface pipeline-v2 {
         /// Format is auto-detected from content.
         use-lmt: func(source: node-id, data: buffer) -> result<node-id, rasmcore-error>;
 
-        /// Draw text onto a source node using a Font resource.
-        ///
-        /// The font is passed directly — no pipeline-level state needed.
-        /// Multiple nodes can share the same Font reference (parsed once).
-        draw-text: func(source: node-id, font: borrow<font>, params: buffer) -> result<node-id, rasmcore-error>;
 
         // ─── ML Operations ───
         /// Apply an ML model to a source node.
@@ -310,6 +309,14 @@ interface pipeline-v2 {
         /// Returns the same data as ml-capabilities() but through the
         /// pipeline API for convenience. Empty list if no ML runtime.
         list-ml-models: func() -> list<ml-model-info>;
+
+
+
+        // ─── Brush Presets ───
+        /// List available brush presets.
+        list-brush-presets: func() -> list<brush-preset-info>;
+        /// Get a specific brush preset by name, returning its brush-params.
+        get-brush-preset: func(name: string) -> option<brush-params>;
 
         // ─── Stroke Drawing ───
         /// Apply a brush stroke to a layer.
