@@ -44,6 +44,7 @@ pub mod gpu_shaders;
 pub mod aces_audit;
 pub mod noise;
 pub mod lmt;
+pub mod brush;
 pub mod font;
 pub mod filters;
 
