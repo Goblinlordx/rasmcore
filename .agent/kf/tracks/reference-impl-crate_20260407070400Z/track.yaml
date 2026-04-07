@@ -1,148 +1,114 @@
 id: reference-impl-crate_20260407070400Z
-title: "Reference implementation crate — textbook filter ground truth for testing"
+title: Reference implementation crate — textbook filter ground truth for testing
 type: feature
 status: pending
 created: 2026-04-07
-updated: 2026-04-07
+updated: '2026-04-07'
 spec:
-  summary: |
-    New crate crates/rasmcore-reference/ with dead-simple, textbook reference
+  summary: 'New crate crates/rasmcore-reference/ with dead-simple, textbook reference
+
     implementations of filter operations. Used as dev-dependency for automated
+
     parity testing. Each function documents the external tool/version used to
+
     validate it. Procedural test inputs, no committed binaries.
-  context: |
-    The current filter parity tests (tests/filter_parity.rs) verify our
-    implementations against inline formulas — but if the formula is wrong,
-    the test passes anyway. Real validation needs a separate reference
-    implementation that has been independently verified against production
-    tools (ImageMagick, vips, OpenCV).
 
-    The reference crate is:
-    - Pure math. No SIMD, no GPU, no optimization. Readable textbook code.
-    - Color-space aware. All operations assume linear f32 input (matching
-      our pipeline). Reference validation against external tools must also
-      use linear-space processing (e.g., IM with -colorspace Linear,
-      vips with --linear flag, OpenCV in float32 linear).
-    - Each function documents its validation source (tool, version, command,
-      color space setting, tolerance achieved).
-    - Used only in tests (dev-dependency). Never compiled into production.
-    - Procedural test inputs (gradient, solid, noise) — no committed images.
-    - The reference is the ground truth. If our optimized implementation
-      disagrees with the reference, the optimized code is wrong.
-  codebase_analysis: |
-    Workspace structure: crates/ contains ~25 crates. Adding rasmcore-reference
-    follows the existing pattern. Cargo.toml workspace members list at root.
-
-    Existing test infrastructure:
-    - tests/filter_parity.rs: 14 tests comparing against inline formulas
-    - tests/gpu_correctness.rs: GPU-specific tests
-    - Each filter module has unit tests in #[cfg(test)]
-
-    Filter categories to cover (by priority):
-    1. Point ops (12 filters): brightness, contrast, gamma, exposure, invert,
-       levels, posterize, solarize, sigmoidal, dodge, burn — pure per-pixel math
-    2. Color ops (22 filters): sepia, saturate, hue_rotate, channel_mixer,
-       white_balance, vibrance, colorize, etc. — color matrix / HSL math
-    3. Enhancement (17 filters): auto_level, equalize, normalize, sharpen,
-       clahe, etc. — histogram + spatial
-    4. Spatial (14 filters): gaussian_blur, box_blur, median, bilateral,
-       etc. — convolution kernels
-    5. Others: edge detection, morphology, distortion, grading — complex
-
-    The crate starts with point ops and color ops (Wave 1), then expands.
+    '
+  context: "The current filter parity tests (tests/filter_parity.rs) verify our\nimplementations against inline formulas —\
+    \ but if the formula is wrong,\nthe test passes anyway. Real validation needs a separate reference\nimplementation that\
+    \ has been independently verified against production\ntools (ImageMagick, vips, OpenCV).\n\nThe reference crate is:\n\
+    - Pure math. No SIMD, no GPU, no optimization. Readable textbook code.\n- Color-space aware. All operations assume linear\
+    \ f32 input (matching\n  our pipeline). Reference validation against external tools must also\n  use linear-space processing\
+    \ (e.g., IM with -colorspace Linear,\n  vips with --linear flag, OpenCV in float32 linear).\n- Each function documents\
+    \ its validation source (tool, version, command,\n  color space setting, tolerance achieved).\n- Used only in tests (dev-dependency).\
+    \ Never compiled into production.\n- Procedural test inputs (gradient, solid, noise) — no committed images.\n- The reference\
+    \ is the ground truth. If our optimized implementation\n  disagrees with the reference, the optimized code is wrong.\n"
+  codebase_analysis: "Workspace structure: crates/ contains ~25 crates. Adding rasmcore-reference\nfollows the existing pattern.\
+    \ Cargo.toml workspace members list at root.\n\nExisting test infrastructure:\n- tests/filter_parity.rs: 14 tests comparing\
+    \ against inline formulas\n- tests/gpu_correctness.rs: GPU-specific tests\n- Each filter module has unit tests in #[cfg(test)]\n\
+    \nFilter categories to cover (by priority):\n1. Point ops (12 filters): brightness, contrast, gamma, exposure, invert,\n\
+    \   levels, posterize, solarize, sigmoidal, dodge, burn — pure per-pixel math\n2. Color ops (22 filters): sepia, saturate,\
+    \ hue_rotate, channel_mixer,\n   white_balance, vibrance, colorize, etc. — color matrix / HSL math\n3. Enhancement (17\
+    \ filters): auto_level, equalize, normalize, sharpen,\n   clahe, etc. — histogram + spatial\n4. Spatial (14 filters):\
+    \ gaussian_blur, box_blur, median, bilateral,\n   etc. — convolution kernels\n5. Others: edge detection, morphology, distortion,\
+    \ grading — complex\n\nThe crate starts with point ops and color ops (Wave 1), then expands.\n"
   acceptance_criteria:
-    - crates/rasmcore-reference/ exists as a workspace member
-    - Reference implementations for all 12 adjustment (point op) filters
-    - Reference implementations for core color ops (sepia, saturate, hue_rotate, channel_mixer, white_balance)
-    - Each reference function has a doc comment citing the external validation source
-    - VALIDATION.md documents the methodology and per-filter validation status
-    - Procedural test input generators (gradient, solid, checkerboard, noise)
-    - Pipeline crate tests/filter_reference.rs uses rasmcore-reference as dev-dep
-    - All reference tests pass comparing our filters against reference implementations
-    - No committed binary test images or golden files
-  out_of_scope: |
-    - Spatial filter references (separate expansion track)
+  - crates/rasmcore-reference/ exists as a workspace member
+  - Reference implementations for all 12 adjustment (point op) filters
+  - Reference implementations for core color ops (sepia, saturate, hue_rotate, channel_mixer, white_balance)
+  - Each reference function has a doc comment citing the external validation source
+  - VALIDATION.md documents the methodology and per-filter validation status
+  - Procedural test input generators (gradient, solid, checkerboard, noise)
+  - Pipeline crate tests/filter_reference.rs uses rasmcore-reference as dev-dep
+  - All reference tests pass comparing our filters against reference implementations
+  - No committed binary test images or golden files
+  out_of_scope: '- Spatial filter references (separate expansion track)
+
     - Enhancement filter references (separate expansion track)
+
     - GPU shader validation (CPU reference only)
+
     - Performance — reference implementations are intentionally slow
+
     - External tool integration in CI (validation is one-time manual)
-  technical_notes: |
-    Crate structure:
-      crates/rasmcore-reference/
-        Cargo.toml          # no dependencies beyond std
-        src/
-          lib.rs            # re-exports + test input generators
-          point_ops.rs      # brightness, contrast, gamma, etc.
-          color_ops.rs      # sepia, saturate, hue_rotate, etc.
-        VALIDATION.md       # per-filter validation audit trail
 
-    Each reference function signature mirrors the filter:
-      pub fn brightness(input: &[f32], w: u32, h: u32, amount: f32) -> Vec<f32>
-
-    VALIDATION.md format per filter:
-      ## brightness
-      - Formula: out[c] = in[c] + amount (RGB only, alpha preserved)
-      - Color space: linear f32 (pipeline working space)
-      - Reference: ImageMagick 7.1.1-38 `-colorspace Linear -evaluate Add {amount}`
-      - Reference: vips 8.15 `vips linear input.v output.v 1.0 {amount} --linear`
-      - Tolerance: <1e-7 (exact match in f32)
-      - Status: VALIDATED
-      - Notes: IM must be in linear space; default sRGB would apply gamma
-
-    Test input generators in lib.rs:
-      pub fn gradient(w, h) -> Vec<f32>     // R=x/w, G=y/h, B=(x+y)/(w+h)
-      pub fn solid(w, h, color) -> Vec<f32> // constant fill
-      pub fn noise(w, h, seed) -> Vec<f32>  // deterministic pseudo-random
-
-    Integration test in pipeline crate:
-      use rasmcore_reference as ref_impl;
-      let input = ref_impl::gradient(32, 32);
-      let expected = ref_impl::brightness(&input, 32, 32, 0.3);
-      let actual = Brightness { amount: 0.3 }.compute(&input, 32, 32).unwrap();
-      assert_parity(&actual, &expected, 1e-6);
+    '
+  technical_notes: "Crate structure:\n  crates/rasmcore-reference/\n    Cargo.toml          # no dependencies beyond std\n\
+    \    src/\n      lib.rs            # re-exports + test input generators\n      point_ops.rs      # brightness, contrast,\
+    \ gamma, etc.\n      color_ops.rs      # sepia, saturate, hue_rotate, etc.\n    VALIDATION.md       # per-filter validation\
+    \ audit trail\n\nEach reference function signature mirrors the filter:\n  pub fn brightness(input: &[f32], w: u32, h:\
+    \ u32, amount: f32) -> Vec<f32>\n\nVALIDATION.md format per filter:\n  ## brightness\n  - Formula: out[c] = in[c] + amount\
+    \ (RGB only, alpha preserved)\n  - Color space: linear f32 (pipeline working space)\n  - Reference: ImageMagick 7.1.1-38\
+    \ `-colorspace Linear -evaluate Add {amount}`\n  - Reference: vips 8.15 `vips linear input.v output.v 1.0 {amount} --linear`\n\
+    \  - Tolerance: <1e-7 (exact match in f32)\n  - Status: VALIDATED\n  - Notes: IM must be in linear space; default sRGB\
+    \ would apply gamma\n\nTest input generators in lib.rs:\n  pub fn gradient(w, h) -> Vec<f32>     // R=x/w, G=y/h, B=(x+y)/(w+h)\n\
+    \  pub fn solid(w, h, color) -> Vec<f32> // constant fill\n  pub fn noise(w, h, seed) -> Vec<f32>  // deterministic pseudo-random\n\
+    \nIntegration test in pipeline crate:\n  use rasmcore_reference as ref_impl;\n  let input = ref_impl::gradient(32, 32);\n\
+    \  let expected = ref_impl::brightness(&input, 32, 32, 0.3);\n  let actual = Brightness { amount: 0.3 }.compute(&input,\
+    \ 32, 32).unwrap();\n  assert_parity(&actual, &expected, 1e-6);\n"
 plan:
-  - phase: "Crate scaffolding"
-    tasks:
-      - text: "Create crates/rasmcore-reference/ with Cargo.toml (no deps, lib only)"
-        done: false
-      - text: "Add to workspace members in root Cargo.toml"
-        done: false
-      - text: "Create lib.rs with test input generators (gradient, solid, noise)"
-        done: false
-      - text: "Create VALIDATION.md with methodology header"
-        done: false
-  - phase: "Point op references"
-    tasks:
-      - text: "Implement brightness, contrast, gamma, exposure reference functions"
-        done: false
-      - text: "Implement invert, levels, posterize, solarize reference functions"
-        done: false
-      - text: "Implement sigmoidal_contrast, dodge, burn reference functions"
-        done: false
-      - text: "Document validation source for each in VALIDATION.md"
-        done: false
-  - phase: "Color op references"
-    tasks:
-      - text: "Implement sepia, saturate, hue_rotate reference functions"
-        done: false
-      - text: "Implement channel_mixer, white_balance, vibrance reference functions"
-        done: false
-      - text: "Document validation source for each in VALIDATION.md"
-        done: false
-  - phase: "Integration tests"
-    tasks:
-      - text: "Add rasmcore-reference as dev-dependency of rasmcore-pipeline-v2"
-        done: false
-      - text: "Create tests/filter_reference.rs comparing our filters against reference"
-        done: false
-      - text: "Verify all point op tests pass"
-        done: false
-      - text: "Verify all color op tests pass"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "cargo test --workspace passes"
-        done: false
-      - text: "cargo build --target wasm32-wasip2 -p rasmcore-pipeline-v2 succeeds"
-        done: false
+- phase: Crate scaffolding
+  tasks:
+  - text: Create crates/rasmcore-reference/ with Cargo.toml (no deps, lib only)
+    done: true
+  - text: Add to workspace members in root Cargo.toml
+    done: true
+  - text: Create lib.rs with test input generators (gradient, solid, noise)
+    done: true
+  - text: Create VALIDATION.md with methodology header
+    done: true
+- phase: Point op references
+  tasks:
+  - text: Implement brightness, contrast, gamma, exposure reference functions
+    done: true
+  - text: Implement invert, levels, posterize, solarize reference functions
+    done: true
+  - text: Implement sigmoidal_contrast, dodge, burn reference functions
+    done: true
+  - text: Document validation source for each in VALIDATION.md
+    done: true
+- phase: Color op references
+  tasks:
+  - text: Implement sepia, saturate, hue_rotate reference functions
+    done: true
+  - text: Implement channel_mixer, white_balance, vibrance reference functions
+    done: true
+  - text: Document validation source for each in VALIDATION.md
+    done: true
+- phase: Integration tests
+  tasks:
+  - text: Add rasmcore-reference as dev-dependency of rasmcore-pipeline-v2
+    done: true
+  - text: Create tests/filter_reference.rs comparing our filters against reference
+    done: true
+  - text: Verify all point op tests pass
+    done: true
+  - text: Verify all color op tests pass
+    done: true
+- phase: Verification
+  tasks:
+  - text: cargo test --workspace passes
+    done: true
+  - text: cargo build --target wasm32-wasip2 -p rasmcore-pipeline-v2 succeeds
+    done: true
 extra: {}
