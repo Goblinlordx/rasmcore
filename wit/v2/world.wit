@@ -1,5 +1,10 @@
 package rasmcore:v2-image@0.1.0;
 
 world image-processor {
+    /// ML inference offload — optional host import.
+    /// When provided, apply-ml() pipeline operations are available.
+    /// When absent, apply-ml() returns not-available error.
+    import rasmcore:core/ml;
+
     export pipeline-v2;
 }

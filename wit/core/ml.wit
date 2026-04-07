@@ -1,23 +1,36 @@
 /// ML inference offload interface.
 ///
 /// Optional import — when provided by the host, pipeline nodes can offload
-/// ML inference to the host's runtime (ONNX Runtime, CoreML, WebNN, etc.).
-/// When absent, ML-only nodes report NotSupported.
+/// ML inference to the host's runtime (ONNX Runtime, WebNN, CoreML, etc.).
+/// When absent, ML operations return not-available.
 ///
-/// The WASM component emits a model reference + input tensor. The host
-/// resolves the model, runs inference, and returns the output tensor.
-/// Models are NOT embedded in the component — they are hosted externally
-/// and cached by the host.
+/// Architecture: host-as-capability-provider.
+/// - The WASM guest never bundles or loads models
+/// - Host declares capabilities via ml-capabilities()
+/// - Guest calls ml-execute() per tile — host runs single-tile inference
+/// - Pipeline handles tiling, overlap blending, stitching
+/// - Host handles GPU buffer management and zero-copy optimization
+///
+/// Model distribution: definitions, not weights.
+/// - ML packages ship model metadata (~1KB per model)
+/// - Weights (~50-176MB) downloaded by host on first use
+/// - Cached locally (IndexedDB for browser, filesystem for native)
 
 interface ml {
+    use types.{buffer};
+
+    // ─── Model Identity ────────────────────────────────────────────────
+
     /// Reference to a model by name and version.
     /// The host resolves this to a local cached model file.
     record model-ref {
-        /// Model identifier (e.g., "rmbg-1.4", "real-esrgan-x4plus").
+        /// Model identifier (e.g., "real-esrgan-x4plus", "rmbg-1.4").
         name: string,
         /// Version or variant (e.g., "1.0.0", "fp16", "int8").
         version: string,
     }
+
+    // ─── Tensor Types ──────────────────────────────────────────────────
 
     /// Tensor element data type.
     enum tensor-dtype {
@@ -29,24 +42,156 @@ interface ml {
 
     /// Tensor shape and type descriptor.
     record tensor-desc {
-        /// Dimension sizes (e.g., [1, 3, 1024, 1024] for NCHW).
-        shape: list<u32>,
+        /// Dimension sizes (e.g., [1, 3, 1024, 1024] for NCHW batch=1).
+        /// Use -1 for dynamic dimensions.
+        shape: list<s32>,
         /// Element data type.
         dtype: tensor-dtype,
     }
 
-    /// ML inference operation emitted by a node.
-    record ml-op {
-        /// Model to run inference with.
+    // ─── Model Output ──────────────────────────────────────────────────
+
+    /// What kind of output the model produces.
+    enum ml-output-kind {
+        /// RGBA image (same or different dimensions than input).
+        image,
+        /// Single-channel mask (alpha, depth, segmentation).
+        mask,
+    }
+
+    // ─── Model Input Specification ─────────────────────────────────────
+
+    /// How the model handles input dimensions.
+    ///
+    /// Tileable models (convolutional, like super-resolution) can process
+    /// the image in independent tiles with overlap for seam blending.
+    /// Full-image models (like segmentation, depth) need global context
+    /// and process the entire image resized to a target size.
+    enum ml-tile-mode {
+        /// Can be tiled — pipeline splits input, runs per-tile inference.
+        tileable,
+        /// Needs full image — pipeline resizes to target-size, runs once.
+        full-image,
+    }
+
+    /// How to pad tiles at image edges.
+    enum ml-padding-mode {
+        /// Reflect pixels at boundary (best quality for most models).
+        mirror,
+        /// Pad with zeros (black).
+        zero,
+        /// Repeat edge pixels.
+        clamp,
+    }
+
+    /// Model input requirements — used by the pipeline for tiling strategy.
+    ///
+    /// The pipeline reads this from ml-capability-info and decides how to
+    /// tile the input. The host's ml-execute always receives a single tile
+    /// (or the full resized image for full-image models).
+    record ml-input-spec {
+        /// Tiling strategy.
+        tile-mode: ml-tile-mode,
+        /// For tileable: optimal tile size for GPU utilization.
+        /// For full-image: ignored (use target-size).
+        preferred-size: option<tuple<u32, u32>>,
+        /// For tileable: minimum usable tile size.
+        min-size: option<tuple<u32, u32>>,
+        /// For full-image: resize input to this before inference.
+        /// For tileable: ignored.
+        target-size: option<tuple<u32, u32>>,
+        /// Pixels of overlap between adjacent tiles (for seam blending).
+        /// Only used when tile-mode is tileable.
+        overlap: u32,
+        /// How to pad tiles at image edges.
+        padding: ml-padding-mode,
+    }
+
+    // ─── Model Parameters ──────────────────────────────────────────────
+
+    /// Parameter type for model configuration.
+    /// Mirrors the pipeline's param-type enum for consistency.
+    enum ml-param-type {
+        f32-val,
+        u32-val,
+        bool-val,
+        string-val,
+    }
+
+    /// Parameter descriptor — schema for a single model parameter.
+    /// Same pattern as the filter param-descriptor so the SDK can
+    /// auto-generate UI controls identically.
+    record ml-param-descriptor {
+        /// Parameter name (e.g., "denoise_strength").
+        name: string,
+        /// Value type.
+        value-type: ml-param-type,
+        /// Minimum value (for numeric types).
+        min: option<f64>,
+        /// Maximum value (for numeric types).
+        max: option<f64>,
+        /// Step size for UI sliders.
+        step: option<f64>,
+        /// Default value.
+        default-val: option<f64>,
+        /// UI hint or description.
+        hint: option<string>,
+    }
+
+    // ─── Capability Discovery ──────────────────────────────────────────
+
+    /// Information about an ML model available on this host.
+    ///
+    /// Returned by ml-capabilities(). The pipeline uses this to:
+    /// - Populate the ML operation list in the UI
+    /// - Auto-generate parameter controls from params
+    /// - Determine tiling strategy from input-spec
+    /// - Calculate output dimensions from output-scale
+    record ml-capability-info {
+        /// Model identity.
         model: model-ref,
-        /// Raw input tensor bytes (layout per dtype, row-major).
-        input: list<u8>,
+        /// Human-readable name for UI (e.g., "AI Super Resolution (4x)").
+        display-name: string,
+        /// Category for grouping (e.g., "enhancement", "segmentation", "upscale").
+        category: string,
+        /// What the model produces.
+        output-kind: ml-output-kind,
+        /// Output scale factor. None = same dimensions as input.
+        /// Some(4) = output is 4x input dimensions (super-resolution).
+        output-scale: option<u32>,
+        /// Input tiling requirements.
+        input-spec: ml-input-spec,
+        /// Expected input tensor shape and type.
+        input-desc: tensor-desc,
+        /// Expected output tensor shape and type.
+        output-desc: tensor-desc,
+        /// Model-specific parameters.
+        params: list<ml-param-descriptor>,
+        /// Execution backend name (e.g., "webnn-gpu", "ort-webgpu", "ort-wasm", "coreml").
+        backend: string,
+        /// Estimated inference time per tile in milliseconds (UI progress hint).
+        estimated-ms-per-tile: u32,
+    }
+
+    // ─── Inference Execution ───────────────────────────────────────────
+
+    /// ML inference operation — single tile or full image.
+    ///
+    /// The pipeline constructs this per-tile (or per-image for full-image
+    /// models) and calls ml-execute(). The host runs inference and returns
+    /// the output tensor bytes.
+    record ml-op {
+        /// Model to use.
+        model: model-ref,
+        /// Raw input tensor bytes (row-major, per dtype).
+        /// For a 128x128 RGB float32 tile: 128*128*3*4 = 196608 bytes.
+        input: buffer,
         /// Input tensor shape and type.
         input-desc: tensor-desc,
         /// Expected output tensor shape and type.
         output-desc: tensor-desc,
-        /// Key-value parameters (model-specific, e.g., threshold).
-        params: list<tuple<string, string>>,
+        /// Serialized model parameters (same format as filter params).
+        params: buffer,
     }
 
     /// Error from ML execution.
@@ -63,27 +208,17 @@ interface ml {
         not-available(string),
     }
 
-    /// Execute an ML inference operation.
+    /// Execute a single ML inference operation.
     ///
     /// Returns raw output tensor bytes matching output-desc.
-    ml-execute: func(op: ml-op) -> result<list<u8>, ml-error>;
-
-    /// Information about a model available on this host.
-    record ml-capability-info {
-        /// Model reference.
-        model: model-ref,
-        /// Input tensor requirements.
-        input-desc: tensor-desc,
-        /// Output tensor format.
-        output-desc: tensor-desc,
-        /// Execution backend name (e.g., "coreml", "cuda", "cpu").
-        backend: string,
-        /// Estimated inference time in milliseconds.
-        estimated-ms: u32,
-    }
+    /// The host may keep data on GPU internally — the bytes returned
+    /// are the materialized result for the pipeline's cache.
+    ml-execute: func(op: ml-op) -> result<buffer, ml-error>;
 
     /// Query available ML models and their capabilities.
     ///
     /// Returns empty list if no ML runtime is available.
+    /// The pipeline uses this for discovery (list-ml-models in the API)
+    /// and to determine tiling strategy per model.
     ml-capabilities: func() -> list<ml-capability-info>;
 }

@@ -929,6 +929,26 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
             })
             .collect()
     }
+
+    // ─── ML Operations ─────────────────────────────────────────────────
+
+    fn apply_ml(
+        &self,
+        _source: u32,
+        _model_name: String,
+        _params: Vec<u8>,
+    ) -> Result<u32, RasmcoreError> {
+        // Stub — ML node implementation is in the ml-graph-node track.
+        // Returns not-available until the host provides an ML runtime.
+        Err(RasmcoreError::NotImplemented)
+    }
+
+    fn list_ml_models(&self) -> Vec<wit::MlModelInfo> {
+        // Stub — returns empty list until host provides ML runtime.
+        // The host's ml-capabilities() would be called here to discover
+        // available models and translate to MlModelInfo records.
+        Vec::new()
+    }
 }
 
 // ─── Param deserialization ──────────────────────────────────────────────────

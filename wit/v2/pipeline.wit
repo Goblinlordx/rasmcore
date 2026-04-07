@@ -271,6 +271,21 @@ interface pipeline-v2 {
         /// Format is auto-detected from content.
         use-lmt: func(source: node-id, data: buffer) -> result<node-id, rasmcore-error>;
 
+        // ─── ML Operations ───
+        /// Apply an ML model to a source node.
+        ///
+        /// The model is identified by name (e.g., "real-esrgan-x4plus").
+        /// The pipeline handles tiling based on the model's input-spec
+        /// (from ml-capabilities). The host runs single-tile inference.
+        ///
+        /// Returns not-available error if no ML runtime is provided by the host.
+        apply-ml: func(source: node-id, model-name: string, params: buffer) -> result<node-id, rasmcore-error>;
+        /// List available ML models from the host runtime.
+        ///
+        /// Returns the same data as ml-capabilities() but through the
+        /// pipeline API for convenience. Empty list if no ML runtime.
+        list-ml-models: func() -> list<ml-model-info>;
+
         // ─── Configuration ───
         /// Set the demand strategy (tile sizing).
         set-demand-strategy: func(strategy: demand-strategy);
@@ -332,5 +347,26 @@ interface pipeline-v2 {
         set-tracing: func(enabled: bool);
         /// Take collected trace events, clearing the internal buffer.
         take-trace: func() -> list<trace-event>;
+    }
+
+    /// ML model info — pipeline-facing view of host ML capabilities.
+    /// Flattened for ergonomic use in the pipeline API.
+    record ml-model-info {
+        /// Model name (used as the model-name arg in apply-ml).
+        name: string,
+        /// Version/variant string.
+        version: string,
+        /// Human-readable display name.
+        display-name: string,
+        /// Category (enhancement, segmentation, upscale, etc.).
+        category: string,
+        /// Output kind: "image" or "mask".
+        output-kind: string,
+        /// Output scale factor (e.g., 4 for 4x upscale). 1 = same dims.
+        output-scale: u32,
+        /// Model parameters (same schema as filter params for UI generation).
+        params: list<param-descriptor>,
+        /// Estimated inference time per tile in ms.
+        estimated-ms-per-tile: u32,
     }
 }
