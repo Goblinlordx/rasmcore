@@ -3,41 +3,49 @@ title: Additional generators — clouds, fractal, patterns
 type: feature
 status: pending
 created: 2026-04-07
-updated: 2026-04-07
+updated: '2026-04-07'
 spec:
-  summary: |
-    Add cloud_noise, fractal_noise, pattern_fill, solid_color generators.
+  summary: 'Add cloud_noise, fractal_noise, pattern_fill, solid_color generators.
+
     All pure GPU compute — no input image needed. Extends the 6 existing
+
     generators to 10.
-  context: |
-    GPU-first. Generators produce pixels from parameters alone (no source
+
+    '
+  context: 'GPU-first. Generators produce pixels from parameters alone (no source
+
     image). Perfect for compute shaders — massively parallel, no memory
+
     dependencies. Current generators: checkerboard, gradient_linear,
+
     gradient_radial, perlin_noise, simplex_noise, plasma.
+
+    '
   acceptance_criteria:
-    - cloud_noise (Worley + value noise blend with octaves)
-    - fractal_noise (multi-octave with lacunarity and persistence params)
-    - pattern_fill (tileable pattern from small source texture)
-    - solid_color (constant RGBA fill — useful as pipeline building block)
-    - GPU shader for each
-    - SIMD CPU fallback for each
-  out_of_scope: |
-    Animated noise (time parameter for video frames)
+  - cloud_noise (Worley + value noise blend with octaves)
+  - fractal_noise (multi-octave with lacunarity and persistence params)
+  - pattern_fill (tileable pattern from small source texture)
+  - solid_color (constant RGBA fill — useful as pipeline building block)
+  - GPU shader for each
+  - SIMD CPU fallback for each
+  out_of_scope: 'Animated noise (time parameter for video frames)
+
+    '
 plan:
-  - phase: Implementation
-    tasks:
-      - text: Implement cloud_noise generator (Worley + value noise, octaves, scale params)
-        done: false
-      - text: Implement fractal_noise generator (fBm with lacunarity, persistence, octaves)
-        done: false
-      - text: Implement pattern_fill generator (tile a small source region across output)
-        done: false
-      - text: Implement solid_color generator (constant RGBA, useful as mask/background)
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Verify all generators appear in registry and produce visible output
-        done: false
-      - text: Test deterministic output (same params = same pixels)
-        done: false
+- phase: Implementation
+  tasks:
+  - text: Implement cloud_noise generator (Worley + value noise, octaves, scale params)
+    done: true
+  - text: Implement fractal_noise generator (fBm with lacunarity, persistence, octaves)
+    done: true
+  - text: Implement pattern_fill generator (tile a small source region across output)
+    done: true
+  - text: Implement solid_color generator (constant RGBA, useful as mask/background)
+    done: true
+- phase: Verification
+  tasks:
+  - text: Verify all generators appear in registry and produce visible output
+    done: true
+  - text: Test deterministic output (same params = same pixels)
+    done: true
 extra: {}
