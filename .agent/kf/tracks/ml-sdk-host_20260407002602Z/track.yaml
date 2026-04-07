@@ -211,19 +211,13 @@ plan:
         done: false
       - text: Add inputSpec to model definitions (fixedSize, overlap, padding mode)
         done: false
-  - phase: Tiling Engine (host-side)
+  - phase: GPU Buffer Returns
     tasks:
-      - text: Implement tile extraction with configurable overlap and mirror/zero/clamp padding
+      - text: ml-execute returns GPU buffer handle when GPU backend active (not raw bytes)
         done: false
-      - text: Implement hardware-adaptive concurrency estimation (GPU memory, device class, model size)
+      - text: Host manages internal copy when inference GPU differs from pipeline GPU (ORT device mismatch)
         done: false
-      - text: Implement concurrent tile dispatch (Promise pool with N parallel inferences)
-        done: false
-      - text: Implement overlap region blending (linear feather cross-fade to eliminate seams)
-        done: false
-      - text: Implement output tile stitching into final image
-        done: false
-      - text: Passthrough for dynamic-input models (no tiling needed, just resize)
+      - text: CPU fallback path returns raw bytes when no GPU backend available
         done: false
   - phase: Native ML Crate (rasmcore-ml)
     tasks:

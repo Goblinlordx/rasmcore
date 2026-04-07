@@ -45,11 +45,14 @@ spec:
     it may need its own copy or a shared types package.
   acceptance_criteria:
     - ml-output-kind enum with image and mask variants
-    - ml-capability-info includes display-name, category, output-kind, output-scale, and list of param-descriptor
-    - ml-op uses typed params buffer (same as filter params) instead of string key-value
+    - ml-input-spec record with fixed-size, overlap, padding mode
+    - ml-capability-info includes display-name, category, output-kind, output-scale, input-spec, params
+    - ml-op designed for single-tile execution (pipeline handles tiling)
+    - ml-execute return type supports GPU buffer path (not just raw bytes)
     - world.wit imports ml interface (optional import for backwards compat)
     - pipeline.wit has apply-ml(source, model-name, params) method
     - pipeline.wit has list-ml-models() discovery method
+    - ml-stage added to stage-input variant for GPU plan integration
     - WASM adapter compiles with stub implementations
     - Existing pipeline functionality unaffected (ml import is optional)
   out_of_scope: |

@@ -96,20 +96,23 @@ spec:
     5. If mask: expand single channel to RGBA
     6. If upscale: NodeInfo already has scaled dimensions
 
-    For GPU plan integration, add to pipeline.wit:
+    GPU-first ML integration:
+    - MlNode is a tiled operation (like spatial filters with tile_overlap)
+    - Pipeline tiles input based on model's inputSpec (fixedSize, overlap, padding)
+    - Each tile: MlNode calls ml-execute(tile_tensor) -> host returns GPU buffer
+    - Output buffer feeds directly into next GPU stage (zero-copy when possible)
+    - Host handles internal copy if inference GPU != pipeline GPU
+    - CPU fallback: ml-execute returns raw bytes, MlNode uploads to GPU
+
+    For GPU plan integration, ml-stage becomes a stage in multi-gpu-plan:
     variant stage-input {
       pixels(pixel-buffer),
       prior-stage(string),
-      ml-inference(ml-stage-desc),  // NEW
+      ml-inference(ml-stage-desc),  // NEW — host runs inference, returns GPU buffer
     }
-    record ml-stage-desc {
-      model: model-ref,
-      params: buffer,
-      input-desc: tensor-desc,
-      output-desc: tensor-desc,
-    }
-    The host receives this in the multi-gpu-plan and decides internally
-    whether to use GPU-native ML or CPU fallback.
+    The host receives an ml-stage in the gpu-plan. It runs inference and
+    the result is a GPU buffer that subsequent stages can reference via
+    prior-stage(name) — same as any other GPU stage output.
 plan:
   - phase: Tensor Conversion
     tasks:
@@ -129,13 +132,31 @@ plan:
         done: false
       - text: Handle ml-error mapping to PipelineError
         done: false
-  - phase: Graph Integration
+  - phase: Tiling (pipeline-side, reuses existing infra)
     tasks:
+      - text: MlNode reads inputSpec from model capability (fixedSize, overlap, padding)
+        done: false
+      - text: Implement tile extraction with overlap and mirror/zero/clamp padding
+        done: false
+      - text: Call ml-execute per tile (host runs single-tile inference)
+        done: false
+      - text: Implement overlap blending (linear feather cross-fade at seams)
+        done: false
+      - text: Stitch output tiles into final result
+        done: false
+      - text: Passthrough for dynamic-input models (no tiling, just resize)
+        done: false
+  - phase: GPU Plan Integration
+    tasks:
+      - text: Add ml-stage to multi-gpu-plan stage-input variant
+        done: false
+      - text: ml-execute returns GPU buffer handle (not raw bytes) when GPU path active
+        done: false
+      - text: ML stage output referenceable as prior-stage by downstream GPU stages
+        done: false
       - text: Add apply_ml() method to Graph
         done: false
       - text: Wire apply-ml WIT method to graph.apply_ml() in WASM adapter
-        done: false
-      - text: Add ml-stage to multi-gpu-plan stage-input variant
         done: false
   - phase: Verification
     tasks:
@@ -143,13 +164,10 @@ plan:
         done: false
       - text: Unit test MlNode with mock ml-execute returning known output
         done: false
-      - text: Test upscale node produces correct output dimensions
+      - text: Test tiled upscale produces correct dimensions and no seam artifacts
         done: false
       - text: Test mask node produces correct RGBA expansion
         done: false
-  note_on_tiling: |
-    Tiling, overlap blending, and concurrent dispatch are HOST-SIDE concerns,
-    not implemented in the guest graph node. The MlNode sends the full image
-    via ml-execute; the host's tiling engine handles the rest. Tiling tasks
-    belong in the ml-sdk-host track, not here.
+      - text: Test ML stage integrates into multi-gpu-plan
+        done: false
 extra: {}
