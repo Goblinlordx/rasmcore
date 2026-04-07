@@ -5,65 +5,74 @@ status: pending
 created: '2026-04-07'
 updated: '2026-04-07'
 spec:
-  summary: |
-    Add typed resource reference param types (node-ref, font-ref, lut-ref) to the
+  summary: 'Add typed resource reference param types (node-ref, font-ref, lut-ref) to the
+
     param system. Filters receive resources through standard apply-filter params
+
     instead of dedicated WIT methods. Pipeline gets typed register methods.
-  context: |
-    Resources (fonts, LUTs) currently need dedicated WIT methods. Multi-input
+
+    '
+  context: 'Resources (fonts, LUTs) currently need dedicated WIT methods. Multi-input
+
     nodes need node refs as params. Unify under typed ref param variants.
+
+    '
   acceptance_criteria:
-    - ParamType has NodeRef, FontRef, LutRef variants
-    - ParamMap has refs field with TypedRef enum
-    - Binary param format extended with ref type codes
-    - Pipeline has register-font and register-lut returning u32 IDs
-    - draw_text works via apply-filter with font ref param
-    - Composite filter takes node-ref param for second input
-    - Existing convenience WIT methods remain as wrappers
-    - All tests pass, WASM build succeeds
-  out_of_scope: |
-    Mask/brush resource types. GPU resource sharing.
-  technical_notes: |
-    TypedRef enum: Node(u32), Font(u32), Lut(u32)
+  - ParamType has NodeRef, FontRef, LutRef variants
+  - ParamMap has refs field with TypedRef enum
+  - Binary param format extended with ref type codes
+  - Pipeline has register-font and register-lut returning u32 IDs
+  - draw_text works via apply-filter with font ref param
+  - Composite filter takes node-ref param for second input
+  - Existing convenience WIT methods remain as wrappers
+  - All tests pass, WASM build succeeds
+  out_of_scope: 'Mask/brush resource types. GPU resource sharing.
+
+    '
+  technical_notes: 'TypedRef enum: Node(u32), Font(u32), Lut(u32)
+
     Binary: 0x03=NodeRef, 0x04=FontRef, 0x05=LutRef
+
     Composite: apply-filter(src, "composite", { layer: nodeRef, mode: 0 })
+
+    '
 plan:
-  - phase: "Param System Extension"
-    tasks:
-      - text: "Add TypedRef enum and refs field to ParamMap"
-        done: false
-      - text: "Add NodeRef, FontRef, LutRef to ParamType enum"
-        done: false
-      - text: "Extend deserialize_params with ref type codes"
-        done: false
-      - text: "Include refs in ParamMap::to_hash_bytes()"
-        done: false
-  - phase: "Resource Registry"
-    tasks:
-      - text: "Add resource stores and register methods to PipelineResource"
-        done: false
-      - text: "Add register-font and register-lut to pipeline.wit"
-        done: false
-      - text: "Wire WIT bindings for register methods"
-        done: false
-  - phase: "Filter Migration"
-    tasks:
-      - text: "Refactor draw_text to use FontRef param"
-        done: false
-      - text: "Refactor use_lmt to use LutRef param"
-        done: false
-      - text: "Keep draw-text and use-lmt as convenience wrappers"
-        done: false
-      - text: "Add composite filter with NodeRef for second input"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Test draw_text via apply-filter with font ref"
-        done: false
-      - text: "Test composite with two node-ref inputs"
-        done: false
-      - text: "Test ref type validation rejects mismatched types"
-        done: false
-      - text: "All existing tests pass, WASM build succeeds"
-        done: false
+- phase: Param System Extension
+  tasks:
+  - text: Add TypedRef enum and refs field to ParamMap
+    done: true
+  - text: Add NodeRef, FontRef, LutRef to ParamType enum
+    done: true
+  - text: Extend deserialize_params with ref type codes
+    done: true
+  - text: Include refs in ParamMap::to_hash_bytes()
+    done: true
+- phase: Resource Registry
+  tasks:
+  - text: Add resource stores and register methods to PipelineResource
+    done: true
+  - text: Add register-font and register-lut to pipeline.wit
+    done: true
+  - text: Wire WIT bindings for register methods
+    done: true
+- phase: Filter Migration
+  tasks:
+  - text: Refactor draw_text to use FontRef param
+    done: true
+  - text: Refactor use_lmt to use LutRef param
+    done: true
+  - text: Keep draw-text and use-lmt as convenience wrappers
+    done: true
+  - text: Add composite filter with NodeRef for second input
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test draw_text via apply-filter with font ref
+    done: true
+  - text: Test composite with two node-ref inputs
+    done: true
+  - text: Test ref type validation rejects mismatched types
+    done: true
+  - text: All existing tests pass, WASM build succeeds
+    done: true
 extra: {}
