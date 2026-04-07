@@ -1,0 +1,14 @@
+[package]
+name = "rasmcore-ml"
+version = "0.1.0"
+edition = "2024"
+description = "ML inference provider for rasmcore — native ONNX Runtime backends"
+license = "MIT"
+
+[dependencies]
+# ort is optional — only needed when actually running inference
+ort = { version = "2.0.0-rc.12", features = ["load-dynamic"], optional = true }
+
+[features]
+default = []
+onnx = ["dep:ort"]
