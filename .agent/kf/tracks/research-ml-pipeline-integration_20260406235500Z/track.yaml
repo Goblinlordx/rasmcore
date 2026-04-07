@@ -1,150 +1,134 @@
 id: research-ml-pipeline-integration_20260406235500Z
-title: "Research: ML inference as host-provided capability — runtime discovery, lazy loading, GPU interop"
+title: 'Research: ML inference as host-provided capability — runtime discovery, lazy loading, GPU interop'
 type: research
 status: pending
 created: 2026-04-07
-updated: 2026-04-07
+updated: '2026-04-07'
 spec:
-  summary: |
-    Design and prototype the ML integration architecture where the host
+  summary: 'Design and prototype the ML integration architecture where the host
+
     declares available models at runtime, downloads on demand, and executes
+
     inference. The guest pipeline references models by name and treats ML
+
     as another operation type with host-managed dispatch (like GPU shaders).
-  context: |
-    The pipeline already has a host-dispatch pattern for GPU compute: the
+
+    '
+  context: 'The pipeline already has a host-dispatch pattern for GPU compute: the
+
     guest produces a gpu-plan, the host executes it, the guest gets pixels
+
     back. ML inference should follow the same pattern — the guest says
+
     "run model X on this data" and the host handles everything.
 
+
     Key architectural principle: the WASM guest never bundles, loads, or
+
     manages ML models. The host is the capability provider. This mirrors
-    how GPU dispatch works — the guest doesn't know if the host has WebGPU,
+
+    how GPU dispatch works — the guest doesn''t know if the host has WebGPU,
+
     wgpu, or falls back to CPU.
 
+
     An existing ML WIT interface stub exists at wit/core/ml.wit with
+
     ml-execute, ml-capabilities, model-ref, tensor-desc, and ml-error.
+
     This needs evaluation and likely revision (current tensor I/O uses
+
     list<u8> which forces a copy).
 
-    Zero-copy GPU buffer sharing between WebGPU and WebNN is spec'd via
+
+    Zero-copy GPU buffer sharing between WebGPU and WebNN is spec''d via
+
     MLTensor with exportableToGPU but is "best effort" (W3C CR Jan 2026).
+
     ONNX Runtime WebGPU EP manages its own GPUDevice (bug #26107 blocks
+
     sharing). Native wgpu has no interop with CUDA/TensorRT without CPU
+
     roundtrip. The architecture should abstract over these limitations
+
     so it improves as APIs mature.
-  codebase_analysis: |
-    Existing infrastructure:
-    - wit/core/ml.wit: stub interface with ml-execute, ml-capabilities,
-      model-ref, tensor-desc. NOT imported by pipeline yet.
-    - wit/v2/pipeline.wit: gpu-plan, gpu-stage, stage-input variant.
-      stage-input has pixels(pixel-buffer) and prior-stage(string).
-    - web-ui/src/gpu-handler-v2.ts: WebGPU dispatch with ping-pong
-      buffers, multi-stage execution, zero-copy blit to canvas.
-    - crates/rasmcore-gpu-native/src/lib.rs: native wgpu dispatch.
-    - inject-gpu-result takes list<f32> (forces CPU readback).
 
-    Key gaps:
-    - No ml-stage in gpu-plan (can't chain GPU→ML→GPU on device)
-    - ml.wit tensor I/O is list<u8> (forces serialize/copy)
-    - No runtime capability discovery wired into pipeline
-    - No model lifecycle management (download, cache, warm-up)
-
-    WebNN status (verified April 2026):
-    - NOT shipping unflagged in any browser
-    - Requires chrome://flags (web-machine-learning-neural-network)
-    - macOS has NO functional backend (DirectML is Windows-only)
-    - navigator.ml is undefined on macOS Chrome even with M4 GPU
-    - Firefox/Safari do not implement WebNN
-    - WebNN is NOT a viable cross-platform target today
-
-    Practical ML backends for cross-platform:
-    - ONNX Runtime Web WebGPU EP (runs compute shaders, works on all
-      platforms with WebGPU — including macOS, Linux, Windows)
-    - ONNX Runtime Web WASM SIMD (CPU fallback, universal)
-    - Native: ONNX Runtime with CoreML EP (macOS), CUDA EP (NVIDIA),
-      DirectML EP (Windows), or CPU
+    '
+  codebase_analysis: "Existing infrastructure:\n- wit/core/ml.wit: stub interface with ml-execute, ml-capabilities,\n  model-ref,\
+    \ tensor-desc. NOT imported by pipeline yet.\n- wit/v2/pipeline.wit: gpu-plan, gpu-stage, stage-input variant.\n  stage-input\
+    \ has pixels(pixel-buffer) and prior-stage(string).\n- web-ui/src/gpu-handler-v2.ts: WebGPU dispatch with ping-pong\n\
+    \  buffers, multi-stage execution, zero-copy blit to canvas.\n- crates/rasmcore-gpu-native/src/lib.rs: native wgpu dispatch.\n\
+    - inject-gpu-result takes list<f32> (forces CPU readback).\n\nKey gaps:\n- No ml-stage in gpu-plan (can't chain GPU→ML→GPU\
+    \ on device)\n- ml.wit tensor I/O is list<u8> (forces serialize/copy)\n- No runtime capability discovery wired into pipeline\n\
+    - No model lifecycle management (download, cache, warm-up)\n\nWebNN status (verified April 2026):\n- NOT shipping unflagged\
+    \ in any browser\n- Requires chrome://flags (web-machine-learning-neural-network)\n- macOS has NO functional backend (DirectML\
+    \ is Windows-only)\n- navigator.ml is undefined on macOS Chrome even with M4 GPU\n- Firefox/Safari do not implement WebNN\n\
+    - WebNN is NOT a viable cross-platform target today\n\nPractical ML backends for cross-platform:\n- ONNX Runtime Web WebGPU\
+    \ EP (runs compute shaders, works on all\n  platforms with WebGPU — including macOS, Linux, Windows)\n- ONNX Runtime Web\
+    \ WASM SIMD (CPU fallback, universal)\n- Native: ONNX Runtime with CoreML EP (macOS), CUDA EP (NVIDIA),\n  DirectML EP\
+    \ (Windows), or CPU\n"
   acceptance_criteria:
-    - Document the host-as-capability-provider architecture
-    - Evaluate and revise the existing ml.wit interface
-    - Prototype WebNN MLTensor GPU buffer interop (measure actual copy cost)
-    - Prototype ONNX Runtime WebGPU EP buffer sharing (verify bug #26107 status)
-    - Design ml-stage extension for gpu-plan (GPU→ML→GPU chaining)
-    - Design runtime capability discovery (host injects available models)
-    - Design lazy model loading (download on first use, cache for reuse)
-    - Document CPU fallback path (ONNX Runtime WASM SIMD or WebNN CPU)
-    - Produce implementation plan with concrete WIT changes and host API
-  out_of_scope: |
-    Implementing the full ML pipeline. Training or fine-tuning models.
+  - Document the host-as-capability-provider architecture
+  - Evaluate and revise the existing ml.wit interface
+  - Prototype WebNN MLTensor GPU buffer interop (measure actual copy cost)
+  - Prototype ONNX Runtime WebGPU EP buffer sharing (verify bug
+  - Design ml-stage extension for gpu-plan (GPU→ML→GPU chaining)
+  - Design runtime capability discovery (host injects available models)
+  - Design lazy model loading (download on first use, cache for reuse)
+  - Document CPU fallback path (ONNX Runtime WASM SIMD or WebNN CPU)
+  - Produce implementation plan with concrete WIT changes and host API
+  out_of_scope: 'Implementing the full ML pipeline. Training or fine-tuning models.
+
     Bundling specific ML models. Building model management UI.
+
     CUDA/TensorRT native integration (requires bypassing wgpu).
-  technical_notes: |
-    Architecture vision:
 
-    1. Host starts, registers capabilities:
-       - Enumerates available backends (WebNN GPU, WebNN CPU, ORT WASM)
-       - Registers available models (from manifest, CDN, local cache)
-       - Each model has: name, version, input/output tensor descriptors,
-         supported backends, download URL, file size
-
-    2. Guest queries capabilities:
-       - ml-capabilities() returns list of available models + metadata
-       - Pipeline UI can show/hide ML operations based on availability
-
-    3. User builds graph with ML node:
-       - apply-ml(source-node, model-name, params) -> node-id
-       - Model name is a string reference, not a binary blob
-       - Params are model-specific (e.g., strength, scale factor)
-
-    4. Execution:
-       - If prior node has GPU output and host supports GPU ML:
-         GPU buffer -> MLTensor (best-effort zero-copy) -> inference -> GPU buffer
-       - If no GPU ML: readback -> CPU inference (ORT WASM) -> upload
-       - If no ML at all: return ml-error::not-available
-
-    5. Model lifecycle:
-       - First reference triggers download (host manages)
-       - Model cached in host storage (IndexedDB, filesystem)
-       - Warm-up: pre-compile model graph on first load
-       - Subsequent calls reuse compiled graph
-
-    Open questions to resolve:
-    - Should ml-stage be part of gpu-plan or a separate plan type?
-    - How to handle variable output dimensions (e.g., super-res 4x)?
-    - How to express model-specific parameters in a generic WIT interface?
-    - Should tensor layout conversion (RGBA->RGB, HWC->NCHW) be a
-      guest-side micro-node or a host-side concern?
-    - How to handle streaming/progressive inference for large images?
+    '
+  technical_notes: "Architecture vision:\n\n1. Host starts, registers capabilities:\n   - Enumerates available backends (WebNN\
+    \ GPU, WebNN CPU, ORT WASM)\n   - Registers available models (from manifest, CDN, local cache)\n   - Each model has: name,\
+    \ version, input/output tensor descriptors,\n     supported backends, download URL, file size\n\n2. Guest queries capabilities:\n\
+    \   - ml-capabilities() returns list of available models + metadata\n   - Pipeline UI can show/hide ML operations based\
+    \ on availability\n\n3. User builds graph with ML node:\n   - apply-ml(source-node, model-name, params) -> node-id\n \
+    \  - Model name is a string reference, not a binary blob\n   - Params are model-specific (e.g., strength, scale factor)\n\
+    \n4. Execution:\n   - If prior node has GPU output and host supports GPU ML:\n     GPU buffer -> MLTensor (best-effort\
+    \ zero-copy) -> inference -> GPU buffer\n   - If no GPU ML: readback -> CPU inference (ORT WASM) -> upload\n   - If no\
+    \ ML at all: return ml-error::not-available\n\n5. Model lifecycle:\n   - First reference triggers download (host manages)\n\
+    \   - Model cached in host storage (IndexedDB, filesystem)\n   - Warm-up: pre-compile model graph on first load\n   -\
+    \ Subsequent calls reuse compiled graph\n\nOpen questions to resolve:\n- Should ml-stage be part of gpu-plan or a separate\
+    \ plan type?\n- How to handle variable output dimensions (e.g., super-res 4x)?\n- How to express model-specific parameters\
+    \ in a generic WIT interface?\n- Should tensor layout conversion (RGBA->RGB, HWC->NCHW) be a\n  guest-side micro-node\
+    \ or a host-side concern?\n- How to handle streaming/progressive inference for large images?\n"
 plan:
-  - phase: Evaluate Existing Infrastructure
-    tasks:
-      - text: Audit wit/core/ml.wit — evaluate tensor I/O design, identify needed revisions
-        done: false
-      - text: Map how ml.wit would wire into pipeline.wit (import, node type, graph integration)
-        done: false
-      - text: Survey available ML models for image processing (RMBG, Real-ESRGAN, etc.)
-        done: false
-  - phase: Prototype GPU-ML Interop
-    tasks:
-      - text: Prototype ONNX Runtime Web WebGPU EP — test Tensor.fromGpuBuffer() and preferredOutputLocation gpu-buffer
-        done: false
-      - text: Verify ORT shared GPUDevice bug 26107 status — test if custom device can be injected
-        done: false
-      - text: Measure actual copy cost between rasmcore WebGPU device and ORT WebGPU device (if separate)
-        done: false
-      - text: Prototype CPU fallback path via ONNX Runtime WASM SIMD backend
-        done: false
-      - text: If WebNN flag is available on test machine, evaluate MLTensor interop as future optimization
-        done: false
-  - phase: Architecture Design
-    tasks:
-      - text: Design revised ml.wit interface with host-capability-provider model
-        done: false
-      - text: Design ml-stage extension for multi-gpu-plan (GPU to ML to GPU chaining)
-        done: false
-      - text: Design runtime capability discovery and lazy model loading protocol
-        done: false
-      - text: Design tensor layout conversion strategy (RGBA f32 to model input format)
-        done: false
-      - text: Write implementation plan document with WIT diffs and host API specs
-        done: false
+- phase: Evaluate Existing Infrastructure
+  tasks:
+  - text: Audit wit/core/ml.wit — evaluate tensor I/O design, identify needed revisions
+    done: true
+  - text: Map how ml.wit would wire into pipeline.wit (import, node type, graph integration)
+    done: true
+  - text: Survey available ML models for image processing (RMBG, Real-ESRGAN, etc.)
+    done: true
+- phase: Prototype GPU-ML Interop
+  tasks:
+  - text: Prototype ONNX Runtime Web WebGPU EP — test Tensor.fromGpuBuffer() and preferredOutputLocation gpu-buffer
+    done: true
+  - text: Verify ORT shared GPUDevice bug 26107 status — test if custom device can be injected
+    done: true
+  - text: Measure actual copy cost between rasmcore WebGPU device and ORT WebGPU device (if separate)
+    done: true
+  - text: Prototype CPU fallback path via ONNX Runtime WASM SIMD backend
+    done: true
+  - text: If WebNN flag is available on test machine, evaluate MLTensor interop as future optimization
+    done: true
+- phase: Architecture Design
+  tasks:
+  - text: Design revised ml.wit interface with host-capability-provider model
+    done: true
+  - text: Design ml-stage extension for multi-gpu-plan (GPU to ML to GPU chaining)
+    done: true
+  - text: Design runtime capability discovery and lazy model loading protocol
+    done: true
+  - text: Design tensor layout conversion strategy (RGBA f32 to model input format)
+    done: true
+  - text: Write implementation plan document with WIT diffs and host API specs
+    done: true
 extra: {}
