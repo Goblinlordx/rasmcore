@@ -20,36 +20,36 @@ spec:
   out_of_scope: Command-based undo (re-render from scratch). Non-stroke undo (filter undo). History branching.
   technical_notes: ''
 plan:
-  - phase: Tile Snapshot System
-    tasks:
-      - text: Define Tile struct (64x64 f32 RGBA) and TileSet (sparse map of tile coords to data)
-        done: false
-      - text: Implement capture_tiles(layer, bounding_rect) - extract only overlapping tiles
-        done: false
-      - text: Implement restore_tiles(layer, tile_set) - write tiles back to layer
-        done: false
-  - phase: Undo Stack
-    tasks:
-      - text: Define UndoEntry (layer_id, pre_stroke TileSet, bounding_rect)
-        done: false
-      - text: Implement UndoStack with push_stroke, undo, redo, clear
-        done: false
-      - text: Implement memory budget - evict oldest entries when total size exceeds limit
-        done: false
-  - phase: WIT Integration
-    tasks:
-      - text: Add undo-stack resource to WIT with push-stroke, undo, redo, clear, set-memory-budget
-        done: false
-      - text: Wire apply-stroke to automatically push undo entry before rendering
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Test undo restores exact pre-stroke tile state
-        done: false
-      - text: Test redo re-applies stroke result
-        done: false
-      - text: Test memory budget eviction - oldest entries removed first
-        done: false
-      - text: Round-trip - draw 3 strokes, undo all 3, verify canvas matches original
-        done: false
+- phase: Tile Snapshot System
+  tasks:
+  - text: Define Tile struct (64x64 f32 RGBA) and TileSet (sparse map of tile coords to data)
+    done: true
+  - text: Implement capture_tiles(layer, bounding_rect) - extract only overlapping tiles
+    done: true
+  - text: Implement restore_tiles(layer, tile_set) - write tiles back to layer
+    done: true
+- phase: Undo Stack
+  tasks:
+  - text: Define UndoEntry (layer_id, pre_stroke TileSet, bounding_rect)
+    done: true
+  - text: Implement UndoStack with push_stroke, undo, redo, clear
+    done: true
+  - text: Implement memory budget - evict oldest entries when total size exceeds limit
+    done: true
+- phase: WIT Integration
+  tasks:
+  - text: Add undo-stack resource to WIT with push-stroke, undo, redo, clear, set-memory-budget
+    done: true
+  - text: Wire apply-stroke to automatically push undo entry before rendering
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test undo restores exact pre-stroke tile state
+    done: true
+  - text: Test redo re-applies stroke result
+    done: true
+  - text: Test memory budget eviction - oldest entries removed first
+    done: true
+  - text: Round-trip - draw 3 strokes, undo all 3, verify canvas matches original
+    done: true
 extra: {}
