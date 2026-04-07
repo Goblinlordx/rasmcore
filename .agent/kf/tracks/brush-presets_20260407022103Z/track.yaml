@@ -22,34 +22,34 @@ spec:
   out_of_scope: User-defined custom brushes. Brush import/export. UI for brush editing.
   technical_notes: ''
 plan:
-  - phase: Preset Infrastructure
-    tasks:
-      - text: Create BrushPreset struct wrapping brush-params with name and description
-        done: false
-      - text: Create preset registry (inventory-based, same pattern as filter registry)
-        done: false
-  - phase: Presets
-    tasks:
-      - text: Pencil preset - small diameter, high hardness, steep pressure-to-size curve, 10% spacing
-        done: false
-      - text: Pen preset - medium diameter, full hardness, pressure-to-opacity, 5% spacing
-        done: false
-      - text: Airbrush preset - large diameter, low hardness (soft), pressure-to-flow, 25% spacing
-        done: false
-      - text: Watercolor preset - medium diameter, soft edge, velocity-to-size, scatter 0.3
-        done: false
-      - text: Chalk preset - medium diameter, embedded grain texture tip, tilt-to-size, scatter 0.2
-        done: false
-  - phase: Discovery
-    tasks:
-      - text: Add list-brush-presets and get-brush-preset WIT methods
-        done: false
-      - text: Wire preset lookup in WASM adapter
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Each preset produces visually distinct output with identical stroke path
-        done: false
-      - text: All presets discoverable via list-brush-presets
-        done: false
+- phase: Preset Infrastructure
+  tasks:
+  - text: Create BrushPreset struct wrapping brush-params with name and description
+    done: true
+  - text: Create preset registry (inventory-based, same pattern as filter registry)
+    done: true
+- phase: Presets
+  tasks:
+  - text: Pencil preset - small diameter, high hardness, steep pressure-to-size curve, 10% spacing
+    done: true
+  - text: Pen preset - medium diameter, full hardness, pressure-to-opacity, 5% spacing
+    done: true
+  - text: Airbrush preset - large diameter, low hardness (soft), pressure-to-flow, 25% spacing
+    done: true
+  - text: Watercolor preset - medium diameter, soft edge, velocity-to-size, scatter 0.3
+    done: true
+  - text: Chalk preset - medium diameter, embedded grain texture tip, tilt-to-size, scatter 0.2
+    done: true
+- phase: Discovery
+  tasks:
+  - text: Add list-brush-presets and get-brush-preset WIT methods
+    done: true
+  - text: Wire preset lookup in WASM adapter
+    done: true
+- phase: Verification
+  tasks:
+  - text: Each preset produces visually distinct output with identical stroke path
+    done: true
+  - text: All presets discoverable via list-brush-presets
+    done: true
 extra: {}
