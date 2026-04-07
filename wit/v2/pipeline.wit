@@ -311,6 +311,21 @@ interface pipeline-v2 {
         /// pipeline API for convenience. Empty list if no ML runtime.
         list-ml-models: func() -> list<ml-model-info>;
 
+        // ─── Stroke Drawing ───
+        /// Apply a brush stroke to a layer.
+        ///
+        /// Renders the stroke using the brush engine (stamp-based dab compositing),
+        /// then composites the result onto the source layer with the given color
+        /// and blend mode.
+        apply-stroke: func(
+            source: node-id,
+            stroke: borrow<stroke-input>,
+            color-r: f32,
+            color-g: f32,
+            color-b: f32,
+            blend-mode: string,
+        ) -> result<node-id, rasmcore-error>;
+
         // ─── Configuration ───
         /// Set the demand strategy (tile sizing).
         set-demand-strategy: func(strategy: demand-strategy);
@@ -372,6 +387,79 @@ interface pipeline-v2 {
         set-tracing: func(enabled: bool);
         /// Take collected trace events, clearing the internal buffer.
         take-trace: func() -> list<trace-event>;
+    }
+
+    // ─── Stroke Input ────────────────────────────────────────────────
+
+    /// Per-point sample from a stylus/pointer device.
+    record stroke-point {
+        /// X position in pixels.
+        x: f32,
+        /// Y position in pixels.
+        y: f32,
+        /// Pen pressure (0.0 = no pressure, 1.0 = full).
+        pressure: f32,
+        /// Pen tilt X in radians (-PI/2..PI/2).
+        tilt-x: f32,
+        /// Pen tilt Y in radians (-PI/2..PI/2).
+        tilt-y: f32,
+        /// Barrel rotation in radians (0..2*PI).
+        rotation: f32,
+        /// Stroke velocity in px/ms (derived from position delta / time delta).
+        velocity: f32,
+        /// Timestamp relative to stroke start in milliseconds.
+        timestamp: f32,
+    }
+
+    /// Brush configuration parameters.
+    record brush-params {
+        /// Base diameter in pixels.
+        diameter: f32,
+        /// Spacing between dabs (fraction of diameter, e.g., 0.15 = 15%).
+        spacing: f32,
+        /// Edge hardness (0.0 = soft airbrush, 1.0 = hard circle).
+        hardness: f32,
+        /// Per-dab flow (opacity per dab, 0..1).
+        flow: f32,
+        /// Per-stroke opacity cap (0..1).
+        opacity: f32,
+        /// Base rotation angle in radians.
+        angle: f32,
+        /// Roundness (1.0 = circle, 0.1 = flat ellipse).
+        roundness: f32,
+        /// Scatter amount (0 = no scatter, perpendicular displacement as fraction of diameter).
+        scatter: f32,
+        /// Path smoothing strength (0..1, 0 = raw input, 1 = max smoothing).
+        smoothing: f32,
+        /// Dynamics: pressure-to-size curve control points (pairs of f32).
+        pressure-size-curve: option<list<f32>>,
+        /// Dynamics: pressure-to-opacity curve control points.
+        pressure-opacity-curve: option<list<f32>>,
+        /// Dynamics: velocity-to-size curve control points.
+        velocity-size-curve: option<list<f32>>,
+        /// Brush tip texture (grayscale f32, width * height entries). None = parametric circle.
+        tip-texture: option<list<f32>>,
+        /// Tip texture width (ignored if tip-texture is none).
+        tip-width: u32,
+        /// Tip texture height (ignored if tip-texture is none).
+        tip-height: u32,
+    }
+
+    /// Interactive stroke input — accumulates per-point samples for brush rendering.
+    ///
+    /// Created with brush parameters, then populated with sample points from
+    /// pointer/stylus events. Passed to apply-stroke for rendering.
+    resource stroke-input {
+        /// Create a new stroke with the given brush configuration.
+        constructor(brush: brush-params);
+        /// Add a sample point to the stroke.
+        add-point: func(point: stroke-point);
+        /// Signal end of stroke (pointer up).
+        end-stroke: func();
+        /// Get the number of points in this stroke.
+        point-count: func() -> u32;
+        /// Get serialized point data (f32 array, 8 floats per point).
+        point-data: func() -> list<f32>;
     }
 
     /// ML model info — pipeline-facing view of host ML capabilities.

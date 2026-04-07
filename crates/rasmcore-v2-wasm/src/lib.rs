@@ -499,6 +499,37 @@ impl PipelineResource {
         Ok(id)
     }
 
+    pub fn apply_stroke(
+        &self,
+        source: u32,
+        stroke: &StrokeInputResource,
+        color: [f32; 3],
+        _blend_mode: &str,
+    ) -> Result<u32, PipelineError> {
+        let info = self.graph.borrow().node_info(source)?;
+
+        // Content hash includes stroke point data + brush params for caching
+        let upstream_hash = self.graph.borrow().content_hash(source);
+        // Hash stroke point data as bytes for content-addressed caching
+        let pts = stroke.points.borrow();
+        let point_bytes: Vec<u8> = pts.iter()
+            .flat_map(|f| f.to_le_bytes())
+            .collect();
+        let stroke_hash = content_hash(&upstream_hash, "apply_stroke", &point_bytes);
+
+        let n_points = pts.len() / STROKE_POINT_STRIDE;
+
+        // Placeholder: pass-through node (actual brush engine added in brush-engine-cpu track)
+        let node = Box::new(PassthroughStrokeNode {
+            upstream: source,
+            info,
+            point_count: n_points,
+            color,
+        });
+        let id = self.graph.borrow_mut().add_node_with_hash(node, stroke_hash);
+        Ok(id)
+    }
+
     pub fn write(
         &self,
         node_id: u32,
@@ -574,6 +605,7 @@ impl LayerCacheResource {
 
 /// WASM-exported font resource.
 pub struct FontResource {
+    #[allow(dead_code)]
     pub(crate) inner: std::rc::Rc<v2::font::Font>,
 }
 
@@ -584,6 +616,64 @@ impl FontResource {
         Ok(Self { inner: std::rc::Rc::new(font) })
     }
 }
+
+/// Placeholder stroke node — passes through source unchanged.
+///
+/// This will be replaced by the actual brush engine in the brush-engine-cpu track.
+/// For now it validates the wiring works end-to-end.
+struct PassthroughStrokeNode {
+    upstream: u32,
+    info: NodeInfo,
+    #[allow(dead_code)]
+    point_count: usize,
+    #[allow(dead_code)]
+    color: [f32; 3],
+}
+
+impl v2::Node for PassthroughStrokeNode {
+    fn info(&self) -> NodeInfo {
+        self.info.clone()
+    }
+
+    fn compute(
+        &self,
+        request: v2::rect::Rect,
+        upstream: &mut dyn v2::node::Upstream,
+    ) -> Result<Vec<f32>, PipelineError> {
+        // Passthrough — actual brush rendering will be added in brush-engine-cpu
+        upstream.request(self.upstream, request)
+    }
+
+    fn upstream_ids(&self) -> Vec<u32> {
+        vec![self.upstream]
+    }
+}
+
+/// WASM-exported stroke input resource.
+pub struct StrokeInputResource {
+    points: RefCell<Vec<f32>>,
+    #[allow(dead_code)]
+    brush_params: StrokeBrushParams,
+    #[allow(dead_code)]
+    ended: std::cell::Cell<bool>,
+}
+
+/// Internal brush params (mirrors WIT brush-params).
+#[derive(Clone)]
+pub struct StrokeBrushParams {
+    pub diameter: f32,
+    pub spacing: f32,
+    pub hardness: f32,
+    pub flow: f32,
+    pub opacity: f32,
+    pub angle: f32,
+    pub roundness: f32,
+    pub scatter: f32,
+    pub smoothing: f32,
+}
+
+/// Number of f32 fields per stroke point.
+const STROKE_POINT_STRIDE: usize = 8;
 
 #[cfg(target_arch = "wasm32")]
 struct Component;
@@ -597,6 +687,7 @@ impl wit::Guest for Component {
     type LayerCache = LayerCacheResource;
     type Source = SourceResource;
     type Font = FontResource;
+    type StrokeInput = StrokeInputResource;
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -667,6 +758,51 @@ impl wit::GuestFont for FontResource {
             descender: i.descender,
             num_glyphs: i.num_glyphs,
         }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl wit::GuestStrokeInput for StrokeInputResource {
+    fn new(brush: wit::BrushParams) -> Self {
+        Self {
+            points: RefCell::new(Vec::new()),
+            brush_params: StrokeBrushParams {
+                diameter: brush.diameter,
+                spacing: brush.spacing,
+                hardness: brush.hardness,
+                flow: brush.flow,
+                opacity: brush.opacity,
+                angle: brush.angle,
+                roundness: brush.roundness,
+                scatter: brush.scatter,
+                smoothing: brush.smoothing,
+            },
+            ended: std::cell::Cell::new(false),
+        }
+    }
+
+    fn add_point(&self, point: wit::StrokePoint) {
+        let mut pts = self.points.borrow_mut();
+        pts.push(point.x);
+        pts.push(point.y);
+        pts.push(point.pressure);
+        pts.push(point.tilt_x);
+        pts.push(point.tilt_y);
+        pts.push(point.rotation);
+        pts.push(point.velocity);
+        pts.push(point.timestamp);
+    }
+
+    fn end_stroke(&self) {
+        self.ended.set(true);
+    }
+
+    fn point_count(&self) -> u32 {
+        (self.points.borrow().len() / STROKE_POINT_STRIDE) as u32
+    }
+
+    fn point_data(&self) -> Vec<f32> {
+        self.points.borrow().clone()
     }
 }
 
@@ -847,6 +983,20 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
         let font_res = font.get::<FontResource>();
         let param_map = deserialize_params(&params);
         self.draw_text(source, font_res.inner.clone(), &param_map)
+            .map_err(to_wit_error)
+    }
+
+    fn apply_stroke(
+        &self,
+        source: u32,
+        stroke: wit::StrokeInputBorrow<'_>,
+        color_r: f32,
+        color_g: f32,
+        color_b: f32,
+        blend_mode: String,
+    ) -> Result<u32, RasmcoreError> {
+        let stroke_res = stroke.get::<StrokeInputResource>();
+        self.apply_stroke(source, stroke_res, [color_r, color_g, color_b], &blend_mode)
             .map_err(to_wit_error)
     }
 
@@ -1315,6 +1465,58 @@ mod tests {
             stats_after_second.hits > hits_after_first,
             "should have at least one cache hit from unchanged upstream filter"
         );
+    }
+
+    #[test]
+    fn stroke_input_round_trip() {
+        let stroke = StrokeInputResource {
+            points: RefCell::new(Vec::new()),
+            brush_params: StrokeBrushParams {
+                diameter: 20.0,
+                spacing: 0.15,
+                hardness: 0.8,
+                flow: 1.0,
+                opacity: 1.0,
+                angle: 0.0,
+                roundness: 1.0,
+                scatter: 0.0,
+                smoothing: 0.0,
+            },
+            ended: std::cell::Cell::new(false),
+        };
+
+        // Add 3 points
+        {
+            let mut pts = stroke.points.borrow_mut();
+            // Point 1: (100, 200) pressure=0.5
+            pts.extend_from_slice(&[100.0, 200.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0]);
+            // Point 2: (110, 205) pressure=0.7
+            pts.extend_from_slice(&[110.0, 205.0, 0.7, 0.0, 0.0, 0.0, 1.0, 16.0]);
+            // Point 3: (120, 210) pressure=0.3
+            pts.extend_from_slice(&[120.0, 210.0, 0.3, 0.0, 0.0, 0.0, 1.0, 32.0]);
+        }
+
+        // Verify point count
+        assert_eq!(stroke.points.borrow().len() / STROKE_POINT_STRIDE, 3);
+
+        // Verify data round-trip
+        let data = stroke.points.borrow().clone();
+        assert_eq!(data.len(), 24); // 3 points * 8 floats
+        assert_eq!(data[0], 100.0); // first point x
+        assert_eq!(data[8], 110.0); // second point x
+        assert_eq!(data[18], 0.3);  // third point pressure
+
+        // Verify apply_stroke with passthrough
+        let pipe = PipelineResource::new();
+        let source = SourceNode {
+            pixels: vec![0.5, 0.3, 0.1, 1.0],
+            info: NodeInfo { width: 1, height: 1, color_space: ColorSpace::Linear },
+        };
+        let src_id = pipe.graph.borrow_mut().add_node(Box::new(source));
+        let result_id = pipe.apply_stroke(src_id, &stroke, [1.0, 0.0, 0.0], "normal").unwrap();
+        let output = pipe.render(result_id).unwrap();
+        // Passthrough: output should match source
+        assert_eq!(output, vec![0.5, 0.3, 0.1, 1.0]);
     }
 
 }

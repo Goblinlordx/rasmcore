@@ -312,9 +312,19 @@ for (const enc of encoderFormats) {
   ts += `  }\n\n`;
 }
 
+ts += `  // ─── Stroke Drawing ────────────────────────────────────────────────────
+
+  /** Apply a brush stroke to the current image. */
+  applyStroke(stroke: StrokeInput, color: [number, number, number], blendMode: string = 'normal'): Pipeline {
+    const node = this._pipe.applyStroke(this._node, stroke._stroke, color[0], color[1], color[2], blendMode);
+    return new Pipeline(this._pipe, node);
+  }
+
+`;
+
 ts += `  // ─── Discovery ──────────────────────────────────────────────────────────
 
-  /** List all available operations (auto-loads WASM module). */
+  /** List all available operations (auto-loads WASM module). */`;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   static listOperations(): any[] {
     const { pipelineV2 } = require('../v2-generated/rasmcore-v2-image.js');
@@ -327,6 +337,103 @@ ts += `  // ─── Discovery ────────────────
   static listOperationsFromRaw(PipelineClass: any): any[] {
     const pipe = new PipelineClass();
     return pipe.listOperations();
+  }
+}
+
+/** Stroke point — per-sample data from a stylus/pointer device. */
+export interface StrokePointData {
+  x: number;
+  y: number;
+  pressure?: number;
+  tiltX?: number;
+  tiltY?: number;
+  rotation?: number;
+  velocity?: number;
+  timestamp?: number;
+}
+
+/** Brush configuration parameters. */
+export interface BrushConfig {
+  diameter: number;
+  spacing?: number;
+  hardness?: number;
+  flow?: number;
+  opacity?: number;
+  angle?: number;
+  roundness?: number;
+  scatter?: number;
+  smoothing?: number;
+  pressureSizeCurve?: number[];
+  pressureOpacityCurve?: number[];
+  velocitySizeCurve?: number[];
+  tipTexture?: Float32Array;
+  tipWidth?: number;
+  tipHeight?: number;
+}
+
+/**
+ * Stroke input — accumulates per-point samples for brush rendering.
+ *
+ * Usage:
+ *   const stroke = StrokeInput.create({ diameter: 20, spacing: 0.15, hardness: 0.8 });
+ *   stroke.addPoint({ x: 100, y: 200, pressure: 0.5 });
+ *   stroke.addPoint({ x: 110, y: 205, pressure: 0.6 });
+ *   stroke.endStroke();
+ *   const result = Pipeline.open(canvas).applyStroke(stroke, [1, 0, 0]).writePng();
+ */
+export class StrokeInput {
+  /** @internal */
+  _stroke: any;
+
+  private constructor(stroke: any) {
+    this._stroke = stroke;
+  }
+
+  /** Create a new stroke with the given brush configuration. */
+  static create(config: BrushConfig): StrokeInput {
+    const { pipelineV2 } = require('../v2-generated/rasmcore-v2-image.js');
+    const stroke = new pipelineV2.StrokeInput({
+      diameter: config.diameter,
+      spacing: config.spacing ?? 0.15,
+      hardness: config.hardness ?? 0.8,
+      flow: config.flow ?? 1.0,
+      opacity: config.opacity ?? 1.0,
+      angle: config.angle ?? 0.0,
+      roundness: config.roundness ?? 1.0,
+      scatter: config.scatter ?? 0.0,
+      smoothing: config.smoothing ?? 0.0,
+      pressureSizeCurve: config.pressureSizeCurve ?? undefined,
+      pressureOpacityCurve: config.pressureOpacityCurve ?? undefined,
+      velocitySizeCurve: config.velocitySizeCurve ?? undefined,
+      tipTexture: config.tipTexture ? Array.from(config.tipTexture) : undefined,
+      tipWidth: config.tipWidth ?? 0,
+      tipHeight: config.tipHeight ?? 0,
+    });
+    return new StrokeInput(stroke);
+  }
+
+  /** Add a sample point to the stroke. */
+  addPoint(point: StrokePointData): void {
+    this._stroke.addPoint({
+      x: point.x,
+      y: point.y,
+      pressure: point.pressure ?? 1.0,
+      tiltX: point.tiltX ?? 0.0,
+      tiltY: point.tiltY ?? 0.0,
+      rotation: point.rotation ?? 0.0,
+      velocity: point.velocity ?? 0.0,
+      timestamp: point.timestamp ?? 0.0,
+    });
+  }
+
+  /** Signal end of stroke (pointer up). */
+  endStroke(): void {
+    this._stroke.endStroke();
+  }
+
+  /** Get the number of points in this stroke. */
+  get pointCount(): number {
+    return this._stroke.pointCount();
   }
 }
 `;
