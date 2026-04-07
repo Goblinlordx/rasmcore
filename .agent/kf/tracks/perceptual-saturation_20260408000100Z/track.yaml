@@ -1,0 +1,128 @@
+id: perceptual-saturation_20260408000100Z
+title: "Perceptual saturation filter using OKLab/OKLCH color model"
+type: feature
+status: pending
+created: 2026-04-08
+updated: 2026-04-08
+spec:
+  summary: |
+    Replace the HSL-based saturate filter with a perceptual model using
+    OKLCH (OKLab cylindrical). Add OKLab<->linear sRGB conversion to
+    color_math.rs. Update rasmcore-reference and AUTHORITY.md.
+  context: |
+    The current saturate filter uses HSL hexcone saturation — multiply S in HSL
+    space. This is NOT perceptually uniform: saturating yellow and blue by the
+    same amount produces visually different results. Professional color tools
+    (DaVinci Resolve, Nuke) use perceptual models.
+
+    Candidate perceptual color spaces for saturation:
+    - CIE LCH (CIELab cylindrical): perceptual but not uniform for hue
+    - ACES JMh: ACES-specific, complex, requires full ACES pipeline
+    - OKLab/OKLCH (Bjorn Ottosson 2020): designed specifically for perceptual
+      uniformity. Simple matrix math. Used by CSS Color Level 4 spec. Fast.
+
+    Decision: OKLCH. Rationale:
+    1. Perceptually uniform by design (Ottosson 2020, optimized via CAM16-UCS)
+    2. Simple implementation — 3x3 matrix + cube root, no iterative solver
+    3. CSS Color Level 4 adopted it (W3C standard)
+    4. Colour-science Python library has reference implementation
+    5. Fast — comparable to HSL, no transcendental functions beyond cbrt
+
+    Literature:
+    - Ottosson, B. (2020). "A perceptual color space for image processing."
+      https://bottosson.github.io/posts/oklab/
+    - W3C CSS Color Level 4, Section 8 (OKLab, OKLCH)
+    - Colour-science: colour.models.oklab (Python reference)
+
+    The existing HSL saturate filter will be preserved as saturate_hsl for
+    backward compatibility. The default saturate becomes OKLCH-based.
+  codebase_analysis: |
+    Files to modify:
+    - color_math.rs: add linear_srgb_to_oklab(), oklab_to_linear_srgb(),
+      oklab_to_oklch(), oklch_to_oklab()
+    - filters/color.rs: new PerceptualSaturate filter, rename current to SaturateHsl
+    - rasmcore-reference/src/color_ops.rs: add OKLCH reference saturate
+    - rasmcore-reference/AUTHORITY.md: update saturation entry with citations
+    - rasmcore-reference/VALIDATION.md: update saturation entry
+
+    Existing color_math.rs has: srgb_to_linear, linear_to_srgb, Lab conversions
+    (for lab_adjust filter). Adding OKLab is the same pattern.
+
+    The OKLab conversion is:
+    1. Linear sRGB -> LMS via M1 matrix (3x3)
+    2. LMS -> cube root of each component
+    3. Cube-rooted LMS -> OKLab via M2 matrix (3x3)
+    4. OKLab (L,a,b) -> OKLCH (L,C,h) via polar conversion
+  acceptance_criteria:
+    - linear_srgb_to_oklab() and oklab_to_linear_srgb() in color_math.rs
+    - oklab_to_oklch() and oklch_to_oklab() conversions
+    - Roundtrip test linear->oklab->linear within 1e-6
+    - New PerceptualSaturate filter using OKLCH chroma scaling
+    - Existing HSL saturate preserved as saturate_hsl
+    - Default saturate name points to perceptual version
+    - GPU shader for OKLCH saturation
+    - Reference implementation in rasmcore-reference with OKLCH math
+    - AUTHORITY.md updated with Ottosson 2020 citation and CSS Color L4 ref
+    - Perceptual saturation produces visually uniform results across hues
+  out_of_scope: |
+    Full OKLab gamut mapping (out-of-gamut clamping). ACES JMh model.
+    Replacing all HSL usage throughout the codebase.
+  technical_notes: |
+    OKLab conversion matrices (Ottosson 2020):
+
+    M1 (linear sRGB to LMS):
+      0.4122214708  0.5363325363  0.0514459929
+      0.2119034982  0.6806995451  0.1073969566
+      0.0883024619  0.2817188376  0.6299787005
+
+    M2 (cube-rooted LMS to OKLab):
+      0.2104542553  0.7936177850 -0.0040720468
+      1.9779984951 -2.4285922050  0.4505937099
+      0.0259040371  0.7827717662 -0.8086757660
+
+    OKLCH from OKLab:
+      L = L (lightness, same)
+      C = sqrt(a*a + b*b) (chroma)
+      h = atan2(b, a) (hue angle)
+
+    Saturation in OKLCH: scale C by factor, reconstruct.
+    This is perceptually uniform — equal C changes produce equal
+    perceived saturation changes regardless of hue.
+plan:
+  - phase: "OKLab color math"
+    tasks:
+      - text: "Add M1, M2 matrices and their inverses as constants in color_math.rs"
+        done: false
+      - text: "Implement linear_srgb_to_oklab() and oklab_to_linear_srgb()"
+        done: false
+      - text: "Implement oklab_to_oklch() and oklch_to_oklab()"
+        done: false
+      - text: "Roundtrip tests for all conversions (tolerance < 1e-6)"
+        done: false
+  - phase: "Perceptual saturation filter"
+    tasks:
+      - text: "Rename current Saturate to SaturateHsl, register as saturate_hsl"
+        done: false
+      - text: "Create new Saturate using OKLCH chroma scaling"
+        done: false
+      - text: "GPU shader for OKLCH saturation (inline matrices)"
+        done: false
+      - text: "Test perceptual uniformity — equal factor on red/green/blue produces similar perceived change"
+        done: false
+  - phase: "Reference and documentation"
+    tasks:
+      - text: "Add OKLCH saturate to rasmcore-reference/src/color_ops.rs"
+        done: false
+      - text: "Update AUTHORITY.md with Ottosson 2020 and CSS Color L4 citations"
+        done: false
+      - text: "Integration test — reference vs pipeline filter"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "All existing tests pass (HSL saturate tests now test saturate_hsl)"
+        done: false
+      - text: "New perceptual saturate tests pass"
+        done: false
+      - text: "WASM build succeeds"
+        done: false
+extra: {}

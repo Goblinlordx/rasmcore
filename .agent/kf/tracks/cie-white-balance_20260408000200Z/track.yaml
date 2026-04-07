@@ -1,0 +1,135 @@
+id: cie-white-balance_20260408000200Z
+title: "CIE chromatic adaptation white balance (CAT16, Planckian locus)"
+type: feature
+status: pending
+created: 2026-04-08
+updated: 2026-04-08
+spec:
+  summary: |
+    Replace the naive per-channel scaling white balance with proper CIE
+    chromatic adaptation using CAT16 transform and Planckian locus
+    temperature-to-chromaticity conversion.
+  context: |
+    Current white_balance_temperature does R *= 1+shift*0.1, B *= 1-shift*0.1.
+    This is not how any professional tool works. Real white balance:
+
+    1. Convert source temperature (Kelvin) to CIE xy chromaticity via the
+       Planckian locus or CIE D-illuminant series
+    2. Convert target temperature to xy chromaticity
+    3. Apply a chromatic adaptation transform (CAT) that maps colors seen
+       under the source illuminant to how they would appear under the target
+
+    The CAT is a 3x3 matrix multiply in a cone response space. CAT16
+    (from CIE CAM16, Li et al. 2017) is the current best practice.
+
+    Literature:
+    - CIE 015:2018 Colorimetry, 4th Edition — D-illuminant series
+    - Li, C. et al. (2017). "Comprehensive color appearance model (CAM16)."
+      Color Research & Application, 42(6), 703-718.
+    - Planckian locus approximation: Hernandez-Andres et al. (1999).
+      "Calculating correlated color temperatures across the entire gamut
+      of daylight and skylight chromaticities." Applied Optics, 38(27).
+    - Colour-science Python: colour.adaptation.chromatic_adaptation_CAT16()
+
+    The implementation adds reusable CIE infrastructure to color_math.rs
+    that benefits future color science work (ICC profiles, ACES, etc.).
+  codebase_analysis: |
+    Files to modify:
+    - color_math.rs: add CIE illuminant functions, CAT16 matrices, adaptation
+    - filters/color.rs: replace wb_temp_scales() with proper CIE math
+    - rasmcore-reference/src/color_ops.rs: proper white balance reference
+    - rasmcore-reference/AUTHORITY.md: update with CIE citations
+    - rasmcore-reference/VALIDATION.md: update validation status
+
+    Existing wb_temp_scales() at color.rs:707-714 is the function to replace.
+    The ClutOp implementation at line 716-721 also needs updating.
+
+    The white_balance_gray_world filter (line 854) is a different algorithm
+    (statistical, not temperature-based) and is NOT changed by this track.
+  acceptance_criteria:
+    - cie_d_illuminant_xy(temperature_k) returns CIE xy chromaticity
+    - planckian_locus_xy(temperature_k) for non-D illuminants
+    - cat16_adaptation_matrix(source_xy, target_xy) returns 3x3 matrix
+    - White balance filter uses CIE adaptation (temperature in Kelvin, D65 as reference)
+    - Existing parameter range preserved (2000-12000K, tint -1 to 1)
+    - Tint maps to green-magenta shift along the Planckian locus perpendicular
+    - GPU shader for the 3x3 matrix adaptation
+    - CLUT fusion still works (ClutOp updated)
+    - Reference implementation in rasmcore-reference with same CIE math
+    - AUTHORITY.md updated with Li et al. 2017 and CIE 015 citations
+    - Roundtrip test 6500K (D65) adaptation is identity
+    - Visual test warm/cool shift matches DaVinci Resolve behavior
+  out_of_scope: |
+    Full CAM16 appearance model (only the CAT16 adaptation component).
+    ICC profile-based white point adaptation.
+    Correlated color temperature (CCT) estimation from image pixels.
+  technical_notes: |
+    CIE D-illuminant series (CIE 015:2018, eq. 4.1):
+      For 4000K <= T <= 25000K:
+        xD = -4.6070e9/T^3 + 2.9678e6/T^2 + 0.09911e3/T + 0.244063  (T<=7000)
+        xD = -2.0064e9/T^3 + 1.9018e6/T^2 + 0.24748e3/T + 0.237040  (T>7000)
+        yD = -3.000*xD^2 + 2.870*xD - 0.275
+
+    CAT16 matrix (Li et al. 2017):
+      M_CAT16 =
+        0.401288  0.650173 -0.051461
+       -0.250268  1.204414  0.045854
+       -0.002079  0.048952  0.953127
+
+    Adaptation:
+      1. Source and target XYZ from xy chromaticity (Y=1)
+      2. Source and target cone responses: RGB_s = M_CAT16 * XYZ_s
+      3. Diagonal adaptation: D = diag(RGB_t / RGB_s)
+      4. Full adaptation matrix: M = M_CAT16^-1 * D * M_CAT16
+
+    The result is a single 3x3 matrix that can be applied per-pixel.
+    For the GPU shader, the matrix is pre-computed on CPU and passed
+    as a uniform (9 floats = 36 bytes).
+
+    Tint (green-magenta): offset along the isotemperature line perpendicular
+    to the Planckian locus. Implemented as a small duv shift in CIE uv space
+    before converting to xy for the adaptation.
+plan:
+  - phase: "CIE color math infrastructure"
+    tasks:
+      - text: "Add CIE D-illuminant xy chromaticity function (CIE 015:2018 eq 4.1)"
+        done: false
+      - text: "Add Planckian locus xy approximation (Hernandez-Andres 1999)"
+        done: false
+      - text: "Add xy_to_xyz() and xyz_to_linear_srgb() helper functions"
+        done: false
+      - text: "Add CAT16 forward and inverse matrices as constants"
+        done: false
+      - text: "Implement cat16_adaptation_matrix(source_xy, target_xy) -> [f32; 9]"
+        done: false
+      - text: "Test D65 (6500K) self-adaptation produces identity matrix"
+        done: false
+  - phase: "White balance filter upgrade"
+    tasks:
+      - text: "Replace wb_temp_scales() with CIE CAT16 adaptation"
+        done: false
+      - text: "Implement tint as duv perpendicular shift on Planckian locus"
+        done: false
+      - text: "Update GPU shader to use pre-computed 3x3 adaptation matrix uniform"
+        done: false
+      - text: "Update ClutOp implementation for CLUT fusion"
+        done: false
+      - text: "Test warm (3200K) and cool (9000K) produce expected chromatic shift"
+        done: false
+  - phase: "Reference and documentation"
+    tasks:
+      - text: "Implement CIE white balance in rasmcore-reference/src/color_ops.rs"
+        done: false
+      - text: "Update AUTHORITY.md with Li et al. 2017 and CIE 015:2018 citations"
+        done: false
+      - text: "Integration test — reference vs pipeline filter"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "All existing white balance tests pass with updated math"
+        done: false
+      - text: "6500K with tint=0 produces identity (no change)"
+        done: false
+      - text: "WASM build succeeds"
+        done: false
+extra: {}
