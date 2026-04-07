@@ -1,0 +1,100 @@
+id: gaussian-kernel-accuracy_20260408000300Z
+title: "Professional Gaussian kernel accuracy — 5-sigma truncation, configurable threshold"
+type: refactor
+status: pending
+created: 2026-04-08
+updated: 2026-04-08
+spec:
+  summary: |
+    Increase Gaussian kernel truncation from 3*sigma (OpenCV default) to
+    5*sigma (99.9999% energy capture). Add configurable truncation threshold.
+    Update reference implementation and AUTHORITY.md.
+  context: |
+    Current gaussian_kernel_1d() at spatial.rs:57-74 uses sigma*6+1 = 3*sigma
+    per side. This matches OpenCV's default but NOT professional VFX tools.
+
+    Professional tool behavior:
+    - Nuke (Foundry): Blur node defaults to "infinite" support, practically
+      truncated when kernel weight drops below a threshold (~4.4*sigma for
+      99.99% energy). Nuke quality setting controls this.
+    - DaVinci Resolve: Uses 4*sigma for Gaussian blur in Fusion.
+    - Photoshop: Uses iterative box blur approximation (3-pass box blur
+      approximates Gaussian via central limit theorem), effective support
+      similar to 4*sigma.
+
+    Energy captured by truncation:
+    - 3*sigma: 99.73% (current)
+    - 4*sigma: 99.9937%
+    - 5*sigma: 99.99994% (effectively perfect for f32 precision)
+    - 6*sigma: 99.9999998% (overkill)
+
+    Decision: reference uses 5*sigma (matches f32 precision limit).
+    Optimized filter uses 4*sigma (matches Resolve) with option to increase.
+    The reference is correctness-first — it captures all perceptible energy.
+
+    The kernel size increase is 10/6 = 1.67x more taps. For a separable
+    2-pass filter this is 1.67x slowdown, acceptable for correctness.
+    GPU shaders can use the smaller kernel with documented quality flag.
+  codebase_analysis: |
+    gaussian_kernel_1d() at spatial.rs:57:
+      ksize = ((sigma * 6.0 + 1.0).round() as usize) | 1
+    This is the only place kernel size is determined. All Gaussian-based
+    filters (gaussian_blur, sharpen unsharp mask, high_pass) use this.
+
+    GPU shaders for gaussian_blur use a 2-pass separable approach with
+    the same kernel size. Changing the kernel function changes both paths.
+
+    Affected filters: gaussian_blur, sharpen (uses Gaussian), high_pass
+    (subtracts Gaussian), bokeh_blur (disc, different), lens_blur (different).
+  acceptance_criteria:
+    - gaussian_kernel_1d() uses 5*sigma truncation by default
+    - Configurable truncation multiplier parameter (default 5.0)
+    - Reference implementation in rasmcore-reference uses 5*sigma
+    - Existing filter behavior changes only in the tails (pixels beyond 3*sigma)
+    - GPU shader kernel size updated to match
+    - AUTHORITY.md updated to cite Nuke/Resolve behavior not OpenCV
+    - Energy capture documented in code comments
+    - Test that 5*sigma kernel sums to within 1e-7 of 1.0
+  out_of_scope: |
+    FFT-based convolution (separate optimization track).
+    Box blur approximation of Gaussian (different algorithm).
+    Non-Gaussian blur kernels (bilateral, median).
+  technical_notes: |
+    Change at spatial.rs:59:
+      Before: let ksize = ((sigma * 6.0 + 1.0).round() as usize) | 1;
+      After:  let ksize = ((sigma * 10.0 + 1.0).round() as usize) | 1;
+
+    This is a one-line core change. The rest is updating tests that
+    depend on exact kernel sizes, and updating documentation.
+
+    For GPU shaders that hardcode kernel size in the dispatch:
+    The kernel weights are passed as an extra_buffer, so the GPU path
+    automatically gets the larger kernel. Dispatch count increases.
+plan:
+  - phase: "Kernel accuracy upgrade"
+    tasks:
+      - text: "Change gaussian_kernel_1d truncation from 3*sigma to 5*sigma"
+        done: false
+      - text: "Add sigma_multiplier parameter with default 5.0"
+        done: false
+      - text: "Verify kernel normalization (sum within 1e-7 of 1.0) for various sigma"
+        done: false
+  - phase: "Reference and documentation"
+    tasks:
+      - text: "Update rasmcore-reference gaussian_blur to use 5*sigma"
+        done: false
+      - text: "Update AUTHORITY.md — cite Nuke 4.4*sigma, Resolve 4*sigma, our 5*sigma"
+        done: false
+      - text: "Document energy capture percentages in kernel function comments"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "gaussian_blur_solid_unchanged test still passes (solid is blur-invariant)"
+        done: false
+      - text: "Verify output difference vs old kernel is only in tails (< 0.01 for most pixels)"
+        done: false
+      - text: "All spatial filter tests pass"
+        done: false
+      - text: "WASM build succeeds"
+        done: false
+extra: {}
