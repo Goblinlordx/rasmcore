@@ -60,17 +60,29 @@ spec:
 
     enum ml-output-kind { image, mask }
 
+    enum ml-padding-mode { mirror, zero, clamp }
+
+    // Model input requirements — host uses this to decide tiling strategy.
+    // If fixed-size is set, the host tiles the image into chunks of that size.
+    // Concurrency is NOT here — host decides based on hardware.
+    record ml-input-spec {
+      fixed-size: option<tuple<u32, u32>>,  // None = dynamic dims, Some = fixed tile size
+      overlap: u32,                          // pixels of overlap between tiles (for seam blending)
+      padding: ml-padding-mode,              // how to pad edge tiles
+    }
+
     record ml-capability-info {
       model: model-ref,
       display-name: string,
       category: string,           // enhancement, segmentation, upscale, generation
       output-kind: ml-output-kind,
       output-scale: option<u32>,  // None=same dims, Some(4)=4x upscale
-      input-desc: tensor-desc,
+      input-spec: ml-input-spec,  // tiling requirements
+      input-desc: tensor-desc,    // tensor shape/dtype
       output-desc: tensor-desc,
       params: list<ml-param-descriptor>,
       backend: string,
-      estimated-ms: u32,
+      estimated-ms-per-tile: u32, // hint for UI progress estimation
     }
 
     record ml-param-descriptor {
@@ -98,7 +110,9 @@ plan:
         done: false
       - text: Add ml-param-descriptor record (matching filter param-descriptor pattern)
         done: false
-      - text: Revise ml-capability-info with display-name, category, output-kind, output-scale, params
+      - text: Add ml-input-spec record (fixed-size, overlap, padding) and ml-padding-mode enum
+        done: false
+      - text: Revise ml-capability-info with display-name, category, output-kind, output-scale, input-spec, params
         done: false
       - text: Update ml-op to use params buffer instead of string key-value pairs
         done: false

@@ -209,7 +209,21 @@ plan:
         done: false
       - text: Create model manifest JSON with all 3 models and HuggingFace download URLs
         done: false
-      - text: Implement tiled inference for large images (tile, infer, stitch) for upscale model
+      - text: Add inputSpec to model definitions (fixedSize, overlap, padding mode)
+        done: false
+  - phase: Tiling Engine (host-side)
+    tasks:
+      - text: Implement tile extraction with configurable overlap and mirror/zero/clamp padding
+        done: false
+      - text: Implement hardware-adaptive concurrency estimation (GPU memory, device class, model size)
+        done: false
+      - text: Implement concurrent tile dispatch (Promise pool with N parallel inferences)
+        done: false
+      - text: Implement overlap region blending (linear feather cross-fade to eliminate seams)
+        done: false
+      - text: Implement output tile stitching into final image
+        done: false
+      - text: Passthrough for dynamic-input models (no tiling needed, just resize)
         done: false
   - phase: Native ML Crate (rasmcore-ml)
     tasks:

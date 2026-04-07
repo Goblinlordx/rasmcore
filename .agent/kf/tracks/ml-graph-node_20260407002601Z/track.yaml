@@ -23,9 +23,25 @@ spec:
       reflect the output dimensions, not input.
     - Mask output: segmentation models produce single-channel output. The node
       must expand to RGBA (mask in alpha, or grayscale in RGB).
+    - Tiling: models with fixed input size (e.g., 128x128) need automatic
+      tiling with overlap and seam blending. The model spec declares input
+      requirements; the host decides concurrency based on hardware.
     - GPU plan integration: when prior node has GPU output, the ml-stage
       should receive GPU buffer data without unnecessary CPU roundtrip where
       the host supports it.
+
+    Tiling architecture:
+    - Model inputSpec declares: fixedSize (or null for dynamic), overlap
+      pixels, and padding mode (mirror/zero/clamp).
+    - The tiling engine is a host-side concern. The guest MlNode sends
+      the full image; the host tiles, runs concurrent inference (hardware-
+      determined parallelism), blends overlap regions, and returns the
+      stitched result.
+    - Concurrency is NOT in the model spec — the host estimates it from
+      available GPU memory, device class, and model size.
+    - Overlap blending uses linear feather to eliminate seam artifacts.
+    - Model variants (quality vs fast) are exposed as separate entries
+      in ml-capabilities. The application chooses which to use.
   codebase_analysis: |
     Files to create/modify:
     - crates/rasmcore-pipeline-v2/src/ml_node.rs (NEW): MlNode implementation
@@ -131,4 +147,9 @@ plan:
         done: false
       - text: Test mask node produces correct RGBA expansion
         done: false
+  note_on_tiling: |
+    Tiling, overlap blending, and concurrent dispatch are HOST-SIDE concerns,
+    not implemented in the guest graph node. The MlNode sends the full image
+    via ml-execute; the host's tiling engine handles the rest. Tiling tasks
+    belong in the ml-sdk-host track, not here.
 extra: {}
