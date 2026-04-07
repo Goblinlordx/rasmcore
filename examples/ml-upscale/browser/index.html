@@ -103,20 +103,16 @@ function setTiming(entries) {
 async function detectBackends() {
   const results = [];
 
-  // WebNN check
+  // WebNN check — createContext takes an options object per W3C spec
   if (typeof navigator !== 'undefined' && navigator.ml) {
     results.push('<span class="ok">WebNN API: available (navigator.ml exists)</span>');
-    try {
-      const ctx = await navigator.ml.createContext('gpu');
-      results.push('<span class="ok">  WebNN GPU: available</span>');
-    } catch (e) {
-      results.push('<span class="warn">  WebNN GPU: ' + e.message + '</span>');
-    }
-    try {
-      const ctx = await navigator.ml.createContext('cpu');
-      results.push('<span class="ok">  WebNN CPU: available</span>');
-    } catch (e) {
-      results.push('<span class="warn">  WebNN CPU: ' + e.message + '</span>');
+    for (const deviceType of ['gpu', 'npu', 'cpu']) {
+      try {
+        const ctx = await navigator.ml.createContext({ deviceType });
+        results.push('<span class="ok">  WebNN ' + deviceType.toUpperCase() + ': available</span>');
+      } catch (e) {
+        results.push('<span class="warn">  WebNN ' + deviceType.toUpperCase() + ': ' + e.message + '</span>');
+      }
     }
   } else {
     results.push('<span class="warn">WebNN API: not available</span>');
@@ -128,15 +124,19 @@ async function detectBackends() {
     try {
       const adapter = await navigator.gpu.requestAdapter();
       if (adapter) {
-        const info = await adapter.requestAdapterInfo();
-        results.push('<span class="ok">WebGPU: available (' + (info.description || info.vendor || 'unknown') + ')</span>');
+        // adapter.info is the modern API (requestAdapterInfo is deprecated)
+        const info = adapter.info || {};
+        const desc = info.description || info.vendor || info.architecture || 'unknown';
+        results.push('<span class="ok">WebGPU: available (' + desc + ')</span>');
         selectedBackend = 'webgpu';
+      } else {
+        results.push('<span class="warn">WebGPU: no adapter returned</span>');
       }
     } catch (e) {
-      results.push('<span class="warn">WebGPU: adapter request failed</span>');
+      results.push('<span class="warn">WebGPU: ' + e.message + '</span>');
     }
   } else {
-    results.push('<span class="warn">WebGPU: not available</span>');
+    results.push('<span class="warn">WebGPU: not available (requires HTTPS or localhost)</span>');
   }
 
   // WASM always available
