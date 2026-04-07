@@ -24,50 +24,50 @@ spec:
   out_of_scope: GPU rendering. Custom brush textures (parametric circle only). Undo. Presets.
   technical_notes: ''
 plan:
-  - phase: Foundation
-    tasks:
-      - text: Create crates/rasmcore-pipeline-v2/src/brush/ module with mod.rs, types.rs
-        done: false
-      - text: Define DabInstance struct (pos, size, angle, opacity, color) and BrushEngine trait
-        done: false
-      - text: Implement piecewise-linear dynamics curve lookup (shared with grading curves format)
-        done: false
-  - phase: Path Processing
-    tasks:
-      - text: Implement Catmull-Rom path smoothing with adjustable strength parameter
-        done: false
-      - text: Implement spacing interpolation along smoothed path (evenly-spaced dab positions)
-        done: false
-      - text: Interpolate all per-point fields (pressure, tilt, velocity) at dab positions
-        done: false
-  - phase: Dab Generation
-    tasks:
-      - text: Implement dynamics evaluation - map input fields to dab params via curves
-        done: false
-      - text: Implement scatter - random perpendicular displacement per dab
-        done: false
-      - text: Implement parametric circle tip with hardness-controlled falloff gradient
-        done: false
-  - phase: Compositing
-    tasks:
-      - text: Create AccumulationBuffer (f32 RGBA at canvas dimensions)
-        done: false
-      - text: Implement dab stamp compositing onto accumulation buffer (max-opacity blend)
-        done: false
-      - text: Implement layer composite - blend accumulation buffer onto source with blend mode and stroke opacity
-        done: false
-  - phase: Integration
-    tasks:
-      - text: Create StrokeNode that takes StrokeInput + BrushEngine and produces rendered output
-        done: false
-      - text: Wire apply_stroke in WASM adapter to use CPU brush engine
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Test spacing interpolation produces correct dab count for known path length
-        done: false
-      - text: Test dynamics curves map pressure to expected size/opacity values
-        done: false
-      - text: Test full stroke render produces visible stamp pattern at expected positions
-        done: false
+- phase: Foundation
+  tasks:
+  - text: Create crates/rasmcore-pipeline-v2/src/brush/ module with mod.rs, types.rs
+    done: true
+  - text: Define DabInstance struct (pos, size, angle, opacity, color) and BrushEngine trait
+    done: true
+  - text: Implement piecewise-linear dynamics curve lookup (shared with grading curves format)
+    done: true
+- phase: Path Processing
+  tasks:
+  - text: Implement Catmull-Rom path smoothing with adjustable strength parameter
+    done: true
+  - text: Implement spacing interpolation along smoothed path (evenly-spaced dab positions)
+    done: true
+  - text: Interpolate all per-point fields (pressure, tilt, velocity) at dab positions
+    done: true
+- phase: Dab Generation
+  tasks:
+  - text: Implement dynamics evaluation - map input fields to dab params via curves
+    done: true
+  - text: Implement scatter - random perpendicular displacement per dab
+    done: true
+  - text: Implement parametric circle tip with hardness-controlled falloff gradient
+    done: true
+- phase: Compositing
+  tasks:
+  - text: Create AccumulationBuffer (f32 RGBA at canvas dimensions)
+    done: true
+  - text: Implement dab stamp compositing onto accumulation buffer (max-opacity blend)
+    done: true
+  - text: Implement layer composite - blend accumulation buffer onto source with blend mode and stroke opacity
+    done: true
+- phase: Integration
+  tasks:
+  - text: Create StrokeNode that takes StrokeInput + BrushEngine and produces rendered output
+    done: true
+  - text: Wire apply_stroke in WASM adapter to use CPU brush engine
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test spacing interpolation produces correct dab count for known path length
+    done: true
+  - text: Test dynamics curves map pressure to expected size/opacity values
+    done: true
+  - text: Test full stroke render produces visible stamp pattern at expected positions
+    done: true
 extra: {}
