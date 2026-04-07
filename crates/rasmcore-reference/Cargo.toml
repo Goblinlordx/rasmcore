@@ -1,0 +1,12 @@
+[package]
+name = "rasmcore-reference"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "Textbook reference implementations for filter parity testing"
+
+# No dependencies — pure math only.
+[dependencies]
+
+[lints]
+workspace = true

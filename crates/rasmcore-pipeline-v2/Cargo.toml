@@ -16,6 +16,7 @@ fontdue = "0.9"
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 rasmcore-gpu-native = { path = "../rasmcore-gpu-native" }
+rasmcore-reference = { path = "../rasmcore-reference" }
 
 [[bench]]
 name = "gpu_pipeline"
