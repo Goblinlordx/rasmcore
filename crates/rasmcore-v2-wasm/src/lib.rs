@@ -43,6 +43,7 @@ use rasmcore_pipeline_v2::gpu_shaders::pixel_source::{self, HostPixelFormat};
 thread_local! {
     static RESOURCE_FONTS: RefCell<std::collections::HashMap<u32, std::rc::Rc<v2::font::Font>>> = RefCell::new(std::collections::HashMap::new());
     static RESOURCE_LUTS: RefCell<std::collections::HashMap<u32, v2::lmt::Lmt>> = RefCell::new(std::collections::HashMap::new());
+    static RESOURCE_TRANSFORMS: RefCell<std::collections::HashMap<u32, v2::color_transform::ColorTransform>> = RefCell::new(std::collections::HashMap::new());
     static NEXT_RESOURCE_ID: std::cell::Cell<u32> = const { std::cell::Cell::new(1) };
 }
 
@@ -78,6 +79,25 @@ fn instance_get_font(id: u32) -> Option<std::rc::Rc<v2::font::Font>> {
 #[allow(dead_code)]
 fn instance_get_lut(id: u32) -> Option<v2::lmt::Lmt> {
     RESOURCE_LUTS.with(|m| m.borrow().get(&id).cloned())
+}
+
+fn instance_register_transform(data: &[u8], format_hint: Option<&str>) -> Result<u32, PipelineError> {
+    let transform = v2::color_transform::parse_transform(data, format_hint)?;
+    let id = NEXT_RESOURCE_ID.with(|c| { let id = c.get(); c.set(id + 1); id });
+    RESOURCE_TRANSFORMS.with(|m| m.borrow_mut().insert(id, transform));
+    Ok(id)
+}
+
+fn instance_register_transform_preset(name: &str) -> Result<u32, PipelineError> {
+    let transform = v2::color_transform::load_preset(name)?;
+    let id = NEXT_RESOURCE_ID.with(|c| { let id = c.get(); c.set(id + 1); id });
+    RESOURCE_TRANSFORMS.with(|m| m.borrow_mut().insert(id, transform));
+    Ok(id)
+}
+
+#[allow(dead_code)]
+fn instance_get_transform(id: u32) -> Option<v2::color_transform::ColorTransform> {
+    RESOURCE_TRANSFORMS.with(|m| m.borrow().get(&id).cloned())
 }
 
 // ─── Error conversion ───────────────────────────────────────────────────────
@@ -580,6 +600,16 @@ impl PipelineResource {
         Ok(id)
     }
 
+    /// Apply a registered color transform (IDT, LMT, or Output Transform).
+    pub fn apply_color_transform(&self, source: u32, transform_id: u32) -> Result<u32, PipelineError> {
+        let info = self.graph.borrow().node_info(source)?;
+        let transform = instance_get_transform(transform_id)
+            .ok_or_else(|| PipelineError::InvalidParams(format!("transform ID {transform_id} not found")))?;
+        let node = Box::new(v2::color_transform::ColorTransformNode::new(source, info, transform));
+        let id = self.graph.borrow_mut().add_node(node);
+        Ok(id)
+    }
+
     /// Draw text using an externally-provided Font resource.
     pub fn draw_text(
         &self,
@@ -799,6 +829,23 @@ impl wit::Guest for Component {
 
     fn register_lut(data: Vec<u8>) -> Result<u32, RasmcoreError> {
         instance_register_lut(&data).map_err(to_wit_error)
+    }
+
+    fn register_transform(data: Vec<u8>, format_hint: Option<String>) -> Result<u32, RasmcoreError> {
+        instance_register_transform(&data, format_hint.as_deref()).map_err(to_wit_error)
+    }
+
+    fn register_transform_preset(name: String) -> Result<u32, RasmcoreError> {
+        instance_register_transform_preset(&name).map_err(to_wit_error)
+    }
+
+    fn list_transform_presets() -> Vec<wit::TransformPresetInfo> {
+        v2::color_transform::preset_list().into_iter().map(|p| wit::TransformPresetInfo {
+            name: p.name.to_string(),
+            display_name: p.display_name.to_string(),
+            kind: format!("{:?}", p.kind).to_lowercase(),
+            description: p.description.to_string(),
+        }).collect()
     }
 }
 
@@ -1111,7 +1158,19 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
         self.use_lmt(source, &data).map_err(to_wit_error)
     }
 
+    // ─── Color Transforms (IDT / LMT / Output Transform) ──────────────
 
+    fn apply_idt(&self, source: u32, transform_id: u32) -> Result<u32, RasmcoreError> {
+        self.apply_color_transform(source, transform_id).map_err(to_wit_error)
+    }
+
+    fn apply_lmt_transform(&self, source: u32, transform_id: u32) -> Result<u32, RasmcoreError> {
+        self.apply_color_transform(source, transform_id).map_err(to_wit_error)
+    }
+
+    fn apply_output_transform(&self, source: u32, transform_id: u32) -> Result<u32, RasmcoreError> {
+        self.apply_color_transform(source, transform_id).map_err(to_wit_error)
+    }
 
     fn list_brush_presets(&self) -> Vec<wit::BrushPresetInfo> {
         v2::brush::registered_presets().into_iter().map(|p| wit::BrushPresetInfo {

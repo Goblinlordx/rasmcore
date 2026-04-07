@@ -35,6 +35,7 @@ pub mod filter_node;
 pub mod ml_node;
 pub mod color_math;
 pub mod color_convert;
+pub mod color_transform;
 pub mod aces;
 pub mod fusion;
 pub mod trace;

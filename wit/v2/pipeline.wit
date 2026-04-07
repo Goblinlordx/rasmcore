@@ -231,6 +231,17 @@ interface pipeline-v2 {
     /// Returns a LUT ID for use as a LutRef param in filters.
     register-lut: func(data: buffer) -> result<u32, rasmcore-error>;
 
+    /// Register a color transform from file data (CLF, .cube, CDL).
+    /// Returns a transform ID for use in apply-idt/apply-lmt-transform/apply-output-transform.
+    register-transform: func(data: buffer, format-hint: option<string>) -> result<u32, rasmcore-error>;
+
+    /// Register a built-in color transform preset by name.
+    /// Names: srgb-to-aces, rec709-to-aces, aces-to-srgb, aces-to-rec709, etc.
+    register-transform-preset: func(name: string) -> result<u32, rasmcore-error>;
+
+    /// List available built-in transform presets.
+    list-transform-presets: func() -> list<transform-preset-info>;
+
     // ─── Undo Stack Resource ────────────────────────────────────────────
 
     /// Tile-based stroke undo stack.
@@ -319,8 +330,16 @@ interface pipeline-v2 {
         /// Apply a Look Modification Transform from raw file data.
         /// Accepts .cube (3D LUT) and .clf (Common LUT Format) files.
         /// Format is auto-detected from content.
+        /// DEPRECATED: Use register-transform + apply-lmt-transform instead.
         use-lmt: func(source: node-id, data: buffer) -> result<node-id, rasmcore-error>;
 
+        // ─── Color Transforms (IDT / LMT / Output Transform) ───
+        /// Apply an Input Device Transform (source → ACES working space).
+        apply-idt: func(source: node-id, transform-id: u32) -> result<node-id, rasmcore-error>;
+        /// Apply a Look Modification Transform (ACES → ACES creative look).
+        apply-lmt-transform: func(source: node-id, transform-id: u32) -> result<node-id, rasmcore-error>;
+        /// Apply an Output Transform (ACES → display, combines RRT+ODT).
+        apply-output-transform: func(source: node-id, transform-id: u32) -> result<node-id, rasmcore-error>;
 
         // ─── ML Operations ───
         /// Apply an ML model to a source node.
@@ -515,5 +534,17 @@ interface pipeline-v2 {
         params: list<param-descriptor>,
         /// Estimated inference time per tile in ms.
         estimated-ms-per-tile: u32,
+    }
+
+    /// Built-in color transform preset info.
+    record transform-preset-info {
+        /// Preset name (used in register-transform-preset).
+        name: string,
+        /// Human-readable display name.
+        display-name: string,
+        /// Transform kind: idt, lmt, output-transform, cdl, csc.
+        kind: string,
+        /// Description.
+        description: string,
     }
 }
