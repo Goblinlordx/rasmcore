@@ -10,6 +10,8 @@ pub mod path;
 pub mod dab;
 pub mod composite;
 pub mod engine;
+pub mod presets;
 
 pub use types::*;
 pub use engine::CpuBrushEngine;
+pub use presets::{BrushPreset, registered_presets, find_preset};

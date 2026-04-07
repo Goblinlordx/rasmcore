@@ -97,6 +97,17 @@ fn to_wit_error(e: PipelineError) -> RasmcoreError {
     }
 }
 
+/// Convert a Rust DynamicsCurve to WIT flat f32 list (pairs of x,y).
+/// Empty curve → None (identity). Non-empty → Some(vec![x0,y0, x1,y1, ...]).
+#[cfg(target_arch = "wasm32")]
+fn curve_to_wit(curve: &v2::brush::DynamicsCurve) -> Option<Vec<f32>> {
+    if curve.points.is_empty() {
+        None
+    } else {
+        Some(curve.points.iter().flat_map(|&(x, y)| [x, y]).collect())
+    }
+}
+
 // ─── V2 Source Node ─────────────────────────────────────────────────────────
 
 /// Source node that holds decoded f32 pixel data.
@@ -1071,12 +1082,12 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
             roundness: p.params.roundness,
             scatter: p.params.scatter,
             smoothing: p.params.smoothing,
-            dynamics: wit::DynamicsCurves {
-                pressure_size: convert_curve(&p.params.dynamics.pressure_size),
-                pressure_opacity: convert_curve(&p.params.dynamics.pressure_opacity),
-                velocity_size: convert_curve(&p.params.dynamics.velocity_size),
-                tilt_angle: convert_curve(&p.params.dynamics.tilt_angle),
-            },
+            pressure_size_curve: curve_to_wit(&p.params.dynamics.pressure_size),
+            pressure_opacity_curve: curve_to_wit(&p.params.dynamics.pressure_opacity),
+            velocity_size_curve: curve_to_wit(&p.params.dynamics.velocity_size),
+            tip_texture: None,
+            tip_width: 0,
+            tip_height: 0,
         })
     }
 
