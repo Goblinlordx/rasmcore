@@ -115,7 +115,7 @@ A future track should implement proper CIE CAT02/CAT16 adaptation matching Resol
 
 | Filter | Authority | Command / Spec | Rationale |
 |--------|-----------|---------------|-----------|
-| `gaussian_blur` | OpenCV | `cv2.GaussianBlur(img, (0,0), sigma)` on float32 | Standard Gaussian kernel |
+| `gaussian_blur` | Nuke/Resolve | 5*sigma truncation (99.99994% energy), f32 separable convolution | Nuke ~4.4*sigma, Resolve 4*sigma; we use 5*sigma for f32-exact quality |
 | `box_blur` | OpenCV | `cv2.blur(img, (k,k))` on float32 | Uniform averaging kernel |
 | `median` | OpenCV | `cv2.medianBlur(img, k)` | Standard median filter |
 | `bilateral` | OpenCV | `cv2.bilateralFilter(img, d, sigmaColor, sigmaSpace)` | Tomasi-Manduchi formulation |

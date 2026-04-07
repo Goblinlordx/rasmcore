@@ -54,9 +54,25 @@ fn clamp_coord(v: i32, size: usize) -> usize {
 }
 
 /// Generate a 1D Gaussian kernel (normalized to sum=1).
+/// Default Gaussian truncation multiplier: 5 * sigma per side.
+///
+/// Energy capture by truncation radius:
+/// - 3*sigma: 99.73% (OpenCV default — loses visible tail energy)
+/// - 4*sigma: 99.9937% (DaVinci Resolve — good quality/perf balance)
+/// - 5*sigma: 99.99994% (our default — effectively perfect for f32 precision)
+/// - 6*sigma: 99.9999998% (overkill for f32)
+///
+/// Reference: Nuke (Foundry) uses ~4.4*sigma for 99.99% energy capture.
+/// We use 5*sigma as our reference quality level.
+const GAUSSIAN_SIGMA_MULTIPLIER: f32 = 5.0;
+
 fn gaussian_kernel_1d(radius: f32) -> Vec<f32> {
+    gaussian_kernel_1d_with_truncation(radius, GAUSSIAN_SIGMA_MULTIPLIER)
+}
+
+fn gaussian_kernel_1d_with_truncation(radius: f32, sigma_multiplier: f32) -> Vec<f32> {
     let sigma = radius;
-    let ksize = ((sigma * 6.0 + 1.0).round() as usize) | 1; // ensure odd
+    let ksize = ((sigma * 2.0 * sigma_multiplier + 1.0).round() as usize) | 1; // ensure odd
     let ksize = ksize.max(3);
     let center = ksize / 2;
     let mut kernel = Vec::with_capacity(ksize);
@@ -988,24 +1004,10 @@ use crate::gpu_shaders::spatial;
 
 /// Helper: generate a 1D Gaussian kernel as f32 bytes for GPU extra_buffer.
 pub fn gaussian_kernel_bytes(radius: f32) -> (u32, Vec<u8>) {
-    let sigma = radius;
-    let ksize = ((sigma * 6.0 + 1.0).round() as usize) | 1;
-    let ksize = ksize.max(3);
-    let center = ksize / 2;
-    let mut kernel = Vec::with_capacity(ksize);
-    let mut sum = 0.0f32;
-    for i in 0..ksize {
-        let x = i as f32 - center as f32;
-        let w = (-0.5 * (x / sigma).powi(2)).exp();
-        kernel.push(w);
-        sum += w;
-    }
-    let inv = 1.0 / sum;
-    let mut bytes = Vec::with_capacity(ksize * 4);
-    for w in &kernel {
-        bytes.extend_from_slice(&(w * inv).to_le_bytes());
-    }
-    (center as u32, bytes)
+    let kernel = gaussian_kernel_1d(radius);
+    let center = (kernel.len() / 2) as u32;
+    let bytes: Vec<u8> = kernel.iter().flat_map(|w| w.to_le_bytes()).collect();
+    (center, bytes)
 }
 
 /// Helper: build width/height/radius/pad params.
@@ -1465,6 +1467,48 @@ mod tests {
         let blur = GaussianBlur { radius: 0.0 };
         let output = blur.compute(&input, 8, 8).unwrap();
         assert_eq!(input, output);
+    }
+
+    #[test]
+    fn gaussian_kernel_5sigma_sums_to_one() {
+        // Verify kernel normalization for various sigma values
+        for sigma in [0.5, 1.0, 2.0, 5.0, 10.0, 20.0] {
+            let kernel = gaussian_kernel_1d(sigma);
+            let sum: f32 = kernel.iter().sum();
+            assert!(
+                (sum - 1.0).abs() < 1e-6,
+                "kernel for sigma={sigma} sums to {sum}, expected 1.0"
+            );
+        }
+    }
+
+    #[test]
+    fn gaussian_kernel_5sigma_larger_than_3sigma() {
+        // 5*sigma kernel should have more taps than the old 3*sigma
+        let sigma = 5.0;
+        let kernel_5s = gaussian_kernel_1d_with_truncation(sigma, 5.0);
+        let kernel_3s = gaussian_kernel_1d_with_truncation(sigma, 3.0);
+        assert!(
+            kernel_5s.len() > kernel_3s.len(),
+            "5*sigma kernel ({}) should be larger than 3*sigma kernel ({})",
+            kernel_5s.len(), kernel_3s.len()
+        );
+        // 5*sigma: ksize = round(5*2*5+1) = 51
+        // 3*sigma: ksize = round(5*2*3+1) = 31
+        assert_eq!(kernel_5s.len(), 51);
+        assert_eq!(kernel_3s.len(), 31);
+    }
+
+    #[test]
+    fn gaussian_kernel_bytes_matches_f32_kernel() {
+        let kernel = gaussian_kernel_1d(3.0);
+        let (center, bytes) = gaussian_kernel_bytes(3.0);
+        assert_eq!(center as usize, kernel.len() / 2);
+        assert_eq!(bytes.len(), kernel.len() * 4);
+        for (i, &w) in kernel.iter().enumerate() {
+            let from_bytes = f32::from_le_bytes(bytes[i*4..i*4+4].try_into().unwrap());
+            assert!((from_bytes - w).abs() < 1e-7, "mismatch at index {i}");
+        }
     }
 
     #[test]
