@@ -42,6 +42,13 @@
 <div class="controls">
   <button onclick="document.getElementById('fileInput').click()">Choose Image</button>
   <button onclick="useTestImage()">Use Test Image (64x64)</button>
+  <select id="backendSelect" style="background: #0f3460; color: white; border: 1px solid #333; padding: 8px; border-radius: 6px; font-size: 0.9em;">
+    <option value="auto">Backend: auto-detect</option>
+    <option value="webnn-gpu">WebNN GPU</option>
+    <option value="webnn-cpu">WebNN CPU</option>
+    <option value="webgpu">WebGPU (ORT)</option>
+    <option value="wasm">WASM CPU</option>
+  </select>
   <button id="runBtn" onclick="runUpscale()" disabled>Run Upscale (4x)</button>
   <input type="file" id="fileInput" accept="image/*" onchange="loadFile(event)">
   <span id="inputInfo" style="color: #888; font-size: 0.9em;"></span>
@@ -74,7 +81,9 @@
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.all.min.js"></script>
 
 <script>
-const MODEL_URL = 'https://huggingface.co/qualcomm/Real-ESRGAN-x4plus/resolve/main/Real-ESRGAN-x4plus.onnx';
+// Local model — drop Real-ESRGAN-x4plus.onnx in the same directory as this HTML.
+// In production, the host serves models from its own CDN / storage.
+const MODEL_URL = './Real-ESRGAN-x4plus.onnx';
 const SCALE = 4;
 
 let inputImageData = null;
@@ -247,8 +256,21 @@ async function runUpscale() {
     const t0 = performance.now();
 
     if (!session) {
-      const opts = { executionProviders: [selectedBackend] };
-      log(`  Backend: ${selectedBackend}`, 'info');
+      // Determine backend from dropdown or auto-detect
+      const pick = document.getElementById('backendSelect').value;
+      const backend = pick === 'auto' ? selectedBackend : pick;
+
+      // Map backend name to ORT execution provider config
+      const epMap = {
+        'webnn-gpu': [{ name: 'webnn', deviceType: 'gpu', powerPreference: 'high-performance' }],
+        'webnn-cpu': [{ name: 'webnn', deviceType: 'cpu' }],
+        'webgpu':    ['webgpu'],
+        'wasm':      ['wasm'],
+      };
+      const eps = epMap[backend] || ['wasm'];
+      const opts = { executionProviders: eps };
+      log(`  Backend: ${backend}`, 'info');
+      log(`  Execution providers: ${JSON.stringify(eps)}`, 'info');
       log(`  Model URL: ${MODEL_URL}`, 'info');
 
       // Fetch model as ArrayBuffer for progress tracking
@@ -312,10 +334,12 @@ async function runUpscale() {
     log(e.stack || '', 'err');
     console.error(e);
 
-    // If WebGPU failed, retry with WASM
-    if (selectedBackend === 'webgpu' && !session) {
-      log('\nRetrying with WASM backend...', 'warn');
-      selectedBackend = 'wasm';
+    // If non-WASM backend failed, retry with WASM as final fallback
+    const pick = document.getElementById('backendSelect').value;
+    const triedBackend = pick === 'auto' ? selectedBackend : pick;
+    if (triedBackend !== 'wasm' && !session) {
+      log(`\n${triedBackend} failed. Retrying with WASM backend...`, 'warn');
+      document.getElementById('backendSelect').value = 'wasm';
       session = null;
       btn.disabled = false;
       btn.textContent = 'Run Upscale (4x)';
