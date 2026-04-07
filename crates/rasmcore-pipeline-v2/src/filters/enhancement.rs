@@ -83,6 +83,29 @@ impl Filter for AutoLevel {
 pub struct Equalize;
 
 impl Filter for Equalize {
+    fn analysis_buffer_outputs(&self) -> &'static [crate::analysis_buffer::AnalysisBufferDecl] {
+        use crate::analysis_buffer::{AnalysisBufferDecl, AnalysisBufferKind};
+        static DECLS: [AnalysisBufferDecl; 1] = [AnalysisBufferDecl {
+            logical_id: 0,
+            kind: AnalysisBufferKind::Histogram256,
+            size_bytes: 0,
+        }];
+        &DECLS
+    }
+
+    fn gpu_shader_passes_with_context(
+        &self,
+        width: u32,
+        height: u32,
+        mapping: &crate::analysis_buffer::NodeBufferMapping,
+    ) -> Option<Vec<crate::node::GpuShader>> {
+        use crate::gpu_shaders::reduction::GpuReduction;
+        let resolved_id = mapping.resolve(0);
+        let reduction = GpuReduction::histogram_256(256).with_buffer_id(resolved_id);
+        let passes = reduction.build_passes(width, height);
+        Some(vec![passes.pass1, passes.pass2])
+    }
+
     fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
         let _ = (width, height);
         let npixels = input.len() / 4;

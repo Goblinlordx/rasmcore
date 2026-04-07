@@ -129,6 +129,28 @@ pub trait Filter {
     fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
         None
     }
+
+    // --- Analysis buffer protocol ---
+
+    /// Analysis buffers this filter produces (for cross-node GPU sharing).
+    fn analysis_buffer_outputs(&self) -> &'static [crate::analysis_buffer::AnalysisBufferDecl] {
+        &[]
+    }
+
+    /// Analysis buffers this filter consumes from upstream analysis nodes.
+    fn analysis_buffer_inputs(&self) -> &'static [crate::analysis_buffer::AnalysisBufferRef] {
+        &[]
+    }
+
+    /// Multi-pass GPU shaders with resolved analysis buffer context.
+    fn gpu_shader_passes_with_context(
+        &self,
+        width: u32,
+        height: u32,
+        _mapping: &crate::analysis_buffer::NodeBufferMapping,
+    ) -> Option<Vec<GpuShader>> {
+        self.gpu_shader_passes(width, height)
+    }
 }
 
 /// GPU filter trait — provides WGSL shader for GPU execution.
