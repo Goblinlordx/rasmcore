@@ -70,10 +70,12 @@ fn instance_register_lut(data: &[u8]) -> Result<u32, PipelineError> {
     Ok(id)
 }
 
+#[allow(dead_code)]
 fn instance_get_font(id: u32) -> Option<std::rc::Rc<v2::font::Font>> {
     RESOURCE_FONTS.with(|m| m.borrow().get(&id).cloned())
 }
 
+#[allow(dead_code)]
 fn instance_get_lut(id: u32) -> Option<v2::lmt::Lmt> {
     RESOURCE_LUTS.with(|m| m.borrow().get(&id).cloned())
 }
@@ -772,6 +774,11 @@ pub struct StrokeBrushParams {
 /// Number of f32 fields per stroke point.
 const STROKE_POINT_STRIDE: usize = 8;
 
+/// WASM-exported undo stack resource.
+pub struct UndoStackResource {
+    inner: RefCell<v2::undo::UndoStack>,
+}
+
 #[cfg(target_arch = "wasm32")]
 struct Component;
 
@@ -784,6 +791,7 @@ impl wit::Guest for Component {
     type LayerCache = LayerCacheResource;
     type Source = SourceResource;
     type StrokeInput = StrokeInputResource;
+    type UndoStack = UndoStackResource;
 
     fn register_font(data: Vec<u8>) -> Result<u32, RasmcoreError> {
         instance_register_font(&data).map_err(to_wit_error)
@@ -791,6 +799,49 @@ impl wit::Guest for Component {
 
     fn register_lut(data: Vec<u8>) -> Result<u32, RasmcoreError> {
         instance_register_lut(&data).map_err(to_wit_error)
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl wit::GuestUndoStack for UndoStackResource {
+    fn new(memory_budget_mb: u32) -> Self {
+        let budget = memory_budget_mb as usize * 1024 * 1024;
+        Self { inner: RefCell::new(v2::undo::UndoStack::new(budget)) }
+    }
+
+    fn push_stroke(&self, pixels: Vec<f32>, width: u32, height: u32, x: u32, y: u32, w: u32, h: u32) {
+        let bounds = v2::Rect::new(x, y, w, h);
+        self.inner.borrow_mut().push_stroke(&pixels, width, height, bounds);
+    }
+
+    fn record_post(&self, pixels: Vec<f32>, width: u32, height: u32) {
+        self.inner.borrow_mut().record_post_state(&pixels, width, height);
+    }
+
+    fn undo(&self, pixels: Vec<f32>, width: u32, height: u32) -> Option<Vec<f32>> {
+        let mut px = pixels;
+        self.inner.borrow_mut().undo(&mut px, width, height).map(|_| px)
+    }
+
+    fn redo(&self, pixels: Vec<f32>, width: u32, height: u32) -> Option<Vec<f32>> {
+        let mut px = pixels;
+        self.inner.borrow_mut().redo(&mut px, width, height).map(|_| px)
+    }
+
+    fn clear(&self) {
+        self.inner.borrow_mut().clear();
+    }
+
+    fn set_memory_budget(&self, mb: u32) {
+        self.inner.borrow_mut().set_memory_budget(mb as usize * 1024 * 1024);
+    }
+
+    fn undo_count(&self) -> u32 {
+        self.inner.borrow().undo_count() as u32
+    }
+
+    fn redo_count(&self) -> u32 {
+        self.inner.borrow().redo_count() as u32
     }
 }
 

@@ -231,6 +231,33 @@ interface pipeline-v2 {
     /// Returns a LUT ID for use as a LutRef param in filters.
     register-lut: func(data: buffer) -> result<u32, rasmcore-error>;
 
+    // ─── Undo Stack Resource ────────────────────────────────────────────
+
+    /// Tile-based stroke undo stack.
+    ///
+    /// Captures only tiles overlapping stroke bounding box before rendering.
+    /// Memory-bounded with oldest-first eviction.
+    resource undo-stack {
+        /// Create with memory budget in megabytes.
+        constructor(memory-budget-mb: u32);
+        /// Push pre-stroke state (capture tiles before rendering).
+        push-stroke: func(pixels: pixel-buffer, width: u32, height: u32, x: u32, y: u32, w: u32, h: u32);
+        /// Record post-stroke state (for redo). Call after rendering.
+        record-post: func(pixels: pixel-buffer, width: u32, height: u32);
+        /// Undo last stroke. Returns modified pixel buffer, or none if nothing to undo.
+        undo: func(pixels: pixel-buffer, width: u32, height: u32) -> option<pixel-buffer>;
+        /// Redo last undone stroke. Returns modified pixel buffer, or none.
+        redo: func(pixels: pixel-buffer, width: u32, height: u32) -> option<pixel-buffer>;
+        /// Clear all undo/redo history.
+        clear: func();
+        /// Set memory budget in megabytes.
+        set-memory-budget: func(mb: u32);
+        /// Number of undoable entries.
+        undo-count: func() -> u32;
+        /// Number of redoable entries.
+        redo-count: func() -> u32;
+    }
+
     // ─── Source Resource ────────────────────────────────────────────────
 
     /// Decoded image source — created once, reused across pipeline chains.
