@@ -835,7 +835,7 @@ impl wit::Guest for Component {
         instance_register_transform(&data, format_hint.as_deref()).map_err(to_wit_error)
     }
 
-    fn register_transform_preset(name: String) -> Result<u32, RasmcoreError> {
+    fn get_transform(name: String) -> Result<u32, RasmcoreError> {
         instance_register_transform_preset(&name).map_err(to_wit_error)
     }
 
@@ -844,6 +844,9 @@ impl wit::Guest for Component {
             name: p.name.to_string(),
             display_name: p.display_name.to_string(),
             kind: format!("{:?}", p.kind).to_lowercase(),
+            source_space: p.source_space.to_string(),
+            target_space: p.target_space.to_string(),
+            vendor: p.vendor.to_string(),
             description: p.description.to_string(),
         }).collect()
     }
@@ -1164,7 +1167,7 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
         self.apply_color_transform(source, transform_id).map_err(to_wit_error)
     }
 
-    fn apply_lmt_transform(&self, source: u32, transform_id: u32) -> Result<u32, RasmcoreError> {
+    fn apply_lmt(&self, source: u32, transform_id: u32) -> Result<u32, RasmcoreError> {
         self.apply_color_transform(source, transform_id).map_err(to_wit_error)
     }
 

@@ -232,14 +232,17 @@ interface pipeline-v2 {
     register-lut: func(data: buffer) -> result<u32, rasmcore-error>;
 
     /// Register a color transform from file data (CLF, .cube, CDL).
-    /// Returns a transform ID for use in apply-idt/apply-lmt-transform/apply-output-transform.
+    /// Returns a transform ID. The transform defines its own from/to spaces.
     register-transform: func(data: buffer, format-hint: option<string>) -> result<u32, rasmcore-error>;
 
-    /// Register a built-in color transform preset by name.
-    /// Names: srgb-to-aces, rec709-to-aces, aces-to-srgb, aces-to-rec709, etc.
-    register-transform-preset: func(name: string) -> result<u32, rasmcore-error>;
+    /// Get a reference to a built-in transform by name. Returns a transform ID.
+    /// No data needed — built-ins are always available.
+    /// IDT names: srgb, rec709, acescg, alexa-logc-v4, s-log3-sgamut3, etc.
+    /// OT names: odt-srgb-100nits, odt-rec709-100nits, etc.
+    /// CSC names: acescg-to-cct, acescct-to-cg, etc.
+    get-transform: func(name: string) -> result<u32, rasmcore-error>;
 
-    /// List available built-in transform presets.
+    /// List available built-in transform presets with metadata for UI.
     list-transform-presets: func() -> list<transform-preset-info>;
 
     // ─── Undo Stack Resource ────────────────────────────────────────────
@@ -334,11 +337,18 @@ interface pipeline-v2 {
         use-lmt: func(source: node-id, data: buffer) -> result<node-id, rasmcore-error>;
 
         // ─── Color Transforms (IDT / LMT / Output Transform) ───
-        /// Apply an Input Device Transform (source → ACES working space).
+        // Each transform is a registered resource (via register-transform or get-transform).
+        // The transform defines its own from/to spaces — no from/to params needed.
+        // apply-idt: camera-specific → ACES (one-directional, not invertible)
+        // apply-lmt: creative look, ACES → ACES (one-directional grade)
+        // apply-output-transform: ACES → display (one-directional, device-specific)
+        // convert-color-space: bidirectional CSC (above, for standard space conversions)
+
+        /// Apply an Input Device Transform. The transform defines source→ACES.
         apply-idt: func(source: node-id, transform-id: u32) -> result<node-id, rasmcore-error>;
-        /// Apply a Look Modification Transform (ACES → ACES creative look).
-        apply-lmt-transform: func(source: node-id, transform-id: u32) -> result<node-id, rasmcore-error>;
-        /// Apply an Output Transform (ACES → display, combines RRT+ODT).
+        /// Apply a Look Modification Transform. One-directional creative grade.
+        apply-lmt: func(source: node-id, transform-id: u32) -> result<node-id, rasmcore-error>;
+        /// Apply an Output Transform. The transform defines ACES→display.
         apply-output-transform: func(source: node-id, transform-id: u32) -> result<node-id, rasmcore-error>;
 
         // ─── ML Operations ───
@@ -536,14 +546,20 @@ interface pipeline-v2 {
         estimated-ms-per-tile: u32,
     }
 
-    /// Built-in color transform preset info.
+    /// Built-in color transform preset info — metadata for UI selectors.
     record transform-preset-info {
-        /// Preset name (used in register-transform-preset).
+        /// Preset name (used in get-transform).
         name: string,
         /// Human-readable display name.
         display-name: string,
-        /// Transform kind: idt, lmt, output-transform, cdl, csc.
+        /// Transform kind: idt, lmt, output-transform, csc.
         kind: string,
+        /// Source color space (e.g., "sRGB", "ARRI LogC v4 EI800").
+        source-space: string,
+        /// Target color space (e.g., "ACES2065-1", "ACEScg").
+        target-space: string,
+        /// Vendor/manufacturer (e.g., "Academy", "ARRI", "Sony").
+        vendor: string,
         /// Description.
         description: string,
     }

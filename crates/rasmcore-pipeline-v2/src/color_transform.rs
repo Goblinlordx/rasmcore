@@ -90,84 +90,60 @@ pub struct TransformPresetInfo {
     pub name: &'static str,
     pub display_name: &'static str,
     pub kind: TransformKind,
+    pub source_space: &'static str,
+    pub target_space: &'static str,
+    pub vendor: &'static str,
     pub description: &'static str,
 }
 
 /// All built-in transform presets.
 pub fn preset_list() -> Vec<TransformPresetInfo> {
     vec![
-        TransformPresetInfo { name: "srgb-to-aces", display_name: "sRGB to ACES (IDT)", kind: TransformKind::Idt, description: "sRGB/Rec.709 input to ACEScg working space" },
-        TransformPresetInfo { name: "rec709-to-aces", display_name: "Rec.709 to ACES (IDT)", kind: TransformKind::Idt, description: "Rec.709 input to ACEScg working space" },
-        TransformPresetInfo { name: "rec2020-to-aces", display_name: "Rec.2020 to ACES (IDT)", kind: TransformKind::Idt, description: "Rec.2020 input to ACEScg working space" },
-        TransformPresetInfo { name: "p3-to-aces", display_name: "Display P3 to ACES (IDT)", kind: TransformKind::Idt, description: "Display P3 input to ACEScg working space" },
-        TransformPresetInfo { name: "aces-to-srgb", display_name: "ACES to sRGB (OT)", kind: TransformKind::OutputTransform, description: "ACEScg to sRGB display output" },
-        TransformPresetInfo { name: "aces-to-rec709", display_name: "ACES to Rec.709 (OT)", kind: TransformKind::OutputTransform, description: "ACEScg to Rec.709 display output" },
-        TransformPresetInfo { name: "aces-to-rec2020", display_name: "ACES to Rec.2020 (OT)", kind: TransformKind::OutputTransform, description: "ACEScg to Rec.2020 display output" },
-        TransformPresetInfo { name: "aces-to-p3", display_name: "ACES to Display P3 (OT)", kind: TransformKind::OutputTransform, description: "ACEScg to Display P3 output" },
-        TransformPresetInfo { name: "acescg-to-cct", display_name: "ACEScg to ACEScct", kind: TransformKind::Csc, description: "Linear to log (grading space)" },
-        TransformPresetInfo { name: "acescct-to-cg", display_name: "ACEScct to ACEScg", kind: TransformKind::Csc, description: "Log to linear (compositing space)" },
-        TransformPresetInfo { name: "identity", display_name: "Identity (passthrough)", kind: TransformKind::Lmt, description: "No-op transform for testing" },
+        // IDTs — source → ACES (one-directional)
+        TransformPresetInfo { name: "idt-srgb", display_name: "sRGB (IDT)", kind: TransformKind::Idt, source_space: "sRGB", target_space: "ACEScg", vendor: "Academy", description: "sRGB/Rec.709 input to ACEScg" },
+        TransformPresetInfo { name: "idt-rec709", display_name: "Rec.709 (IDT)", kind: TransformKind::Idt, source_space: "Rec.709", target_space: "ACEScg", vendor: "Academy", description: "Rec.709 input to ACEScg" },
+        TransformPresetInfo { name: "idt-rec2020", display_name: "Rec.2020 (IDT)", kind: TransformKind::Idt, source_space: "Rec.2020", target_space: "ACEScg", vendor: "Academy", description: "Rec.2020 input to ACEScg" },
+        TransformPresetInfo { name: "idt-p3", display_name: "Display P3 (IDT)", kind: TransformKind::Idt, source_space: "Display P3", target_space: "ACEScg", vendor: "Academy", description: "Display P3 input to ACEScg" },
+        // Output Transforms — ACES → display (one-directional)
+        TransformPresetInfo { name: "ot-srgb", display_name: "sRGB 100 nits (OT)", kind: TransformKind::OutputTransform, source_space: "ACEScg", target_space: "sRGB", vendor: "Academy", description: "ACEScg to sRGB display" },
+        TransformPresetInfo { name: "ot-rec709", display_name: "Rec.709 100 nits (OT)", kind: TransformKind::OutputTransform, source_space: "ACEScg", target_space: "Rec.709", vendor: "Academy", description: "ACEScg to Rec.709 display" },
+        TransformPresetInfo { name: "ot-rec2020", display_name: "Rec.2020 100 nits (OT)", kind: TransformKind::OutputTransform, source_space: "ACEScg", target_space: "Rec.2020", vendor: "Academy", description: "ACEScg to Rec.2020 display" },
+        TransformPresetInfo { name: "ot-p3", display_name: "Display P3 100 nits (OT)", kind: TransformKind::OutputTransform, source_space: "ACEScg", target_space: "Display P3", vendor: "Academy", description: "ACEScg to Display P3 display" },
+        // CSCs — bidirectional working space conversions
+        TransformPresetInfo { name: "csc-acescg-to-cct", display_name: "ACEScg to ACEScct", kind: TransformKind::Csc, source_space: "ACEScg", target_space: "ACEScct", vendor: "Academy", description: "Linear to log grading space" },
+        TransformPresetInfo { name: "csc-acescct-to-cg", display_name: "ACEScct to ACEScg", kind: TransformKind::Csc, source_space: "ACEScct", target_space: "ACEScg", vendor: "Academy", description: "Log to linear compositing space" },
+        // Utility
+        TransformPresetInfo { name: "identity", display_name: "Identity", kind: TransformKind::Lmt, source_space: "any", target_space: "any", vendor: "Academy", description: "Passthrough (no-op)" },
     ]
 }
 
 /// Load a built-in preset by name.
+/// Helper to build a CSC preset.
+fn csc_preset(name: &str, from: ColorSpace, to: ColorSpace, kind: TransformKind) -> ColorTransform {
+    ColorTransform {
+        name: name.into(), kind,
+        source_space: from, target_space: to,
+        inner: ColorTransformInner::ColorSpaceConvert { from, to },
+    }
+}
+
 pub fn load_preset(name: &str) -> Result<ColorTransform, PipelineError> {
     match name {
-        "srgb-to-aces" => Ok(ColorTransform {
-            name: name.into(), kind: TransformKind::Idt,
-            source_space: ColorSpace::Srgb, target_space: ColorSpace::AcesCg,
-            inner: ColorTransformInner::ColorSpaceConvert { from: ColorSpace::Srgb, to: ColorSpace::AcesCg },
-        }),
-        "rec709-to-aces" => Ok(ColorTransform {
-            name: name.into(), kind: TransformKind::Idt,
-            source_space: ColorSpace::Rec709, target_space: ColorSpace::AcesCg,
-            inner: ColorTransformInner::ColorSpaceConvert { from: ColorSpace::Rec709, to: ColorSpace::AcesCg },
-        }),
-        "rec2020-to-aces" => Ok(ColorTransform {
-            name: name.into(), kind: TransformKind::Idt,
-            source_space: ColorSpace::Rec2020, target_space: ColorSpace::AcesCg,
-            inner: ColorTransformInner::ColorSpaceConvert { from: ColorSpace::Rec2020, to: ColorSpace::AcesCg },
-        }),
-        "p3-to-aces" => Ok(ColorTransform {
-            name: name.into(), kind: TransformKind::Idt,
-            source_space: ColorSpace::DisplayP3, target_space: ColorSpace::AcesCg,
-            inner: ColorTransformInner::ColorSpaceConvert { from: ColorSpace::DisplayP3, to: ColorSpace::AcesCg },
-        }),
-        "aces-to-srgb" => Ok(ColorTransform {
-            name: name.into(), kind: TransformKind::OutputTransform,
-            source_space: ColorSpace::AcesCg, target_space: ColorSpace::Srgb,
-            inner: ColorTransformInner::ColorSpaceConvert { from: ColorSpace::AcesCg, to: ColorSpace::Srgb },
-        }),
-        "aces-to-rec709" => Ok(ColorTransform {
-            name: name.into(), kind: TransformKind::OutputTransform,
-            source_space: ColorSpace::AcesCg, target_space: ColorSpace::Rec709,
-            inner: ColorTransformInner::ColorSpaceConvert { from: ColorSpace::AcesCg, to: ColorSpace::Rec709 },
-        }),
-        "aces-to-rec2020" => Ok(ColorTransform {
-            name: name.into(), kind: TransformKind::OutputTransform,
-            source_space: ColorSpace::AcesCg, target_space: ColorSpace::Rec2020,
-            inner: ColorTransformInner::ColorSpaceConvert { from: ColorSpace::AcesCg, to: ColorSpace::Rec2020 },
-        }),
-        "aces-to-p3" => Ok(ColorTransform {
-            name: name.into(), kind: TransformKind::OutputTransform,
-            source_space: ColorSpace::AcesCg, target_space: ColorSpace::DisplayP3,
-            inner: ColorTransformInner::ColorSpaceConvert { from: ColorSpace::AcesCg, to: ColorSpace::DisplayP3 },
-        }),
-        "acescg-to-cct" => Ok(ColorTransform {
-            name: name.into(), kind: TransformKind::Csc,
-            source_space: ColorSpace::AcesCg, target_space: ColorSpace::AcesCct,
-            inner: ColorTransformInner::ColorSpaceConvert { from: ColorSpace::AcesCg, to: ColorSpace::AcesCct },
-        }),
-        "acescct-to-cg" => Ok(ColorTransform {
-            name: name.into(), kind: TransformKind::Csc,
-            source_space: ColorSpace::AcesCct, target_space: ColorSpace::AcesCg,
-            inner: ColorTransformInner::ColorSpaceConvert { from: ColorSpace::AcesCct, to: ColorSpace::AcesCg },
-        }),
-        "identity" => Ok(ColorTransform {
-            name: name.into(), kind: TransformKind::Lmt,
-            source_space: ColorSpace::Linear, target_space: ColorSpace::Linear,
-            inner: ColorTransformInner::ColorSpaceConvert { from: ColorSpace::Linear, to: ColorSpace::Linear },
-        }),
+        // IDTs — source → ACEScg
+        "idt-srgb" => Ok(csc_preset(name, ColorSpace::Srgb, ColorSpace::AcesCg, TransformKind::Idt)),
+        "idt-rec709" => Ok(csc_preset(name, ColorSpace::Rec709, ColorSpace::AcesCg, TransformKind::Idt)),
+        "idt-rec2020" => Ok(csc_preset(name, ColorSpace::Rec2020, ColorSpace::AcesCg, TransformKind::Idt)),
+        "idt-p3" => Ok(csc_preset(name, ColorSpace::DisplayP3, ColorSpace::AcesCg, TransformKind::Idt)),
+        // Output Transforms — ACEScg → display
+        "ot-srgb" => Ok(csc_preset(name, ColorSpace::AcesCg, ColorSpace::Srgb, TransformKind::OutputTransform)),
+        "ot-rec709" => Ok(csc_preset(name, ColorSpace::AcesCg, ColorSpace::Rec709, TransformKind::OutputTransform)),
+        "ot-rec2020" => Ok(csc_preset(name, ColorSpace::AcesCg, ColorSpace::Rec2020, TransformKind::OutputTransform)),
+        "ot-p3" => Ok(csc_preset(name, ColorSpace::AcesCg, ColorSpace::DisplayP3, TransformKind::OutputTransform)),
+        // CSCs — working space conversions
+        "csc-acescg-to-cct" => Ok(csc_preset(name, ColorSpace::AcesCg, ColorSpace::AcesCct, TransformKind::Csc)),
+        "csc-acescct-to-cg" => Ok(csc_preset(name, ColorSpace::AcesCct, ColorSpace::AcesCg, TransformKind::Csc)),
+        // Utility
+        "identity" => Ok(csc_preset(name, ColorSpace::Linear, ColorSpace::Linear, TransformKind::Lmt)),
         _ => Err(PipelineError::InvalidParams(format!("unknown transform preset: {name}"))),
     }
 }
@@ -263,8 +239,8 @@ mod tests {
     fn preset_list_has_entries() {
         let presets = preset_list();
         assert!(presets.len() >= 10);
-        assert!(presets.iter().any(|p| p.name == "srgb-to-aces"));
-        assert!(presets.iter().any(|p| p.name == "aces-to-srgb"));
+        assert!(presets.iter().any(|p| p.name == "idt-srgb"));
+        assert!(presets.iter().any(|p| p.name == "ot-srgb"));
         assert!(presets.iter().any(|p| p.name == "identity"));
     }
 
@@ -294,8 +270,8 @@ mod tests {
 
     #[test]
     fn idt_odt_roundtrip() {
-        let idt = load_preset("srgb-to-aces").unwrap();
-        let odt = load_preset("aces-to-srgb").unwrap();
+        let idt = load_preset("idt-srgb").unwrap();
+        let odt = load_preset("ot-srgb").unwrap();
         let mut pixels = vec![0.5, 0.3, 0.8, 1.0];
         let orig = pixels.clone();
         idt.apply(&mut pixels);
