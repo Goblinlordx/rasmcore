@@ -3,72 +3,75 @@ title: CPU render optimization audit (SIMD, LUT baking, fused ops)
 type: chore
 status: pending
 created: '2026-04-04'
-updated: '2026-04-04'
+updated: '2026-04-07'
 spec:
-  summary: |
-    Audit and optimize V2 CPU fallback path: LUT baking for fused point ops,
+  summary: 'Audit and optimize V2 CPU fallback path: LUT baking for fused point ops,
+
     SIMD for hot filters, eliminate recursive tree evaluation. Low priority.
-  context: |
-    V2 CPU path has zero SIMD intrinsics — pure scalar f32 loops everywhere.
+
+    '
+  context: 'V2 CPU path has zero SIMD intrinsics — pure scalar f32 loops everywhere.
+
     FusedPointOpNode::compute() uses recursive PointOpExpr::evaluate() per pixel
+
     per channel despite lower_to_lut() existing but never being called.
+
     Individual filters (brightness, contrast, blur) are scalar loops.
+
     V1 rasmcore-kernel has vectorized tetrahedral interpolation that V2 does not use.
+
     This is low priority since GPU dispatch is the primary path, but CPU fallback
+
     should still be reasonable for environments without GPU.
-  codebase_analysis: |
-    - FusedPointOpNode::compute() (fusion.rs:460-475): lower_to_closure() clones
-      expression tree, evaluates recursively per pixel per channel
-    - lower_to_lut() exists (fusion.rs:192-194) but is NEVER called in CPU path
-    - PointOpExpr::evaluate() (ops.rs:309-339): recursive match with O(tree_depth) per call
-    - Brightness compute(): 3 scalar adds per pixel (no SIMD)
-    - GaussianBlur compute(): nested accumulation loops (no SIMD)
-    - Existing benchmarks: benches/gpu_pipeline.rs, CPU-only, Criterion
-    - No std::arch, packed_simd, std::simd, or target_feature in V2 pipeline
+
+    '
+  codebase_analysis: "- FusedPointOpNode::compute() (fusion.rs:460-475): lower_to_closure() clones\n  expression tree, evaluates\
+    \ recursively per pixel per channel\n- lower_to_lut() exists (fusion.rs:192-194) but is NEVER called in CPU path\n- PointOpExpr::evaluate()\
+    \ (ops.rs:309-339): recursive match with O(tree_depth) per call\n- Brightness compute(): 3 scalar adds per pixel (no SIMD)\n\
+    - GaussianBlur compute(): nested accumulation loops (no SIMD)\n- Existing benchmarks: benches/gpu_pipeline.rs, CPU-only,\
+    \ Criterion\n- No std::arch, packed_simd, std::simd, or target_feature in V2 pipeline\n"
   acceptance_criteria:
-    - FusedPointOpNode uses LUT for point op chains (lower_to_lut instead of lower_to_closure)
-    - Hot point-op filters use SIMD-friendly patterns (compiler auto-vectorizes)
-    - Gaussian blur uses SIMD accumulation where possible
-    - Benchmark suite covers CPU path at 400px and 4K with before/after comparison
-    - At minimum 2x speedup on fused CPU path via LUT baking
-  out_of_scope: |
-    GPU dispatch (separate track). Layer cache (separate track).
+  - FusedPointOpNode uses LUT for point op chains (lower_to_lut instead of lower_to_closure)
+  - Hot point-op filters use SIMD-friendly patterns (compiler auto-vectorizes)
+  - Gaussian blur uses SIMD accumulation where possible
+  - Benchmark suite covers CPU path at 400px and 4K with before/after comparison
+  - At minimum 2x speedup on fused CPU path via LUT baking
+  out_of_scope: 'GPU dispatch (separate track). Layer cache (separate track).
+
     Full SIMD rewrite of every filter. Parallelization (rayon).
-  technical_notes: |
-    Priority order:
-    1. LUT baking for FusedPointOpNode — biggest single win. lower_to_lut() already
-       exists, just needs to be called in compute() instead of lower_to_closure().
-       4096-entry LUT with linear interpolation = O(1) per channel per pixel.
-    2. SIMD-friendly loop patterns — restructure hot loops to process 4 pixels at a
-       time using [f32; 4] arrays that LLVM can auto-vectorize.
-    3. Gaussian blur — separate horizontal/vertical passes already done, but inner
-       accumulation loop should use array-of-structs to array-of-arrays transform.
-    4. Audit remaining filters for obvious scalar bottlenecks.
+
+    '
+  technical_notes: "Priority order:\n1. LUT baking for FusedPointOpNode — biggest single win. lower_to_lut() already\n   exists,\
+    \ just needs to be called in compute() instead of lower_to_closure().\n   4096-entry LUT with linear interpolation = O(1)\
+    \ per channel per pixel.\n2. SIMD-friendly loop patterns — restructure hot loops to process 4 pixels at a\n   time using\
+    \ [f32; 4] arrays that LLVM can auto-vectorize.\n3. Gaussian blur — separate horizontal/vertical passes already done,\
+    \ but inner\n   accumulation loop should use array-of-structs to array-of-arrays transform.\n4. Audit remaining filters\
+    \ for obvious scalar bottlenecks.\n"
 plan:
-  - phase: LUT Baking
-    tasks:
-      - text: Wire lower_to_lut() into FusedPointOpNode::compute() for point op chains
-        done: false
-      - text: Benchmark LUT vs closure on 7-brightness chain at 4K
-        done: false
-      - text: Verify visual correctness (LUT interpolation matches closure output)
-        done: false
-  - phase: Hot Filter Audit
-    tasks:
-      - text: Profile top 10 most-used filters to identify CPU bottlenecks
-        done: false
-      - text: Restructure brightness/contrast/gamma loops for auto-vectorization
-        done: false
-      - text: Optimize gaussian blur inner loop accumulation
-        done: false
-      - text: Benchmark before/after for each optimized filter
-        done: false
-  - phase: Benchmark Suite
-    tasks:
-      - text: Extend existing Criterion benchmarks with fused-chain scenarios
-        done: false
-      - text: Add 4K benchmark for single-filter and multi-filter chains
-        done: false
-      - text: Add regression test to prevent future CPU performance degradation
-        done: false
+- phase: LUT Baking
+  tasks:
+  - text: Wire lower_to_lut() into FusedPointOpNode::compute() for point op chains
+    done: true
+  - text: Benchmark LUT vs closure on 7-brightness chain at 4K
+    done: true
+  - text: Verify visual correctness (LUT interpolation matches closure output)
+    done: true
+- phase: Hot Filter Audit
+  tasks:
+  - text: Profile top 10 most-used filters to identify CPU bottlenecks
+    done: true
+  - text: Restructure brightness/contrast/gamma loops for auto-vectorization
+    done: true
+  - text: Optimize gaussian blur inner loop accumulation
+    done: true
+  - text: Benchmark before/after for each optimized filter
+    done: true
+- phase: Benchmark Suite
+  tasks:
+  - text: Extend existing Criterion benchmarks with fused-chain scenarios
+    done: true
+  - text: Add 4K benchmark for single-filter and multi-filter chains
+    done: true
+  - text: Add regression test to prevent future CPU performance degradation
+    done: true
 extra: {}
