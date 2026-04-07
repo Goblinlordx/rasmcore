@@ -1,6 +1,6 @@
 title: ML provider package with WebNN/ORT backends, model lifecycle, SDK registration
   API
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-07'
