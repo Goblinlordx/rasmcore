@@ -49,7 +49,7 @@ impl AnalysisBufferKind {
 ///
 /// Returned by `Node::analysis_outputs()`. The logical_id is node-local —
 /// the negotiation step assigns a globally unique resolved ID.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AnalysisBufferDecl {
     /// Node-local logical ID for this buffer. Matches the ID used in
     /// the node's internal `ReductionBuffer` declarations.
@@ -89,7 +89,7 @@ impl AnalysisBufferDecl {
 ///
 /// Returned by `Node::analysis_inputs()`. The logical_id must match
 /// a declared `AnalysisBufferDecl::logical_id` from an upstream analysis node.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AnalysisBufferRef {
     /// Logical ID of the upstream analysis buffer to consume.
     /// Must match an `AnalysisBufferDecl::logical_id` from an upstream node.

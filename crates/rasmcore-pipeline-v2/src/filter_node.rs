@@ -179,6 +179,23 @@ impl<F: Filter + 'static> Node for FilterNode<F> {
             InputRectEstimate::Exact(output.clamp(bounds_w, bounds_h))
         }
     }
+
+    fn analysis_outputs(&self) -> &[crate::analysis_buffer::AnalysisBufferDecl] {
+        self.filter.analysis_buffer_outputs()
+    }
+
+    fn analysis_inputs(&self) -> &[crate::analysis_buffer::AnalysisBufferRef] {
+        self.filter.analysis_buffer_inputs()
+    }
+
+    fn gpu_shaders_with_context(
+        &self,
+        width: u32,
+        height: u32,
+        mapping: &crate::analysis_buffer::NodeBufferMapping,
+    ) -> Option<Vec<GpuShader>> {
+        self.filter.gpu_shader_passes_with_context(width, height, mapping)
+    }
 }
 
 /// Legacy GPU filter node — use `FilterNode` instead.
