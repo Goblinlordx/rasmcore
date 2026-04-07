@@ -1,0 +1,70 @@
+id: gpu-clut-shader_20260407033700Z
+title: GPU WGSL shader for FusedClutNode (3D LUT trilinear interpolation)
+type: feature
+status: pending
+created: 2026-04-07
+updated: 2026-04-07
+spec:
+  summary: |
+    Implement a WGSL compute shader for FusedClutNode that performs
+    trilinear interpolation on a 3D LUT. Currently marked TODO at
+    fusion.rs:744 — capabilities claims gpu:true but no shader exists.
+  context: |
+    FusedClutNode applies composed 3D color LUTs (17x17x17 grid, RGB).
+    CPU path works (Clut3D::apply with trilinear interpolation). GPU
+    path is claimed in capabilities but has no shader — meaning GPU
+    dispatch will silently fall back to CPU.
+
+    The shader receives the 3D LUT grid as an extra storage buffer
+    via gpu_extra_buffers. Each pixel does 8 lookups + 7 lerps
+    (trilinear interpolation) — highly parallel, ideal for GPU.
+  codebase_analysis: |
+    fusion.rs:706-748 — FusedClutNode struct and Node impl.
+    fusion.rs:490-598 — Clut3D struct with sample() and apply().
+    fusion.rs:744 — TODO marker: gpu: true but no gpu_shader() impl.
+
+    The Clut3D data is flattened: grid_size^3 * 3 f32 values (RGB per grid point).
+    Index formula: (b * gs * gs + g * gs + r) * 3
+
+    GpuShader has extra_buffers field for read-only storage buffers.
+    FusedPointOpNode already uses gpu_shader() pattern to return WGSL.
+    The CLUT shader needs a Params uniform (width, height, grid_size)
+    plus one extra buffer (the LUT data).
+  acceptance_criteria:
+    - FusedClutNode::gpu_shader() returns valid WGSL compute shader
+    - Shader performs trilinear interpolation matching CPU Clut3D::sample()
+    - 3D LUT grid passed as extra storage buffer via gpu_extra_buffers
+    - Params uniform includes width, height, grid_size
+    - GPU and CPU paths produce matching output (within f32 precision)
+    - Existing fusion tests pass
+  out_of_scope: |
+    Tetrahedral interpolation (future optimization over trilinear).
+    LUT compression. Dynamic grid sizes at runtime.
+  technical_notes: |
+    WGSL shader structure:
+    - Params: width, height, grid_size, _pad
+    - Extra buffer binding 3: 3D LUT data (grid_size^3 * 3 f32)
+    - Per pixel: clamp RGB to [0,1], compute grid coords, 8 lookups,
+      trilinear lerp, write output
+    - Workgroup: 16x16x1
+
+    gpu_extra_buffers returns vec![clut.data as bytes]
+    gpu_shader returns composed WGSL with trilinear interpolation
+plan:
+  - phase: Implementation
+    tasks:
+      - text: Create shaders/clut3d.wgsl with trilinear interpolation compute shader
+        done: false
+      - text: Implement gpu_shader() on FusedClutNode returning the WGSL + params
+        done: false
+      - text: Implement gpu_extra_buffers() returning the 3D LUT grid data
+        done: false
+      - text: Remove TODO comment at fusion.rs:744
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test GPU and CPU CLUT paths produce matching output
+        done: false
+      - text: All existing fusion tests pass
+        done: false
+extra: {}

@@ -1,0 +1,91 @@
+id: parallel-histogram_20260407033701Z
+title: GPU histogram reduction for enhancement filters (auto-level, equalize, normalize)
+type: feature
+status: pending
+created: 2026-04-07
+updated: 2026-04-07
+spec:
+  summary: |
+    Replace sequential CPU histogram computation in auto-level, equalize,
+    and normalize filters with GPU histogram reduction. These filters are
+    bottlenecked by O(n) sequential histogram binning that cannot auto-vectorize.
+  context: |
+    Three enhancement filters share the same bottleneck — building a
+    256-bin histogram of pixel luminance/channel values by iterating
+    every pixel sequentially. On a 4K image this is ~8M pixels, each
+    doing a random-access increment (histogram[bin]++).
+
+    This is inherently non-vectorizable on CPU because of bin conflicts.
+    GPU reduction shaders can parallelize this via atomic increments
+    on shared memory, then reduce workgroup histograms.
+
+    The existing gpu_shaders/analysis.rs already has histogram shader
+    patterns for the analysis pipeline. This track adapts that pattern
+    for the enhancement filters.
+  codebase_analysis: |
+    Affected filters (enhancement.rs):
+    - AutoLevel (lines ~48-75): histogram -> min/max -> linear stretch
+    - Equalize (lines ~85-141): histogram -> CDF -> remap
+    - Normalize (lines ~155-200): histogram -> percentile clip -> stretch
+
+    Existing GPU histogram pattern:
+    - gpu_shaders/analysis.rs: has 256-bin histogram shader
+    - gpu_shaders/scan.rs: has scan/reduction shaders
+    - These use atomic operations on storage buffers
+
+    The enhancement filters would need a two-pass GPU approach:
+    Pass 1: GPU histogram reduction (image -> 256-bin histogram buffer)
+    Pass 2: GPU per-pixel remap using the histogram/CDF
+
+    Currently these filters have no gpu_shader_body() — they are CPU-only.
+  acceptance_criteria:
+    - AutoLevel, Equalize, Normalize have GPU shader implementations
+    - GPU histogram uses atomic increments with workgroup-local reduction
+    - Two-pass approach via gpu_shader_passes() (histogram + remap)
+    - CPU path unchanged as fallback
+    - GPU and CPU paths produce matching output
+    - Performance improvement measurable on 4K images
+  out_of_scope: |
+    Changing the histogram algorithm (still 256 bins).
+    Other filters that use histograms (scope/analysis filters).
+  technical_notes: |
+    Two-pass GPU approach:
+
+    Pass 1 - Histogram:
+    - Each workgroup computes a local 256-bin histogram in shared memory
+    - Atomic add to merge local histograms into global histogram buffer
+    - Output: 256 u32 values in a storage buffer
+
+    Pass 2 - Remap:
+    - AutoLevel: reads min/max from histogram, applies linear stretch
+    - Equalize: builds CDF from histogram, remaps each pixel
+    - Normalize: reads percentile bounds from histogram, applies stretch
+
+    The histogram buffer is passed between passes via gpu_extra_buffers
+    or the multi-pass shader system (gpu_shader_passes).
+plan:
+  - phase: GPU Histogram Shader
+    tasks:
+      - text: Create shaders/histogram_reduce.wgsl for 256-bin GPU histogram
+        done: false
+      - text: Implement workgroup-local histogram with atomic merge to global
+        done: false
+  - phase: Enhancement Filter GPU Paths
+    tasks:
+      - text: Add gpu_shader_passes() to AutoLevel (histogram + linear stretch)
+        done: false
+      - text: Add gpu_shader_passes() to Equalize (histogram + CDF remap)
+        done: false
+      - text: Add gpu_shader_passes() to Normalize (histogram + percentile stretch)
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test GPU and CPU auto-level produce matching output
+        done: false
+      - text: Test GPU and CPU equalize produce matching output
+        done: false
+      - text: Test GPU and CPU normalize produce matching output
+        done: false
+      - text: All existing enhancement tests pass
+        done: false
+extra: {}
