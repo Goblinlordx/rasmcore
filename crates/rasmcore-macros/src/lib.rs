@@ -1138,6 +1138,7 @@ pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
     let mut param_descriptors = Vec::new();
     let mut factory_setters = Vec::new();
     let mut default_entries = Vec::new();
+    let mut has_resource_fields = false;
 
     for field in &fields {
         let fname = field.ident.as_ref().unwrap();
@@ -1189,13 +1190,24 @@ pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
             None => quote! { Default::default() },
         };
 
-        let param_type = match ftype_str.as_str() {
-            "f32" => quote! { rasmcore_pipeline_v2::ParamType::F32 },
-            "f64" => quote! { rasmcore_pipeline_v2::ParamType::F64 },
-            "u32" | "u16" | "u8" | "u64" => quote! { rasmcore_pipeline_v2::ParamType::U32 },
-            "i32" | "i16" | "i8" => quote! { rasmcore_pipeline_v2::ParamType::I32 },
-            "bool" => quote! { rasmcore_pipeline_v2::ParamType::Bool },
-            _ => quote! { rasmcore_pipeline_v2::ParamType::F32 },
+        // Detect resource reference types by checking if the type contains known resource names
+        let is_font_ref = ftype_str.contains("Font") && ftype_str.contains("Rc");
+        let is_lut_ref = (ftype_str.contains("Lmt") || ftype_str.contains("Lut")) && ftype_str.contains("Rc");
+        if is_font_ref || is_lut_ref { has_resource_fields = true; }
+
+        let param_type = if is_font_ref {
+            quote! { rasmcore_pipeline_v2::ParamType::FontRef }
+        } else if is_lut_ref {
+            quote! { rasmcore_pipeline_v2::ParamType::LutRef }
+        } else {
+            match ftype_str.as_str() {
+                "f32" => quote! { rasmcore_pipeline_v2::ParamType::F32 },
+                "f64" => quote! { rasmcore_pipeline_v2::ParamType::F64 },
+                "u32" | "u16" | "u8" | "u64" => quote! { rasmcore_pipeline_v2::ParamType::U32 },
+                "i32" | "i16" | "i8" => quote! { rasmcore_pipeline_v2::ParamType::I32 },
+                "bool" => quote! { rasmcore_pipeline_v2::ParamType::Bool },
+                _ => quote! { rasmcore_pipeline_v2::ParamType::F32 },
+            }
         };
 
         param_descriptors.push(quote! { rasmcore_pipeline_v2::ParamDescriptor {
@@ -1205,16 +1217,22 @@ pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
             constraints: &[],
         }});
 
-        let setter = match ftype_str.as_str() {
-            "f32" => quote! { #fname: params.get_f32(#fname_str) },
-            "f64" => quote! { #fname: params.get_f32(#fname_str) as f64 },
-            "u32" => quote! { #fname: params.get_u32(#fname_str) },
-            "u16" => quote! { #fname: params.get_u32(#fname_str) as u16 },
-            "u8" => quote! { #fname: params.get_u32(#fname_str) as u8 },
-            "i32" => quote! { #fname: params.get_i32(#fname_str) },
-            "u64" => quote! { #fname: params.get_u64(#fname_str) },
-            "bool" => quote! { #fname: params.get_bool(#fname_str) },
-            _ => quote! { #fname: Default::default() },
+        let setter = if is_font_ref {
+            quote! { #fname: params.get_font(#fname_str).expect("font ref not resolved") }
+        } else if is_lut_ref {
+            quote! { #fname: std::rc::Rc::new(params.get_lut(#fname_str).expect("lut ref not resolved")) }
+        } else {
+            match ftype_str.as_str() {
+                "f32" => quote! { #fname: params.get_f32(#fname_str) },
+                "f64" => quote! { #fname: params.get_f32(#fname_str) as f64 },
+                "u32" => quote! { #fname: params.get_u32(#fname_str) },
+                "u16" => quote! { #fname: params.get_u32(#fname_str) as u16 },
+                "u8" => quote! { #fname: params.get_u32(#fname_str) as u8 },
+                "i32" => quote! { #fname: params.get_i32(#fname_str) },
+                "u64" => quote! { #fname: params.get_u64(#fname_str) },
+                "bool" => quote! { #fname: params.get_bool(#fname_str) },
+                _ => quote! { #fname: Default::default() },
+            }
         };
         factory_setters.push(setter);
         default_entries.push(quote! { #fname: #default_expr });
@@ -1234,8 +1252,8 @@ pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
         }
     };
 
-    let default_impl = if fields.is_empty() {
-        quote! {}  // Unit structs don't need Default
+    let default_impl = if fields.is_empty() || has_resource_fields {
+        quote! {}  // Unit structs or structs with resource refs skip Default
     } else {
         quote! {
             impl ::std::default::Default for #struct_name {

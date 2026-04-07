@@ -259,6 +259,9 @@ pub struct PipelineResource {
     /// Default 1.0 = full resolution. Values < 1.0 indicate proxy resolution;
     /// spatial params (hint = rc.pixels) are multiplied by this factor.
     proxy_scale: std::cell::Cell<f32>,
+    fonts: RefCell<std::collections::HashMap<u32, std::rc::Rc<v2::font::Font>>>,
+    luts: RefCell<std::collections::HashMap<u32, v2::lmt::Lmt>>,
+    next_resource_id: std::cell::Cell<u32>,
 }
 
 impl PipelineResource {
@@ -267,6 +270,9 @@ impl PipelineResource {
             graph: RefCell::new(Graph::new(16 * 1024 * 1024)),
             layer_cache: RefCell::new(None),
             proxy_scale: std::cell::Cell::new(1.0),
+            fonts: RefCell::new(std::collections::HashMap::new()),
+            luts: RefCell::new(std::collections::HashMap::new()),
+            next_resource_id: std::cell::Cell::new(1),
         }
     }
 
@@ -275,6 +281,38 @@ impl PipelineResource {
     /// Set the graph-level working color space.
     pub fn set_working_color_space(&self, cs: ColorSpace) {
         self.graph.borrow_mut().set_working_color_space(cs);
+    }
+
+    pub fn register_font(&self, font: std::rc::Rc<v2::font::Font>) -> u32 {
+        let id = self.next_resource_id.get();
+        self.next_resource_id.set(id + 1);
+        self.fonts.borrow_mut().insert(id, font);
+        id
+    }
+
+    pub fn register_lut(&self, data: &[u8]) -> Result<u32, PipelineError> {
+        let text = std::str::from_utf8(data).map_err(|_|
+            PipelineError::InvalidParams("LUT data is not valid UTF-8".into())
+        )?;
+        let lmt = if text.contains("LUT_3D_SIZE") || text.contains("LUT_1D_SIZE") {
+            v2::parse_cube(text)?
+        } else if text.trim_start().starts_with("<?xml") || text.contains("<ProcessList") || text.contains("<CLF") {
+            v2::lmt::parse_clf(text)?
+        } else {
+            return Err(PipelineError::InvalidParams("unsupported LUT format".into()));
+        };
+        let id = self.next_resource_id.get();
+        self.next_resource_id.set(id + 1);
+        self.luts.borrow_mut().insert(id, lmt);
+        Ok(id)
+    }
+
+    pub fn get_font(&self, id: u32) -> Option<std::rc::Rc<v2::font::Font>> {
+        self.fonts.borrow().get(&id).cloned()
+    }
+
+    pub fn get_lut(&self, id: u32) -> Option<v2::lmt::Lmt> {
+        self.luts.borrow().get(&id).cloned()
     }
 
     pub fn set_proxy_scale(&self, scale: f32) {
@@ -396,7 +434,7 @@ impl PipelineResource {
 
         // Apply proxy scale to spatial params (hint = "rc.pixels")
         let scale = self.proxy_scale.get();
-        let scaled_params = if (scale - 1.0).abs() > f32::EPSILON {
+        let mut scaled_params = if (scale - 1.0).abs() > f32::EPSILON {
             scale_spatial_params(name, params, scale)
         } else {
             params.clone()
@@ -408,6 +446,23 @@ impl PipelineResource {
         let mut hash_input = params.to_hash_bytes();
         hash_input.extend_from_slice(&scale.to_le_bytes());
         let filter_hash = content_hash(&upstream_hash, name, &hash_input);
+
+        // Resolve all resource refs in params before factory call.
+        for (key, typed_ref) in &scaled_params.refs.clone() {
+            match typed_ref {
+                v2::TypedRef::Font(id) => {
+                    if let Some(font) = self.get_font(*id) {
+                        scaled_params.resolved_fonts.insert(key.clone(), font);
+                    }
+                }
+                v2::TypedRef::Lut(id) => {
+                    if let Some(lut) = self.get_lut(*id) {
+                        scaled_params.resolved_luts.insert(key.clone(), lut);
+                    }
+                }
+                v2::TypedRef::Node(_) => {}
+            }
+        }
 
         // Create filter to check its preferred color space
         let node = create_filter_node(name, source, info.clone(), &scaled_params).ok_or_else(|| {
@@ -1260,6 +1315,24 @@ fn deserialize_params(buf: &[u8]) -> ParamMap {
                 }
                 map.bools.insert(name, buf[i] != 0);
                 i += 1;
+            }
+            3 => { // NodeRef
+                if i + 4 > buf.len() { break; }
+                let v = u32::from_le_bytes([buf[i], buf[i+1], buf[i+2], buf[i+3]]);
+                map.refs.insert(name, v2::TypedRef::Node(v));
+                i += 4;
+            }
+            4 => { // FontRef
+                if i + 4 > buf.len() { break; }
+                let v = u32::from_le_bytes([buf[i], buf[i+1], buf[i+2], buf[i+3]]);
+                map.refs.insert(name, v2::TypedRef::Font(v));
+                i += 4;
+            }
+            5 => { // LutRef
+                if i + 4 > buf.len() { break; }
+                let v = u32::from_le_bytes([buf[i], buf[i+1], buf[i+2], buf[i+3]]);
+                map.refs.insert(name, v2::TypedRef::Lut(v));
+                i += 4;
             }
             _ => break,
         }

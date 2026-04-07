@@ -223,12 +223,18 @@ pub fn param_descriptors(name: &str) -> Option<&'static [ParamDescriptor]> {
 use std::collections::HashMap;
 
 /// A map of parameter values for dynamic filter construction.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct ParamMap {
     pub floats: HashMap<String, f32>,
     pub ints: HashMap<String, i64>,
     pub bools: HashMap<String, bool>,
     pub strings: HashMap<String, String>,
+    /// Typed resource references (node refs, font refs, LUT refs).
+    pub refs: HashMap<String, TypedRef>,
+    /// Resolved font resources (populated by pipeline before factory call).
+    pub resolved_fonts: HashMap<String, std::rc::Rc<crate::font::Font>>,
+    /// Resolved LUT resources (populated by pipeline before factory call).
+    pub resolved_luts: HashMap<String, crate::lmt::Lmt>,
 }
 
 impl ParamMap {
@@ -258,6 +264,30 @@ impl ParamMap {
 
     pub fn get_string(&self, key: &str) -> String {
         self.strings.get(key).cloned().unwrap_or_default()
+    }
+
+    pub fn get_ref(&self, key: &str) -> Option<TypedRef> {
+        self.refs.get(key).copied()
+    }
+
+    pub fn get_node_ref(&self, key: &str) -> Option<u32> {
+        match self.refs.get(key) { Some(TypedRef::Node(id)) => Some(*id), _ => None }
+    }
+
+    pub fn get_font_ref(&self, key: &str) -> Option<u32> {
+        match self.refs.get(key) { Some(TypedRef::Font(id)) => Some(*id), _ => None }
+    }
+
+    pub fn get_lut_ref(&self, key: &str) -> Option<u32> {
+        match self.refs.get(key) { Some(TypedRef::Lut(id)) => Some(*id), _ => None }
+    }
+
+    pub fn get_font(&self, key: &str) -> Option<std::rc::Rc<crate::font::Font>> {
+        self.resolved_fonts.get(key).cloned()
+    }
+
+    pub fn get_lut(&self, key: &str) -> Option<crate::lmt::Lmt> {
+        self.resolved_luts.get(key).cloned()
     }
 
     /// Deterministic byte serialization for content hashing.
@@ -293,6 +323,17 @@ impl ParamMap {
         for k in skeys {
             out.extend_from_slice(k.as_bytes());
             out.extend_from_slice(self.strings[k].as_bytes());
+        }
+        // Refs
+        let mut rkeys: Vec<_> = self.refs.keys().collect();
+        rkeys.sort();
+        for k in rkeys {
+            out.extend_from_slice(k.as_bytes());
+            match &self.refs[k] {
+                TypedRef::Node(id) => { out.push(0x03); out.extend_from_slice(&id.to_le_bytes()); }
+                TypedRef::Font(id) => { out.push(0x04); out.extend_from_slice(&id.to_le_bytes()); }
+                TypedRef::Lut(id) => { out.push(0x05); out.extend_from_slice(&id.to_le_bytes()); }
+            }
         }
         out
     }

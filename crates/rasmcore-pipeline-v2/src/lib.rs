@@ -65,7 +65,7 @@ pub use registry::{
     ParamDescriptor, ParamType, ParamConstraint, ContextRef,
     registered_operations, find_operation, operations_by_category,
     operations_by_kind, param_descriptors,
-    ParamMap, FilterFactory, FilterFactoryRegistration,
+    ParamMap, TypedRef, FilterFactory, FilterFactoryRegistration,
     create_filter_node, registered_filter_factories,
     EncoderFactory, EncoderFactoryRegistration,
     encode_via_registry, registered_encoders,
