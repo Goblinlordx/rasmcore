@@ -4,7 +4,7 @@
  * MIT license. Original: BRIA AI (briaai/RMBG-1.4).
  * Weights downloaded on first use (~176MB ONNX).
  */
-import type { MlCapabilityInfo } from '../types.js';
+import type { MlCapabilityInfo } from '../../ml-provider.js';
 
 export const rmbg14: MlCapabilityInfo = {
   model: { name: 'rmbg-1.4', version: '1.4.0' },

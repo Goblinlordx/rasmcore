@@ -4,7 +4,7 @@
  * BSD-3-Clause license. Original: xinntao/Real-ESRGAN.
  * Weights downloaded on first use (~64MB ONNX).
  */
-import type { MlCapabilityInfo } from '../types.js';
+import type { MlCapabilityInfo } from '../../ml-provider.js';
 
 export const realEsrganX4plus: MlCapabilityInfo = {
   model: { name: 'real-esrgan-x4plus', version: '1.0.0' },

@@ -4,7 +4,7 @@
  * MIT license. Original: Intel ISL (isl-org/MiDaS).
  * Weights downloaded on first use (~50MB ONNX).
  */
-import type { MlCapabilityInfo } from '../types.js';
+import type { MlCapabilityInfo } from '../../ml-provider.js';
 
 export const midasV21Small: MlCapabilityInfo = {
   model: { name: 'midas-v2.1-small', version: '2.1.0' },

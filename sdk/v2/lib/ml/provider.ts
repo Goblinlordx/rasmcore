@@ -7,8 +7,8 @@
  * 3. Executes single-tile inference via the best available backend
  */
 
-import type { MlCapabilityInfo, MlOp, MlProvider } from './types.js';
-import { MlError } from './types.js';
+import type { MlCapabilityInfo, MlOp, MlProvider } from '../ml-provider.js';
+import { MlError } from '../ml-provider.js';
 import { detectBackends, selectOrtProvider, type BackendInfo } from './backends/detect.js';
 
 export interface MlProviderConfig {
