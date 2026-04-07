@@ -11,6 +11,8 @@ inventory = "0.3"
 rasmcore-macros = { path = "../rasmcore-macros" }
 serde = { version = "1", features = ["derive"] }
 
+fontdue = "0.9"
+
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 rasmcore-gpu-native = { path = "../rasmcore-gpu-native" }

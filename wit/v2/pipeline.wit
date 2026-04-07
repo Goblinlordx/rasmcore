@@ -220,6 +220,25 @@ interface pipeline-v2 {
         set-cache-quality: func(quality: cache-quality);
     }
 
+    /// Font metadata.
+    record font-info {
+        units-per-em: u16,
+        ascender: s16,
+        descender: s16,
+        num-glyphs: u16,
+    }
+
+    /// Parsed font resource — created from TTF/OTF bytes, cached glyph atlas.
+    ///
+    /// No fonts are embedded in the binary. The consumer provides font data
+    /// externally. Glyph rasterization is cached per (char, size) pair.
+    resource font {
+        /// Parse a TTF/OTF font from raw bytes.
+        constructor(data: buffer);
+        /// Get font metadata.
+        info: func() -> font-info;
+    }
+
     // ─── Source Resource ────────────────────────────────────────────────
 
     /// Decoded image source — created once, reused across pipeline chains.
@@ -298,6 +317,9 @@ interface pipeline-v2 {
         /// When set, filters without an explicit preferred color space auto-convert
         /// to this space. Used for pipeline-wide color management (e.g., ACEScg for VFX).
         set-working-color-space: func(cs: color-space);
+        /// Set the font for text rendering operations.
+        /// Must be called before draw_text. The font persists across pipeline chains.
+        set-font: func(font: borrow<font>);
         /// Set the proxy scale factor for spatial param auto-scaling.
         /// Spatial params (hint = rc.pixels) are multiplied by this factor.
         /// Default 1.0 = full resolution. Use 0.5 for half-res proxy.

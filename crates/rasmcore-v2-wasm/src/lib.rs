@@ -259,6 +259,8 @@ pub struct PipelineResource {
     /// Default 1.0 = full resolution. Values < 1.0 indicate proxy resolution;
     /// spatial params (hint = rc.pixels) are multiplied by this factor.
     proxy_scale: std::cell::Cell<f32>,
+    /// Font resource for text rendering.
+    font: RefCell<Option<std::rc::Rc<v2::font::Font>>>,
 }
 
 impl PipelineResource {
@@ -267,6 +269,7 @@ impl PipelineResource {
             graph: RefCell::new(Graph::new(16 * 1024 * 1024)),
             layer_cache: RefCell::new(None),
             proxy_scale: std::cell::Cell::new(1.0),
+            font: RefCell::new(None),
         }
     }
 
@@ -275,6 +278,16 @@ impl PipelineResource {
     /// Set the graph-level working color space.
     pub fn set_working_color_space(&self, cs: ColorSpace) {
         self.graph.borrow_mut().set_working_color_space(cs);
+    }
+
+    /// Set the font for text rendering.
+    pub fn set_font(&self, font: std::rc::Rc<v2::font::Font>) {
+        *self.font.borrow_mut() = Some(font);
+    }
+
+    /// Get the current font (if set).
+    pub fn font(&self) -> Option<std::rc::Rc<v2::font::Font>> {
+        self.font.borrow().clone()
     }
 
     pub fn set_proxy_scale(&self, scale: f32) {
@@ -408,6 +421,27 @@ impl PipelineResource {
         let mut hash_input = params.to_hash_bytes();
         hash_input.extend_from_slice(&scale.to_le_bytes());
         let filter_hash = content_hash(&upstream_hash, name, &hash_input);
+
+        // Special case: draw_text needs Font resource
+        if name == "draw_text" {
+            let font = self.font().ok_or_else(|| {
+                PipelineError::InvalidParams("draw_text requires a font — call set_font() first".into())
+            })?;
+            let text = scaled_params.strings.get("text").cloned().unwrap_or_default();
+            let x = scaled_params.floats.get("x").copied().unwrap_or(0.0);
+            let y = scaled_params.floats.get("y").copied().unwrap_or(0.0);
+            let size = scaled_params.floats.get("size").copied().unwrap_or(24.0);
+            let cr = scaled_params.floats.get("color_r").copied().unwrap_or(1.0);
+            let cg = scaled_params.floats.get("color_g").copied().unwrap_or(1.0);
+            let cb = scaled_params.floats.get("color_b").copied().unwrap_or(1.0);
+            let ca = scaled_params.floats.get("color_a").copied().unwrap_or(1.0);
+
+            let node = v2::filters::draw::DrawTextNode::new(
+                source, info, font, text, x, y, size, [cr, cg, cb, ca],
+            );
+            let id = self.graph.borrow_mut().add_node_with_hash(Box::new(node), filter_hash);
+            return Ok(id);
+        }
 
         // Create filter to check its preferred color space
         let node = create_filter_node(name, source, info.clone(), &scaled_params).ok_or_else(|| {
@@ -545,6 +579,19 @@ impl LayerCacheResource {
     }
 }
 
+/// WASM-exported font resource.
+pub struct FontResource {
+    pub(crate) inner: std::rc::Rc<v2::font::Font>,
+}
+
+impl FontResource {
+    pub fn new(data: &[u8]) -> Result<Self, PipelineError> {
+        let font = v2::font::Font::from_bytes(data)
+            .map_err(|e| PipelineError::ComputeError(e))?;
+        Ok(Self { inner: std::rc::Rc::new(font) })
+    }
+}
+
 #[cfg(target_arch = "wasm32")]
 struct Component;
 
@@ -556,6 +603,7 @@ impl wit::Guest for Component {
     type ImagePipelineV2 = PipelineResource;
     type LayerCache = LayerCacheResource;
     type Source = SourceResource;
+    type Font = FontResource;
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -606,6 +654,25 @@ impl wit::GuestSource for SourceResource {
                 ColorSpace::Rec2020 => wit::ColorSpace::Rec2020,
                 _ => wit::ColorSpace::Unknown,
             },
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl wit::GuestFont for FontResource {
+    fn new(data: Vec<u8>) -> Self {
+        FontResource::new(&data).unwrap_or_else(|e| {
+            panic!("Font parse failed: {e}");
+        })
+    }
+
+    fn info(&self) -> wit::FontInfo {
+        let i = self.inner.info();
+        wit::FontInfo {
+            units_per_em: i.units_per_em,
+            ascender: i.ascender,
+            descender: i.descender,
+            num_glyphs: i.num_glyphs,
         }
     }
 }
@@ -800,6 +867,11 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
             wit::ColorSpace::Unknown => ColorSpace::Unknown,
         };
         self.set_working_color_space(domain_cs);
+    }
+
+    fn set_font(&self, font: wit::FontBorrow<'_>) {
+        let font_res = font.get::<FontResource>();
+        self.set_font(font_res.inner.clone());
     }
 
     fn set_proxy_scale(&self, scale: f32) {

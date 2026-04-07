@@ -44,6 +44,7 @@ pub mod gpu_shaders;
 pub mod aces_audit;
 pub mod noise;
 pub mod lmt;
+pub mod font;
 pub mod filters;
 
 // Re-export core types at crate root
