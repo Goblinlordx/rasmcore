@@ -357,6 +357,54 @@ pipeline.setWorkingColorSpace("acescg");
 
 When set, the pipeline auto-inserts color space conversions at source boundaries (after decode) and output boundaries (before encode). Filters operate in the working space without manual conversion.
 
+## Licensing
+
+All color transforms shipped as built-in presets have been verified for open-source distribution.
+
+### ACES Transforms
+
+**License:** Custom permissive (BSD-like) from A.M.P.A.S.
+
+The aces-dev repository grants "a worldwide, royalty-free, non-exclusive right to copy, modify, create derivatives, and use, in source and binary forms." Condition: retain the A.M.P.A.S. copyright notice and disclaimer.
+
+This covers: ACEScg, ACEScct, ACES2065-1, all IDTs, all ODTs, the RRT, and all utility transforms from the aces-dev repo.
+
+Note: SMPTE standards documents (ST 2065-1 through ST 2065-5) require purchase and cannot be redistributed. However, the aces-dev repo contains the complete reference implementation under the permissive license — you do not need to purchase SMPTE specs to implement ACES.
+
+### ARRI Color Science (LogC4, Wide Gamut 4)
+
+**License:** No explicit license, but explicitly intended for third-party implementation.
+
+The ARRI LogC4 specification PDF states Section 4 is "the specification intended for 3rd Party implementations" and includes reference CTL code. ARRI employees (notably Joseph Goldstone, Image Science Engineer) contribute directly to open-source implementations in the `colour-science` library (BSD-3-Clause).
+
+Mathematical formulas and numerical constants (primaries, matrices) are not copyrightable under U.S. law.
+
+### DaVinci Wide Gamut / DaVinci Intermediate
+
+**License:** No explicit license in the specification document.
+
+The math is published in Blackmagic's public PDF without usage restrictions. Blackmagic reviewed and approved DWG CLF transforms contributed to the OpenColorIO-Config-ACES project (BSD-3-Clause). Mathematical formulas are not copyrightable.
+
+Provenance: implement from the published Blackmagic PDF, validate against OCIO CLF transforms.
+
+### FilmLight E-Gamut / T-Log
+
+**License:** Available via `colour-science` library (BSD-3-Clause).
+
+No official specification PDF from FilmLight. The data originated from a private communication (Daniele Siragusano, 2018) subsequently released as open-source code. Weaker provenance than ARRI or Blackmagic — note this in attribution.
+
+### Compliance Summary
+
+| Space | Ship in OSS? | Attribution Required |
+|---|---|---|
+| ACES (all) | Yes | A.M.P.A.S. copyright notice |
+| ARRI LogC4 / AWG4 | Yes | Cite ARRI specification |
+| DaVinci Wide Gamut / DI | Yes | Cite Blackmagic specification |
+| FilmLight E-Gamut / T-Log | Yes | Cite colour-science (BSD-3) |
+| OCIO transforms (if ported) | Yes | BSD-3-Clause notice |
+
+Use vendor names (ARRI, DaVinci, etc.) as technical identifiers for the color spaces, not as endorsement or branding.
+
 ## References
 
 - **ACES Technical Documentation:** https://acescentral.com/knowledge-base-2/
@@ -369,3 +417,7 @@ When set, the pipeline auto-inserts color space conversions at source boundaries
 - **S-2016-001:** ACEScct Color Space Specification
 - **ISO 32000-2:2020:** PDF 2.0 (blend mode formulas, Section 11.3.5)
 - **ASC CDL Specification:** https://theasc.com/asc/asc-cdl
+- **Blackmagic DWG/DI Spec:** https://documents.blackmagicdesign.com/InformationNotes/DaVinci_Resolve_17_Wide_Gamut_Intermediate.pdf
+- **ARRI LogC4 Spec:** https://www.arri.com/resource/blob/278790/bea879ac0d041a925bed27a096ab3ec2/2022-05-arri-logc4-specification-data.pdf
+- **colour-science Library:** https://github.com/colour-science/colour (BSD-3-Clause)
+- **OpenColorIO:** https://github.com/AcademySoftwareFoundation/OpenColorIO (BSD-3-Clause)
