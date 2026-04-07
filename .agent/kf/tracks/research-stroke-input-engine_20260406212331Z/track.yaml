@@ -1,67 +1,86 @@
 id: research-stroke-input-engine_20260406212331Z
-title: "Research: Professional stroke input model and GPU brush engine"
+title: 'Research: Professional stroke input model and GPU brush engine'
 type: research
 status: pending
 created: 2026-04-07
-updated: 2026-04-07
+updated: '2026-04-07'
 spec:
-  summary: |
-    Research what a professional-grade stroke input model looks like
+  summary: 'Research what a professional-grade stroke input model looks like
+
     for GPU-first brush/draw tools. Covers input data format (position,
+
     pressure, tilt, rotation, velocity), brush engine architecture
+
     (stamp vs ribbon, spacing, scatter, texture), GPU rendering approach,
+
     and undo/layer model. Produces a design doc, not code.
-  context: |
-    The V2 pipeline has draw_line/circle/rect/polygon filters and tool
+
+    '
+  context: 'The V2 pipeline has draw_line/circle/rect/polygon filters and tool
+
     filters (clone_stamp, healing_brush, smudge, sponge). These accept
+
     simple coordinate parameters but not rich stroke input.
 
+
     Professional drawing tools (Procreate, Krita, Photoshop) accept
+
     per-sample-point data from stylus devices: position, pressure,
+
     tilt X/Y, barrel rotation, velocity, timestamp. A brush engine
+
     interprets these to modulate stroke properties: width, opacity,
+
     flow, texture rotation, scatter, color dynamics.
 
+
     We need to understand this model to design a stroke input type
+
     that works as a pipeline parameter — serializable, GPU-friendly,
+
     and capable of expressing professional-quality brush behavior.
+
+    '
   acceptance_criteria:
-    - Document per-point input data model (what data per sample)
-    - Survey how Krita, Procreate, and PS brush engines work
-    - Design GPU rendering approach (stamp instancing vs SDF accumulation)
-    - Design WIT type for stroke input (serializable, extensible)
-    - Consider caching/incremental rendering (only new segments)
-    - Consider undo model (stroke as atomic unit)
-    - Design doc at tracks/{trackId}/design.md
-  out_of_scope: |
-    Implementation code
+  - Document per-point input data model (what data per sample)
+  - Survey how Krita, Procreate, and PS brush engines work
+  - Design GPU rendering approach (stamp instancing vs SDF accumulation)
+  - Design WIT type for stroke input (serializable, extensible)
+  - Consider caching/incremental rendering (only new segments)
+  - Consider undo model (stroke as atomic unit)
+  - Design doc at tracks/{trackId}/design.md
+  out_of_scope: 'Implementation code
+
     Font rendering / text layout engine
+
     Vector path boolean operations
+
+    '
 plan:
-  - phase: Input Model Research
-    tasks:
-      - text: Document per-point stroke data (position, pressure, tilt, rotation, velocity, timestamp)
-        done: false
-      - text: Survey Krita brush engine architecture (stamp spacing, scatter, texture, dynamics)
-        done: false
-      - text: Survey Procreate and PS brush models for comparison
-        done: false
-  - phase: GPU Architecture
-    tasks:
-      - text: Design GPU stamp-based rendering approach (instanced quad per sample, texture sampling)
-        done: false
-      - text: Design incremental rendering (only render new stroke segments, composite onto accumulation buffer)
-        done: false
-      - text: Design undo model (stroke as atomic unit, layer-based compositing)
-        done: false
-  - phase: WIT and SDK Design
-    tasks:
-      - text: Design WIT stroke-input resource type with per-point data and brush parameters
-        done: false
-      - text: Design SDK API for building strokes interactively (addPoint with pressure/tilt)
-        done: false
-  - phase: Report
-    tasks:
-      - text: Produce design doc with input model, GPU architecture, and WIT type specification
-        done: false
+- phase: Input Model Research
+  tasks:
+  - text: Document per-point stroke data (position, pressure, tilt, rotation, velocity, timestamp)
+    done: true
+  - text: Survey Krita brush engine architecture (stamp spacing, scatter, texture, dynamics)
+    done: true
+  - text: Survey Procreate and PS brush models for comparison
+    done: true
+- phase: GPU Architecture
+  tasks:
+  - text: Design GPU stamp-based rendering approach (instanced quad per sample, texture sampling)
+    done: true
+  - text: Design incremental rendering (only render new stroke segments, composite onto accumulation buffer)
+    done: true
+  - text: Design undo model (stroke as atomic unit, layer-based compositing)
+    done: true
+- phase: WIT and SDK Design
+  tasks:
+  - text: Design WIT stroke-input resource type with per-point data and brush parameters
+    done: true
+  - text: Design SDK API for building strokes interactively (addPoint with pressure/tilt)
+    done: true
+- phase: Report
+  tasks:
+  - text: Produce design doc with input model, GPU architecture, and WIT type specification
+    done: true
 extra: {}
