@@ -3,159 +3,122 @@ title: Revise ml.wit interface with capability discovery and param schema
 type: feature
 status: pending
 created: 2026-04-07
-updated: 2026-04-07
+updated: '2026-04-07'
 spec:
-  summary: |
-    Update wit/core/ml.wit with refined schema: ml-output-kind (image/mask),
+  summary: 'Update wit/core/ml.wit with refined schema: ml-output-kind (image/mask),
+
     reuse param-descriptor for model params, add display-name/category to
+
     capability info. Wire as import in pipeline world. Add apply-ml() to
+
     pipeline.wit.
-  context: |
-    The pipeline needs AI/ML support as a host-provided capability. The host
+
+    '
+  context: 'The pipeline needs AI/ML support as a host-provided capability. The host
+
     declares available models at runtime via ml-capabilities(). Each model
+
     has typed parameters (reusing param-descriptor from the filter registry),
+
     output kind (image or mask), and dimension behavior (same size or scaled).
 
+
     An existing ml.wit stub exists but needs revision:
+
     - ml-capability-info lacks param descriptors, display name, category
+
     - ml-op uses list<u8> for tensor I/O (correct for cross-boundary)
+
     - ml-op uses string key-value params (should use typed param-descriptor)
+
     - No ml-output-kind enum
+
     - Not imported by the pipeline world
 
+
     The param-descriptor type already exists in pipeline.wit and is used by
+
     all 175+ filters. ML models should use the same schema so the SDK can
+
     auto-generate UI controls identically to filter controls.
-  codebase_analysis: |
-    Files to modify:
-    - wit/core/ml.wit: revise records, add ml-output-kind enum
-    - wit/v2/world.wit: add import ml (currently only exports pipeline-v2)
-    - wit/v2/pipeline.wit: add apply-ml() method to image-pipeline-v2,
-      add list-ml-models() for discovery
-    - crates/rasmcore-v2-wasm/src/lib.rs: stub the WIT adapter methods
 
-    Existing param-descriptor (pipeline.wit:50-58):
-      record param-descriptor {
-        name, value-type (param-type enum), min, max, step, default-val, hint
-      }
-    param-type covers: f32, f64, u32, i32, bool, string, rect
-
-    The ml.wit interface should import param-descriptor from the pipeline
-    or define a compatible type. Since ml.wit is in core/ (separate package),
-    it may need its own copy or a shared types package.
+    '
+  codebase_analysis: "Files to modify:\n- wit/core/ml.wit: revise records, add ml-output-kind enum\n- wit/v2/world.wit: add\
+    \ import ml (currently only exports pipeline-v2)\n- wit/v2/pipeline.wit: add apply-ml() method to image-pipeline-v2,\n\
+    \  add list-ml-models() for discovery\n- crates/rasmcore-v2-wasm/src/lib.rs: stub the WIT adapter methods\n\nExisting\
+    \ param-descriptor (pipeline.wit:50-58):\n  record param-descriptor {\n    name, value-type (param-type enum), min, max,\
+    \ step, default-val, hint\n  }\nparam-type covers: f32, f64, u32, i32, bool, string, rect\n\nThe ml.wit interface should\
+    \ import param-descriptor from the pipeline\nor define a compatible type. Since ml.wit is in core/ (separate package),\n\
+    it may need its own copy or a shared types package.\n"
   acceptance_criteria:
-    - ml-output-kind enum with image and mask variants
-    - ml-input-spec record with fixed-size, overlap, padding mode
-    - ml-capability-info includes display-name, category, output-kind, output-scale, input-spec, params
-    - ml-op designed for single-tile execution (pipeline handles tiling)
-    - ml-execute return type supports GPU buffer path (not just raw bytes)
-    - world.wit imports ml interface (optional import for backwards compat)
-    - pipeline.wit has apply-ml(source, model-name, params) method
-    - pipeline.wit has list-ml-models() discovery method
-    - ml-stage added to stage-input variant for GPU plan integration
-    - WASM adapter compiles with stub implementations
-    - Existing pipeline functionality unaffected (ml import is optional)
-  out_of_scope: |
-    Implementing actual ML execution. SDK/host side. Model loading.
+  - ml-output-kind enum with image and mask variants
+  - ml-input-spec record with fixed-size, overlap, padding mode
+  - ml-capability-info includes display-name, category, output-kind, output-scale, input-spec, params
+  - ml-op designed for single-tile execution (pipeline handles tiling)
+  - ml-execute return type supports GPU buffer path (not just raw bytes)
+  - world.wit imports ml interface (optional import for backwards compat)
+  - pipeline.wit has apply-ml(source, model-name, params) method
+  - pipeline.wit has list-ml-models() discovery method
+  - ml-stage added to stage-input variant for GPU plan integration
+  - WASM adapter compiles with stub implementations
+  - Existing pipeline functionality unaffected (ml import is optional)
+  out_of_scope: 'Implementing actual ML execution. SDK/host side. Model loading.
+
     GPU buffer interop. This track is WIT contract + WASM adapter stubs only.
-  technical_notes: |
-    Revised ml.wit schema (key changes from current stub):
 
-    enum ml-output-kind { image, mask }
-
-    enum ml-padding-mode { mirror, zero, clamp }
-
-    // Model input requirements — pipeline uses this for tiling strategy.
-    // tileMode distinguishes convolutional models (can tile) from global
-    // context models (need full image). Pipeline handles tiling; host
-    // just runs single-tile inference via ml-execute.
-    //
-    // Validated via Real-ESRGAN PoC (April 2026):
-    // - Qualcomm ONNX export: fixed 128x128 (tileable)
-    // - RMBG-1.4: full-image (1024x1024 resize)
-    // - MiDaS: full-image (384x384 resize)
-
-    enum ml-tile-mode {
-      tileable,    // convolutional — can be split, overlap blends seams
-      full-image,  // needs global context — resize to target-size, run once
-    }
-
-    record ml-input-spec {
-      tile-mode: ml-tile-mode,
-      // For tileable: preferred tile size, minimum tile size
-      preferred-size: option<tuple<u32, u32>>,
-      min-size: option<tuple<u32, u32>>,
-      // For full-image: target resize dimensions
-      target-size: option<tuple<u32, u32>>,
-      overlap: u32,
-      padding: ml-padding-mode,
-    }
-
-    record ml-capability-info {
-      model: model-ref,
-      display-name: string,
-      category: string,           // enhancement, segmentation, upscale, generation
-      output-kind: ml-output-kind,
-      output-scale: option<u32>,  // None=same dims, Some(4)=4x upscale
-      input-spec: ml-input-spec,  // tiling requirements
-      input-desc: tensor-desc,    // tensor shape/dtype
-      output-desc: tensor-desc,
-      params: list<ml-param-descriptor>,
-      backend: string,
-      estimated-ms-per-tile: u32, // hint for UI progress estimation
-    }
-
-    record ml-param-descriptor {
-      name: string,
-      value-type: ml-param-type,
-      min: option<f64>,
-      max: option<f64>,
-      step: option<f64>,
-      default-val: option<f64>,
-      hint: option<string>,
-    }
-
-    The apply-ml() method in pipeline.wit follows the same pattern as
-    apply-filter(): takes source node, model name, serialized params buffer,
-    returns new node-id. The graph node handles tensor conversion internally.
-
-    Optional import pattern for backwards compat:
-    - If host provides ml interface: ML features available
-    - If host does not: apply-ml returns not-available error
-    - SDK detects and hides ML UI when not available
+    '
+  technical_notes: "Revised ml.wit schema (key changes from current stub):\n\nenum ml-output-kind { image, mask }\n\nenum\
+    \ ml-padding-mode { mirror, zero, clamp }\n\n// Model input requirements — pipeline uses this for tiling strategy.\n//\
+    \ tileMode distinguishes convolutional models (can tile) from global\n// context models (need full image). Pipeline handles\
+    \ tiling; host\n// just runs single-tile inference via ml-execute.\n//\n// Validated via Real-ESRGAN PoC (April 2026):\n\
+    // - Qualcomm ONNX export: fixed 128x128 (tileable)\n// - RMBG-1.4: full-image (1024x1024 resize)\n// - MiDaS: full-image\
+    \ (384x384 resize)\n\nenum ml-tile-mode {\n  tileable,    // convolutional — can be split, overlap blends seams\n  full-image,\
+    \  // needs global context — resize to target-size, run once\n}\n\nrecord ml-input-spec {\n  tile-mode: ml-tile-mode,\n\
+    \  // For tileable: preferred tile size, minimum tile size\n  preferred-size: option<tuple<u32, u32>>,\n  min-size: option<tuple<u32,\
+    \ u32>>,\n  // For full-image: target resize dimensions\n  target-size: option<tuple<u32, u32>>,\n  overlap: u32,\n  padding:\
+    \ ml-padding-mode,\n}\n\nrecord ml-capability-info {\n  model: model-ref,\n  display-name: string,\n  category: string,\
+    \           // enhancement, segmentation, upscale, generation\n  output-kind: ml-output-kind,\n  output-scale: option<u32>,\
+    \  // None=same dims, Some(4)=4x upscale\n  input-spec: ml-input-spec,  // tiling requirements\n  input-desc: tensor-desc,\
+    \    // tensor shape/dtype\n  output-desc: tensor-desc,\n  params: list<ml-param-descriptor>,\n  backend: string,\n  estimated-ms-per-tile:\
+    \ u32, // hint for UI progress estimation\n}\n\nrecord ml-param-descriptor {\n  name: string,\n  value-type: ml-param-type,\n\
+    \  min: option<f64>,\n  max: option<f64>,\n  step: option<f64>,\n  default-val: option<f64>,\n  hint: option<string>,\n\
+    }\n\nThe apply-ml() method in pipeline.wit follows the same pattern as\napply-filter(): takes source node, model name,\
+    \ serialized params buffer,\nreturns new node-id. The graph node handles tensor conversion internally.\n\nOptional import\
+    \ pattern for backwards compat:\n- If host provides ml interface: ML features available\n- If host does not: apply-ml\
+    \ returns not-available error\n- SDK detects and hides ML UI when not available\n"
 plan:
-  - phase: WIT Interface Revision
-    tasks:
-      - text: Add ml-output-kind enum (image, mask) to ml.wit
-        done: false
-      - text: Add ml-param-descriptor record (matching filter param-descriptor pattern)
-        done: false
-      - text: Add ml-input-spec record (fixed-size, overlap, padding) and ml-padding-mode enum
-        done: false
-      - text: Revise ml-capability-info with display-name, category, output-kind, output-scale, input-spec, params
-        done: false
-      - text: Update ml-op to use params buffer instead of string key-value pairs
-        done: false
-  - phase: Pipeline Integration
-    tasks:
-      - text: Add import of ml interface to world.wit
-        done: false
-      - text: Add apply-ml(source, model-name, params) to pipeline.wit image-pipeline-v2
-        done: false
-      - text: Add list-ml-models() discovery method to pipeline.wit
-        done: false
-  - phase: WASM Adapter Stubs
-    tasks:
-      - text: Implement apply-ml stub in rasmcore-v2-wasm (returns not-available when no host ML)
-        done: false
-      - text: Implement list-ml-models stub (returns empty list when no host ML)
-        done: false
-  - phase: Verification
-    tasks:
-      - text: cargo component build succeeds with new WIT
-        done: false
-      - text: Existing pipeline tests pass unchanged
-        done: false
-      - text: Verify optional import works (pipeline functions without ML host)
-        done: false
+- phase: WIT Interface Revision
+  tasks:
+  - text: Add ml-output-kind enum (image, mask) to ml.wit
+    done: true
+  - text: Add ml-param-descriptor record (matching filter param-descriptor pattern)
+    done: true
+  - text: Add ml-input-spec record (fixed-size, overlap, padding) and ml-padding-mode enum
+    done: true
+  - text: Revise ml-capability-info with display-name, category, output-kind, output-scale, input-spec, params
+    done: true
+  - text: Update ml-op to use params buffer instead of string key-value pairs
+    done: true
+- phase: Pipeline Integration
+  tasks:
+  - text: Add import of ml interface to world.wit
+    done: true
+  - text: Add apply-ml(source, model-name, params) to pipeline.wit image-pipeline-v2
+    done: true
+  - text: Add list-ml-models() discovery method to pipeline.wit
+    done: true
+- phase: WASM Adapter Stubs
+  tasks:
+  - text: Implement apply-ml stub in rasmcore-v2-wasm (returns not-available when no host ML)
+    done: true
+  - text: Implement list-ml-models stub (returns empty list when no host ML)
+    done: true
+- phase: Verification
+  tasks:
+  - text: cargo component build succeeds with new WIT
+    done: false
+  - text: Existing pipeline tests pass unchanged
+    done: false
+  - text: Verify optional import works (pipeline functions without ML host)
+    done: false
 extra: {}
