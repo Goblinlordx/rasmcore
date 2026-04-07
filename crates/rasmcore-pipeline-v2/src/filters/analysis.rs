@@ -1040,3 +1040,54 @@ mod tests {
         }
     }
 }
+
+
+#[cfg(test)]
+mod smart_crop_analysis_tests {
+    use crate::staged::{AnalysisNode, AnalysisResult};
+    use super::{SmartCropAnalysis, smart_crop_find_rect};
+
+    fn gradient_image(w: u32, h: u32) -> Vec<f32> {
+        let n = (w * h) as usize;
+        let mut px = Vec::with_capacity(n * 4);
+        for i in 0..n {
+            let v = i as f32 / n as f32;
+            px.extend_from_slice(&[v, v, v, 1.0]);
+        }
+        px
+    }
+
+    #[test]
+    fn smart_crop_analysis_produces_rect() {
+        let img = gradient_image(100, 100);
+        let info = crate::node::NodeInfo {
+            width: 100, height: 100,
+            color_space: crate::color_space::ColorSpace::Linear,
+        };
+        let node = SmartCropAnalysis::new(0, info, 0.5);
+        let result = node.analyze(&img, 100, 100).unwrap();
+        match result {
+            AnalysisResult::Rect(r) => {
+                assert!(r.width <= 100 && r.height <= 100);
+                assert!(r.width >= 1 && r.height >= 1);
+            }
+            _ => panic!("expected Rect result"),
+        }
+    }
+
+    #[test]
+    fn smart_crop_find_rect_full_ratio() {
+        let img = gradient_image(50, 50);
+        let rect = smart_crop_find_rect(&img, 50, 50, 1.0);
+        assert_eq!(rect.width, 50);
+        assert_eq!(rect.height, 50);
+    }
+
+    #[test]
+    fn smart_crop_find_rect_valid_bounds() {
+        let img = gradient_image(100, 80);
+        let rect = smart_crop_find_rect(&img, 100, 80, 0.5);
+        assert!(rect.x + rect.width <= 100);
+        assert!(rect.y + rect.height <= 80);
+    }
+}
