@@ -1,0 +1,8 @@
+title: ML node integration in pipeline graph with tensor conversion
+status: pending
+type: feature
+approved: false
+created: '2026-04-07'
+updated: '2026-04-07'
+deps:
+- ml-wit-interface_20260407002600Z

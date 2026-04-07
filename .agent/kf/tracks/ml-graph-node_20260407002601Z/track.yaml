@@ -1,0 +1,134 @@
+id: ml-graph-node_20260407002601Z
+title: ML node integration in pipeline graph with tensor conversion
+type: feature
+status: pending
+created: 2026-04-07
+updated: 2026-04-07
+spec:
+  summary: |
+    Implement MlNode in the pipeline graph that calls ml-execute() via the
+    host ML interface. Handle output dimension changes (upscale), mask output
+    (single-channel to RGBA), and tensor format conversion (f32 RGBA to model
+    input format).
+  context: |
+    After the ml.wit interface revision, the pipeline needs a graph node that
+    can execute ML inference. This node receives f32 RGBA pixels from upstream,
+    converts to the model's expected tensor format (e.g., RGB uint8 NCHW),
+    calls ml-execute(), and converts the output back to f32 RGBA.
+
+    Key challenges:
+    - Tensor layout conversion: pipeline is always f32 RGBA interleaved (HWC).
+      Models expect various formats (NCHW float32, NHWC uint8, etc.).
+    - Dimension changes: upscale models produce larger output. NodeInfo must
+      reflect the output dimensions, not input.
+    - Mask output: segmentation models produce single-channel output. The node
+      must expand to RGBA (mask in alpha, or grayscale in RGB).
+    - GPU plan integration: when prior node has GPU output, the ml-stage
+      should receive GPU buffer data without unnecessary CPU roundtrip where
+      the host supports it.
+  codebase_analysis: |
+    Files to create/modify:
+    - crates/rasmcore-pipeline-v2/src/ml_node.rs (NEW): MlNode implementation
+    - crates/rasmcore-pipeline-v2/src/graph.rs: add apply_ml() method
+    - crates/rasmcore-pipeline-v2/src/lib.rs: export MlNode
+    - crates/rasmcore-v2-wasm/src/lib.rs: wire apply-ml to graph.apply_ml()
+
+    Pattern to follow: FilterNode in filter_node.rs
+    - Implements Node trait (info, compute, capabilities, gpu_shaders)
+    - Receives upstream via Upstream::request()
+    - Stores NodeInfo with potentially different output dimensions
+
+    Tensor conversion needs:
+    - f32 RGBA HWC -> f32 RGB NCHW (drop alpha, transpose)
+    - f32 RGBA HWC -> u8 RGB HWC (quantize, drop alpha)
+    - f32 RGBA HWC -> f16 RGB NCHW (quantize, transpose)
+    - Output reverse of above
+    - For mask output: single f32 channel -> f32 RGBA (broadcast or alpha)
+
+    GPU plan integration:
+    - Add ml-stage variant to multi-gpu-plan (pipeline.wit)
+    - The ml-stage carries model-ref + params, host decides GPU vs CPU path
+    - Host can keep data on GPU if ML backend supports GPU buffer input
+  acceptance_criteria:
+    - MlNode implements Node trait with correct NodeInfo (output dims may differ from input)
+    - Tensor conversion handles f32/f16/u8 and HWC/NCHW layouts
+    - Mask output correctly expanded to RGBA
+    - Upscale output has correct dimensions in NodeInfo
+    - apply_ml() in Graph creates MlNode and returns node-id
+    - MlNode calls ml-execute via host import and handles ml-error
+    - When ML not available, returns PipelineError with clear message
+    - Unit tests with mock ml-execute
+  out_of_scope: |
+    SDK/host-side ML execution. Model loading/caching. GPU buffer interop
+    optimization (host internal). WebNN/ONNX Runtime integration.
+  technical_notes: |
+    MlNode structure:
+    - upstream: u32 (source node)
+    - model: ModelRef { name, version }
+    - params: Vec<u8> (serialized param buffer)
+    - input_desc: TensorDesc
+    - output_desc: TensorDesc
+    - output_kind: MlOutputKind (Image or Mask)
+    - output_scale: Option<u32>
+    - info: NodeInfo (with output dimensions)
+
+    Compute path:
+    1. Request f32 RGBA pixels from upstream
+    2. Convert to model input format (tensor_to_bytes)
+    3. Call ml_execute(ml_op)
+    4. Convert output bytes back to f32 RGBA (bytes_to_pixels)
+    5. If mask: expand single channel to RGBA
+    6. If upscale: NodeInfo already has scaled dimensions
+
+    For GPU plan integration, add to pipeline.wit:
+    variant stage-input {
+      pixels(pixel-buffer),
+      prior-stage(string),
+      ml-inference(ml-stage-desc),  // NEW
+    }
+    record ml-stage-desc {
+      model: model-ref,
+      params: buffer,
+      input-desc: tensor-desc,
+      output-desc: tensor-desc,
+    }
+    The host receives this in the multi-gpu-plan and decides internally
+    whether to use GPU-native ML or CPU fallback.
+plan:
+  - phase: Tensor Conversion
+    tasks:
+      - text: Implement f32 RGBA HWC to model tensor format conversion (f32/f16/u8, HWC/NCHW)
+        done: false
+      - text: Implement reverse conversion (model output to f32 RGBA)
+        done: false
+      - text: Handle mask output expansion (single channel to RGBA)
+        done: false
+  - phase: MlNode Implementation
+    tasks:
+      - text: Create ml_node.rs with MlNode struct implementing Node trait
+        done: false
+      - text: Implement compute() with tensor conversion and ml-execute call
+        done: false
+      - text: Handle output dimension changes for upscale models
+        done: false
+      - text: Handle ml-error mapping to PipelineError
+        done: false
+  - phase: Graph Integration
+    tasks:
+      - text: Add apply_ml() method to Graph
+        done: false
+      - text: Wire apply-ml WIT method to graph.apply_ml() in WASM adapter
+        done: false
+      - text: Add ml-stage to multi-gpu-plan stage-input variant
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Unit tests for tensor conversion roundtrip (f32 RGBA -> NCHW f32 -> f32 RGBA)
+        done: false
+      - text: Unit test MlNode with mock ml-execute returning known output
+        done: false
+      - text: Test upscale node produces correct output dimensions
+        done: false
+      - text: Test mask node produces correct RGBA expansion
+        done: false
+extra: {}

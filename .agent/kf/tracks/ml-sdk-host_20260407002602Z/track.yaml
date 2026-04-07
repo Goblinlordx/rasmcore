@@ -1,0 +1,240 @@
+id: ml-sdk-host_20260407002602Z
+title: ML provider package with WebNN/ORT backends, model lifecycle, SDK registration API
+type: feature
+status: pending
+created: 2026-04-07
+updated: 2026-04-07
+spec:
+  summary: |
+    Separate ML package (@rasmcore/ml) with WebNN/ORT backends, model
+    lifecycle, and 3 reference models. SDK exposes registerMlProvider()
+    so ML is opt-in, not bundled.
+  context: |
+    ML is a separate package that plugs into the SDK via a public
+    registration API. Users who do not need ML do not pull in model
+    weights or inference runtimes.
+
+    Architecture:
+    - @rasmcore/sdk: exposes registerMlProvider(config) which wires
+      the provider into the WIT ml-execute/ml-capabilities imports.
+      This is the same internal mechanism the WASM adapter uses, just
+      made public. No ML code in the core SDK.
+    - @rasmcore/ml: separate npm package providing MlProvider with
+      backend detection (WebNN, ORT WebGPU, ORT WASM), model lifecycle
+      (download, cache), and model definitions.
+    - @rasmcore/ml/models: individual model exports (realEsrgan, rmbg,
+      midas) so users can tree-shake to only what they need.
+
+    Super-resolution (upscaling) is the highest-value first model because
+    Topaz Gigapixel is a best-selling standalone product proving demand.
+    Background removal and depth estimation round out the set by covering
+    all output types (image, mask).
+
+    The SDK auto-generates UI controls from ml-capability-info params
+    using the same param-descriptor pattern as filter controls.
+  codebase_analysis: |
+    Package structure:
+    - sdk/v2/lib/ml-provider.ts (NEW in core SDK): MlProvider interface +
+      registerMlProvider() public API. Thin — just wires provider into
+      the WASM adapter ml-execute/ml-capabilities imports.
+    - packages/ml/ (NEW separate package): @rasmcore/ml
+      - packages/ml/src/backends/webnn.ts: WebNN backend
+      - packages/ml/src/backends/ort.ts: ONNX Runtime Web backend
+      - packages/ml/src/model-cache.ts: IndexedDB cache
+      - packages/ml/src/model-loader.ts: download + progress
+      - packages/ml/src/provider.ts: MlProvider implementation
+      - packages/ml/src/models/real-esrgan.ts: model definition
+      - packages/ml/src/models/rmbg.ts: model definition
+      - packages/ml/src/models/midas.ts: model definition
+
+    SDK registration API (in core SDK):
+    - pipeline.registerMlProvider(provider: MlProvider)
+    - MlProvider interface: { execute(op), capabilities(), dispose() }
+    - This directly maps to the WIT ml-execute/ml-capabilities imports
+    - When no provider registered: ml-capabilities returns [], apply-ml
+      returns not-available error
+
+    Existing patterns to follow:
+    - sdk/v2/lib/gpu-handler.ts: device management, backend detection
+    - scripts/generate-v2-fluent-sdk.mjs: auto-generates typed methods
+
+    WebNN status (verified April 2026):
+    - Requires chrome://flags (web-machine-learning-neural-network)
+    - Works on macOS M4 with flag enabled
+    - Not available without flag on any platform
+    - Fallback: ONNX Runtime Web (WebGPU EP or WASM)
+  acceptance_criteria:
+    - SDK exposes registerMlProvider(provider) as public API
+    - MlProvider interface is minimal (execute, capabilities, dispose)
+    - @rasmcore/ml is a separate npm package, not bundled in core SDK
+    - Individual models are tree-shakeable imports from @rasmcore/ml/models
+    - Runtime detection of WebNN and ONNX Runtime backends
+    - On-demand model download with progress callback
+    - Model caching in IndexedDB
+    - 3 working reference models (Real-ESRGAN, RMBG-1.4, MiDaS)
+    - CPU fallback via ONNX Runtime WASM when GPU ML not available
+    - Pipeline without registerMlProvider works normally (ML just unavailable)
+  out_of_scope: |
+    Training or fine-tuning. Model conversion tools.
+    Remote execution backend (future track).
+    Note: native crate IS in scope (see plan).
+  technical_notes: |
+    ML Host Architecture:
+
+    MODEL DISTRIBUTION: definitions not weights.
+    - ML packages ship JSON model definitions (~1KB each)
+    - Definitions contain: name, shapes, params, download URL, file hash
+    - Weights (~50-176MB) downloaded on first use from CDN/HuggingFace
+    - Cached locally: IndexedDB (browser), ~/.cache/rasmcore/models/ (native)
+    - Hash-verified after download to prevent corruption
+    - Users can self-host models by overriding the download URL
+
+    class MlHost {
+      private backends: MlBackend[]  // ordered by preference
+      private modelCache: ModelCache
+      private manifest: ModelManifest
+
+      async init(manifestUrl: string)
+        - Fetch model manifest
+        - Detect backends: WebNN GPU > WebNN CPU > ORT WebGPU > ORT WASM
+        - Report capabilities to guest
+
+      async execute(op: MlOp): Promise<Uint8Array>
+        - Ensure model loaded (download if needed)
+        - Select best backend for this model
+        - Run inference
+        - Return output tensor bytes
+
+      capabilities(): MlCapabilityInfo[]
+        - Return manifest filtered by available backends
+    }
+
+    Model Manifest Format:
+    {
+      models: [{
+        name: "real-esrgan-x4plus",
+        version: "1.0.0",
+        displayName: "AI Super Resolution (4x)",
+        category: "upscale",
+        outputKind: "image",
+        outputScale: 4,
+        inputDesc: { shape: [1, 3, -1, -1], dtype: "float32" },
+        outputDesc: { shape: [1, 3, -1, -1], dtype: "float32" },
+        params: [
+          { name: "denoise", type: "f32", min: 0, max: 1, step: 0.1, default: 0.5 }
+        ],
+        files: {
+          onnx: "https://cdn.example.com/models/real-esrgan-x4plus.onnx",
+          sizeBytes: 67108864
+        },
+        backends: ["webnn-gpu", "ort-webgpu", "ort-wasm"]
+      }]
+    }
+
+    Backend priority (highest to lowest):
+    1. WebNN GPU/NPU (lowest overhead, native acceleration)
+    2. ONNX Runtime WebGPU EP (cross-platform GPU)
+    3. WebNN CPU (native SIMD)
+    4. ONNX Runtime WASM SIMD (universal fallback)
+
+    Reference models (3 covering all output types):
+
+    1. Real-ESRGAN x4plus (upscale, image output):
+       - Source: huggingface.co/xinntao/Real-ESRGAN (ONNX export)
+       - Input: RGB float32 NCHW, any dimensions
+       - Output: RGB float32 NCHW, 4x input dimensions
+       - Size: ~64MB ONNX
+       - Params: denoise_strength (f32, 0-1)
+       - Tiling needed for large images (512px tiles typical)
+
+    2. RMBG-1.4 (background removal, mask output):
+       - Source: huggingface.co/briaai/RMBG-1.4 (ONNX available)
+       - Input: RGB float32 NCHW, 1024x1024 (resize+pad)
+       - Output: single-channel float32, binary mask
+       - Size: ~176MB ONNX
+       - Params: threshold (f32, 0-1, default 0.5)
+       - High demand — Remove.bg charges per image for this
+
+    3. MiDaS v2.1 small (depth estimation, mask output):
+       - Source: huggingface.co/Intel/dpt-hybrid-midas (ONNX)
+       - Input: RGB float32 NCHW, 384x384 (resize)
+       - Output: single-channel float32, continuous depth map
+       - Size: ~50MB ONNX
+       - Params: none (or normalize: bool)
+       - Enables depth-based effects (bokeh blur, fog, parallax)
+plan:
+  - phase: ML Backend Detection
+    tasks:
+      - text: Implement WebNN availability detection (navigator.ml, createContext per device type)
+        done: false
+      - text: Implement ONNX Runtime Web availability detection (WebGPU EP, WASM fallback)
+        done: false
+      - text: Create MlBackend interface with detect/execute/dispose methods
+        done: false
+      - text: Implement backend priority selection (WebNN GPU > ORT WebGPU > ORT WASM)
+        done: false
+  - phase: Model Lifecycle
+    tasks:
+      - text: Define model manifest JSON schema
+        done: false
+      - text: Implement manifest loading from configurable URL
+        done: false
+      - text: Implement on-demand model download with progress callback
+        done: false
+      - text: Implement IndexedDB model cache (store/retrieve/evict)
+        done: false
+  - phase: SDK Registration API (in core @rasmcore/sdk)
+    tasks:
+      - text: Define MlProvider interface (execute, capabilities, dispose)
+        done: false
+      - text: Implement registerMlProvider() on pipeline — wires provider into WASM adapter ml imports
+        done: false
+      - text: When no provider registered, ml-capabilities returns empty, apply-ml returns not-available
+        done: false
+  - phase: ML Provider Package (@rasmcore/ml)
+    tasks:
+      - text: Scaffold packages/ml/ with package.json, tsconfig, build
+        done: false
+      - text: Implement MlProvider class with backend detection and model registry
+        done: false
+      - text: Implement model definition exports (tree-shakeable per-model imports)
+        done: false
+  - phase: Reference Models (3 covering all output types)
+    tasks:
+      - text: Source Real-ESRGAN x4plus ONNX (~64MB) — upscale, image output, 4x dims
+        done: false
+      - text: Source RMBG-1.4 ONNX (BRIA AI, ~176MB) — background removal, mask output
+        done: false
+      - text: Source MiDaS v2.1 small ONNX (Intel, ~50MB) — depth estimation, mask output
+        done: false
+      - text: Create model manifest JSON with all 3 models and HuggingFace download URLs
+        done: false
+      - text: Implement tiled inference for large images (tile, infer, stitch) for upscale model
+        done: false
+  - phase: Native ML Crate (rasmcore-ml)
+    tasks:
+      - text: Scaffold crates/rasmcore-ml/ with MlProvider trait matching the TS interface
+        done: false
+      - text: Implement model definition structs (metadata + download URL, no weights bundled)
+        done: false
+      - text: Implement model download and filesystem cache (~/.cache/rasmcore/models/)
+        done: false
+      - text: Implement ONNX Runtime native backend (auto-detects CoreML/CUDA/DirectML/CPU)
+        done: false
+      - text: Wire native MlProvider into rasmcore-ffi and rasmcore-gpu-native
+        done: false
+  - phase: End-to-End Testing
+    tasks:
+      - text: Test Real-ESRGAN 4x upscale through full pipeline (image in, 4x image out)
+        done: false
+      - text: Test RMBG-1.4 background removal (image in, alpha mask out)
+        done: false
+      - text: Test MiDaS depth map (image in, depth mask out — verify usable for depth blur)
+        done: false
+      - text: Test ML detection correctly identifies available backends
+        done: false
+      - text: Test model download, IndexedDB caching, and cache hit on reload
+        done: false
+      - text: Test graceful degradation when no ML backend available
+        done: false
+extra: {}
