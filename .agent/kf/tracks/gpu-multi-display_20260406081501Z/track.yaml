@@ -3,101 +3,111 @@ title: GpuHandler multi-display target registry
 type: feature
 status: pending
 created: '2026-04-06'
-updated: '2026-04-06'
+updated: '2026-04-07'
 spec:
-  summary: |
-    Refactor GpuHandlerV2 to support N named display targets via
+  summary: 'Refactor GpuHandlerV2 to support N named display targets via
+
     addDisplay(name, canvas). Migrate existing canvasCtx/origCtx into
+
     a display map. Add executeMulti() for multi-stage GPU plans.
-  context: |
-    GpuHandlerV2 currently has two hardcoded display surfaces:
+
+    '
+  context: 'GpuHandlerV2 currently has two hardcoded display surfaces:
+
     canvasCtx (processed view) and origCtx (original view). Each has
+
     its own OffscreenCanvas, GPUCanvasContext, and viewport uniform.
+
     The multi-output design needs N displays (viewport + N scopes).
 
+
     The codebase already proves multi-canvas from one GPUDevice works.
+
     This track generalizes the pattern into a registry.
-  codebase_analysis: |
-    GpuHandlerV2 (gpu-handler-v2.ts):
+
+    '
+  codebase_analysis: 'GpuHandlerV2 (gpu-handler-v2.ts):
+
     - displayCanvas/canvasCtx/viewportBuf — processed view
+
     - origCanvas/origCtx/origViewportBuf — original view
+
     - blitPipeline shared across both — same shader, different bind groups
+
     - appendBlitPass(encoder, pixelBuf) blits to canvasCtx
+
     - blitOriginal() blits sourcePixelBuf to origCtx
+
     - lastOutputBuf persists GPU output for displayOnly() re-blit
 
+
     Pattern per display target:
+
     - OffscreenCanvas
+
     - GPUCanvasContext (configure with device + format)
+
     - GPUBuffer for viewport uniforms
+
     - Reference to which pixel buffer to blit from
 
+
     executeMulti() would iterate stages, execute compute passes, then
-    blit each stage's output to its registered display target.
+
+    blit each stage''s output to its registered display target.
+
+    '
   acceptance_criteria:
-    - DisplayRegistration type with name, canvas, ctx, viewportBuf
-    - displays Map<string, DisplayRegistration> replaces hardcoded fields
-    - addDisplay(name, canvas, hdr) registers a named target
-    - removeDisplay(name) cleans up a target
-    - Existing canvasCtx/origCtx migrated into display map
-    - blitTo(name, pixelBuf) blits a buffer to a named display
-    - executeMulti(stages) executes ordered stages with display blits
-    - displayOnly(name) re-blits without recompute
-    - updateViewport(name, ...) updates a specific display viewport
-    - Backward compatible — existing executeAndDisplay still works
-  out_of_scope: |
-    Graph refs. GPU plan extraction from Rust. Worker integration.
-  technical_notes: |
-    DisplayRegistration interface:
-      { name: string, canvas: OffscreenCanvas, ctx: GPUCanvasContext,
-        viewportBuf: GPUBuffer, lastPixelBuf: GPUBuffer | null,
-        imageWidth: number, imageHeight: number }
+  - DisplayRegistration type with name, canvas, ctx, viewportBuf
+  - displays Map<string, DisplayRegistration> replaces hardcoded fields
+  - addDisplay(name, canvas, hdr) registers a named target
+  - removeDisplay(name) cleans up a target
+  - Existing canvasCtx/origCtx migrated into display map
+  - blitTo(name, pixelBuf) blits a buffer to a named display
+  - executeMulti(stages) executes ordered stages with display blits
+  - displayOnly(name) re-blits without recompute
+  - updateViewport(name, ...) updates a specific display viewport
+  - Backward compatible — existing executeAndDisplay still works
+  out_of_scope: 'Graph refs. GPU plan extraction from Rust. Worker integration.
 
-    Migration: replace private canvasCtx/origCtx/viewportBuf with
-    displays.get("viewport") and displays.get("original").
-    setDisplayCanvas() becomes addDisplay("viewport", canvas, hdr).
-    setOriginalDisplayCanvas() becomes addDisplay("original", canvas, hdr).
-
-    executeMulti(stages: MultiStage[]):
-      type MultiStage = {
-        name: string,          // display target name
-        shaders: GpuShader[],  // compute chain (empty = passthrough)
-        input: { tag: 'pixels', data: Float32Array }
-             | { tag: 'prior', name: string },
-        width: number, height: number,
-      }
-
-    Execution: single command encoder, stages in order.
-    prior-stage input binds the output buffer from a previous stage.
+    '
+  technical_notes: "DisplayRegistration interface:\n  { name: string, canvas: OffscreenCanvas, ctx: GPUCanvasContext,\n  \
+    \  viewportBuf: GPUBuffer, lastPixelBuf: GPUBuffer | null,\n    imageWidth: number, imageHeight: number }\n\nMigration:\
+    \ replace private canvasCtx/origCtx/viewportBuf with\ndisplays.get(\"viewport\") and displays.get(\"original\").\nsetDisplayCanvas()\
+    \ becomes addDisplay(\"viewport\", canvas, hdr).\nsetOriginalDisplayCanvas() becomes addDisplay(\"original\", canvas,\
+    \ hdr).\n\nexecuteMulti(stages: MultiStage[]):\n  type MultiStage = {\n    name: string,          // display target name\n\
+    \    shaders: GpuShader[],  // compute chain (empty = passthrough)\n    input: { tag: 'pixels', data: Float32Array }\n\
+    \         | { tag: 'prior', name: string },\n    width: number, height: number,\n  }\n\nExecution: single command encoder,\
+    \ stages in order.\nprior-stage input binds the output buffer from a previous stage.\n"
 plan:
-  - phase: Display Registry
-    tasks:
-      - text: Define DisplayRegistration interface
-        done: false
-      - text: Add displays Map to GpuHandlerV2
-        done: false
-      - text: Implement addDisplay(name, canvas, hdr) and removeDisplay(name)
-        done: false
-      - text: Migrate canvasCtx/viewportBuf to displays.get viewport
-        done: false
-      - text: Migrate origCtx/origViewportBuf to displays.get original
-        done: false
-  - phase: Multi-Target Operations
-    tasks:
-      - text: Implement blitTo(name, pixelBuf) for named display blit
-        done: false
-      - text: Implement updateViewport(name, ...) for per-display viewport
-        done: false
-      - text: Implement displayOnly(name) for re-blit without recompute
-        done: false
-      - text: Implement executeMulti(stages) with prior-stage buffer reuse
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Test addDisplay registers and configures canvas correctly
-        done: false
-      - text: Test executeMulti with 2 stages sharing a buffer
-        done: false
-      - text: Verify existing single-display path still works unchanged
-        done: false
+- phase: Display Registry
+  tasks:
+  - text: Define DisplayRegistration interface
+    done: true
+  - text: Add displays Map to GpuHandlerV2
+    done: true
+  - text: Implement addDisplay(name, canvas, hdr) and removeDisplay(name)
+    done: true
+  - text: Migrate canvasCtx/viewportBuf to displays.get viewport
+    done: true
+  - text: Migrate origCtx/origViewportBuf to displays.get original
+    done: true
+- phase: Multi-Target Operations
+  tasks:
+  - text: Implement blitTo(name, pixelBuf) for named display blit
+    done: true
+  - text: Implement updateViewport(name, ...) for per-display viewport
+    done: true
+  - text: Implement displayOnly(name) for re-blit without recompute
+    done: true
+  - text: Implement executeMulti(stages) with prior-stage buffer reuse
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test addDisplay registers and configures canvas correctly
+    done: true
+  - text: Test executeMulti with 2 stages sharing a buffer
+    done: true
+  - text: Verify existing single-display path still works unchanged
+    done: true
 extra: {}
