@@ -1,6 +1,6 @@
 title: CPU render optimization audit (SIMD, LUT baking, fused ops)
-status: completed
+status: pending
 type: chore
 approved: false
 created: '2026-04-04'
-updated: '2026-04-04'
+updated: '2026-04-07'
