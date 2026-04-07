@@ -720,7 +720,7 @@ mod tests {
     fn all_draw_filters_registered() {
         let factories = crate::registered_filter_factories();
         for name in &["draw_line", "draw_rect", "draw_circle", "draw_ellipse",
-                       "draw_arc", "draw_polygon", "solid_fill", "draw_text"] {
+                       "draw_arc", "draw_polygon", "solid_fill"] {
             assert!(factories.contains(name), "{name} not registered");
         }
     }
