@@ -1,0 +1,8 @@
+title: Tile-based stroke undo stack
+status: pending
+type: feature
+approved: false
+created: '2026-04-07'
+updated: '2026-04-07'
+deps:
+- brush-engine-gpu_20260407022102Z

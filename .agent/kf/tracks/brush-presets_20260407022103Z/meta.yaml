@@ -1,0 +1,8 @@
+title: Standard brush presets library
+status: pending
+type: feature
+approved: false
+created: '2026-04-07'
+updated: '2026-04-07'
+deps:
+- brush-engine-cpu_20260407022101Z

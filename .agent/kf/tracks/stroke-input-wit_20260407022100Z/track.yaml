@@ -1,0 +1,57 @@
+id: stroke-input-wit_20260407022100Z
+title: Stroke input WIT types, WASM adapter, and SDK bindings
+type: feature
+status: pending
+created: '2026-04-07'
+updated: '2026-04-07'
+spec:
+  summary: Add stroke-point record, brush-params record, stroke-input resource to WIT. Wire WASM adapter with apply-stroke
+    method. Generate fluent SDK StrokeInput class.
+  context: The V2 pipeline has draw/tool filters but no stroke input model. Professional drawing requires per-point stylus
+    data (pressure, tilt, velocity) and brush configuration. This track adds the WIT interface types and WASM adapter wiring
+    so strokes can be passed from host to pipeline.
+  codebase_analysis: 'WIT interface: wit/v2/pipeline.wit. WASM adapter: crates/rasmcore-v2-wasm/src/lib.rs. SDK generator:
+    scripts/generate-v2-fluent-sdk.mjs. Existing pattern: apply-filter takes (source, name, params buffer). Stroke needs a
+    resource type with addPoint/endStroke methods.'
+  acceptance_criteria:
+  - stroke-point record in WIT with x, y, pressure, tilt-x, tilt-y, rotation, velocity, timestamp
+  - brush-params record in WIT with diameter, spacing, hardness, flow, opacity, dynamics curves
+  - stroke-input resource in WIT with constructor(brush-params), add-point, end-stroke, point-count, point-data
+  - apply-stroke method on image-pipeline-v2 resource
+  - WASM adapter wires stroke-input resource to Rust StrokeInput struct
+  - Fluent SDK generates StrokeInput class with addPoint/endStroke/applyStroke
+  - WASM component builds clean
+  out_of_scope: Brush rendering engine (CPU or GPU). Undo. Presets. This is types + wiring only.
+  technical_notes: ''
+plan:
+  - phase: WIT Types
+    tasks:
+      - text: Add stroke-point record to wit/v2/pipeline.wit (x, y, pressure, tilt-x, tilt-y, rotation, velocity, timestamp)
+        done: false
+      - text: Add brush-params record (diameter, spacing, hardness, flow, opacity, angle, roundness, dynamics curves, scatter, color jitter, smoothing)
+        done: false
+      - text: Add stroke-input resource with constructor(brush-params), add-point, end-stroke, point-count, point-data
+        done: false
+      - text: Add apply-stroke method to image-pipeline-v2 resource
+        done: false
+  - phase: WASM Adapter
+    tasks:
+      - text: Create Rust StrokeInput struct in rasmcore-v2-wasm storing points Vec and brush params
+        done: false
+      - text: Wire stroke-input WIT resource to StrokeInput struct (add_point pushes to vec, point_data returns flat f32 slice)
+        done: false
+      - text: Implement apply_stroke in PipelineResource (placeholder - creates StrokeNode that returns source unchanged for now)
+        done: false
+  - phase: SDK Generation
+    tasks:
+      - text: Update generate-v2-fluent-sdk.mjs to emit StrokeInput class with addPoint/endStroke
+        done: false
+      - text: Add applyStroke(stroke, color, blendMode) chainable method to Pipeline class
+        done: false
+  - phase: Verification
+    tasks:
+      - text: WASM component builds clean with new WIT types
+        done: false
+      - text: Round-trip test - create stroke, add points, verify point_data returns correct flat array
+        done: false
+extra: {}

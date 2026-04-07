@@ -1,0 +1,55 @@
+id: stroke-undo_20260407022104Z
+title: Tile-based stroke undo stack
+type: feature
+status: pending
+created: '2026-04-07'
+updated: '2026-04-07'
+spec:
+  summary: Stroke-atomic undo with tile-based snapshots. Only tiles overlapping stroke bounding box are captured. Memory-bounded
+    with fallback to re-render for old entries.
+  context: Drawing requires undo. Each stroke should be a single undo unit. The undo system captures tile-based snapshots
+    of only the tiles modified by a stroke, enabling fast undo/redo with bounded memory usage. Integrates with the accumulation
+    buffer from the GPU engine.
+  codebase_analysis: ''
+  acceptance_criteria:
+  - UndoStack resource in WIT with push-stroke, undo, redo, clear methods
+  - 'Tile-based snapshot: only captures tiles overlapping stroke bounding box'
+  - Undo restores pre-stroke tile state, redo re-applies
+  - 'Memory budget: configurable max undo entries, oldest entries evicted'
+  - 'Round-trip test: draw 3 strokes, undo all 3, verify canvas matches original'
+  out_of_scope: Command-based undo (re-render from scratch). Non-stroke undo (filter undo). History branching.
+  technical_notes: ''
+plan:
+  - phase: Tile Snapshot System
+    tasks:
+      - text: Define Tile struct (64x64 f32 RGBA) and TileSet (sparse map of tile coords to data)
+        done: false
+      - text: Implement capture_tiles(layer, bounding_rect) - extract only overlapping tiles
+        done: false
+      - text: Implement restore_tiles(layer, tile_set) - write tiles back to layer
+        done: false
+  - phase: Undo Stack
+    tasks:
+      - text: Define UndoEntry (layer_id, pre_stroke TileSet, bounding_rect)
+        done: false
+      - text: Implement UndoStack with push_stroke, undo, redo, clear
+        done: false
+      - text: Implement memory budget - evict oldest entries when total size exceeds limit
+        done: false
+  - phase: WIT Integration
+    tasks:
+      - text: Add undo-stack resource to WIT with push-stroke, undo, redo, clear, set-memory-budget
+        done: false
+      - text: Wire apply-stroke to automatically push undo entry before rendering
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test undo restores exact pre-stroke tile state
+        done: false
+      - text: Test redo re-applies stroke result
+        done: false
+      - text: Test memory budget eviction - oldest entries removed first
+        done: false
+      - text: Round-trip - draw 3 strokes, undo all 3, verify canvas matches original
+        done: false
+extra: {}

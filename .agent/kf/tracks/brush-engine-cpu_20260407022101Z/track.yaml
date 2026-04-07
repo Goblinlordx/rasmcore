@@ -1,0 +1,73 @@
+id: brush-engine-cpu_20260407022101Z
+title: CPU stamp-based brush engine with dynamics curves
+type: feature
+status: pending
+created: '2026-04-07'
+updated: '2026-04-07'
+spec:
+  summary: Spacing interpolation, dab generation with pressure/tilt/velocity dynamics, Catmull-Rom smoothing. CPU reference
+    implementation that the GPU engine mirrors.
+  context: 'After WIT types are defined, the pipeline needs a brush engine to convert stroke input + brush params into rendered
+    pixels. This track implements the CPU reference engine: spacing interpolation along the stroke path, dab parameter computation
+    from dynamics curves, and per-dab stamp compositing.'
+  codebase_analysis: Engine lives in crates/rasmcore-pipeline-v2/src/brush/. New module. Uses StrokeInput from the WIT track.
+    Dab compositing writes to f32 RGBA accumulation buffer. Dynamics curves use piecewise-linear lookup (same format as grading
+    curves). Spacing interpolation is sequential (CPU-bound, low volume).
+  acceptance_criteria:
+  - 'Spacing interpolation: evenly-spaced dab positions along stroke path'
+  - 'Dynamics curves: pressure/velocity/tilt map to size/opacity/angle via piecewise-linear control points'
+  - Catmull-Rom path smoothing with adjustable strength
+  - 'Dab stamp compositing: parametric circle tip with hardness falloff'
+  - 'Scatter support: random perpendicular displacement per dab'
+  - 'Accumulation buffer model: f32 RGBA, stroke composited then blended onto layer'
+  - 'Round-trip test: draw stroke, verify pixels match expected stamp pattern'
+  out_of_scope: GPU rendering. Custom brush textures (parametric circle only). Undo. Presets.
+  technical_notes: ''
+plan:
+  - phase: Foundation
+    tasks:
+      - text: Create crates/rasmcore-pipeline-v2/src/brush/ module with mod.rs, types.rs
+        done: false
+      - text: Define DabInstance struct (pos, size, angle, opacity, color) and BrushEngine trait
+        done: false
+      - text: Implement piecewise-linear dynamics curve lookup (shared with grading curves format)
+        done: false
+  - phase: Path Processing
+    tasks:
+      - text: Implement Catmull-Rom path smoothing with adjustable strength parameter
+        done: false
+      - text: Implement spacing interpolation along smoothed path (evenly-spaced dab positions)
+        done: false
+      - text: Interpolate all per-point fields (pressure, tilt, velocity) at dab positions
+        done: false
+  - phase: Dab Generation
+    tasks:
+      - text: Implement dynamics evaluation - map input fields to dab params via curves
+        done: false
+      - text: Implement scatter - random perpendicular displacement per dab
+        done: false
+      - text: Implement parametric circle tip with hardness-controlled falloff gradient
+        done: false
+  - phase: Compositing
+    tasks:
+      - text: Create AccumulationBuffer (f32 RGBA at canvas dimensions)
+        done: false
+      - text: Implement dab stamp compositing onto accumulation buffer (max-opacity blend)
+        done: false
+      - text: Implement layer composite - blend accumulation buffer onto source with blend mode and stroke opacity
+        done: false
+  - phase: Integration
+    tasks:
+      - text: Create StrokeNode that takes StrokeInput + BrushEngine and produces rendered output
+        done: false
+      - text: Wire apply_stroke in WASM adapter to use CPU brush engine
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test spacing interpolation produces correct dab count for known path length
+        done: false
+      - text: Test dynamics curves map pressure to expected size/opacity values
+        done: false
+      - text: Test full stroke render produces visible stamp pattern at expected positions
+        done: false
+extra: {}
