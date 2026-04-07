@@ -46,6 +46,7 @@ pub mod noise;
 pub mod lmt;
 pub mod brush;
 pub mod font;
+pub mod undo;
 pub mod filters;
 
 // Re-export core types at crate root
