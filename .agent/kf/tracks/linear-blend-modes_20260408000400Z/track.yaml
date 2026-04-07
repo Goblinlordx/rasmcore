@@ -1,142 +1,146 @@
 id: linear-blend-modes_20260408000400Z
-title: "Linear-space professional blend modes — remove [0,1] clamping, add HDR support"
+title: Linear-space professional blend modes — remove [0,1] clamping, add HDR support
 type: refactor
 status: pending
 created: 2026-04-08
-updated: 2026-04-08
+updated: '2026-04-07'
 spec:
-  summary: |
-    Audit and fix blend mode implementations for linear HDR pipeline.
+  summary: 'Audit and fix blend mode implementations for linear HDR pipeline.
+
     Remove input clamping to [0,1] (line 289), add proper scene-referred
-    linear handling matching Nuke's merge node behavior. Update reference
+
+    linear handling matching Nuke''s merge node behavior. Update reference
+
     and AUTHORITY.md with professional tool citations.
-  context: |
-    The blend filter at composite.rs:288-295 clamps inputs to [0,1]:
-      let r = px[0].clamp(0.0, 1.0);
-    This is incorrect for a scene-referred linear pipeline where values
-    routinely exceed 1.0 (HDR highlights, specular reflections).
 
-    Professional tool behavior:
-    - Nuke (merge node): Does NOT clamp inputs. All blend modes operate
-      on unbounded scene-referred linear values. Multiply of 2.0 * 0.5 = 1.0.
-      Screen of values > 1.0 produces values > 1.0. This is the VFX standard.
-    - DaVinci Resolve: Composite modes in Fusion work in scene-referred linear
-      (when in ACES/Linear working space). No input clamping.
-    - Photoshop: Clamps to [0,1] because PS works in display-referred space
-      (8/16-bit sRGB by default). This is the web/print convention.
-    - ISO 32000-2: Defines blend modes for display-referred values in [0,1].
-      Extension to scene-referred is straightforward for most modes.
-
-    Decision: Remove the [0,1] clamp for the main pipeline (linear f32).
-    Modes that mathematically require [0,1] (e.g., color dodge denominator)
-    use epsilon guards instead of clamping. Modes like multiply, screen,
-    overlay naturally extend to unbounded values.
-
-    Additional professional modes to evaluate:
-    - The existing 25 modes already cover ISO 32000-2 + common extensions
-    - Luminosity mode already uses color-space-aware luma coefficients (good)
-    - Missing: proper premultiplied-over compositing (Nuke's "over" operation
-      accounts for premultiplied alpha in scene-referred linear)
-
-    The existing implementation is actually quite professional (ISO 32000-2
-    ClipColor/SetLum/SetSat functions, parameterized luma coefficients).
-    The main fix is removing the input clamp.
-  codebase_analysis: |
-    composite.rs line 288-295 — the clamping loop:
-      for px in out.chunks_exact_mut(4) {
-          let r = px[0].clamp(0.0, 1.0);  // <-- REMOVE THIS
-          ...
-      }
-
-    The non-separable modes (hue, saturation, color, luminosity) at lines
-    306+ use luma() with color_space.luma_coefficients() — already correct.
-
-    ISO 32000-2 functions (ClipColor, SetLum, SetSat) at lines 153-207
-    reference the standard correctly.
-
-    GPU shader for blend is in the shader body (if present) — needs same fix.
-
-    The existing test suite has blend_multiply_darkens, blend_screen_brightens,
-    blend_opacity_zero_is_identity etc. — these use values in [0,1] and will
-    still pass. Need new tests for HDR values > 1.0.
+    '
+  context: "The blend filter at composite.rs:288-295 clamps inputs to [0,1]:\n  let r = px[0].clamp(0.0, 1.0);\nThis is incorrect\
+    \ for a scene-referred linear pipeline where values\nroutinely exceed 1.0 (HDR highlights, specular reflections).\n\n\
+    Professional tool behavior:\n- Nuke (merge node): Does NOT clamp inputs. All blend modes operate\n  on unbounded scene-referred\
+    \ linear values. Multiply of 2.0 * 0.5 = 1.0.\n  Screen of values > 1.0 produces values > 1.0. This is the VFX standard.\n\
+    - DaVinci Resolve: Composite modes in Fusion work in scene-referred linear\n  (when in ACES/Linear working space). No\
+    \ input clamping.\n- Photoshop: Clamps to [0,1] because PS works in display-referred space\n  (8/16-bit sRGB by default).\
+    \ This is the web/print convention.\n- ISO 32000-2: Defines blend modes for display-referred values in [0,1].\n  Extension\
+    \ to scene-referred is straightforward for most modes.\n\nDecision: Remove the [0,1] clamp for the main pipeline (linear\
+    \ f32).\nModes that mathematically require [0,1] (e.g., color dodge denominator)\nuse epsilon guards instead of clamping.\
+    \ Modes like multiply, screen,\noverlay naturally extend to unbounded values.\n\nAdditional professional modes to evaluate:\n\
+    - The existing 25 modes already cover ISO 32000-2 + common extensions\n- Luminosity mode already uses color-space-aware\
+    \ luma coefficients (good)\n- Missing: proper premultiplied-over compositing (Nuke's \"over\" operation\n  accounts for\
+    \ premultiplied alpha in scene-referred linear)\n\nThe existing implementation is actually quite professional (ISO 32000-2\n\
+    ClipColor/SetLum/SetSat functions, parameterized luma coefficients).\nThe main fix is removing the input clamp.\n"
+  codebase_analysis: "composite.rs line 288-295 — the clamping loop:\n  for px in out.chunks_exact_mut(4) {\n      let r =\
+    \ px[0].clamp(0.0, 1.0);  // <-- REMOVE THIS\n      ...\n  }\n\nThe non-separable modes (hue, saturation, color, luminosity)\
+    \ at lines\n306+ use luma() with color_space.luma_coefficients() — already correct.\n\nISO 32000-2 functions (ClipColor,\
+    \ SetLum, SetSat) at lines 153-207\nreference the standard correctly.\n\nGPU shader for blend is in the shader body (if\
+    \ present) — needs same fix.\n\nThe existing test suite has blend_multiply_darkens, blend_screen_brightens,\nblend_opacity_zero_is_identity\
+    \ etc. — these use values in [0,1] and will\nstill pass. Need new tests for HDR values > 1.0.\n"
   acceptance_criteria:
-    - Remove input clamping to [0,1] from separable blend modes
-    - Blend modes work correctly with HDR values (> 1.0)
-    - Multiply, screen, overlay produce correct results for values > 1.0
-    - Color dodge/burn use epsilon guards instead of clamping
-    - Non-separable modes (hue, sat, color, luminosity) handle > 1.0 gracefully
-    - ClipColor extended to handle scene-referred range
-    - New tests with HDR input values (e.g., 2.0, 5.0)
-    - Existing blend tests still pass
-    - Reference implementation in rasmcore-reference updated
-    - AUTHORITY.md updated to cite Nuke merge node + ISO 32000-2
-  out_of_scope: |
-    Adding new blend modes beyond the existing 25.
+  - Remove input clamping to [0,1] from separable blend modes
+  - Blend modes work correctly with HDR values (> 1.0)
+  - Multiply, screen, overlay produce correct results for values > 1.0
+  - Color dodge/burn use epsilon guards instead of clamping
+  - Non-separable modes (hue, sat, color, luminosity) handle > 1.0 gracefully
+  - ClipColor extended to handle scene-referred range
+  - New tests with HDR input values (e.g., 2.0, 5.0)
+  - Existing blend tests still pass
+  - Reference implementation in rasmcore-reference updated
+  - AUTHORITY.md updated to cite Nuke merge node + ISO 32000-2
+  out_of_scope: 'Adding new blend modes beyond the existing 25.
+
     Two-layer compositing node (this filter is self-blend only).
+
     Premultiplied alpha compositing pipeline changes.
-  technical_notes: |
-    Mode-by-mode HDR analysis:
+
+    '
+  technical_notes: 'Mode-by-mode HDR analysis:
+
 
     Naturally extend to unbounded:
+
     - 0 Normal: identity — works for any value
+
     - 1 Multiply: a*b — works for any value
+
     - 2 Screen: 1-(1-a)*(1-b) — works, can produce values > 1
+
     - 8 Darken: min(a,b) — works for any value
+
     - 9 Lighten: max(a,b) — works for any value
+
     - 10 Difference: abs(a-b) — works for any value
+
     - 11 Exclusion: a+b-2*a*b — works for any value
+
     - 12 LinearBurn: a+b-1 — works, can go negative (valid in linear)
+
     - 13 LinearDodge: a+b — works for any value
 
+
     Need epsilon guard (not clamp):
+
     - 6 ColorDodge: a/(1-b+eps) — valid for b<1, needs guard at b=1
+
     - 7 ColorBurn: 1-(1-a)/(b+eps) — valid for b>0, needs guard at b=0
 
+
     Need extension for > 1:
+
     - 3 Overlay: uses 0.5 threshold — for HDR, threshold could scale
+
     - 4 SoftLight: ISO formula uses [0,1] assumptions
+
     - 5 HardLight: uses 0.5 threshold — same as overlay
+
     - 14 VividLight: dodge/burn combo — epsilon guards
+
     - 15 LinearLight: linear combo — naturally extends
+
     - 16 PinLight: min/max combo — naturally extends
+
     - 17 HardMix: threshold at 1.0 — naturally extends
 
+
     Non-separable (21-24): These use SetLum/SetSat/ClipColor which currently
+
     assume [0,1]. ClipColor needs modification to handle scene-referred values.
+
     For the initial fix, clamp only in non-separable modes (documented limitation).
 
+
     For GPU: the shader currently has the same clamp. Remove it.
+
+    '
 plan:
-  - phase: "Remove input clamping"
-    tasks:
-      - text: "Remove .clamp(0.0, 1.0) from separable blend mode loop (line 289)"
-        done: false
-      - text: "Replace dodge/burn clamp with epsilon-only guards"
-        done: false
-      - text: "Document which modes naturally extend vs need special handling"
-        done: false
-  - phase: "HDR tests"
-    tasks:
-      - text: "Test multiply with HDR values (2.0 * 0.5 = expected)"
-        done: false
-      - text: "Test screen with HDR values"
-        done: false
-      - text: "Test linear dodge/burn with values > 1.0"
-        done: false
-      - text: "Test all existing blend tests still pass"
-        done: false
-  - phase: "Non-separable mode handling"
-    tasks:
-      - text: "Audit ClipColor for scene-referred values"
-        done: false
-      - text: "Document ClipColor limitation for HDR non-separable modes"
-        done: false
-  - phase: "Reference and documentation"
-    tasks:
-      - text: "Update rasmcore-reference blend mode implementations"
-        done: false
-      - text: "Update AUTHORITY.md to cite Nuke merge node behavior"
-        done: false
-      - text: "WASM build succeeds"
-        done: false
+- phase: Remove input clamping
+  tasks:
+  - text: Remove .clamp(0.0, 1.0) from separable blend mode loop (line 289)
+    done: true
+  - text: Replace dodge/burn clamp with epsilon-only guards
+    done: true
+  - text: Document which modes naturally extend vs need special handling
+    done: true
+- phase: HDR tests
+  tasks:
+  - text: Test multiply with HDR values (2.0 * 0.5 = expected)
+    done: true
+  - text: Test screen with HDR values
+    done: true
+  - text: Test linear dodge/burn with values > 1.0
+    done: true
+  - text: Test all existing blend tests still pass
+    done: true
+- phase: Non-separable mode handling
+  tasks:
+  - text: Audit ClipColor for scene-referred values
+    done: true
+  - text: Document ClipColor limitation for HDR non-separable modes
+    done: true
+- phase: Reference and documentation
+  tasks:
+  - text: Update rasmcore-reference blend mode implementations
+    done: true
+  - text: Update AUTHORITY.md to cite Nuke merge node behavior
+    done: true
+  - text: WASM build succeeds
+    done: true
 extra: {}
