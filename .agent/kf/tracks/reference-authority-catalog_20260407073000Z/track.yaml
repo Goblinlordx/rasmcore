@@ -1,150 +1,111 @@
 id: reference-authority-catalog_20260407073000Z
-title: "Document reference tool authority for all ~170 filters"
+title: Document reference tool authority for all ~170 filters
 type: chore
 status: pending
 created: 2026-04-07
-updated: 2026-04-07
+updated: '2026-04-07'
 spec:
-  summary: |
-    Produce a comprehensive AUTHORITY.md in rasmcore-reference/ that maps
+  summary: 'Produce a comprehensive AUTHORITY.md in rasmcore-reference/ that maps
+
     every filter to its reference tool, command, color space setting, and
+
     rationale. This is the planning document that drives all subsequent
+
     reference implementation and cross-validation work.
-  context: |
-    rasmcore has ~170 filters across 17 categories. Before implementing
-    reference functions or running cross-validation, we need a single
-    document that answers: for each filter, what tool do we consider
-    the professional-grade authority, and why?
 
-    Tool candidates by category:
-    - ImageMagick 7.x: point ops, distortion, sepia, solarize. CLI-friendly,
-      explicit -colorspace Linear. Industry standard for batch image processing.
-    - vips 8.15: color ops, spatial ops. Native f32 pipeline, --linear flag.
-      Used by sharp/libvips ecosystem. Fast and accurate.
-    - OpenCV: spatial ops, edge detection, morphology, enhancement (CLAHE,
-      bilateral, histogram eq). The computer vision standard. f32 native.
-    - DaVinci Resolve: color grading (CDL, curves, LGG, LUT application,
-      tone mapping). The professional color grading authority. ACES-aware.
-    - GIMP 2.10+: fallback for operations not easily CLI-accessible in
-      other tools. Script-Fu batch mode. 32-bit float precision available.
-    - OpenColorIO: LUT application, color space conversion. ACES reference.
-    - W3C specs: blend modes (CSS Compositing), hue-rotate (CSS Filters),
-      sepia matrix (CSS Filters). Formally specified, unambiguous.
-    - ISO standards: JPEG, PNG color management. ICC profiles.
-
-    For ambiguous operations, the document must research what DaVinci Resolve
-    and Nuke actually do and recommend alignment with the professional standard.
-
-    Key ambiguities to resolve:
-    - HSL saturation: which HSL model? (hexcone vs bi-hexcone vs CSS)
-    - Hue rotation: YIQ (CSS) vs HSL vs HSV?
-    - White balance: simplified linear vs CIE CAT02/CAT16?
-    - Gaussian blur: truncated kernel vs infinite? At what sigma multiple?
-    - Bilateral filter: which formulation? (Tomasi-Manduchi vs Paris-Durand)
-    - CLAHE: which tile size / clip limit convention?
-    - Sharpen: unsharp mask vs Laplacian? Which convention?
-  codebase_analysis: |
-    Filter categories and counts (from V2Filter derive count):
-    - adjustment: 12 (brightness, contrast, gamma, exposure, invert, levels,
-      posterize, solarize, sigmoidal, dodge, burn + 1 more)
-    - color: 22 (sepia, saturate, hue_rotate, channel_mixer, wb, vibrance,
-      colorize, gradient_map, selective_color, replace_color, etc.)
-    - spatial: 14 (gaussian_blur, box_blur, median, bilateral, sharpen,
-      high_pass, motion_blur, convolve, displacement_map, etc.)
-    - enhancement: 17 (auto_level, equalize, normalize, clahe, nlm_denoise,
-      retinex_ssr/msr/msrcr, shadow_highlight, vignette, etc.)
-    - edge: 8 (sobel, canny, laplacian, threshold, otsu, adaptive, etc.)
-    - morphology: 8 (dilate, erode, open, close, gradient, top_hat, etc.)
-    - grading: 6 (curves, cdl, lgg, reinhard, drago, filmic_aces, etc.)
-    - effect: 16 (emboss, pixelate, noise, film_grain, halftone, etc.)
-    - distortion: 10 (barrel, swirl, wave, polar, etc.)
-    - composite: 4 (premultiply, unpremultiply, blend, blend_if)
-    - generator: 10 (checkerboard, gradients, noise, plasma, etc.)
-    - evaluate: 9 (add, subtract, multiply, divide, pow, etc.)
-    - alpha: 4 (add_alpha, remove_alpha, flatten, extract_alpha)
-    - mask: 7 (luminance_mask, color_range, etc.)
-    - draw: 7 (line, circle, rect, text, etc.)
-    - analysis: 10 (smart_crop, seam_carve, perspective, etc.)
-    - tool: 7 (flood_fill, clone_stamp, etc.)
-    - scope: 4 (histogram, waveform, vectorscope, parade)
-
-    Generators and scopes need no external reference (pure math / visualization).
-    Draw ops are geometric — reference against SVG spec or Cairo.
-    Tool ops (flood fill, clone stamp) reference against GIMP.
+    '
+  context: "rasmcore has ~170 filters across 17 categories. Before implementing\nreference functions or running cross-validation,\
+    \ we need a single\ndocument that answers: for each filter, what tool do we consider\nthe professional-grade authority,\
+    \ and why?\n\nTool candidates by category:\n- ImageMagick 7.x: point ops, distortion, sepia, solarize. CLI-friendly,\n\
+    \  explicit -colorspace Linear. Industry standard for batch image processing.\n- vips 8.15: color ops, spatial ops. Native\
+    \ f32 pipeline, --linear flag.\n  Used by sharp/libvips ecosystem. Fast and accurate.\n- OpenCV: spatial ops, edge detection,\
+    \ morphology, enhancement (CLAHE,\n  bilateral, histogram eq). The computer vision standard. f32 native.\n- DaVinci Resolve:\
+    \ color grading (CDL, curves, LGG, LUT application,\n  tone mapping). The professional color grading authority. ACES-aware.\n\
+    - GIMP 2.10+: fallback for operations not easily CLI-accessible in\n  other tools. Script-Fu batch mode. 32-bit float\
+    \ precision available.\n- OpenColorIO: LUT application, color space conversion. ACES reference.\n- W3C specs: blend modes\
+    \ (CSS Compositing), hue-rotate (CSS Filters),\n  sepia matrix (CSS Filters). Formally specified, unambiguous.\n- ISO\
+    \ standards: JPEG, PNG color management. ICC profiles.\n\nFor ambiguous operations, the document must research what DaVinci\
+    \ Resolve\nand Nuke actually do and recommend alignment with the professional standard.\n\nKey ambiguities to resolve:\n\
+    - HSL saturation: which HSL model? (hexcone vs bi-hexcone vs CSS)\n- Hue rotation: YIQ (CSS) vs HSL vs HSV?\n- White balance:\
+    \ simplified linear vs CIE CAT02/CAT16?\n- Gaussian blur: truncated kernel vs infinite? At what sigma multiple?\n- Bilateral\
+    \ filter: which formulation? (Tomasi-Manduchi vs Paris-Durand)\n- CLAHE: which tile size / clip limit convention?\n- Sharpen:\
+    \ unsharp mask vs Laplacian? Which convention?\n"
+  codebase_analysis: "Filter categories and counts (from V2Filter derive count):\n- adjustment: 12 (brightness, contrast,\
+    \ gamma, exposure, invert, levels,\n  posterize, solarize, sigmoidal, dodge, burn + 1 more)\n- color: 22 (sepia, saturate,\
+    \ hue_rotate, channel_mixer, wb, vibrance,\n  colorize, gradient_map, selective_color, replace_color, etc.)\n- spatial:\
+    \ 14 (gaussian_blur, box_blur, median, bilateral, sharpen,\n  high_pass, motion_blur, convolve, displacement_map, etc.)\n\
+    - enhancement: 17 (auto_level, equalize, normalize, clahe, nlm_denoise,\n  retinex_ssr/msr/msrcr, shadow_highlight, vignette,\
+    \ etc.)\n- edge: 8 (sobel, canny, laplacian, threshold, otsu, adaptive, etc.)\n- morphology: 8 (dilate, erode, open, close,\
+    \ gradient, top_hat, etc.)\n- grading: 6 (curves, cdl, lgg, reinhard, drago, filmic_aces, etc.)\n- effect: 16 (emboss,\
+    \ pixelate, noise, film_grain, halftone, etc.)\n- distortion: 10 (barrel, swirl, wave, polar, etc.)\n- composite: 4 (premultiply,\
+    \ unpremultiply, blend, blend_if)\n- generator: 10 (checkerboard, gradients, noise, plasma, etc.)\n- evaluate: 9 (add,\
+    \ subtract, multiply, divide, pow, etc.)\n- alpha: 4 (add_alpha, remove_alpha, flatten, extract_alpha)\n- mask: 7 (luminance_mask,\
+    \ color_range, etc.)\n- draw: 7 (line, circle, rect, text, etc.)\n- analysis: 10 (smart_crop, seam_carve, perspective,\
+    \ etc.)\n- tool: 7 (flood_fill, clone_stamp, etc.)\n- scope: 4 (histogram, waveform, vectorscope, parade)\n\nGenerators\
+    \ and scopes need no external reference (pure math / visualization).\nDraw ops are geometric — reference against SVG spec\
+    \ or Cairo.\nTool ops (flood fill, clone stamp) reference against GIMP.\n"
   acceptance_criteria:
-    - AUTHORITY.md created in crates/rasmcore-reference/
-    - Every filter in every category has a documented reference tool
-    - Each entry includes tool name, version, exact CLI command (where applicable)
-    - Each entry includes color space configuration for linear f32
-    - Ambiguous operations have research notes explaining the choice
-    - Categories with no applicable external tool are documented as such with rationale
-    - Document includes installation instructions for each reference tool
-  out_of_scope: |
-    Actually implementing reference functions (separate tracks).
+  - AUTHORITY.md created in crates/rasmcore-reference/
+  - Every filter in every category has a documented reference tool
+  - Each entry includes tool name, version, exact CLI command (where applicable)
+  - Each entry includes color space configuration for linear f32
+  - Ambiguous operations have research notes explaining the choice
+  - Categories with no applicable external tool are documented as such with rationale
+  - Document includes installation instructions for each reference tool
+  out_of_scope: 'Actually implementing reference functions (separate tracks).
+
     Running cross-validation (separate track after references exist).
+
     Changing any filter implementations based on findings.
-  technical_notes: |
-    AUTHORITY.md format per filter:
 
-      ## brightness [adjustment]
-      - Authority: ImageMagick 7.1.1
-      - Command: magick input.exr -colorspace Linear -evaluate Add 0.3 output.exr
-      - Color space: -colorspace Linear (operates on linear f32)
-      - Rationale: Unambiguous additive operation. IM is CLI-accessible and
-        supports EXR (f32) natively.
-      - Alternative: vips linear (equivalent math)
-
-    For ambiguous operations, include a Research section:
-
-      ## saturate [color]
-      - Authority: vips 8.15 (HSL model)
-      - Research: DaVinci Resolve uses a perceptual saturation model based on
-        ACES gamut mapping. Nuke uses a matrix-based approach. CSS uses HSL.
-        Our implementation uses HSL (matching CSS and GIMP). vips matches this.
-      - Decision: Align with CSS/HSL model for now. Document the Resolve/ACES
-        approach as a future enhancement for professional color grading mode.
-
-    Categories that need no external reference:
-    - generator: pure procedural math, self-validating
-    - scope: visualization output, validated by visual inspection
-    - evaluate: basic arithmetic, mathematically unambiguous
+    '
+  technical_notes: "AUTHORITY.md format per filter:\n\n  ## brightness [adjustment]\n  - Authority: ImageMagick 7.1.1\n  -\
+    \ Command: magick input.exr -colorspace Linear -evaluate Add 0.3 output.exr\n  - Color space: -colorspace Linear (operates\
+    \ on linear f32)\n  - Rationale: Unambiguous additive operation. IM is CLI-accessible and\n    supports EXR (f32) natively.\n\
+    \  - Alternative: vips linear (equivalent math)\n\nFor ambiguous operations, include a Research section:\n\n  ## saturate\
+    \ [color]\n  - Authority: vips 8.15 (HSL model)\n  - Research: DaVinci Resolve uses a perceptual saturation model based\
+    \ on\n    ACES gamut mapping. Nuke uses a matrix-based approach. CSS uses HSL.\n    Our implementation uses HSL (matching\
+    \ CSS and GIMP). vips matches this.\n  - Decision: Align with CSS/HSL model for now. Document the Resolve/ACES\n    approach\
+    \ as a future enhancement for professional color grading mode.\n\nCategories that need no external reference:\n- generator:\
+    \ pure procedural math, self-validating\n- scope: visualization output, validated by visual inspection\n- evaluate: basic\
+    \ arithmetic, mathematically unambiguous\n"
 plan:
-  - phase: "Tool survey"
-    tasks:
-      - text: "Document tool availability and linear-space capabilities for IM, vips, OpenCV, GIMP, OCIO"
-        done: false
-      - text: "Document installation commands and version pinning for each tool"
-        done: false
-  - phase: "Point and color ops authority"
-    tasks:
-      - text: "Map all 12 adjustment filters to reference tool with exact commands"
-        done: false
-      - text: "Map all 22 color filters to reference tool with exact commands"
-        done: false
-      - text: "Research HSL saturation model — compare CSS/GIMP vs Resolve/Nuke"
-        done: false
-      - text: "Research white balance — compare simplified linear vs CIE CAT"
-        done: false
-  - phase: "Spatial and enhancement ops authority"
-    tasks:
-      - text: "Map all 14 spatial filters to reference tool (OpenCV primary)"
-        done: false
-      - text: "Map all 17 enhancement filters to reference tool"
-        done: false
-      - text: "Research bilateral filter formulation — which convention do we match"
-        done: false
-  - phase: "Remaining categories"
-    tasks:
-      - text: "Map edge, morphology, grading, effect, distortion filters"
-        done: false
-      - text: "Map composite, alpha, mask, draw, analysis, tool filters"
-        done: false
-      - text: "Document categories that need no external reference with rationale"
-        done: false
-  - phase: "Finalize"
-    tasks:
-      - text: "Write AUTHORITY.md with all entries"
-        done: false
-      - text: "Review for completeness — every registered filter must have an entry"
-        done: false
+- phase: Tool survey
+  tasks:
+  - text: Document tool availability and linear-space capabilities for IM, vips, OpenCV, GIMP, OCIO
+    done: true
+  - text: Document installation commands and version pinning for each tool
+    done: true
+- phase: Point and color ops authority
+  tasks:
+  - text: Map all 12 adjustment filters to reference tool with exact commands
+    done: true
+  - text: Map all 22 color filters to reference tool with exact commands
+    done: true
+  - text: Research HSL saturation model — compare CSS/GIMP vs Resolve/Nuke
+    done: true
+  - text: Research white balance — compare simplified linear vs CIE CAT
+    done: true
+- phase: Spatial and enhancement ops authority
+  tasks:
+  - text: Map all 14 spatial filters to reference tool (OpenCV primary)
+    done: true
+  - text: Map all 17 enhancement filters to reference tool
+    done: true
+  - text: Research bilateral filter formulation — which convention do we match
+    done: true
+- phase: Remaining categories
+  tasks:
+  - text: Map edge, morphology, grading, effect, distortion filters
+    done: true
+  - text: Map composite, alpha, mask, draw, analysis, tool filters
+    done: true
+  - text: Document categories that need no external reference with rationale
+    done: true
+- phase: Finalize
+  tasks:
+  - text: Write AUTHORITY.md with all entries
+    done: true
+  - text: Review for completeness — every registered filter must have an entry
+    done: true
 extra: {}
