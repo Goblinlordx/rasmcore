@@ -205,6 +205,103 @@ Distributed as `.cdl`, `.cc`, or `.ccc` XML files. Every camera department gener
 
 A simple text format for 1D and 3D LUTs. De facto standard for LUT interchange because of its simplicity. Not an official standard — originated from Iridas (now part of Adobe), popularized by DaVinci Resolve.
 
+## Working Space Landscape
+
+### Scene-Referred vs Display-Referred
+
+All creative work should happen in **scene-referred** space — where pixel values represent physical light ratios and can exceed 1.0. The Output Transform is the single point where scene-referred data becomes display-referred (mapped to a specific display's capabilities).
+
+This means everything before the Output Transform is non-destructive with respect to dynamic range. You can change the Output Transform (e.g., switch from SDR to HDR monitoring) without re-rendering anything.
+
+### Industry Working Spaces
+
+Professional production uses a variety of working spaces. Some are open standards, others are proprietary but publicly documented:
+
+#### Open Standards
+
+| Space | Primaries | Transfer | Standardized By | Spec |
+|---|---|---|---|---|
+| **ACEScg** | AP1 | Linear | Academy/SMPTE | S-2014-004 |
+| **ACEScct** | AP1 | Log (toe) | Academy/SMPTE | S-2016-001 |
+| **ACES2065-1** | AP0 | Linear | Academy/SMPTE | SMPTE ST 2065-1 |
+| **Linear sRGB** | Rec.709 | Linear | IEC | IEC 61966-2-1 |
+| **scRGB** | Rec.709 | Linear (HDR) | IEC | IEC 61966-2-2 |
+
+ACEScg and ACEScct are the industry-standard vendor-neutral working spaces. Most VFX pipelines (Nuke, Houdini, Maya) use ACEScg for compositing and ACEScct for grading.
+
+#### Vendor-Specific Working Spaces
+
+These are proprietary but with publicly available specifications — the math is documented and can be implemented from vendor-published PDFs.
+
+**DaVinci Wide Gamut / DaVinci Intermediate (Blackmagic)**
+
+DaVinci Resolve's native working space. Wider gamut than ACEScg (AP1), designed to encompass all camera gamuts without clipping.
+
+| Property | Value |
+|---|---|
+| Primaries (CIE xy) | R: (0.8000, 0.3130), G: (0.1682, 0.9877), B: (0.0790, -0.1155) |
+| White point | D65 |
+| Transfer function | DaVinci Intermediate (piecewise log, exact constants published) |
+| Specification | [Blackmagic DaVinci Resolve 17 Wide Gamut Intermediate PDF](https://documents.blackmagicdesign.com/InformationNotes/DaVinci_Resolve_17_Wide_Gamut_Intermediate.pdf) |
+
+DaVinci Intermediate transfer function constants:
+
+```
+A = 0.0075,  B = 7.0,  C = 0.07329248
+M = 10.44426855,  LIN_CUT = 0.00262409,  LOG_CUT = 0.02740668
+
+Forward:  V = (L <= LIN_CUT) ? L * M : C * (log2(L + A) + B)
+Inverse:  L = (V <= LOG_CUT) ? V / M : 2^((V / C) - B) - A
+```
+
+**ARRI Wide Gamut 4 / LogC4 (ARRI)**
+
+ARRI's latest camera color space. Used natively by the ARRI ALEXA 35 and ARRI ALEXA Mini LF (with firmware update).
+
+| Property | Value |
+|---|---|
+| Primaries (CIE xy) | R: (0.7347, 0.2653), G: (0.1424, 0.8576), B: (0.0991, -0.0308) |
+| White point | D65 |
+| Transfer function | LogC4 (single curve, no EI dependency — unlike LogC3) |
+| Specification | [ARRI LogC4 Specification PDF](https://www.arri.com/resource/blob/278790/bea879ac0d041a925bed27a096ab3ec2/2022-05-arri-logc4-specification-data.pdf) |
+
+Compared to the older ARRI Wide Gamut 3 / LogC3, which required per-EI curve parameters, LogC4 uses a single curve for all exposure indices.
+
+**ARRI Wide Gamut 3 / LogC3 (ARRI)**
+
+The classic ARRI color space used by ALEXA Classic, Mini, and SXT. Per-EI curve parameters (EI 160 through EI 3200), published in ARRI's specification.
+
+**FilmLight E-Gamut / T-Log (FilmLight)**
+
+Baselight's native working space. The primaries and transfer function are available through the open-source `colour-science` Python library (BSD-3 license) and extractable from the free Baselight for Nuke plugin, but no official specification PDF exists from FilmLight.
+
+| Property | Value |
+|---|---|
+| Primaries (CIE xy) | R: (0.8000, 0.3177), G: (0.1800, 0.9000), B: (0.0650, -0.0805) |
+| White point | D65 |
+| Transfer function | T-Log (Cineon-style parametric log) |
+| Source | `colour-science` library (provenance: private communication with FilmLight, subsequently open-sourced) |
+
+**RED Wide Gamut / Log3G10 (RED)**
+
+RED camera native space. Published in RED's technical documentation. Available in OCIO configs.
+
+**Sony S-Gamut3 / S-Log3, S-Gamut3.Cine / S-Log3 (Sony)**
+
+Sony camera native spaces. Fully published by Sony. S-Gamut3.Cine has a narrower gamut optimized for Rec.709 output.
+
+### Why ACEScg for rasmcore
+
+rasmcore uses ACEScg as the default working space because:
+
+1. **Open standard** — no vendor lock-in, documented by SMPTE/Academy
+2. **Wide industry adoption** — the common interchange space across VFX tools
+3. **Linear** — mathematically correct for spatial operations (blur, blend, resize)
+4. **Wide gamut** — covers 99%+ of real camera content (AP1 primaries)
+5. **Scene-referred** — values can exceed 1.0 for HDR
+
+Vendor-specific spaces (DWG, AWG4, E-Gamut) can be used via the color transform system — register the vendor's CLF/matrix as a custom transform and convert at the pipeline boundary. The working space choice is configurable via `setWorkingColorSpace()`.
+
 ## How rasmcore Implements This
 
 ### The Color Transform Resource
