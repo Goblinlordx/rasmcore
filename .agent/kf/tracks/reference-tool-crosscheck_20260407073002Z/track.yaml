@@ -1,0 +1,78 @@
+id: reference-tool-crosscheck_20260407073002Z
+title: "Cross-validate reference implementations against production tools"
+type: chore
+status: pending
+created: 2026-04-07
+updated: 2026-04-07
+spec:
+  summary: |
+    Rust test binary that shells out to production tools (IM, vips, OpenCV,
+    GIMP), compares their output against our reference implementations,
+    and upgrades VALIDATION.md from FORMULA VALIDATED to TOOL VALIDATED.
+  context: |
+    After the authority catalog (Track 1) and expanded references (Track 2),
+    this track actually runs the external tools and verifies our references
+    produce matching output. This is the one-time validation step that
+    proves our ground truth is correct.
+
+    The test binary is NOT run in CI — it requires external tools installed.
+    It produces a validation report and updates VALIDATION.md.
+  acceptance_criteria:
+    - Rust binary in crates/rasmcore-reference/tests/tool_crosscheck.rs
+    - Checks tool availability (skip gracefully if not installed)
+    - For each filter with an authority tool, generates input, runs both, compares
+    - Reports per-filter pass/fail/tolerance
+    - Updates VALIDATION.md status from FORMULA to TOOL VALIDATED
+    - Documents any discrepancies found and resolution
+  out_of_scope: |
+    Running in CI (requires external tools).
+    Fixing discrepancies (separate tracks if needed).
+  technical_notes: |
+    The test binary uses std::process::Command to shell out to tools.
+    Each tool wrapper handles:
+    - Writing input as EXR or raw f32 (tool-dependent)
+    - Running the tool command with linear color space flags
+    - Reading back the output as f32
+    - Comparing against reference output
+
+    Tool I/O formats:
+    - IM: EXR in/out (native f32 support)
+    - vips: VIPS format or EXR
+    - OpenCV: raw f32 via a small Python bridge script
+    - GIMP: Script-Fu batch mode (slower, fallback only)
+plan:
+  - phase: "Tool harness"
+    tasks:
+      - text: "Create tool availability detection (which tools are installed)"
+        done: false
+      - text: "Implement IM wrapper (write EXR, run command, read EXR)"
+        done: false
+      - text: "Implement vips wrapper"
+        done: false
+      - text: "Implement OpenCV wrapper (via small Python script)"
+        done: false
+  - phase: "Point and color validation"
+    tasks:
+      - text: "Cross-validate all 12 point ops against IM"
+        done: false
+      - text: "Cross-validate all color ops against designated authority"
+        done: false
+      - text: "Document discrepancies and resolutions"
+        done: false
+  - phase: "Spatial and complex validation"
+    tasks:
+      - text: "Cross-validate spatial ops against OpenCV"
+        done: false
+      - text: "Cross-validate enhancement ops"
+        done: false
+      - text: "Cross-validate edge and morphology ops against OpenCV"
+        done: false
+  - phase: "Report"
+    tasks:
+      - text: "Generate validation report with per-filter status"
+        done: false
+      - text: "Update VALIDATION.md with TOOL VALIDATED entries"
+        done: false
+      - text: "Update AUTHORITY.md with any corrections from findings"
+        done: false
+extra: {}

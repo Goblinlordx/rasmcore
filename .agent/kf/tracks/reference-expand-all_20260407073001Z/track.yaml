@@ -1,0 +1,99 @@
+id: reference-expand-all_20260407073001Z
+title: "Expand rasmcore-reference to cover all validatable filters"
+type: feature
+status: pending
+created: 2026-04-07
+updated: 2026-04-07
+spec:
+  summary: |
+    Implement reference functions for all remaining filter categories
+    (spatial, enhancement, edge, morphology, grading, effect, distortion,
+    composite, alpha, mask) based on the authority decisions from the
+    catalog track. Expand test inputs and integration tests.
+  context: |
+    After the authority catalog documents the reference tool for each filter,
+    this track implements the actual Rust reference functions. Currently
+    rasmcore-reference has 11 point ops + 5 color ops. This track adds
+    spatial, enhancement, edge, morphology, grading, effect, distortion,
+    composite, alpha, and mask references.
+
+    Each reference function is dead-simple textbook code — the formula
+    from the authority document, implemented with zero optimization.
+    Color-space aware (linear f32).
+  acceptance_criteria:
+    - Reference functions for all spatial ops (gaussian, box, median, bilateral, sharpen, etc.)
+    - Reference functions for all enhancement ops (equalize, normalize, clahe, etc.)
+    - Reference functions for all edge ops (sobel, canny, laplacian, otsu, etc.)
+    - Reference functions for all morphology ops (dilate, erode, open, close, etc.)
+    - Reference functions for grading ops (curves, cdl, lgg, tone mapping)
+    - Reference functions for effect ops (emboss, pixelate, noise, etc.)
+    - Reference functions for composite ops (blend modes, premultiply)
+    - Reference functions for remaining simple ops (alpha, mask, distortion)
+    - Integration tests comparing all new references against pipeline filters
+    - Categories documented as no-reference-needed are skipped with comment
+  out_of_scope: |
+    Cross-validation against external tools (separate track).
+    Generator, scope, evaluate, draw, analysis, tool filter references
+    (pure math or too application-specific for external reference).
+  technical_notes: |
+    New source files in rasmcore-reference:
+      src/spatial_ops.rs    — convolution, blur, median, bilateral
+      src/enhancement_ops.rs — histogram ops, normalization, CLAHE
+      src/edge_ops.rs       — Sobel, Canny, Laplacian, thresholding
+      src/morphology_ops.rs — structuring element operations
+      src/grading_ops.rs    — curves, CDL, LGG, tone mapping
+      src/effect_ops.rs     — emboss kernel, pixelate, noise
+      src/composite_ops.rs  — Porter-Duff, blend modes
+      src/misc_ops.rs       — alpha ops, mask ops, distortion
+
+    For convolution-based ops (blur, sharpen, edge detect), the reference
+    must implement the naive nested-loop convolution with explicit kernel
+    weights. No FFT, no separable optimization.
+plan:
+  - phase: "Spatial references"
+    tasks:
+      - text: "Implement gaussian_blur reference (explicit 2D kernel convolution)"
+        done: false
+      - text: "Implement box_blur, median, sharpen, high_pass references"
+        done: false
+      - text: "Implement bilateral filter reference (naive formulation)"
+        done: false
+      - text: "Integration tests for all spatial refs vs pipeline"
+        done: false
+  - phase: "Enhancement references"
+    tasks:
+      - text: "Implement equalize, normalize, auto_level references (histogram-based)"
+        done: false
+      - text: "Implement CLAHE reference (naive tile-based)"
+        done: false
+      - text: "Integration tests for enhancement refs"
+        done: false
+  - phase: "Edge and morphology references"
+    tasks:
+      - text: "Implement sobel, canny, laplacian, threshold, otsu references"
+        done: false
+      - text: "Implement dilate, erode, open, close references"
+        done: false
+      - text: "Integration tests for edge and morphology refs"
+        done: false
+  - phase: "Grading, effect, and composite references"
+    tasks:
+      - text: "Implement curves, CDL, LGG, tone mapping references"
+        done: false
+      - text: "Implement emboss, pixelate, noise effect references"
+        done: false
+      - text: "Implement blend mode references (W3C/PDF spec)"
+        done: false
+      - text: "Implement alpha and mask op references"
+        done: false
+      - text: "Integration tests for all remaining refs"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "All reference self-tests pass"
+        done: false
+      - text: "All integration tests pass"
+        done: false
+      - text: "Coverage report — list any filters still without reference"
+        done: false
+extra: {}

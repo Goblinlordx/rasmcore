@@ -1,0 +1,8 @@
+title: Cross-validate reference implementations against production tools
+status: pending
+type: chore
+approved: false
+created: '2026-04-07'
+updated: '2026-04-07'
+deps:
+- reference-expand-all_20260407073001Z
