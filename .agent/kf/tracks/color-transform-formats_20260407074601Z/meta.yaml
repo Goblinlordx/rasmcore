@@ -1,0 +1,8 @@
+title: Color transform file format parsers (CLF, CTL, CDL) and camera IDT presets
+status: pending
+type: feature
+approved: false
+created: '2026-04-07'
+updated: '2026-04-07'
+deps:
+- color-transform-resource_20260407074600Z

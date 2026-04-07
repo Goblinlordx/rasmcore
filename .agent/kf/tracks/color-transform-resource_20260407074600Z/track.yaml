@@ -1,0 +1,147 @@
+id: color-transform-resource_20260407074600Z
+title: Color transform WIT resource with register/apply pattern (IDT, LMT, ODT)
+type: feature
+status: pending
+created: 2026-04-07
+updated: 2026-04-07
+spec:
+  summary: |
+    Add color-transform as a WIT resource following the Font pattern:
+    register-transform(data) returns a u32 ID, then apply-idt/apply-lmt/
+    apply-output-transform reference it by ID. Supports IDT, LMT, RRT+ODT,
+    CDL, and CSC transforms. Deprecates raw-bytes use-lmt and hardcoded
+    ACES filters.
+  context: |
+    The pipeline needs proper ACES color transform support following
+    the professional standard: IDT (camera to ACES), LMT (creative look),
+    Output Transform (ACES to display, combines RRT+ODT per ACES 2.0).
+
+    Current state has problems:
+    - aces_idt/aces_odt filters are hardcoded, not extensible
+    - use-lmt takes raw bytes every call (no caching, no resource lifecycle)
+    - aces_cct_to_cg/aces_cg_to_cct duplicate convert-color-space functionality
+    - No support for camera-specific IDTs (Alexa LogC, S-Log3, etc.)
+    - No ACES versioning
+
+    The Font resource pattern (register once, reference by ID) is the
+    right model. A color-transform is loaded once from data (CLF, CTL,
+    .cube, CDL, or built-in preset), cached by the WASM instance, and
+    referenced by u32 ID in pipeline operations.
+  codebase_analysis: |
+    Existing patterns to follow:
+    - wit/v2/pipeline.wit:228 - register-font(data) -> u32
+    - wit/v2/pipeline.wit:232 - register-lut(data) -> u32
+    - crates/rasmcore-v2-wasm/src/lib.rs:49 - instance_register_font()
+    - crates/rasmcore-v2-wasm/src/lib.rs:339 - PipelineResource::register_font()
+
+    Code to deprecate:
+    - filters/color.rs: AcesIdt, AcesOdt, AcesCctToCg, AcesCgToCct filters
+    - pipeline.wit:322: use-lmt (raw bytes, no resource pattern)
+    - LMT node currently takes raw .cube/.clf data per call
+
+    Transform infrastructure:
+    - color_math.rs: has all conversion matrices (sRGB, ACES, Rec.2020, P3)
+    - color_convert.rs: ColorConvertNode for any-to-any CSC
+    - lmt.rs: existing LMT parsing for .cube and .clf files
+    - aces.rs: ACES-specific math (RRT approximation, tonemap curves)
+
+    WIT types needed:
+    - register-transform: func(data, format-hint) -> u32
+    - register-transform-preset: func(name) -> u32
+    - apply-idt: func(source, transform-id) -> node-id
+    - apply-lmt: func(source, transform-id) -> node-id
+    - apply-output-transform: func(source, transform-id) -> node-id
+    - list-transform-presets: func() -> list of preset info
+  acceptance_criteria:
+    - color-transform registered via register-transform(data, format-hint) returning u32 ID
+    - register-transform-preset(name) for built-in presets (srgb, rec709, etc.)
+    - apply-idt(source, transform-id) creates IDT node in graph
+    - apply-lmt(source, transform-id) creates LMT node in graph
+    - apply-output-transform(source, transform-id) creates Output Transform node
+    - Transform ID is a u32 (same pattern as font-id, lut-id)
+    - Transforms cached per WASM instance (not re-parsed per call)
+    - list-transform-presets returns available built-in presets
+    - Existing use-lmt still works (backward compat) but marked deprecated
+    - Old aces_idt/aces_odt/aces_cct_to_cg/aces_cg_to_cct filters deprecated
+    - WASM component builds and all existing tests pass
+  out_of_scope: |
+    New file format parsers (CLF, CTL, CDL) - that is track 2.
+    Camera-specific IDT implementations (Alexa, Sony, RED).
+    ACES version selection. GPU shaders for transforms.
+  technical_notes: |
+    Transform storage (per WASM instance):
+    - Vec of ColorTransform enum variants
+    - Each variant holds the parsed/compiled transform data
+    - Indexed by u32 ID (same as font/lut registry)
+
+    ColorTransform enum:
+    - Idt(IdtTransform) - input device transform
+    - Lmt(LmtTransform) - look modification (reuses existing LMT code)
+    - OutputTransform(OutputTransformData) - combined RRT+ODT
+    - Cdl(CdlTransform) - ASC CDL (slope/offset/power/sat)
+    - Csc(CscTransform) - color space conversion (any to any)
+
+    Built-in presets (loaded by name, no file data needed):
+    - srgb, rec709, rec2020, display-p3 (as IDT or ODT)
+    - aces-cg-to-cct, aces-cct-to-cg (working space changes)
+    - identity (passthrough, useful for testing)
+
+    Graph nodes:
+    - IdtNode: applies transform, sets output color_space to ACES working space
+    - LmtNode: applies transform, preserves color_space (ACES in, ACES out)
+    - OutputTransformNode: applies RRT+ODT, sets output to display space
+    - All share a common ColorTransformNode pattern
+plan:
+  - phase: WIT Interface
+    tasks:
+      - text: Add register-transform(data, format-hint) -> u32 to pipeline.wit
+        done: false
+      - text: Add register-transform-preset(name) -> u32 for built-in presets
+        done: false
+      - text: Add apply-idt(source, transform-id) -> node-id
+        done: false
+      - text: Add apply-lmt-transform(source, transform-id) -> node-id (replaces use-lmt)
+        done: false
+      - text: Add apply-output-transform(source, transform-id) -> node-id
+        done: false
+      - text: Add list-transform-presets() -> list of preset info records
+        done: false
+  - phase: Transform Registry
+    tasks:
+      - text: Create ColorTransform enum with Idt, Lmt, OutputTransform, Cdl, Csc variants
+        done: false
+      - text: Implement per-instance transform storage (Vec indexed by u32)
+        done: false
+      - text: Implement register_transform() parsing data based on format-hint
+        done: false
+      - text: Implement built-in preset loading (srgb, rec709, rec2020, display-p3, aces-cg-to-cct)
+        done: false
+  - phase: Graph Nodes
+    tasks:
+      - text: Create ColorTransformNode implementing Node trait
+        done: false
+      - text: IdtNode sets output color_space to ACES working space
+        done: false
+      - text: LmtNode preserves ACES color_space
+        done: false
+      - text: OutputTransformNode sets output to display color_space
+        done: false
+  - phase: WASM Adapter
+    tasks:
+      - text: Wire register-transform and register-transform-preset in WASM adapter
+        done: false
+      - text: Wire apply-idt, apply-lmt-transform, apply-output-transform
+        done: false
+      - text: Wire list-transform-presets
+        done: false
+      - text: Mark use-lmt as deprecated (still functional)
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test register preset by name and apply-idt roundtrip
+        done: false
+      - text: Test IDT -> LMT -> OT chain produces correct output
+        done: false
+      - text: WASM component builds and existing tests pass
+        done: false
+extra: {}
