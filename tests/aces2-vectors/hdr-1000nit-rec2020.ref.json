@@ -1,0 +1,16 @@
+{
+  "source": "OpenColorIO 2.5.1",
+  "ocio_style": "ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-1000nit-REC2020_2.0",
+  "vectors": [
+    { "input": [0.18, 0.18, 0.18], "output": [0.137926, 0.145115, 0.158039], "label": "18% grey" },
+    { "input": [1, 0, 0], "output": [0.942745, 0.393424, 0.00356678], "label": "pure red" },
+    { "input": [0, 1, 0], "output": [0.177476, 0.832051, 0.0344513], "label": "pure green" },
+    { "input": [0, 0, 1], "output": [0.118462, 0.0445811, 0.740044], "label": "pure blue" },
+    { "input": [1, 1, 0], "output": [1.00914, 1.15201, 0.0334053], "label": "yellow" },
+    { "input": [0, 1, 1], "output": [0.338722, 0.82556, 1.13606], "label": "cyan" },
+    { "input": [1, 0, 1], "output": [0.996203, 0.400111, 1.10229], "label": "magenta" },
+    { "input": [5, 5, 5], "output": [3.91, 4.11381, 4.48018], "label": "bright highlight (5x)" },
+    { "input": [50, 50, 50], "output": [8.46776, 8.90916, 9.70259], "label": "extreme highlight (50x)" },
+    { "input": [0, 0, 0], "output": [0, 0, 0], "label": "black" }
+  ]
+}

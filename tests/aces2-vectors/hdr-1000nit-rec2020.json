@@ -1,0 +1,23 @@
+{
+  "description": "ACES 2.0 Output Transform — HDR 1000 nit Rec.2020 PQ",
+  "config": {
+    "peak_luminance": 1000,
+    "limiting_primaries": "rec2020",
+    "ocio_style": "ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-1000nit-REC2020_2.0"
+  },
+  "input_space": "ACES AP0 (linear, scene-referred)",
+  "output_space": "Rec.2020 (display-referred, PQ encoded)",
+  "tolerance": 1e-5,
+  "vectors": [
+    { "input": [0.18, 0.18, 0.18], "label": "18% grey" },
+    { "input": [1.0, 0.0, 0.0],   "label": "pure red" },
+    { "input": [0.0, 1.0, 0.0],   "label": "pure green" },
+    { "input": [0.0, 0.0, 1.0],   "label": "pure blue" },
+    { "input": [1.0, 1.0, 0.0],   "label": "yellow" },
+    { "input": [0.0, 1.0, 1.0],   "label": "cyan" },
+    { "input": [1.0, 0.0, 1.0],   "label": "magenta" },
+    { "input": [5.0, 5.0, 5.0],   "label": "bright highlight (5x)" },
+    { "input": [50.0, 50.0, 50.0], "label": "extreme highlight (50x)" },
+    { "input": [0.0, 0.0, 0.0],   "label": "black" }
+  ]
+}

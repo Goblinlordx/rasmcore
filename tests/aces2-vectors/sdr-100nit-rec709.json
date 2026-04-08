@@ -1,0 +1,29 @@
+{
+  "description": "ACES 2.0 Output Transform — SDR 100 nit Rec.709",
+  "config": {
+    "peak_luminance": 100,
+    "limiting_primaries": "rec709",
+    "ocio_style": "ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - SDR-100nit-REC709_2.0"
+  },
+  "input_space": "ACES AP0 (linear, scene-referred)",
+  "output_space": "Rec.709 (display-referred, BT.1886 encoded)",
+  "tolerance": 1e-5,
+  "vectors": [
+    { "input": [0.18, 0.18, 0.18], "label": "18% grey" },
+    { "input": [1.0, 0.0, 0.0],   "label": "pure red" },
+    { "input": [0.0, 1.0, 0.0],   "label": "pure green" },
+    { "input": [0.0, 0.0, 1.0],   "label": "pure blue" },
+    { "input": [1.0, 1.0, 0.0],   "label": "yellow" },
+    { "input": [0.0, 1.0, 1.0],   "label": "cyan" },
+    { "input": [1.0, 0.0, 1.0],   "label": "magenta" },
+    { "input": [0.5, 0.5, 0.5],   "label": "50% grey" },
+    { "input": [5.0, 5.0, 5.0],   "label": "bright highlight (5x)" },
+    { "input": [50.0, 50.0, 50.0], "label": "extreme highlight (50x)" },
+    { "input": [0.001, 0.001, 0.001], "label": "near-black" },
+    { "input": [0.0, 0.0, 0.0],   "label": "black" },
+    { "input": [-0.01, 0.5, 0.5], "label": "negative R" },
+    { "input": [0.18, 0.0, 0.0],  "label": "18% red only" },
+    { "input": [0.0, 0.18, 0.0],  "label": "18% green only" },
+    { "input": [0.0, 0.0, 0.18],  "label": "18% blue only" }
+  ]
+}

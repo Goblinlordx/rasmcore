@@ -1,0 +1,22 @@
+{
+  "source": "OpenColorIO 2.5.1",
+  "ocio_style": "ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - SDR-100nit-REC709_2.0",
+  "vectors": [
+    { "input": [0.18, 0.18, 0.18], "output": [0.0950449, 0.0999993, 0.108905], "label": "18% grey" },
+    { "input": [1, 0, 0], "output": [0.412226, 0.212262, 0.032496], "label": "pure red" },
+    { "input": [0, 1, 0], "output": [0.198493, 0.377432, 0.126456], "label": "pure green" },
+    { "input": [0, 0, 1], "output": [0.080662, 0.0530843, 0.360626], "label": "pure blue" },
+    { "input": [1, 1, 0], "output": [0.428105, 0.493521, 0.0727089], "label": "yellow" },
+    { "input": [0, 1, 1], "output": [0.258294, 0.388696, 0.480431], "label": "cyan" },
+    { "input": [1, 0, 1], "output": [0.451651, 0.222469, 0.491289], "label": "magenta" },
+    { "input": [0.5, 0.5, 0.5], "output": [0.26594, 0.279803, 0.304722], "label": "50% grey" },
+    { "input": [5, 5, 5], "output": [0.783224, 0.824051, 0.89744], "label": "bright highlight (5x)" },
+    { "input": [50, 50, 50], "output": [0.937988, 0.986883, 1.07477], "label": "extreme highlight (50x)" },
+    { "input": [0.001, 0.001, 0.001], "output": [3.9246e-06, 4.12918e-06, 4.49692e-06], "label": "near-black" },
+    { "input": [0, 0, 0], "output": [0, 0, 0], "label": "black" },
+    { "input": [-0.01, 0.5, 0.5], "output": [0.15478, 0.232948, 0.287814], "label": "negative R" },
+    { "input": [0.18, 0, 0], "output": [0.0645179, 0.033215, 0.0053736], "label": "18% red only" },
+    { "input": [0, 0.18, 0], "output": [0.0387777, 0.0735573, 0.0252536], "label": "18% green only" },
+    { "input": [0, 0, 0.18], "output": [0.00552532, 0.00363332, 0.0247118], "label": "18% blue only" }
+  ]
+}
