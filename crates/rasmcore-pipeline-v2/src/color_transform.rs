@@ -147,38 +147,30 @@ pub fn load_preset(name: &str) -> Result<ColorTransform, PipelineError> {
         "ot-srgb" => Ok(ColorTransform {
             name: name.into(), kind: TransformKind::OutputTransform,
             source_space: ColorSpace::AcesCg, target_space: ColorSpace::Srgb,
-            inner: ColorTransformInner::Aces2OutputTransform(crate::aces2::Aces2OtParams {
-                peak_luminance: 100.0,
-                limiting_primaries: crate::aces2::LimitingPrimaries::Rec709,
-                eotf: crate::aces2::Eotf::Srgb,
-            }),
+            inner: ColorTransformInner::Aces2OutputTransform(crate::aces2::init_aces2_ot_params(
+                100.0, crate::aces2::LimitingPrimaries::Rec709, crate::aces2::Eotf::Srgb,
+            )),
         }),
         "ot-rec709" => Ok(ColorTransform {
             name: name.into(), kind: TransformKind::OutputTransform,
             source_space: ColorSpace::AcesCg, target_space: ColorSpace::Rec709,
-            inner: ColorTransformInner::Aces2OutputTransform(crate::aces2::Aces2OtParams {
-                peak_luminance: 100.0,
-                limiting_primaries: crate::aces2::LimitingPrimaries::Rec709,
-                eotf: crate::aces2::Eotf::Bt1886,
-            }),
+            inner: ColorTransformInner::Aces2OutputTransform(crate::aces2::init_aces2_ot_params(
+                100.0, crate::aces2::LimitingPrimaries::Rec709, crate::aces2::Eotf::Bt1886,
+            )),
         }),
         "ot-rec2020" => Ok(ColorTransform {
             name: name.into(), kind: TransformKind::OutputTransform,
             source_space: ColorSpace::AcesCg, target_space: ColorSpace::Rec2020,
-            inner: ColorTransformInner::Aces2OutputTransform(crate::aces2::Aces2OtParams {
-                peak_luminance: 100.0,
-                limiting_primaries: crate::aces2::LimitingPrimaries::Rec2020,
-                eotf: crate::aces2::Eotf::Bt1886,
-            }),
+            inner: ColorTransformInner::Aces2OutputTransform(crate::aces2::init_aces2_ot_params(
+                100.0, crate::aces2::LimitingPrimaries::Rec2020, crate::aces2::Eotf::Bt1886,
+            )),
         }),
         "ot-p3" => Ok(ColorTransform {
             name: name.into(), kind: TransformKind::OutputTransform,
             source_space: ColorSpace::AcesCg, target_space: ColorSpace::DisplayP3,
-            inner: ColorTransformInner::Aces2OutputTransform(crate::aces2::Aces2OtParams {
-                peak_luminance: 100.0,
-                limiting_primaries: crate::aces2::LimitingPrimaries::P3,
-                eotf: crate::aces2::Eotf::Srgb,
-            }),
+            inner: ColorTransformInner::Aces2OutputTransform(crate::aces2::init_aces2_ot_params(
+                100.0, crate::aces2::LimitingPrimaries::P3, crate::aces2::Eotf::Srgb,
+            )),
         }),
         // CSCs — working space conversions
         "csc-acescg-to-cct" => Ok(csc_preset(name, ColorSpace::AcesCg, ColorSpace::AcesCct, TransformKind::Csc)),

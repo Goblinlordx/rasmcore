@@ -620,7 +620,10 @@ pub fn init_gamut_compress_params(
                 let approx_j = ji + sl * approx_m;
                 let jmh_test = [approx_j, approx_m, hue];
                 let rgb = jmh_to_rgb(&jmh_test, limit_params);
-                if !(rgb[0] > lum_limit || rgb[1] > lum_limit || rgb[2] > lum_limit) {
+                // "Outside hull" = any channel exceeds limit OR any channel < 0
+                let outside = rgb[0] > lum_limit || rgb[1] > lum_limit || rgb[2] > lum_limit
+                    || rgb[0] < 0.0 || rgb[1] < 0.0 || rgb[2] < 0.0;
+                if !outside {
                     all_outside = false;
                     break;
                 }
@@ -643,7 +646,10 @@ pub fn init_gamut_compress_params(
                 let approx_j = ji + sl * approx_m;
                 let jmh_test = [approx_j, approx_m, hue];
                 let rgb = jmh_to_rgb(&jmh_test, limit_params);
-                if !(rgb[0] > lum_limit || rgb[1] > lum_limit || rgb[2] > lum_limit) {
+                // "Outside hull" = any channel exceeds limit OR any channel < 0
+                let outside = rgb[0] > lum_limit || rgb[1] > lum_limit || rgb[2] > lum_limit
+                    || rgb[0] < 0.0 || rgb[1] < 0.0 || rgb[2] < 0.0;
+                if !outside {
                     all_outside = false;
                     break;
                 }
