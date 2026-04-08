@@ -1,0 +1,8 @@
+title: ACES 2.0 Output Transform — WGSL GPU shader validated against CPU reference
+status: pending
+type: feature
+approved: false
+created: '2026-04-08'
+updated: '2026-04-08'
+deps:
+- aces2-ot-cpu-reference_20260408025100Z

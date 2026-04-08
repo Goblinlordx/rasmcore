@@ -1,0 +1,157 @@
+id: aces2-ot-cpu-reference_20260408025100Z
+title: ACES 2.0 Output Transform — full reference CPU port from OCIO
+type: feature
+status: pending
+created: 2026-04-08
+updated: 2026-04-08
+spec:
+  summary: |
+    Full faithful port of the ACES 2.0 Output Transform from OpenColorIO
+    C++ to Rust. Replaces the current Reinhard placeholder. This is the
+    reference implementation — the ground truth that the GPU shader will
+    be validated against.
+  context: |
+    The current aces2/mod.rs has a simple Reinhard tonemap placeholder
+    instead of the real ACES 2.0 algorithm. The full algorithm operates
+    in CAM16 perceptual space (JMh) with parametric tonescale, chroma
+    compression, and gamut compression. It is approximately 1000 lines
+    of C++ in OCIO.
+
+    Source: OpenColorIO/src/OpenColorIO/ops/fixedfunction/ACES2/Transform.cpp
+    License: BSD-3-Clause
+
+    The algorithm is entirely per-pixel. The heavy part is initialization
+    (cusp table generation via binary search) which runs once per
+    configuration, not per pixel.
+  codebase_analysis: |
+    Existing code to replace:
+    - crates/rasmcore-pipeline-v2/src/aces2/mod.rs: output_transform_fwd()
+      currently uses v/(v+1) Reinhard — must be replaced with full JMh
+    - aces2/cam16.rs, tonescale.rs, compress.rs, params.rs, constants.rs:
+      all stub files ready for implementation
+
+    OCIO source files to port from:
+    - Transform.cpp: main forward/inverse functions, initialization
+    - Common.h: constants, table types, param structs
+    - Key types: JMhParams, ToneScaleParams, ChromaCompressParams,
+      GamutCompressParams, SharedCompressionParameters
+    - Key functions: init_JMhParams, init_ToneScaleParams,
+      outputTransform_fwd (the per-pixel algorithm)
+
+    Per-pixel algorithm (7 steps):
+    1. RGB (AP1) to JMh via CAM16 (cone response + adaptation)
+    2. Resolve hue-dependent parameters from cusp tables
+    3. Chroma normalization (trigonometric polynomial)
+    4. Tonescale (parametric power curve, applied via achromatic channel)
+    5. Chroma compress (toe function, hue-preserving)
+    6. Gamut compress (boundary intersection, Reinhard remap above threshold)
+    7. JMh to output RGB via CAM16 inverse
+
+    Initialization (once per config):
+    - Build CAM16 matrices for input (AP0), reach (AP1), limiting gamut
+    - Compute tonescale parameters from peak luminance
+    - Build reach_m_table (360 entries, max chroma per hue via binary search)
+    - Build gamut_cusp_table (360 entries, cusp J/M/gamma per hue)
+  acceptance_criteria:
+    - Full CAM16 RGB-to-JMh and JMh-to-RGB conversion
+    - Parametric tonescale matching OCIO (not Reinhard)
+    - Chroma compression with toe functions
+    - Gamut compression with cusp tables and boundary projection
+    - All initialization/precomputation (tables built once, reused per pixel)
+    - Matches OCIO C++ output within f32 precision for standard test colors
+    - Test colors include 18% grey, saturated RGB primaries, out-of-gamut, HDR highlights, black
+    - SDR (100 nits) and HDR (1000 nits) configurations both validated
+    - Pure Rust CPU — no GPU code in this track
+    - BSD-3-Clause attribution for OCIO source
+  out_of_scope: |
+    GPU shader (separate track). Inverse transform (future).
+    ACES 1.x RRT+ODT (superseded). EOTF encoding (already implemented).
+  technical_notes: |
+    Port strategy: translate C++ line-by-line into Rust, preserving
+    function structure and naming for traceability back to OCIO source.
+
+    Key data structures to port:
+    - f2/f3/m33f types -> [f32; 2], [f32; 3], [f32; 9]
+    - Table1D/Table3D -> Vec with 363 entries (360 + 3 wrap)
+    - JMhParams, ToneScaleParams, ChromaCompressParams, GamutCompressParams
+    - SharedCompressionParameters, HueDependantGamutParams
+
+    Key constants from OCIO:
+    - CAM16 viewing conditions (L_A=100, Y_B=20, dim surround)
+    - Chroma compress weights (8 trigonometric polynomial coefficients)
+    - Gamut compress parameters (focus distance, compression threshold, etc.)
+
+    Validation approach:
+    - Port the OCIO test vectors if available
+    - If not, generate reference outputs by running OCIO Python bindings
+      with known input colors and compare Rust output
+    - Test matrix: {18% grey, pure R/G/B, saturated cyan/magenta/yellow,
+      super-bright (10x), black, negative values} x {100 nit, 1000 nit}
+plan:
+  - phase: Types and Constants
+    tasks:
+      - text: Port f2/f3/m33f types and matrix math utilities to constants.rs
+        done: false
+      - text: Port all ACES 2.0 constants (CAM16 viewing conditions, chroma weights, gamut params)
+        done: false
+      - text: Port Table1D/Table3D types with hue wrapping and interpolation
+        done: false
+  - phase: CAM16 Color Appearance Model
+    tasks:
+      - text: Port init_JMhParams (build CAM16 matrices for given primaries)
+        done: false
+      - text: Port RGB_to_Aab and Aab_to_JMh (forward CAM16)
+        done: false
+      - text: Port JMh_to_Aab and Aab_to_RGB (inverse CAM16)
+        done: false
+      - text: Port cone response compression (pow 0.42 forward/inverse)
+        done: false
+      - text: Test CAM16 roundtrip (RGB to JMh to RGB within precision)
+        done: false
+  - phase: Tonescale
+    tasks:
+      - text: Port init_ToneScaleParams from peak luminance
+        done: false
+      - text: Port aces_tonescale function (parametric power curve)
+        done: false
+      - text: Port tonescale_A_to_J_fwd (achromatic channel tone mapping)
+        done: false
+      - text: Test 18% grey maps to correct output luminance
+        done: false
+  - phase: Chroma and Gamut Compression
+    tasks:
+      - text: Port chroma_compress_norm (trigonometric polynomial)
+        done: false
+      - text: Port toe_fwd/toe_inv functions
+        done: false
+      - text: Port chroma_compress_fwd (full chroma compression)
+        done: false
+      - text: Port init_GamutCompressParams (cusp table generation via binary search)
+        done: false
+      - text: Port gamut_compress_fwd (boundary intersection + Reinhard remap)
+        done: false
+      - text: Port solve_J_intersect (quadratic solver)
+        done: false
+  - phase: Full Transform Integration
+    tasks:
+      - text: Port outputTransform_fwd composing all steps (AP1 in, display RGB out)
+        done: false
+      - text: Replace Reinhard placeholder in aces2/mod.rs with full implementation
+        done: false
+      - text: Precompute params once, store in Aces2OtParams struct
+        done: false
+  - phase: Validation
+    tasks:
+      - text: Test 18% grey at 100 nits and 1000 nits
+        done: false
+      - text: Test saturated primaries (pure R, G, B) and secondaries (C, M, Y)
+        done: false
+      - text: Test out-of-gamut colors (negative, super-saturated)
+        done: false
+      - text: Test HDR highlights (10x, 100x scene brightness)
+        done: false
+      - text: Test black and near-black values
+        done: false
+      - text: Compare against OCIO reference output (if available)
+        done: false
+extra: {}
