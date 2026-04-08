@@ -259,6 +259,19 @@ impl Pipeline {
 
     /// Get the underlying node ID (for advanced use).
     pub fn node_id(&self) -> u32 { self.node }
+
+    /// Set the display output transform preset for auto-OT insertion.
+    /// Default: "ot-srgb". See docs/guides/color-management.md for presets.
+    pub fn set_display_transform(&self, preset: &str) -> &Self {
+        self.graph.borrow_mut().set_display_transform(preset);
+        self
+    }
+
+    /// Enable or disable automatic IDT/OT insertion.
+    pub fn set_color_managed(&self, enabled: bool) -> &Self {
+        self.graph.borrow_mut().set_color_managed(enabled);
+        self
+    }
 }
 
 // ─── Generated typed filter methods ────────────────────────────────────────
