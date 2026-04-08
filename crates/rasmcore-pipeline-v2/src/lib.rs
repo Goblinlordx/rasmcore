@@ -37,6 +37,7 @@ pub mod color_math;
 pub mod color_convert;
 pub mod color_transform;
 pub mod aces;
+pub mod aces2;
 pub mod fusion;
 pub mod trace;
 pub mod staged;

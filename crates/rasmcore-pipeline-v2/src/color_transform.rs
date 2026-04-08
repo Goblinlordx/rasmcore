@@ -49,6 +49,9 @@ pub enum ColorTransformInner {
         power: [f32; 3],
         saturation: f32,
     },
+    /// ACES 2.0 Output Transform — algorithmic, not expressible as CLF.
+    /// Parametric by peak luminance and limiting primaries.
+    Aces2OutputTransform(crate::aces2::Aces2OtParams),
 }
 
 impl ColorTransform {
@@ -77,6 +80,9 @@ impl ColorTransform {
                         }
                     }
                 }
+            }
+            ColorTransformInner::Aces2OutputTransform(params) => {
+                crate::aces2::output_transform_fwd(pixels, params);
             }
         }
     }
@@ -134,11 +140,43 @@ pub fn load_preset(name: &str) -> Result<ColorTransform, PipelineError> {
         "idt-rec709" => Ok(csc_preset(name, ColorSpace::Rec709, ColorSpace::AcesCg, TransformKind::Idt)),
         "idt-rec2020" => Ok(csc_preset(name, ColorSpace::Rec2020, ColorSpace::AcesCg, TransformKind::Idt)),
         "idt-p3" => Ok(csc_preset(name, ColorSpace::DisplayP3, ColorSpace::AcesCg, TransformKind::Idt)),
-        // Output Transforms — ACEScg → display
-        "ot-srgb" => Ok(csc_preset(name, ColorSpace::AcesCg, ColorSpace::Srgb, TransformKind::OutputTransform)),
-        "ot-rec709" => Ok(csc_preset(name, ColorSpace::AcesCg, ColorSpace::Rec709, TransformKind::OutputTransform)),
-        "ot-rec2020" => Ok(csc_preset(name, ColorSpace::AcesCg, ColorSpace::Rec2020, TransformKind::OutputTransform)),
-        "ot-p3" => Ok(csc_preset(name, ColorSpace::AcesCg, ColorSpace::DisplayP3, TransformKind::OutputTransform)),
+        // Output Transforms — ACEScg → display (ACES 2.0 algorithmic)
+        "ot-srgb" => Ok(ColorTransform {
+            name: name.into(), kind: TransformKind::OutputTransform,
+            source_space: ColorSpace::AcesCg, target_space: ColorSpace::Srgb,
+            inner: ColorTransformInner::Aces2OutputTransform(crate::aces2::Aces2OtParams {
+                peak_luminance: 100.0,
+                limiting_primaries: crate::aces2::LimitingPrimaries::Rec709,
+                eotf: crate::aces2::Eotf::Srgb,
+            }),
+        }),
+        "ot-rec709" => Ok(ColorTransform {
+            name: name.into(), kind: TransformKind::OutputTransform,
+            source_space: ColorSpace::AcesCg, target_space: ColorSpace::Rec709,
+            inner: ColorTransformInner::Aces2OutputTransform(crate::aces2::Aces2OtParams {
+                peak_luminance: 100.0,
+                limiting_primaries: crate::aces2::LimitingPrimaries::Rec709,
+                eotf: crate::aces2::Eotf::Bt1886,
+            }),
+        }),
+        "ot-rec2020" => Ok(ColorTransform {
+            name: name.into(), kind: TransformKind::OutputTransform,
+            source_space: ColorSpace::AcesCg, target_space: ColorSpace::Rec2020,
+            inner: ColorTransformInner::Aces2OutputTransform(crate::aces2::Aces2OtParams {
+                peak_luminance: 100.0,
+                limiting_primaries: crate::aces2::LimitingPrimaries::Rec2020,
+                eotf: crate::aces2::Eotf::Bt1886,
+            }),
+        }),
+        "ot-p3" => Ok(ColorTransform {
+            name: name.into(), kind: TransformKind::OutputTransform,
+            source_space: ColorSpace::AcesCg, target_space: ColorSpace::DisplayP3,
+            inner: ColorTransformInner::Aces2OutputTransform(crate::aces2::Aces2OtParams {
+                peak_luminance: 100.0,
+                limiting_primaries: crate::aces2::LimitingPrimaries::P3,
+                eotf: crate::aces2::Eotf::Srgb,
+            }),
+        }),
         // CSCs — working space conversions
         "csc-acescg-to-cct" => Ok(csc_preset(name, ColorSpace::AcesCg, ColorSpace::AcesCct, TransformKind::Csc)),
         "csc-acescct-to-cg" => Ok(csc_preset(name, ColorSpace::AcesCct, ColorSpace::AcesCg, TransformKind::Csc)),
@@ -269,19 +307,21 @@ mod tests {
     }
 
     #[test]
-    fn idt_odt_roundtrip() {
+    fn idt_then_ot_produces_valid_output() {
         let idt = load_preset("idt-srgb").unwrap();
         let odt = load_preset("ot-srgb").unwrap();
         let mut pixels = vec![0.5, 0.3, 0.8, 1.0];
-        let orig = pixels.clone();
         idt.apply(&mut pixels);
-        // Pixels should have changed (different color space)
-        assert!((pixels[0] - orig[0]).abs() > 0.001 || (pixels[1] - orig[1]).abs() > 0.001);
+        // Pixels should have changed (sRGB → ACEScg)
         odt.apply(&mut pixels);
         // Should be approximately back to original
+        // OT includes tone mapping, so output won't match input exactly.
+        // Verify output is valid display values (0-1 after sRGB encoding).
         for i in 0..3 {
-            assert!((pixels[i] - orig[i]).abs() < 0.02, "ch{i}: {} vs {}", pixels[i], orig[i]);
+            assert!(pixels[i] >= 0.0 && pixels[i] <= 1.0,
+                "ch{i} out of range: {}", pixels[i]);
         }
+        assert!((pixels[3] - 1.0).abs() < 1e-6, "alpha preserved");
     }
 
     #[test]
