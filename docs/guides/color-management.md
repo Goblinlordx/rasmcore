@@ -326,36 +326,122 @@ pipeline.read(image)
 
 ### Available Built-in Transforms
 
-| Name | Kind | Source → Target | Vendor |
-|---|---|---|---|
-| `idt-srgb` | IDT | sRGB → ACEScg | Academy |
-| `idt-rec709` | IDT | Rec.709 → ACEScg | Academy |
-| `idt-rec2020` | IDT | Rec.2020 → ACEScg | Academy |
-| `idt-p3` | IDT | Display P3 → ACEScg | Academy |
-| `ot-srgb` | Output Transform | ACEScg → sRGB | Academy |
-| `ot-rec709` | Output Transform | ACEScg → Rec.709 | Academy |
-| `ot-rec2020` | Output Transform | ACEScg → Rec.2020 | Academy |
-| `ot-p3` | Output Transform | ACEScg → Display P3 | Academy |
-| `csc-acescg-to-cct` | CSC | ACEScg → ACEScct | Academy |
-| `csc-acescct-to-cg` | CSC | ACEScct → ACEScg | Academy |
+#### Input Device Transforms (IDTs)
 
-Camera-specific IDTs (ARRI, Sony, RED) will be added in a future track as actual CLF files from vendor specifications.
+IDTs convert from a source color space into the ACES working space (ACEScg). Auto-inserted at decode time when color management is enabled.
+
+| Name | Source → Target | Description |
+|---|---|---|
+| `idt-srgb` | sRGB → ACEScg | Web images, consumer cameras |
+| `idt-rec709` | Rec.709 → ACEScg | HD broadcast content |
+| `idt-rec2020` | Rec.2020 → ACEScg | UHD/HDR broadcast content |
+| `idt-p3` | Display P3 → ACEScg | Modern wide-gamut displays, iPhone |
+
+Camera-specific IDTs (ARRI LogC4, Sony S-Log3, RED IPP2) will be added in a future track as CLF files from vendor specifications.
+
+#### Output Transforms (OTs)
+
+OTs convert from the ACES working space to a display-ready signal. All use the same ACES 2.0 algorithmic pipeline (validated against OCIO v2.5.1) with different parameters. Auto-inserted at output time for display-referred formats.
+
+**SDR (100 nit)**
+
+| Name | Gamut | EOTF | Use case |
+|---|---|---|---|
+| `ot-srgb` | Rec.709 | sRGB gamma | Web, standard monitors (default) |
+| `ot-rec709` | Rec.709 | BT.1886 (2.4) | Broadcast SDR |
+| `ot-p3` | P3-D65 | sRGB gamma | Apple displays, cinema SDR |
+| `ot-sdr-p3-bt1886` | P3-D65 | BT.1886 (2.4) | DCI cinema |
+| `ot-rec2020` | Rec.2020 | BT.1886 (2.4) | Wide gamut SDR |
+
+**HDR PQ — P3 gamut** (streaming, cinema, consumer HDR)
+
+| Name | Peak | Use case |
+|---|---|---|
+| `ot-hdr-p3-600` | 600 nit | Entry-level HDR displays |
+| `ot-hdr-p3-1000` | 1000 nit | Streaming (Netflix, Disney+, Apple TV+) |
+| `ot-hdr-p3-2000` | 2000 nit | High-end consumer HDR |
+| `ot-hdr-p3-4000` | 4000 nit | Professional HDR mastering |
+
+**HDR PQ — Rec.2020 gamut** (broadcast, reference)
+
+| Name | Peak | Use case |
+|---|---|---|
+| `ot-hdr-rec2020-600` | 600 nit | Entry-level HDR broadcast |
+| `ot-hdr-rec2020-1000` | 1000 nit | HDR broadcast (HDR10) |
+| `ot-hdr-rec2020-2000` | 2000 nit | High-end HDR broadcast |
+| `ot-hdr-rec2020-4000` | 4000 nit | Reference mastering, Dolby Cinema |
+
+**HLG** (broadcast HDR, backwards-compatible with SDR)
+
+| Name | Peak | Use case |
+|---|---|---|
+| `ot-hlg-rec2020-1000` | 1000 nit | BBC/NHK broadcast HDR |
+
+#### Color Space Conversions (CSCs)
+
+| Name | Source → Target | Description |
+|---|---|---|
+| `csc-acescg-to-cct` | ACEScg → ACEScct | Switch to log space for grading |
+| `csc-acescct-to-cg` | ACEScct → ACEScg | Switch back to linear for compositing |
+
+### Automatic Color Management
+
+By default, rasmcore operates in **color-managed mode**. The pipeline automatically inserts IDTs and OTs so that users don't need to think about color transforms for common workflows.
+
+#### How it works
+
+1. **On image decode** (`Pipeline::open`): The pipeline detects the input color space from image metadata. An appropriate IDT is auto-inserted to convert into ACEScg.
+
+2. **During processing**: All filters operate in ACEScg linear light with correct luminance coefficients.
+
+3. **On output** (`Pipeline::write`): For display-referred formats (PNG, JPEG, WebP), the configured display OT is auto-applied. For scene-referred formats (EXR, TIFF), working-space pixels are written directly.
+
+```javascript
+// Color-managed by default — IDT and OT inserted automatically
+pipeline.open(jpegBytes)       // decode → auto IDT (sRGB → ACEScg)
+  .brightness(1.2)             // operates in ACEScg
+  .gaussianBlur(5)             // operates in ACEScg
+  .write("png");               // auto OT (ACEScg → sRGB) → encode
+
+// Scene-referred output — no OT
+pipeline.open(jpegBytes)
+  .brightness(1.2)
+  .write("exr");               // ACEScg linear → EXR (no OT)
+```
+
+#### Render methods
+
+- `render()` — returns working-space (ACEScg) f32 pixels. No OT. Use for compositing or further processing.
+- `renderDisplay()` — returns display-referred f32 pixels with OT applied. Use for viewport preview.
+- `write("png")` — auto-applies OT for display formats, then encodes.
+- `write("exr")` — no OT, encodes working-space pixels directly.
+
+#### Configuring the display target
+
+```javascript
+pipeline.setDisplayTransform("ot-hdr-p3-1000");  // HDR streaming output
+pipeline.setDisplayTransform("ot-rec709");        // broadcast SDR
+```
+
+#### Opting out
+
+```javascript
+// Disable auto-insertion entirely
+pipeline.setColorManaged(false);
+
+// Now you control everything explicitly
+pipeline.open(rawBytes)
+  .applyTransform("idt-arri-logc4")   // manual IDT
+  .brightness(1.2)
+  .applyTransform("ot-hdr-p3-1000")   // manual OT
+  .write("exr");
+```
 
 ### Color-Space-Aware Filters
 
 Filters that depend on luminance (blend modes, saturation, vibrance, luminance masks) automatically use the correct luminance coefficients for the working color space. This is handled by `ColorSpace::luma_coefficients()` — filters never hardcode BT.709 or NTSC weights.
 
 Blend mode formulas follow ISO 32000-2:2020 (PDF specification). Non-separable modes (hue, saturation, color, luminosity) use the W3C/PDF SetLum/SetSat/ClipColor helpers with working-space-derived coefficients.
-
-### Working Color Space
-
-The pipeline supports setting a default working color space:
-
-```javascript
-pipeline.setWorkingColorSpace("acescg");
-```
-
-When set, the pipeline auto-inserts color space conversions at source boundaries (after decode) and output boundaries (before encode). Filters operate in the working space without manual conversion.
 
 ## Licensing
 
