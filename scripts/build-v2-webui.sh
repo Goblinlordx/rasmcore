@@ -27,6 +27,12 @@ mkdir -p "$WEBUI_SDK_DIR/fluent"
 sed 's|../v2-generated/interfaces/|../interfaces/|g' \
   "$PROJECT_ROOT/sdk/typescript/v2-fluent/index.ts" > "$WEBUI_SDK_DIR/fluent/index.ts"
 
+# Copy SDK library files (render-target, gpu-handler, shaders)
+if [ -d "$PROJECT_ROOT/sdk/v2/lib" ]; then
+  cp -r "$PROJECT_ROOT/sdk/v2/lib" "$WEBUI_SDK_DIR/lib"
+  echo "  Synced sdk/v2/lib/"
+fi
+
 echo "=== Done ==="
 echo "Web UI SDK at: $WEBUI_SDK_DIR"
 ls -la "$WEBUI_SDK_DIR/"
