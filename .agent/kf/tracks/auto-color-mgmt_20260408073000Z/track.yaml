@@ -1,0 +1,72 @@
+id: auto-color-mgmt_20260408073000Z
+title: Automatic color management — IDT/OT auto-insertion
+type: feature
+status: pending
+created: '2026-04-08'
+updated: '2026-04-08'
+spec:
+  summary: Add Graph-level color management policy with auto-IDT at decode and auto-OT at output, display transform config,
+    opt-out, and full OT preset documentation.
+  context: The pipeline has a full ACES 2.0 OT (validated against OCIO) and IDT presets, but no automatic insertion. Users
+    must manually add IDT/OT nodes. Without them, sRGB input goes through filters in Linear Rec.709 and outputs without tone
+    mapping — producing unexpected results for any scene-referred workflow. Professional tools (DR, Nuke, Baselight) always
+    auto-insert IDT on ingest and OT on display.
+  codebase_analysis: Graph has working_color_space field (unused). Node trait has expected_input_color_space/preferred_color_space
+    (unused). Codecs report sRGB for 8-bit formats, Linear for EXR/HDR. V2 auto-linearizes sRGB in v1_to_v2(). Pipeline SDK
+    open_with_hint() creates SourceNode with decoded color_space. ColorTransformNode wraps any ColorTransform into a graph
+    node. The OT presets (ot-srgb through ot-hlg-rec2020-1000) are on worker-1 branch, need merging to main.
+  acceptance_criteria:
+  - Graph has color_managed and display_transform fields with accessors
+  - Pipeline::open() auto-inserts IDT when source color space differs from working space
+  - Pipeline::write() auto-inserts OT for display-referred formats (png/jpeg/webp)
+  - Pipeline::write() skips OT for scene-referred formats (exr/tiff/hdr)
+  - Pipeline::render_display() returns display-referred pixels with OT applied
+  - set_color_managed(false) disables all auto-insertion
+  - set_display_transform() changes the auto-OT preset
+  - Docs updated with full OT preset table and auto-insertion behavior
+  - All 14 OT presets from worker-1 merged to main
+  out_of_scope: ICC profile parsing for color space detection (separate track). Camera-specific IDTs (ARRI, Sony, RED). GPU
+    shader for auto-inserted transforms. Custom user-registered IDTs.
+  technical_notes: 'Implementation approach: (1) Add color_managed bool and display_transform String to Graph. (2) In Pipeline::open_with_hint(),
+    after source node creation, auto-insert IDT if source != working space. IDT selection: sRGB->idt-srgb, Rec709/Linear->idt-rec709,
+    Rec2020->idt-rec2020, P3->idt-p3, Unknown->idt-srgb (safe default). (3) Add render_display() that appends OT node before
+    rendering. (4) In write(), auto-insert OT for display formats (png/jpeg/webp/gif), skip for scene-referred (exr/tiff/hdr).
+    (5) set_color_managed(false) disables all auto-insertion. (6) Merge OT presets from worker-1 first.'
+plan:
+  - phase: OT Presets and Graph Foundation
+    tasks:
+      - text: Cherry-pick OT presets commit from worker-1 (ot_preset helper, 14 presets) onto implementation branch
+        done: false
+      - text: Add color_managed (bool, default true) and display_transform (String, default ot-srgb) fields to Graph with accessors
+        done: false
+      - text: Add set_color_managed() and set_display_transform() forwarding methods to SDK Pipeline
+        done: false
+  - phase: Auto-IDT Insertion
+    tasks:
+      - text: In Pipeline open_with_hint(), after SourceNode creation, auto-insert IDT based on source color space vs working space
+        done: false
+      - text: IDT selection map - sRGB to idt-srgb, Rec709/Linear to idt-rec709, Rec2020 to idt-rec2020, P3 to idt-p3, Unknown to idt-srgb (safe default)
+        done: false
+      - text: Skip IDT when source already matches working space (e.g. AcesCg input)
+        done: false
+      - text: Skip IDT when color_managed is false
+        done: false
+  - phase: Auto-OT Insertion
+    tasks:
+      - text: Add render_display() to Pipeline that appends OT node and renders through it
+        done: false
+      - text: In write(), detect display-referred formats (png/jpeg/webp/gif/bmp) vs scene-referred (exr/tiff/hdr) and auto-apply OT for display formats
+        done: false
+      - text: Skip OT when color_managed is false
+        done: false
+      - text: Ensure render() still returns working-space pixels (no OT) for compositing use cases
+        done: false
+  - phase: Documentation and Verification
+    tasks:
+      - text: Update docs/guides/color-management.md with full OT preset table (SDR/HDR/HLG), auto-insertion behavior, opt-out docs, render vs render_display semantics
+        done: false
+      - text: Test sRGB JPEG open then brightness then write(png) produces color-managed output
+        done: false
+      - text: Test set_color_managed(false) produces unmanaged output
+        done: false
+extra: {}

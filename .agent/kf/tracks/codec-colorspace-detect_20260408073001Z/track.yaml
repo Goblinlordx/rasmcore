@@ -1,0 +1,65 @@
+id: codec-colorspace-detect_20260408073001Z
+title: Improve codec color space detection from image metadata
+type: feature
+status: pending
+created: '2026-04-08'
+updated: '2026-04-08'
+spec:
+  summary: Enhance JPEG/WebP/HEIC/TIFF decoders to detect color space from ICC profiles and format-specific markers, rather
+    than hardcoding sRGB.
+  context: Currently all 8-bit codecs hardcode sRGB regardless of actual image metadata. PNG is the only codec that reads
+    cICP chunks. ICC profiles are extracted by JPEG and HEIC but not used for color space determination. iPhone photos (Display
+    P3), wide-gamut camera output, and Rec.2020 HDR content all get incorrectly tagged as sRGB, causing incorrect IDT selection
+    and color shifts.
+  codebase_analysis: 'V1 codecs in rasmcore-image/decoder: JPEG reads ICC via extract_jpeg_icc_profile() but ignores it for
+    ColorSpace. WebP has no ICC extraction. HEIC reads ICC from container but hardcodes sRGB. PNG reads cICP and maps to ColorSpace
+    correctly. TIFF has no ICC or metadata reading. V2 conversion in v1_to_v2() maps V1 ColorSpace to V2 and linearizes sRGB.'
+  acceptance_criteria:
+  - JPEG with embedded Display P3 ICC profile detected as DisplayP3
+  - JPEG with embedded sRGB ICC profile detected as Srgb
+  - JPEG with EXIF ColorSpace=2 detected as AdobeRgb (or closest match)
+  - WebP with ICC profile extracted and matched
+  - HEIC with Display P3 ICC profile detected as DisplayP3
+  - PNG cICP detection still works (no regression)
+  - Fallback to sRGB for 8-bit formats with no metadata
+  - Tests with real-world images from iPhone (P3), Android (sRGB), and DSLR (Adobe RGB)
+  out_of_scope: Full ICC profile rendering (arbitrary ICC to working space). Only well-known profile signatures are matched
+    (sRGB, Display P3, Rec.2020, Adobe RGB). HDR transfer function detection (PQ/HLG from ICC). Camera-specific profiles (ARRI,
+    Sony).
+  technical_notes: 'Approach: (1) Add icc_to_color_space() that matches ICC profile description strings and colorant tags
+    against known profiles. Well-known ICC signatures: sRGB IEC61966-2.1, Display P3, Rec. BT.2020, Adobe RGB (1998). (2)
+    In each codec decoder, after ICC extraction, call icc_to_color_space() to set ColorSpace. (3) For JPEG, also check EXIF
+    ColorSpace tag (1=sRGB, 2=Adobe RGB, 0xFFFF=uncalibrated). (4) For WebP, add ICC extraction from RIFF VP8X chunk. (5)
+    Fallback: Unknown when metadata missing, sRGB for 8-bit web formats.'
+plan:
+  - phase: ICC Profile Matching
+    tasks:
+      - text: Add icc_to_color_space() function that matches ICC profile description strings against known profiles (sRGB, Display P3, Rec.2020, Adobe RGB)
+        done: false
+      - text: Add ICC colorant tag matching as fallback when description string is missing or non-standard
+        done: false
+      - text: Unit tests with real ICC profile headers from known devices
+        done: false
+  - phase: Codec Integration
+    tasks:
+      - text: JPEG decoder - use extracted ICC profile to set ColorSpace via icc_to_color_space()
+        done: false
+      - text: JPEG decoder - check EXIF ColorSpace tag as secondary signal
+        done: false
+      - text: WebP decoder - add ICC profile extraction from RIFF VP8X/ICCP chunk
+        done: false
+      - text: HEIC/AVIF decoder - use already-extracted ICC profile to set ColorSpace
+        done: false
+      - text: TIFF decoder - add ICC profile extraction and color space detection
+        done: false
+      - text: Verify PNG cICP detection is not regressed
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Integration test with iPhone photo (Display P3 JPEG with ICC)
+        done: false
+      - text: Integration test with DSLR photo (Adobe RGB JPEG with EXIF tag)
+        done: false
+      - text: Integration test with standard web JPEG (no ICC, should default to sRGB)
+        done: false
+extra: {}
