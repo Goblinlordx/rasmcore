@@ -1,0 +1,17 @@
+ARRI Color Science (LogC4, Wide Gamut 4)
+
+Implemented from the publicly available ARRI specification:
+"ARRI LogC4 Logarithmic Color Space — Specification"
+https://www.arri.com/resource/blob/278790/bea879ac0d041a925bed27a096ab3ec2/2022-05-arri-logc4-specification-data.pdf
+
+Section 4 of the specification is explicitly designated as
+"the specification intended for 3rd Party implementations."
+
+ARRI Wide Gamut 3 / LogC3 are documented in:
+SMPTE RDD 30:2014 and RDD 31:2014
+
+CIE xy chromaticity coordinates and transfer function parameters
+are mathematical facts and not copyrightable.
+
+ARRI is a trademark of Arnold & Richter Cine Technik GmbH & Co.
+Used here as a technical identifier for the color space, not as endorsement.

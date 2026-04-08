@@ -58,6 +58,7 @@ members = [
     "crates/rasmcore-gpu-shaders",
     "crates/rasmcore-sdk-v2",
     "crates/rasmcore-ml",
+    "crates/rasmcore-color-transforms",
     "crates/rasmcore-reference",
 ]
 

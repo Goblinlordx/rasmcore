@@ -1,0 +1,14 @@
+DaVinci Wide Gamut / DaVinci Intermediate
+
+Implemented from the publicly available Blackmagic specification:
+"DaVinci Resolve 17 Wide Gamut Intermediate" (v1.1, August 2021)
+https://documents.blackmagicdesign.com/InformationNotes/DaVinci_Resolve_17_Wide_Gamut_Intermediate.pdf
+
+CIE xy chromaticity coordinates, RGB-to-XYZ matrices, and transfer
+function parameters are mathematical facts and not copyrightable.
+
+Blackmagic reviewed and approved DWG/DI CLF transforms contributed
+to the OpenColorIO-Config-ACES project (BSD-3-Clause).
+
+DaVinci and DaVinci Resolve are trademarks of Blackmagic Design Pty Ltd.
+Used here as technical identifiers for the color space, not as endorsement.

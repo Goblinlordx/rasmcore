@@ -1,0 +1,10 @@
+[package]
+name = "rasmcore-color-transforms"
+version = "0.1.0"
+edition = "2024"
+description = "Built-in color transform definitions for rasmcore — ACES, ARRI, Blackmagic, Sony"
+license = "MIT AND BSD-3-Clause"
+# This crate bundles transform data from multiple sources, each with its own license.
+# See licenses/ directory for per-source attribution.
+
+[dependencies]

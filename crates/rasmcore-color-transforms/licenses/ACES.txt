@@ -1,0 +1,32 @@
+Academy Color Encoding System (ACES)
+License from A.M.P.A.S. (Academy of Motion Picture Arts and Sciences)
+
+Source: https://github.com/AcademySoftwareFoundation/aces-dev
+
+Copyright (c) 2013-2024 Academy of Motion Picture Arts and Sciences.
+All rights reserved.
+
+A worldwide, royalty-free, non-exclusive right to copy, modify, create
+derivatives, and use, in source and binary forms, is hereby granted,
+subject to acceptance of this license. Performance of any of the
+aforementioned acts indicates acceptance of this license.
+
+This license is based on, and is a non-exclusive implementation of, the
+Academy Software Foundation (ASWF) Intellectual Property Rights policy.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice,
+   this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE.
