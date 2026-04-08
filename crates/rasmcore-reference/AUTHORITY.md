@@ -58,7 +58,8 @@ because exposure is fundamentally a color grading operation.
 | Filter | Authority | Command / Spec | Rationale |
 |--------|-----------|---------------|-----------|
 | `sepia` | W3C CSS Filter Effects | Matrix: R'=.393R+.769G+.189B (clamped) | Formally specified |
-| `saturate` | vips | `vips colourspace` HSL saturation model | Native f32, HSL model |
+| `saturate` | Ottosson 2020 / CSS Color L4 | OKLCH chroma scaling — perceptually uniform | Bottosson OKLab, W3C standard |
+| `saturate_hsl` | vips | `vips colourspace` HSL saturation model (legacy) | Native f32, HSL hexcone |
 | `hue_rotate` | W3C CSS Filter Effects | YIQ rotation matrix (Section 2) | Formally specified |
 | `vibrance` | DaVinci Resolve | Vibrance in Color page (saturation-weighted) | Professional grading tool |
 | `channel_mixer` | DaVinci Resolve | Color Mixer (3×3 matrix) | Mathematically unambiguous |
@@ -82,20 +83,21 @@ because exposure is fundamentally a color grading operation.
 
 ### Research Notes — Saturation Model
 
-**Decision: HSL hexcone model (CSS/GIMP convention)**
+**Decision: OKLCH perceptual model (default) + HSL legacy**
 
-- **CSS/GIMP/vips**: Use symmetric hexcone HSL. S is multiplied directly.
-  This is what our `saturate` filter implements.
-- **DaVinci Resolve**: Uses a perceptual saturation model tied to the ACES
-  gamut mapping algorithm. Not a simple HSL multiply.
-- **Nuke**: SaturationNode uses a matrix-based approach (luma blend):
-  `out = luma + factor * (in - luma)` with BT.709 luma coefficients.
+The default `saturate` filter now uses OKLCH chroma scaling, which is
+perceptually uniform across hues. The legacy HSL model is preserved
+as `saturate_hsl` for backward compatibility.
 
-We align with CSS/HSL because:
-1. It matches the Web platform (CSS `saturate()`)
-2. It matches GIMP (most accessible validation tool)
-3. It's what our current implementation does
-4. Resolve's model is ACES-specific — appropriate for a future "ACES saturation" filter
+- **OKLCH (Ottosson 2020)**: Scales chroma in OKLab cylindrical space.
+  Equal factor changes produce equal perceived saturation changes for
+  all hues. Simple — 3x3 matrix + cbrt, no iterative solver.
+  Reference: https://bottosson.github.io/posts/oklab/
+- **CSS Color Level 4**: W3C adopted OKLab/OKLCH in Section 8.
+- **CSS `saturate()`**: Still uses the old HSL model (CSS Filter Effects L1).
+  Our `saturate_hsl` matches this for web compatibility testing.
+- **DaVinci Resolve**: Uses a perceptual saturation model tied to ACES.
+- **Nuke**: SaturationNode uses luma-blend: `out = luma + factor * (in - luma)`.
 
 ### Research Notes — White Balance
 

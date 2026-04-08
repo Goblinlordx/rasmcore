@@ -96,6 +96,8 @@ pub use color_math::{
     linear_to_acescct, acescct_to_linear,
     linear_to_acescc, acescc_to_linear,
     convert_color_space, apply_transfer, apply_matrix, mat3_mul,
+    linear_srgb_to_oklab, oklab_to_linear_srgb,
+    oklab_to_oklch, oklch_to_oklab,
 };
 pub use color_convert::{ColorConvertNode, ViewTransformNode, ViewTransform};
 pub use trace::{PipelineTrace, TraceEvent, TraceEventKind};

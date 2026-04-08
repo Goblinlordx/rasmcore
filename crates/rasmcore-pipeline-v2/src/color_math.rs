@@ -341,6 +341,101 @@ pub fn srgb_rgb8_to_f32_linear(pixels: &[u8]) -> Vec<f32> {
     out
 }
 
+// ─── OKLab / OKLCH Color Model ──────────────────────────────────────────────
+// Ottosson, B. (2020). "A perceptual color space for image processing."
+// https://bottosson.github.io/posts/oklab/
+// Also: W3C CSS Color Level 4, Section 8.
+
+/// M1: linear sRGB → LMS (Ottosson 2020).
+const OKLAB_M1: [[f32; 3]; 3] = [
+    [0.4122214708, 0.5363325363, 0.0514459929],
+    [0.2119034982, 0.6806995451, 0.1073969566],
+    [0.0883024619, 0.2817188376, 0.6299787005],
+];
+
+/// M2: cube-rooted LMS → OKLab (Ottosson 2020).
+const OKLAB_M2: [[f32; 3]; 3] = [
+    [ 0.2104542553,  0.7936177850, -0.0040720468],
+    [ 1.9779984951, -2.4285922050,  0.4505937099],
+    [ 0.0259040371,  0.7827717662, -0.8086757660],
+];
+
+/// M2 inverse: OKLab → cube-rooted LMS.
+const OKLAB_M2_INV: [[f32; 3]; 3] = [
+    [1.0, 0.3963377774, 0.2158037573],
+    [1.0, -0.1055613458, -0.0638541728],
+    [1.0, -0.0894841775, -1.2914855480],
+];
+
+/// M1 inverse: LMS → linear sRGB.
+const OKLAB_M1_INV: [[f32; 3]; 3] = [
+    [ 4.0767416621, -3.3077115913,  0.2309699292],
+    [-1.2684380046,  2.6097574011, -0.3413193965],
+    [-0.0041960863, -0.7034186147,  1.7076147010],
+];
+
+/// Convert linear sRGB to OKLab (L, a, b).
+///
+/// L is lightness [0, 1], a and b are chromatic components (unbounded, typically ±0.5).
+#[inline]
+pub fn linear_srgb_to_oklab(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
+    // Step 1: linear sRGB -> LMS
+    let l = OKLAB_M1[0][0] * r + OKLAB_M1[0][1] * g + OKLAB_M1[0][2] * b;
+    let m = OKLAB_M1[1][0] * r + OKLAB_M1[1][1] * g + OKLAB_M1[1][2] * b;
+    let s = OKLAB_M1[2][0] * r + OKLAB_M1[2][1] * g + OKLAB_M1[2][2] * b;
+
+    // Step 2: cube root
+    let l_ = l.max(0.0).cbrt();
+    let m_ = m.max(0.0).cbrt();
+    let s_ = s.max(0.0).cbrt();
+
+    // Step 3: cube-rooted LMS -> OKLab
+    let ok_l = OKLAB_M2[0][0] * l_ + OKLAB_M2[0][1] * m_ + OKLAB_M2[0][2] * s_;
+    let ok_a = OKLAB_M2[1][0] * l_ + OKLAB_M2[1][1] * m_ + OKLAB_M2[1][2] * s_;
+    let ok_b = OKLAB_M2[2][0] * l_ + OKLAB_M2[2][1] * m_ + OKLAB_M2[2][2] * s_;
+
+    (ok_l, ok_a, ok_b)
+}
+
+/// Convert OKLab (L, a, b) to linear sRGB.
+#[inline]
+pub fn oklab_to_linear_srgb(ok_l: f32, ok_a: f32, ok_b: f32) -> (f32, f32, f32) {
+    // Step 1: OKLab -> cube-rooted LMS
+    let l_ = OKLAB_M2_INV[0][0] * ok_l + OKLAB_M2_INV[0][1] * ok_a + OKLAB_M2_INV[0][2] * ok_b;
+    let m_ = OKLAB_M2_INV[1][0] * ok_l + OKLAB_M2_INV[1][1] * ok_a + OKLAB_M2_INV[1][2] * ok_b;
+    let s_ = OKLAB_M2_INV[2][0] * ok_l + OKLAB_M2_INV[2][1] * ok_a + OKLAB_M2_INV[2][2] * ok_b;
+
+    // Step 2: cube (inverse of cube root)
+    let l = l_ * l_ * l_;
+    let m = m_ * m_ * m_;
+    let s = s_ * s_ * s_;
+
+    // Step 3: LMS -> linear sRGB
+    let r = OKLAB_M1_INV[0][0] * l + OKLAB_M1_INV[0][1] * m + OKLAB_M1_INV[0][2] * s;
+    let g = OKLAB_M1_INV[1][0] * l + OKLAB_M1_INV[1][1] * m + OKLAB_M1_INV[1][2] * s;
+    let b = OKLAB_M1_INV[2][0] * l + OKLAB_M1_INV[2][1] * m + OKLAB_M1_INV[2][2] * s;
+
+    (r, g, b)
+}
+
+/// Convert OKLab (L, a, b) to OKLCH (L, C, h).
+///
+/// C = chroma (distance from achromatic axis), h = hue angle in radians.
+#[inline]
+pub fn oklab_to_oklch(ok_l: f32, ok_a: f32, ok_b: f32) -> (f32, f32, f32) {
+    let c = (ok_a * ok_a + ok_b * ok_b).sqrt();
+    let h = ok_b.atan2(ok_a);
+    (ok_l, c, h)
+}
+
+/// Convert OKLCH (L, C, h) to OKLab (L, a, b).
+#[inline]
+pub fn oklch_to_oklab(ok_l: f32, c: f32, h: f32) -> (f32, f32, f32) {
+    let a = c * h.cos();
+    let b = c * h.sin();
+    (ok_l, a, b)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -501,5 +596,63 @@ mod tests {
         let w8 = f32_linear_to_srgb_rgba8(&white);
         assert_eq!(b8, vec![0, 0, 0, 255]);
         assert_eq!(w8, vec![255, 255, 255, 255]);
+    }
+
+    // ── OKLab Tests ──
+
+    #[test]
+    fn oklab_roundtrip_neutral_gray() {
+        let (l, a, b) = linear_srgb_to_oklab(0.5, 0.5, 0.5);
+        let (r, g, b2) = oklab_to_linear_srgb(l, a, b);
+        assert!((r - 0.5).abs() < 1e-5, "r={r}");
+        assert!((g - 0.5).abs() < 1e-5, "g={g}");
+        assert!((b2 - 0.5).abs() < 1e-5, "b={b2}");
+    }
+
+    #[test]
+    fn oklab_roundtrip_primary_colors() {
+        for (r, g, b) in [(1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0),
+                           (1.0, 1.0, 0.0), (0.0, 1.0, 1.0), (1.0, 0.0, 1.0)] {
+            let (ol, oa, ob) = linear_srgb_to_oklab(r, g, b);
+            let (r2, g2, b2) = oklab_to_linear_srgb(ol, oa, ob);
+            assert!((r - r2).abs() < 1e-4, "r roundtrip: {r} -> {r2}");
+            assert!((g - g2).abs() < 1e-4, "g roundtrip: {g} -> {g2}");
+            assert!((b - b2).abs() < 1e-4, "b roundtrip: {b} -> {b2}");
+        }
+    }
+
+    #[test]
+    fn oklab_black_is_zero_lightness() {
+        let (l, a, b) = linear_srgb_to_oklab(0.0, 0.0, 0.0);
+        assert!(l.abs() < 1e-6, "black L={l}");
+        assert!(a.abs() < 1e-6, "black a={a}");
+        assert!(b.abs() < 1e-6, "black b={b}");
+    }
+
+    #[test]
+    fn oklab_white_is_unit_lightness() {
+        let (l, a, b) = linear_srgb_to_oklab(1.0, 1.0, 1.0);
+        assert!((l - 1.0).abs() < 1e-4, "white L={l}");
+        assert!(a.abs() < 1e-3, "white a={a}");
+        assert!(b.abs() < 1e-3, "white b={b}");
+    }
+
+    #[test]
+    fn oklch_roundtrip() {
+        let (l, a, b) = linear_srgb_to_oklab(0.8, 0.2, 0.4);
+        let (l2, c, h) = oklab_to_oklch(l, a, b);
+        assert_eq!(l, l2);
+        assert!(c > 0.0, "non-gray should have chroma");
+        let (l3, a2, b2) = oklch_to_oklab(l2, c, h);
+        assert!((l - l3).abs() < 1e-6);
+        assert!((a - a2).abs() < 1e-6);
+        assert!((b - b2).abs() < 1e-6);
+    }
+
+    #[test]
+    fn oklch_neutral_has_zero_chroma() {
+        let (l, a, b) = linear_srgb_to_oklab(0.5, 0.5, 0.5);
+        let (_, c, _) = oklab_to_oklch(l, a, b);
+        assert!(c < 1e-4, "neutral gray should have near-zero chroma, got {c}");
     }
 }

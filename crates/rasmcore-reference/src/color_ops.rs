@@ -211,3 +211,79 @@ mod tests {
         crate::assert_parity("wb_zero", &output, &input, 1e-7);
     }
 }
+
+/// Perceptual saturation via OKLCH — reference implementation.
+///
+/// Ottosson, B. (2020). "A perceptual color space for image processing."
+/// https://bottosson.github.io/posts/oklab/
+///
+/// Converts linear sRGB → OKLab → OKLCH, scales chroma, converts back.
+/// Perceptually uniform: equal factor changes produce equal perceived
+/// saturation changes regardless of hue.
+pub fn saturate_oklch(input: &[f32], _w: u32, _h: u32, factor: f32) -> Vec<f32> {
+    let mut out = input.to_vec();
+    for px in out.chunks_exact_mut(4) {
+        let (r, g, b) = (px[0], px[1], px[2]);
+
+        // Linear sRGB -> LMS via M1
+        let l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
+        let m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
+        let s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
+
+        // Cube root
+        let l_ = l.max(0.0).cbrt();
+        let m_ = m.max(0.0).cbrt();
+        let s_ = s.max(0.0).cbrt();
+
+        // LMS' -> OKLab
+        let ok_l =  0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_;
+        let ok_a =  1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_;
+        let ok_b =  0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_;
+
+        // OKLab -> OKLCH: scale chroma
+        let c = (ok_a * ok_a + ok_b * ok_b).sqrt();
+        let h = ok_b.atan2(ok_a);
+        let c2 = c * factor;
+        let a2 = c2 * h.cos();
+        let b2 = c2 * h.sin();
+
+        // OKLab -> LMS' (M2 inverse)
+        let l2_ = ok_l + 0.3963377774 * a2 + 0.2158037573 * b2;
+        let m2_ = ok_l - 0.1055613458 * a2 - 0.0638541728 * b2;
+        let s2_ = ok_l - 0.0894841775 * a2 - 1.2914855480 * b2;
+
+        // Cube (inverse of cube root)
+        let l2 = l2_ * l2_ * l2_;
+        let m2 = m2_ * m2_ * m2_;
+        let s2 = s2_ * s2_ * s2_;
+
+        // LMS -> linear sRGB (M1 inverse)
+        px[0] =  4.0767416621 * l2 - 3.3077115913 * m2 + 0.2309699292 * s2;
+        px[1] = -1.2684380046 * l2 + 2.6097574011 * m2 - 0.3413193965 * s2;
+        px[2] = -0.0041960863 * l2 - 0.7034186147 * m2 + 1.7076147010 * s2;
+    }
+    out
+}
+
+#[cfg(test)]
+mod saturate_tests {
+    use super::*;
+
+    #[test]
+    fn saturate_oklch_factor_one_is_identity() {
+        let input = crate::gradient(4, 4);
+        let output = saturate_oklch(&input, 4, 4, 1.0);
+        crate::assert_parity("oklch_sat_1.0", &output, &input, 1e-4);
+    }
+
+    #[test]
+    fn saturate_oklch_factor_zero_is_grayscale() {
+        let input = vec![0.8, 0.2, 0.4, 1.0];
+        let output = saturate_oklch(&input, 1, 1, 0.0);
+        assert!(
+            (output[0] - output[1]).abs() < 0.02 && (output[1] - output[2]).abs() < 0.02,
+            "factor=0 should produce grayscale, got ({:.3}, {:.3}, {:.3})",
+            output[0], output[1], output[2]
+        );
+    }
+}
