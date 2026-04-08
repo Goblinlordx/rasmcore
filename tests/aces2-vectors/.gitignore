@@ -1,2 +1,4 @@
-# Compiled binary (regenerate from generate_reference.cpp)
+# Compiled binaries (regenerate via Docker)
 generate_reference
+generate_step_reference
+output/
