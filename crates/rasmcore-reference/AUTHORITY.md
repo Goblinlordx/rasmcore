@@ -63,7 +63,7 @@ because exposure is fundamentally a color grading operation.
 | `hue_rotate` | W3C CSS Filter Effects | YIQ rotation matrix (Section 2) | Formally specified |
 | `vibrance` | DaVinci Resolve | Vibrance in Color page (saturation-weighted) | Professional grading tool |
 | `channel_mixer` | DaVinci Resolve | Color Mixer (3×3 matrix) | Mathematically unambiguous |
-| `white_balance_temperature` | vips | `vips colourspace` temperature shift | Native f32 pipeline |
+| `white_balance_temperature` | CIE 015:2018 + Li et al. 2017 | CAT16 chromatic adaptation, D-illuminant series | CIE standard + peer-reviewed CAM16 |
 | `white_balance_gray_world` | OpenCV | `cv2.xphoto.createGrayworldWB()` | Standard algorithm |
 | `colorize` | GIMP | Colors > Colorize (HSL tint) | GIMP is canonical for this |
 | `modulate` | ImageMagick | `magick -modulate {brightness},{saturation},{hue}` | IM canonical |
@@ -101,17 +101,19 @@ as `saturate_hsl` for backward compatibility.
 
 ### Research Notes — White Balance
 
-**Decision: Simplified Planckian shift for `white_balance_temperature`**
+**Decision: CIE CAT16 chromatic adaptation (implemented)**
 
-- **Our impl**: `R *= 1 + shift*0.1, B *= 1 - shift*0.1` (linear approx)
-- **DaVinci Resolve**: Full CIE D-illuminant calculation with CAT02 chromatic
-  adaptation transform. Temperature in Kelvin, not arbitrary units.
-- **Lightroom/ACR**: Similar to Resolve but with Adobe's proprietary adaptation.
-- **vips**: `vips colourtemp` uses CIE daylight model.
+- **Our impl**: CIE D-illuminant series (CIE 015:2018 eq 4.1) for source/target
+  chromaticity + CAT16 adaptation transform (Li et al. 2017) for 3x3 matrix.
+  Temperature in Kelvin (2000-12000K), tint as duv perpendicular shift.
+- **DaVinci Resolve**: CAT02 adaptation (older CIE model). CAT16 is the newer
+  standard from the same research group (Li, Luo et al.).
+- **Lightroom/ACR**: Adobe's proprietary adaptation, similar to CAT02/CAT16.
 
-Our simplified model is NOT professional-grade. The authority for validation is
-vips (closest to our model), but AUTHORITY.md notes this as a known gap.
-A future track should implement proper CIE CAT02/CAT16 adaptation matching Resolve.
+References:
+- CIE 015:2018 "Colorimetry, 4th Edition" — D-illuminant series formula
+- Li, C. et al. (2017). "Comprehensive color appearance model (CAM16)."
+  Color Research & Application, 42(6), 703-718.
 
 ## Spatial (18 filters)
 
@@ -392,10 +394,8 @@ Scopes: `histogram`, `waveform`, `vectorscope`, `parade`
 
 ## Known Gaps and Future Work
 
-1. **White balance**: Our `white_balance_temperature` uses a simplified linear
-   approximation. Professional tools (Resolve, Lightroom) use CIE chromatic
-   adaptation transforms (CAT02/CAT16). A future track should implement proper
-   CIE adaptation as a separate filter or upgrade to the existing one.
+1. ~~**White balance**~~: Resolved — `white_balance_temperature` now uses CIE
+   CAT16 chromatic adaptation (Li et al. 2017) with D-illuminant series.
 
 2. **Saturation**: Our HSL model matches CSS/GIMP but not Resolve's perceptual
    model. Consider adding an "ACES saturation" filter for professional grading.

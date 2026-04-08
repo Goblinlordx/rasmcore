@@ -142,19 +142,98 @@ pub fn channel_mixer(input: &[f32], _w: u32, _h: u32, matrix: &[f32; 9]) -> Vec<
 /// White balance — Planckian locus temperature shift.
 ///
 /// Simplified model: warm shifts R up and B down, cool does opposite.
-/// temp_shift: positive = warm (more red), negative = cool (more blue)
+/// CIE chromatic adaptation white balance (CAT16).
 ///
-/// Formula: R *= 1 + temp_shift * 0.1, B *= 1 - temp_shift * 0.1
+/// temperature_k: source illuminant in Kelvin (2000-12000).
+///   Photography convention: adapts from source to D65 (display white).
+///   8000K = "shot under blue sky" → warm up. 3200K = "tungsten" → cool down.
+///   6500K = D65 neutral (identity).
+/// tint: green-magenta shift (-1 to 1). 0 = no tint.
 ///
-/// Validated against: Lightroom/ACR white balance slider (simplified linear model)
-/// Production tools use full CIE chromatic adaptation; this is the linear approximation.
-pub fn white_balance(input: &[f32], _w: u32, _h: u32, temp_shift: f32) -> Vec<f32> {
-    let r_mul = 1.0 + temp_shift * 0.1;
-    let b_mul = 1.0 - temp_shift * 0.1;
+/// Implementation: CIE D-illuminant series (CIE 015:2018 eq 4.1) +
+/// CAT16 chromatic adaptation (Li et al. 2017).
+pub fn white_balance(input: &[f32], _w: u32, _h: u32, temperature_k: f32, tint: f32) -> Vec<f32> {
+    let m = cat16_adaptation_matrix(temperature_k, tint);
     let mut out = input.to_vec();
     for px in out.chunks_exact_mut(4) {
-        px[0] *= r_mul;
-        px[2] *= b_mul;
+        let r = m[0] * px[0] + m[1] * px[1] + m[2] * px[2];
+        let g = m[3] * px[0] + m[4] * px[1] + m[5] * px[2];
+        let b = m[6] * px[0] + m[7] * px[1] + m[8] * px[2];
+        px[0] = r;
+        px[1] = g;
+        px[2] = b;
+    }
+    out
+}
+
+/// CIE D-illuminant chromaticity (CIE 015:2018, eq 4.1).
+fn cie_d_illuminant_xy(temp_k: f32) -> (f64, f64) {
+    let t = temp_k.clamp(4000.0, 25000.0) as f64;
+    let (t2, t3) = (t * t, t * t * t);
+    let xd = if t <= 7000.0 {
+        -4.6070e9 / t3 + 2.9678e6 / t2 + 0.09911e3 / t + 0.244063
+    } else {
+        -2.0064e9 / t3 + 1.9018e6 / t2 + 0.24748e3 / t + 0.237040
+    };
+    let yd = -3.000 * xd * xd + 2.870 * xd - 0.275;
+    (xd, yd)
+}
+
+/// Tint shift perpendicular to Planckian locus (in CIE 1960 uv space).
+fn tint_shift_xy(xy: (f64, f64), tint: f32) -> (f64, f64) {
+    if tint.abs() < 1e-6 { return xy; }
+    let (x, y) = xy;
+    let denom = -2.0 * x + 12.0 * y + 3.0;
+    let u = 4.0 * x / denom;
+    let v = 6.0 * y / denom;
+    let v_shifted = v - tint as f64 * 0.02;
+    let denom2 = 2.0 * u - 8.0 * v_shifted + 4.0;
+    (3.0 * u / denom2, 2.0 * v_shifted / denom2)
+}
+
+/// CAT16 adaptation matrix (Li et al. 2017).
+fn cat16_adaptation_matrix(temperature_k: f32, tint: f32) -> [f32; 9] {
+    const CAT16: [[f64; 3]; 3] = [
+        [ 0.401288,  0.650173, -0.051461],
+        [-0.250268,  1.204414,  0.045854],
+        [-0.002079,  0.048952,  0.953127],
+    ];
+    const CAT16_INV: [[f64; 3]; 3] = [
+        [ 1.862067855087232715, -1.011254630531684295,  0.149186775444451747],
+        [ 0.387526543236137111,  0.621447441931475275, -0.008973985167612520],
+        [-0.015841498849333856, -0.034122938028515563,  1.049964436877849350],
+    ];
+
+    let src_xy = tint_shift_xy(cie_d_illuminant_xy(temperature_k), tint);
+    let tgt_xy = cie_d_illuminant_xy(6500.0);
+
+    let xy_to_xyz = |x: f64, y: f64| -> [f64; 3] {
+        if y.abs() < 1e-10 { return [0.0, 1.0, 0.0]; }
+        [x / y, 1.0, (1.0 - x - y) / y]
+    };
+    let mv = |m: &[[f64; 3]; 3], v: &[f64; 3]| -> [f64; 3] {
+        [m[0][0]*v[0]+m[0][1]*v[1]+m[0][2]*v[2],
+         m[1][0]*v[0]+m[1][1]*v[1]+m[1][2]*v[2],
+         m[2][0]*v[0]+m[2][1]*v[1]+m[2][2]*v[2]]
+    };
+
+    let src_xyz = xy_to_xyz(src_xy.0, src_xy.1);
+    let tgt_xyz = xy_to_xyz(tgt_xy.0, tgt_xy.1);
+    let sc = mv(&CAT16, &src_xyz);
+    let tc = mv(&CAT16, &tgt_xyz);
+    let d = [tc[0]/sc[0], tc[1]/sc[1], tc[2]/sc[2]];
+
+    let d_cat = [
+        [d[0]*CAT16[0][0], d[0]*CAT16[0][1], d[0]*CAT16[0][2]],
+        [d[1]*CAT16[1][0], d[1]*CAT16[1][1], d[1]*CAT16[1][2]],
+        [d[2]*CAT16[2][0], d[2]*CAT16[2][1], d[2]*CAT16[2][2]],
+    ];
+
+    let mut out = [0.0f32; 9];
+    for i in 0..3 {
+        for j in 0..3 {
+            out[i*3+j] = (CAT16_INV[i][0]*d_cat[0][j] + CAT16_INV[i][1]*d_cat[1][j] + CAT16_INV[i][2]*d_cat[2][j]) as f32;
+        }
     }
     out
 }
@@ -205,10 +284,18 @@ mod tests {
     }
 
     #[test]
-    fn white_balance_zero_is_identity() {
+    fn white_balance_d65_is_identity() {
         let input = crate::gradient(4, 4);
-        let output = white_balance(&input, 4, 4, 0.0);
-        crate::assert_parity("wb_zero", &output, &input, 1e-7);
+        let output = white_balance(&input, 4, 4, 6500.0, 0.0);
+        crate::assert_parity("wb_d65", &output, &input, 1e-4);
+    }
+
+    #[test]
+    fn white_balance_warm_boosts_red() {
+        let input = vec![0.5f32, 0.5, 0.5, 1.0];
+        let output = white_balance(&input, 1, 1, 8000.0, 0.0);
+        assert!(output[0] > 0.5, "8000K should boost red: {}", output[0]);
+        assert!(output[2] < 0.5, "8000K should reduce blue: {}", output[2]);
     }
 }
 
