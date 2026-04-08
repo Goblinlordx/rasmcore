@@ -1,0 +1,112 @@
+id: ocio-clf-imports_20260408005400Z
+title: Import real OCIO CLF files for camera IDTs and utility EOTF curves
+type: chore
+status: pending
+created: 2026-04-08
+updated: 2026-04-08
+spec:
+  summary: |
+    Replace hand-written CLF approximations with production-tested CLF files
+    from the OpenColorIO-Config-ACES repo (BSD-3-Clause). Camera IDTs for
+    ARRI, Sony, RED, Canon, Panasonic, DJI, Apple, Blackmagic. Utility
+    EOTF curves for sRGB, Rec.1886, ST.2084 PQ, HLG.
+  context: |
+    Our current CLF files in rasmcore-color-transforms are hand-written
+    approximations. The OCIO-Config-ACES repo has real, production-tested
+    CLF files for all major camera IDTs and utility curves. These are the
+    same files used by Nuke, Resolve, and every ACES-compliant tool.
+
+    The OCIO repo is BSD-3-Clause. We add its license to our licenses/
+    directory and download the actual CLF files.
+
+    Note: Output Transforms are NOT available as CLF (they are algorithmic).
+    That is handled by the aces2-output-transform track.
+  codebase_analysis: |
+    Current state: crates/rasmcore-color-transforms/transforms/ has 6 CLF
+    files (hand-written). These need to be replaced with real OCIO CLFs.
+
+    OCIO CLF base URL:
+    https://raw.githubusercontent.com/AcademySoftwareFoundation/OpenColorIO-Config-ACES/main/opencolorio_config_aces/clf/transforms/
+
+    Camera IDTs available:
+    - arri/input/ARRI.Input.ARRI_LogC4_to_ACES2065-1.clf
+    - sony/input/Sony.Input.SLog3_SGamut3Cine_to_ACES2065-1.clf
+    - sony/input/Sony.Input.SLog3_SGamut3_to_ACES2065-1.clf
+    - red/input/RED.Input.Log3G10_REDWideGamutRGB_to_ACES2065-1.clf
+    - canon/input/Canon.Input.CLog3_CGamut_to_ACES2065-1.clf
+    - panasonic/input/Panasonic.Input.VLog_VGamut_to_ACES2065-1.clf
+    - blackmagic/input/Blackmagic.Input.BMDFilm_WideGamut_Gen5_to_ACES2065-1.clf
+    - apple/input/Apple.Input.AppleLog_to_ACES2065-1.clf
+
+    Utility CLFs:
+    - ocio/utility/OCIO.Utility.sRGB-Curve.clf
+    - ocio/utility/OCIO.Utility.Rec1886-Curve.clf
+    - ocio/utility/OCIO.Utility.ST2084-Curve.clf
+    - ocio/utility/OCIO.Utility.AP0_to_Linear_Rec709.clf
+    - ocio/utility/OCIO.Utility.AP0_to_Linear_P3-D65.clf
+    - ocio/utility/OCIO.Utility.AP0_to_Linear_Rec2020.clf
+
+    Note: OCIO IDTs output to ACES2065-1 (AP0), not ACEScg (AP1). Our
+    pipeline works in ACEScg. We need an additional AP0-to-AP1 matrix step
+    after each IDT, or compose the IDT CLF with the AP0→AP1 CSC.
+  acceptance_criteria:
+    - All camera IDTs replaced with real OCIO CLF files
+    - Utility EOTF curves (sRGB, Rec.1886, PQ, HLG) from OCIO
+    - BSD-3-Clause license from OCIO added to licenses/ directory
+    - lib.rs builtins() updated with all new CLF entries
+    - AP0→AP1 conversion handled (either composed into CLF or as pipeline step)
+    - All existing tests pass
+    - New tests verify CLF files parse correctly
+  out_of_scope: |
+    Output Transforms (not available as CLF — separate track).
+    CLF parser improvements (handled by color-transform-formats track).
+    DJI transforms (may not be in OCIO repo yet).
+  technical_notes: |
+    Download CLFs and place in transforms/ directory structure:
+    transforms/
+      idt/
+        arri-logc4.clf         (from OCIO: ARRI.Input.ARRI_LogC4...)
+        sony-slog3-sgamut3.clf (from OCIO: Sony.Input.SLog3_SGamut3...)
+        red-log3g10-rwg.clf    (from OCIO: RED.Input.Log3G10...)
+        canon-clog3.clf        (from OCIO: Canon.Input.CLog3...)
+        panasonic-vlog.clf     (from OCIO: Panasonic.Input.VLog...)
+        blackmagic-gen5.clf    (from OCIO: Blackmagic.Input.BMDFilm...)
+        apple-log.clf          (from OCIO: Apple.Input.AppleLog...)
+      utility/
+        srgb-curve.clf
+        rec1886-curve.clf
+        st2084-pq-curve.clf
+        ap0-to-rec709.clf
+        ap0-to-p3.clf
+        ap0-to-rec2020.clf
+
+    Keep existing hand-written srgb.clf and rec709.clf as fallbacks
+    until CLF parser supports all OCIO node types.
+plan:
+  - phase: Download and License
+    tasks:
+      - text: Download camera IDT CLFs from OCIO-Config-ACES repo
+        done: false
+      - text: Download utility EOTF CLFs from OCIO repo
+        done: false
+      - text: Add OCIO BSD-3-Clause license to licenses/ directory
+        done: false
+  - phase: Integration
+    tasks:
+      - text: Place CLF files in transforms/ with consistent naming
+        done: false
+      - text: Update lib.rs builtins() with all new camera IDT entries
+        done: false
+      - text: Update lib.rs builtins() with utility EOTF entries
+        done: false
+      - text: Handle AP0-to-AP1 conversion for IDTs that output ACES2065-1
+        done: false
+  - phase: Verification
+    tasks:
+      - text: All CLF files are valid XML with ProcessList root
+        done: false
+      - text: register_builtins callback invoked for all entries
+        done: false
+      - text: Existing tests pass
+        done: false
+extra: {}
