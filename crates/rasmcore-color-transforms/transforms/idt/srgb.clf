@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- IDT: sRGB to ACEScg (AP1 linear, D60) -->
+<!-- Source: Academy (A.M.P.A.S.) — see licenses/ACES.txt -->
+<!-- Pipeline: sRGB EOTF (gamma→linear) → 3x3 matrix (Rec.709 D65 → AP1 D60) -->
+<ProcessList id="IDT.sRGB_to_ACEScg" compCLFversion="3.0">
+    <Description>sRGB to ACEScg — Input Device Transform</Description>
+    <!-- Step 1: sRGB EOTF (linearize) -->
+    <Exponent inBitDepth="32f" outBitDepth="32f" style="monCurveFwd">
+        <ExponentParams exponent="2.4" offset="0.055" />
+    </Exponent>
+    <!-- Step 2: Rec.709 (D65) linear → ACEScg (AP1, D60) via Bradford adaptation -->
+    <Matrix inBitDepth="32f" outBitDepth="32f">
+        <Array dim="3 3">
+             0.6131324224  0.3395380158  0.0473295618
+             0.0701243808  0.9163940113  0.0134816079
+             0.0206155839  0.1095697716  0.8698146445
+        </Array>
+    </Matrix>
+</ProcessList>

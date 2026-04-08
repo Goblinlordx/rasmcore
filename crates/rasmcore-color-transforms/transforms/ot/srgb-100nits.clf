@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- OT: ACEScg to sRGB display (100 nits, dim surround) -->
+<!-- Source: Academy (A.M.P.A.S.) — see licenses/ACES.txt -->
+<!-- Note: This is a simplified CSC, not the full ACES RRT+ODT tonemap. -->
+<!-- A proper ACES Output Transform requires the RRT tonescale which -->
+<!-- will be added in a future update. -->
+<ProcessList id="OT.ACEScg_to_sRGB" compCLFversion="3.0">
+    <Description>ACEScg to sRGB — Output Transform (simplified)</Description>
+    <!-- Step 1: ACEScg (AP1, D60) → Rec.709 (D65) linear -->
+    <Matrix inBitDepth="32f" outBitDepth="32f">
+        <Array dim="3 3">
+             1.7048586763 -0.6217160219 -0.0831426544
+            -0.1300768242  1.1407357748 -0.0106589506
+            -0.0239640729 -0.1289755083  1.1529395812
+        </Array>
+    </Matrix>
+    <!-- Step 2: Linear → sRGB EOTF encoding -->
+    <Exponent inBitDepth="32f" outBitDepth="32f" style="monCurveRev">
+        <ExponentParams exponent="2.4" offset="0.055" />
+    </Exponent>
+</ProcessList>

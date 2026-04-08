@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- OT: ACEScg to Rec.709 display (100 nits) -->
+<!-- Source: Academy (A.M.P.A.S.) — see licenses/ACES.txt -->
+<ProcessList id="OT.ACEScg_to_Rec709" compCLFversion="3.0">
+    <Description>ACEScg to Rec.709 (BT.1886) — Output Transform (simplified)</Description>
+    <Matrix inBitDepth="32f" outBitDepth="32f">
+        <Array dim="3 3">
+             1.7048586763 -0.6217160219 -0.0831426544
+            -0.1300768242  1.1407357748 -0.0106589506
+            -0.0239640729 -0.1289755083  1.1529395812
+        </Array>
+    </Matrix>
+    <Exponent inBitDepth="32f" outBitDepth="32f" style="basicRev">
+        <ExponentParams exponent="2.4" />
+    </Exponent>
+</ProcessList>

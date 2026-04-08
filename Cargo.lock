@@ -3108,6 +3108,10 @@ name = "rasmcore-color"
 version = "0.1.0"
 
 [[package]]
+name = "rasmcore-color-transforms"
+version = "0.1.0"
+
+[[package]]
 name = "rasmcore-dct"
 version = "0.1.0"
 
@@ -3344,6 +3348,7 @@ dependencies = [
  "inventory",
  "rasmcore-gpu-native",
  "rasmcore-macros",
+ "rasmcore-reference",
  "serde",
 ]
 
@@ -3360,6 +3365,10 @@ version = "0.1.0"
 
 [[package]]
 name = "rasmcore-raw"
+version = "0.1.0"
+
+[[package]]
+name = "rasmcore-reference"
 version = "0.1.0"
 
 [[package]]

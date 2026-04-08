@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- CSC: ACEScg (AP1 linear) to ACEScct (AP1 log) -->
+<!-- Source: Academy (A.M.P.A.S.) — see licenses/ACES.txt -->
+<!-- Same primaries (AP1), only the transfer function changes. -->
+<ProcessList id="CSC.ACEScg_to_ACEScct" compCLFversion="3.0">
+    <Description>ACEScg to ACEScct — linear to log grading space</Description>
+    <Log inBitDepth="32f" outBitDepth="32f" style="linToLog">
+        <LogParams base="2" linSideSlope="1.0" linSideOffset="0.0"
+                   logSideSlope="0.05707762557" logSideOffset="0.5547945205"
+                   linearSlope="10.5402377417" linearOffset="0.0729055342"
+                   linBreak="0.0078125" />
+    </LogParams>
+</ProcessList>

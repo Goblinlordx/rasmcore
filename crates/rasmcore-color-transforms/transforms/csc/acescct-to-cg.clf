@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- CSC: ACEScct (AP1 log) to ACEScg (AP1 linear) -->
+<!-- Source: Academy (A.M.P.A.S.) — see licenses/ACES.txt -->
+<ProcessList id="CSC.ACEScct_to_ACEScg" compCLFversion="3.0">
+    <Description>ACEScct to ACEScg — log to linear compositing space</Description>
+    <Log inBitDepth="32f" outBitDepth="32f" style="logToLin">
+        <LogParams base="2" linSideSlope="1.0" linSideOffset="0.0"
+                   logSideSlope="0.05707762557" logSideOffset="0.5547945205"
+                   linearSlope="10.5402377417" linearOffset="0.0729055342"
+                   linBreak="0.0078125" />
+    </LogParams>
+</ProcessList>
