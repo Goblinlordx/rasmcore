@@ -251,14 +251,43 @@ impl Pipeline {
         Ok(Pipeline { graph: self.graph.clone(), node: id })
     }
 
-    /// Render the pipeline and return raw f32 RGBA pixels.
+    /// Render the pipeline and return working-space f32 RGBA pixels.
+    /// No OT is applied — useful for compositing or further processing.
     pub fn render(&self) -> Result<Vec<f32>, PipelineError> {
         self.graph.borrow_mut().request_full(self.node)
     }
 
+    /// Render with the display OT applied, returning display-referred f32 RGBA.
+    /// Uses the configured display transform (default: "ot-srgb").
+    /// Returns working-space pixels if color management is disabled.
+    pub fn render_display(&self) -> Result<Vec<f32>, PipelineError> {
+        if !self.graph.borrow().is_color_managed() {
+            return self.render();
+        }
+        let ot_name = self.graph.borrow().display_transform().to_string();
+        if let Ok(transform) = v2::color_transform::load_preset(&ot_name) {
+            let info = self.info();
+            let ot_node = v2::color_transform::ColorTransformNode::new(
+                self.node, info, transform,
+            );
+            let ot_id = self.graph.borrow_mut().add_node(Box::new(ot_node));
+            self.graph.borrow_mut().request_full(ot_id)
+        } else {
+            self.render()
+        }
+    }
+
     /// Render and encode to the specified format.
+    /// For display-referred formats (png, jpeg, webp, gif, bmp), auto-applies
+    /// the display OT when color-managed. For scene-referred formats (exr, tiff,
+    /// hdr), outputs working-space pixels directly.
     pub fn write(&self, format: &str, quality: Option<u8>) -> Result<Vec<u8>, PipelineError> {
-        let pixels = self.render()?;
+        let is_scene_referred = matches!(format, "exr" | "tiff" | "tif" | "hdr");
+        let pixels = if self.graph.borrow().is_color_managed() && !is_scene_referred {
+            self.render_display()?
+        } else {
+            self.render()?
+        };
         let info = self.info();
         let mut params = v2::ParamMap::new();
         if let Some(q) = quality {
