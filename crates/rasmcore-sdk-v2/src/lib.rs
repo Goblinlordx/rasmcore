@@ -137,7 +137,35 @@ impl Pipeline {
         };
 
         let graph = Rc::new(RefCell::new(graph));
-        let node = graph.borrow_mut().add_node(Box::new(source));
+        let mut node = graph.borrow_mut().add_node(Box::new(source));
+
+        // Auto-IDT: convert source color space to working space when color-managed
+        let source_cs = decoded.info.color_space;
+        if graph.borrow().is_color_managed() {
+            let working = graph.borrow().working_color_space()
+                .unwrap_or(ColorSpace::AcesCg);
+            if source_cs != working && source_cs != ColorSpace::Unknown {
+                let idt_name = match source_cs {
+                    ColorSpace::Srgb => "idt-srgb",
+                    ColorSpace::Rec709 | ColorSpace::Linear => "idt-rec709",
+                    ColorSpace::Rec2020 => "idt-rec2020",
+                    ColorSpace::DisplayP3 => "idt-p3",
+                    _ => "idt-srgb", // safe default for unrecognized spaces
+                };
+                if let Ok(transform) = v2::color_transform::load_preset(idt_name) {
+                    let idt_info = NodeInfo {
+                        width: decoded.info.width,
+                        height: decoded.info.height,
+                        color_space: working,
+                    };
+                    let ct_node = v2::color_transform::ColorTransformNode::new(
+                        node, idt_info, transform,
+                    );
+                    node = graph.borrow_mut().add_node(Box::new(ct_node));
+                }
+            }
+        }
+
         Ok(Pipeline { graph, node })
     }
 
