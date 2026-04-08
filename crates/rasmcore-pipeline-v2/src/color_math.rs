@@ -436,6 +436,157 @@ pub fn oklch_to_oklab(ok_l: f32, c: f32, h: f32) -> (f32, f32, f32) {
     (ok_l, a, b)
 }
 
+// ─── CIE Colorimetry ─────────────────────────────────────────────────────────
+// CIE 015:2018 D-illuminant series, Planckian locus, CAT16 adaptation.
+
+/// CIE D-illuminant chromaticity (CIE 015:2018, eq 4.1).
+///
+/// Valid for 4000K <= T <= 25000K. Outside this range, clamps to boundary.
+/// Returns (x, y) CIE 1931 chromaticity coordinates.
+pub fn cie_d_illuminant_xy(temperature_k: f32) -> (f32, f32) {
+    let t = temperature_k.clamp(4000.0, 25000.0) as f64;
+    let t2 = t * t;
+    let t3 = t2 * t;
+
+    let xd = if t <= 7000.0 {
+        -4.6070e9 / t3 + 2.9678e6 / t2 + 0.09911e3 / t + 0.244063
+    } else {
+        -2.0064e9 / t3 + 1.9018e6 / t2 + 0.24748e3 / t + 0.237040
+    };
+    let yd = -3.000 * xd * xd + 2.870 * xd - 0.275;
+    (xd as f32, yd as f32)
+}
+
+/// Planckian locus xy approximation (Hernandez-Andres et al. 1999).
+///
+/// Valid for 1667K <= T <= 25000K. Wider range than D-illuminant series.
+pub fn planckian_locus_xy(temperature_k: f32) -> (f32, f32) {
+    let t = temperature_k.clamp(1667.0, 25000.0) as f64;
+    let t2 = t * t;
+    let t3 = t2 * t;
+
+    let xc = if t <= 4000.0 {
+        -0.2661239e9 / t3 - 0.2343589e6 / t2 + 0.8776956e3 / t + 0.179910
+    } else {
+        -3.0258469e9 / t3 + 2.1070379e6 / t2 + 0.2226347e3 / t + 0.240390
+    };
+
+    let xc2 = xc * xc;
+    let xc3 = xc2 * xc;
+    let yc = if t <= 2222.0 {
+        -1.1063814 * xc3 - 1.34811020 * xc2 + 2.18555832 * xc - 0.20219683
+    } else if t <= 4000.0 {
+        -0.9549476 * xc3 - 1.37418593 * xc2 + 2.09137015 * xc - 0.16748867
+    } else {
+        3.0817580 * xc3 - 5.87338670 * xc2 + 3.75112997 * xc - 0.37001483
+    };
+    (xc as f32, yc as f32)
+}
+
+/// Convert CIE xy chromaticity to XYZ (Y=1 normalization).
+#[inline]
+pub fn xy_to_xyz(x: f32, y: f32) -> [f32; 3] {
+    if y.abs() < 1e-10 {
+        return [0.0, 1.0, 0.0];
+    }
+    [x / y, 1.0, (1.0 - x - y) / y]
+}
+
+/// CAT16 forward matrix (Li et al. 2017, Table 1).
+pub const CAT16: [[f64; 3]; 3] = [
+    [ 0.401288,  0.650173, -0.051461],
+    [-0.250268,  1.204414,  0.045854],
+    [-0.002079,  0.048952,  0.953127],
+];
+
+/// CAT16 inverse matrix (precomputed via Cramer's rule at f64 precision).
+pub const CAT16_INV: [[f64; 3]; 3] = [
+    [ 1.862067855087232715, -1.011254630531684295,  0.149186775444451747],
+    [ 0.387526543236137111,  0.621447441931475275, -0.008973985167612520],
+    [-0.015841498849333856, -0.034122938028515563,  1.049964436877849350],
+];
+
+/// Compute the CAT16 chromatic adaptation matrix from source to target illuminant.
+///
+/// Both source and target are specified as CIE xy chromaticity.
+/// Returns a row-major 3x3 matrix: `[r', g', b'] = M * [r, g, b]`.
+pub fn cat16_adaptation_matrix(source_xy: (f32, f32), target_xy: (f32, f32)) -> [f32; 9] {
+    let src_xyz = xy_to_xyz(source_xy.0, source_xy.1);
+    let tgt_xyz = xy_to_xyz(target_xy.0, target_xy.1);
+
+    let src = [src_xyz[0] as f64, src_xyz[1] as f64, src_xyz[2] as f64];
+    let tgt = [tgt_xyz[0] as f64, tgt_xyz[1] as f64, tgt_xyz[2] as f64];
+
+    let src_cone = mat3x3_mul_vec(&CAT16, &src);
+    let tgt_cone = mat3x3_mul_vec(&CAT16, &tgt);
+
+    let d = [
+        tgt_cone[0] / src_cone[0],
+        tgt_cone[1] / src_cone[1],
+        tgt_cone[2] / src_cone[2],
+    ];
+
+    let d_cat = [
+        [d[0] * CAT16[0][0], d[0] * CAT16[0][1], d[0] * CAT16[0][2]],
+        [d[1] * CAT16[1][0], d[1] * CAT16[1][1], d[1] * CAT16[1][2]],
+        [d[2] * CAT16[2][0], d[2] * CAT16[2][1], d[2] * CAT16[2][2]],
+    ];
+
+    let m = mat3x3_mul(&CAT16_INV, &d_cat);
+
+    [
+        m[0][0] as f32, m[0][1] as f32, m[0][2] as f32,
+        m[1][0] as f32, m[1][1] as f32, m[1][2] as f32,
+        m[2][0] as f32, m[2][1] as f32, m[2][2] as f32,
+    ]
+}
+
+/// Apply a tint shift perpendicular to the Planckian locus.
+///
+/// `tint` in [-1, 1], mapped to duv [-0.02, 0.02] (green-magenta range).
+pub fn tint_shift_xy(xy: (f32, f32), tint: f32) -> (f32, f32) {
+    if tint.abs() < 1e-6 {
+        return xy;
+    }
+    let (x, y) = (xy.0 as f64, xy.1 as f64);
+    let denom = -2.0 * x + 12.0 * y + 3.0;
+    let u = 4.0 * x / denom;
+    let v = 6.0 * y / denom;
+    let v_shifted = v - tint as f64 * 0.02;
+    let denom2 = 2.0 * u - 8.0 * v_shifted + 4.0;
+    let x_out = 3.0 * u / denom2;
+    let y_out = 2.0 * v_shifted / denom2;
+    (x_out as f32, y_out as f32)
+}
+
+fn mat3x3_mul_vec(m: &[[f64; 3]; 3], v: &[f64; 3]) -> [f64; 3] {
+    [
+        m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
+        m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
+        m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2],
+    ]
+}
+
+fn mat3x3_mul(a: &[[f64; 3]; 3], b: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
+    let mut out = [[0.0f64; 3]; 3];
+    for i in 0..3 {
+        for j in 0..3 {
+            out[i][j] = a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j];
+        }
+    }
+    out
+}
+
+/// Apply a row-major 3x3 matrix to a linear RGB pixel.
+#[inline]
+pub fn apply_3x3(m: &[f32; 9], r: f32, g: f32, b: f32) -> (f32, f32, f32) {
+    (
+        m[0] * r + m[1] * g + m[2] * b,
+        m[3] * r + m[4] * g + m[5] * b,
+        m[6] * r + m[7] * g + m[8] * b,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -654,5 +805,54 @@ mod tests {
         let (l, a, b) = linear_srgb_to_oklab(0.5, 0.5, 0.5);
         let (_, c, _) = oklab_to_oklch(l, a, b);
         assert!(c < 1e-4, "neutral gray should have near-zero chroma, got {c}");
+    }
+
+    // ── CIE Colorimetry Tests ──
+
+    #[test]
+    fn d65_chromaticity() {
+        let (x, y) = cie_d_illuminant_xy(6500.0);
+        assert!((x - 0.31272).abs() < 0.001, "D65 x: {x}");
+        assert!((y - 0.32903).abs() < 0.001, "D65 y: {y}");
+    }
+
+    #[test]
+    fn cat16_d65_self_adaptation_is_identity() {
+        let d65 = cie_d_illuminant_xy(6500.0);
+        let m = cat16_adaptation_matrix(d65, d65);
+        let id = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        for i in 0..9 {
+            assert!((m[i] - id[i]).abs() < 1e-5, "identity m[{i}]: {} vs {}", m[i], id[i]);
+        }
+    }
+
+    #[test]
+    fn cat16_warm_cool_shift() {
+        let d65 = cie_d_illuminant_xy(6500.0);
+        let warm = cie_d_illuminant_xy(3200.0);
+        let m = cat16_adaptation_matrix(d65, warm);
+        let (r, _g, b) = apply_3x3(&m, 1.0, 1.0, 1.0);
+        assert!(r > 1.0, "warm should boost red: {r}");
+        assert!(b < 1.0, "warm should reduce blue: {b}");
+    }
+
+    #[test]
+    fn tint_zero_is_identity() {
+        let xy = cie_d_illuminant_xy(6500.0);
+        let shifted = tint_shift_xy(xy, 0.0);
+        assert!((shifted.0 - xy.0).abs() < 1e-6);
+        assert!((shifted.1 - xy.1).abs() < 1e-6);
+    }
+
+    #[test]
+    fn cat16_inverse_roundtrip() {
+        let product = mat3x3_mul(&CAT16, &CAT16_INV);
+        for i in 0..3 {
+            for j in 0..3 {
+                let expected = if i == j { 1.0 } else { 0.0 };
+                assert!((product[i][j] - expected).abs() < 1e-8,
+                    "CAT16*INV [{i}][{j}]: {} vs {expected}", product[i][j]);
+            }
+        }
     }
 }
