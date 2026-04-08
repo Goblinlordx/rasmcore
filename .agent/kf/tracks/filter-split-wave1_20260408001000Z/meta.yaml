@@ -1,0 +1,8 @@
+title: Split filter files — wave 1 (adjustment, alpha, evaluate, composite)
+status: pending
+type: refactor
+approved: false
+created: '2026-04-08'
+updated: '2026-04-08'
+deps:
+- filter-shared-helpers_20260408000900Z

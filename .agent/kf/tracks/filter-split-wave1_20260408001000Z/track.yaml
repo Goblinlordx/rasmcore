@@ -1,0 +1,88 @@
+id: filter-split-wave1_20260408001000Z
+title: "Split filter files — wave 1 (adjustment, alpha, evaluate, composite)"
+type: refactor
+status: pending
+created: 2026-04-08
+updated: 2026-04-08
+spec:
+  summary: |
+    Split the 4 smaller category files into one-file-per-filter directory
+    structure. Proves the pattern before tackling the large files.
+  context: |
+    Target files (small, low-risk):
+    - adjustment.rs (768 lines, 12 filters) -> filters/adjustment/{brightness,contrast,...}.rs
+    - alpha.rs (346 lines, 3 filters) -> filters/alpha/{add_alpha,remove_alpha,...}.rs
+    - evaluate.rs (355 lines, 9 filters) -> filters/evaluate/{add,subtract,...}.rs
+    - composite.rs (418 lines, 4 filters) -> filters/composite/{premultiply,blend,...}.rs
+
+    New structure per category:
+      filters/adjustment/
+        mod.rs          (pub mod brightness; pub mod contrast; ...)
+        brightness.rs   (struct + Filter impl + tests)
+        contrast.rs
+        ...
+
+    Each filter file is self-contained: struct definition, Filter impl,
+    optional GPU shader, tests. Imports shared helpers from filters/helpers.
+  acceptance_criteria:
+    - Each filter in a separate .rs file under its category directory
+    - Category mod.rs re-exports all filter structs (pub use)
+    - All V2Filter derive registrations preserved
+    - All existing tests pass from new file locations
+    - No functional change — just file reorganization
+  out_of_scope: |
+    Large files (color, enhancement, spatial, effect, grading) — wave 2.
+    Changing any filter behavior or API.
+  technical_notes: |
+    Pattern per filter file:
+      // filters/adjustment/brightness.rs
+      use crate::node::PipelineError;
+      use crate::ops::Filter;
+
+      #[derive(Clone, rasmcore_macros::V2Filter)]
+      #[filter(name = "brightness", category = "adjustment")]
+      pub struct Brightness { pub amount: f32 }
+
+      impl Filter for Brightness { ... }
+
+      #[cfg(test)]
+      mod tests { ... }
+
+    Category mod.rs:
+      pub mod brightness;
+      pub mod contrast;
+      // ...
+      pub use brightness::Brightness;
+      pub use contrast::Contrast;
+plan:
+  - phase: "Adjustment split"
+    tasks:
+      - text: "Create filters/adjustment/ directory with mod.rs"
+        done: false
+      - text: "Extract each of the 12 adjustment filters into individual files"
+        done: false
+      - text: "Verify all adjustment tests pass"
+        done: false
+  - phase: "Alpha, evaluate, composite split"
+    tasks:
+      - text: "Split alpha.rs into filters/alpha/{add_alpha,remove_alpha,flatten,extract_alpha}.rs"
+        done: false
+      - text: "Split evaluate.rs into filters/evaluate/{add,subtract,...}.rs"
+        done: false
+      - text: "Split composite.rs into filters/composite/{premultiply,blend,...}.rs"
+        done: false
+      - text: "Verify all tests pass for split categories"
+        done: false
+  - phase: "Cleanup"
+    tasks:
+      - text: "Update top-level filters/mod.rs for new directory modules"
+        done: false
+      - text: "Remove old monolithic files"
+        done: false
+      - text: "Full test suite passes"
+        done: false
+      - text: "WASM build succeeds"
+        done: false
+      - text: "No public API change — re-exports match old paths"
+        done: false
+extra: {}

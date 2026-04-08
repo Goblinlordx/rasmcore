@@ -1,0 +1,78 @@
+id: filter-shared-helpers_20260408000900Z
+title: "Extract shared filter helpers — luminance, HSL, GPU params"
+type: refactor
+status: pending
+created: 2026-04-08
+updated: 2026-04-08
+spec:
+  summary: |
+    Create filters/helpers.rs with deduplicated luminance, HSL conversion,
+    and GPU param serialization helpers. Replace 30+ duplicated definitions
+    across 9+ filter files.
+  context: |
+    Current duplication across filter files:
+    - luminance/luma: 5 independent definitions (effect, enhancement, edge, composite, grading)
+    - rgb_to_hsl/hsl_to_rgb: 3 copies (color, grading, scope/analysis)
+    - gpu_params_wh/gpu_push_f32/gpu_push_u32: 9 files with identical copies
+
+    grading.rs has a comment: "We duplicate these small helpers here to avoid
+    making color module internals pub." This track solves that by creating a
+    dedicated helpers module.
+  codebase_analysis: |
+    Extraction targets:
+    1. pub fn luminance(r, g, b) -> f32 (BT.709: 0.2126R + 0.7152G + 0.0722B)
+       Used in: effect.rs, enhancement.rs, edge.rs, composite.rs, grading.rs
+    2. pub fn rgb_to_hsl(r, g, b) -> (f32, f32, f32)
+       pub fn hsl_to_rgb(h, s, l) -> (f32, f32, f32)
+       Used in: color.rs, grading.rs, scope.rs, analysis.rs
+    3. pub fn gpu_params_wh(w, h) -> Vec<u8>
+       pub fn gpu_push_f32(buf, v)
+       pub fn gpu_push_u32(buf, v)
+       Used in: generator, alpha, analysis, distortion, draw, effect, mask, morphology, tool
+  acceptance_criteria:
+    - filters/helpers.rs created with all shared functions
+    - All 30+ duplicate definitions replaced with imports from helpers
+    - No functional change — output identical for all filters
+    - All existing tests pass
+    - WASM build succeeds
+  out_of_scope: |
+    Splitting filter files into individual files (wave 1/2 tracks).
+    Changing any filter behavior.
+  technical_notes: |
+    New file: src/filters/helpers.rs
+    Added to mod.rs: pub mod helpers;
+
+    Each filter file changes from:
+      fn luminance(r: f32, g: f32, b: f32) -> f32 { ... }
+    to:
+      use super::helpers::luminance;
+
+    The hsl_to_rgb helper also needs hue_to_rgb extracted (internal helper).
+plan:
+  - phase: "Create helpers module"
+    tasks:
+      - text: "Create filters/helpers.rs with luminance, rgb_to_hsl, hsl_to_rgb"
+        done: false
+      - text: "Add GPU param helpers (gpu_params_wh, gpu_push_f32, gpu_push_u32)"
+        done: false
+      - text: "Add convolve3x3 and sample_luma (from edge.rs)"
+        done: false
+      - text: "Unit tests for all helper functions"
+        done: false
+  - phase: "Replace duplicates"
+    tasks:
+      - text: "Replace luminance/luma duplicates in effect, enhancement, edge, composite, grading"
+        done: false
+      - text: "Replace HSL duplicates in color, grading, scope, analysis"
+        done: false
+      - text: "Replace GPU param duplicates in all 9 files"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "All existing filter tests pass unchanged"
+        done: false
+      - text: "No functional change — diff shows only import changes"
+        done: false
+      - text: "WASM build succeeds"
+        done: false
+extra: {}

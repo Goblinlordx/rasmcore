@@ -1,0 +1,11 @@
+title: Split filter files — wave 2 (color, enhancement, spatial, effect, grading +
+  remaining)
+status: pending
+type: refactor
+approved: false
+created: '2026-04-08'
+updated: '2026-04-08'
+deps:
+- filter-split-wave1_20260408001000Z
+- perceptual-saturation_20260408000100Z
+- cie-white-balance_20260408000200Z
