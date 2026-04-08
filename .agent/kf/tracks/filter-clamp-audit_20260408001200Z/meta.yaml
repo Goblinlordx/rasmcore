@@ -1,0 +1,8 @@
+title: Audit and remove inappropriate [0,1] clamping from all filters
+status: pending
+type: refactor
+approved: false
+created: '2026-04-08'
+updated: '2026-04-08'
+deps:
+- filter-split-wave2_20260408001100Z

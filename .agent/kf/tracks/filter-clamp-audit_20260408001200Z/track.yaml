@@ -1,0 +1,141 @@
+id: filter-clamp-audit_20260408001200Z
+title: "Audit and remove inappropriate [0,1] clamping from all filters"
+type: refactor
+status: pending
+created: 2026-04-08
+updated: 2026-04-08
+spec:
+  summary: |
+    Systematic audit of all ~103 clamp sites across filter implementations.
+    Remove mid-pipeline clamping that destroys scene-referred linear HDR data.
+    Preserve only legitimate clamps (interpolation weights, color model
+    constraints, alpha bounds).
+  context: |
+    The V2 pipeline is scene-referred linear f32 — pixel values are unbounded.
+    Values > 1.0 (HDR highlights, specular) and < 0.0 (difference mattes,
+    displacement) are valid and must not be destroyed mid-pipeline. Clamping
+    to [0,1] should only happen at the encode boundary (PNG, JPEG output).
+
+    Professional tools (Nuke, Resolve, Flame, Houdini) never clamp
+    mid-pipeline. This is fundamental to scene-referred compositing.
+
+    Current state: 103 clamp sites found across filter files.
+    Breakdown from audit:
+    - 6 legitimate (interpolation weights, alpha bounds) — KEEP
+    - 33 HSL model constraints (S,L in [0,1]) — KEEP until OKLCH migration
+    - 7 histogram binning (quantize to 256 bins) — FIX gracefully
+    - 31 pixel value clamping in compute paths — REMOVE
+    - 26 additional .min(1.0)/.max(0.0) caps — AUDIT each
+
+    The blend modes track already fixed composite.rs. This track covers
+    the remaining files: edge, effect, enhancement, grading, color, spatial.
+
+    After the filter-split tracks complete, each filter is in its own file,
+    making this audit straightforward — one file, one filter, one review.
+  codebase_analysis: |
+    Known wrong clamps by file (post-split these become per-filter):
+
+    edge.rs:
+    - sobel/scharr: gradient magnitude clamped — should be unbounded
+    - laplacian: output clamped — should be unbounded
+    - otsu/triangle: luma clamped before histogram — should handle >1.0
+
+    effect.rs:
+    - charcoal/emboss: luma clamped — should be unbounded
+    - oil_paint: output clamped
+
+    enhancement.rs:
+    - histogram binning: pixel.clamp(0.0, 1.0) * 255.0 — values >1.0
+      should map to bin 255, not be clamped first
+    - clarity/shadow_highlight: luma clamped — should be unbounded
+    - retinex: blurred_luma clamped
+
+    grading.rs:
+    - LGG: output clamped — destroys HDR. Professional LGG is unbounded.
+    - split_toning: output clamped
+    - hue_vs_sat: HSL constraints (keep until OKLCH)
+
+    color.rs:
+    - sepia: .min(1.0) on matrix result — should allow >1.0
+    - modulate: HSL lightness clamped (keep until OKLCH)
+  acceptance_criteria:
+    - Every .clamp(0.0, 1.0) in filter compute paths audited
+    - Every .min(1.0) and .max(0.0) on pixel values audited
+    - Wrong clamps removed with documented rationale per filter
+    - Histogram binning handles values >1.0 gracefully (map to last bin)
+    - HSL model clamps documented as kept-until-OKLCH
+    - Legitimate clamps documented as intentionally kept
+    - New tests with HDR input values for each fixed filter
+    - All existing tests pass (some updated for unclamped output)
+    - AUDIT.md produced listing every clamp site and its disposition
+  out_of_scope: |
+    HSL-to-OKLCH migration (separate perceptual-saturation track).
+    GPU shader clamp audit (separate pass after CPU is correct).
+    Adding new HDR-specific filter behavior.
+  technical_notes: |
+    Per-clamp disposition categories:
+
+    REMOVE — pixel value clamping in compute path. Replace with unbounded math.
+    Example: edge.rs sobel gradient magnitude — just remove .clamp(0.0, 1.0)
+
+    FIX — histogram binning. Change from:
+      let bin = (pixel[c].clamp(0.0, 1.0) * 255.0) as usize;
+    to:
+      let bin = (pixel[c].max(0.0).min(1.0) * 255.0) as usize;
+    Wait — that is still clamping. Better:
+      let bin = ((pixel[c] * 255.0).round() as usize).min(255);
+    This maps >1.0 to bin 255 and <0.0 to bin 0 without clamping the pixel.
+
+    KEEP — interpolation weights, alpha [0,1], HSL S/L in [0,1].
+    These are genuinely bounded values, not pixel data.
+
+    DOCUMENT — each decision recorded in AUDIT.md for review.
+
+    After split, each filter file is ~50-150 lines. Auditing one at a time
+    is fast and safe. Each fix gets its own test with HDR input.
+plan:
+  - phase: "Audit inventory"
+    tasks:
+      - text: "Grep all .clamp(0.0, 1.0), .min(1.0), .max(0.0) in filter files"
+        done: false
+      - text: "Categorize each as REMOVE, FIX, KEEP with rationale"
+        done: false
+      - text: "Create AUDIT.md with per-filter clamp disposition"
+        done: false
+  - phase: "Fix edge and effect filters"
+    tasks:
+      - text: "Remove gradient magnitude clamps from sobel, scharr, laplacian"
+        done: false
+      - text: "Remove luma clamps from charcoal, emboss, oil_paint"
+        done: false
+      - text: "Add HDR tests for each fixed filter"
+        done: false
+  - phase: "Fix enhancement filters"
+    tasks:
+      - text: "Fix histogram binning to handle >1.0 gracefully (map to bin 255)"
+        done: false
+      - text: "Remove luma clamps from clarity, shadow_highlight, retinex"
+        done: false
+      - text: "Add HDR tests for each fixed filter"
+        done: false
+  - phase: "Fix grading and color filters"
+    tasks:
+      - text: "Remove output clamp from LGG (gain * gammaed should be unbounded)"
+        done: false
+      - text: "Remove output clamp from split_toning"
+        done: false
+      - text: "Remove .min(1.0) from sepia matrix result"
+        done: false
+      - text: "Document HSL clamps as kept-until-OKLCH"
+        done: false
+      - text: "Add HDR tests for each fixed filter"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "All existing tests pass (update expected values where output was previously clamped)"
+        done: false
+      - text: "AUDIT.md complete with every clamp site dispositioned"
+        done: false
+      - text: "WASM build succeeds"
+        done: false
+extra: {}
