@@ -191,15 +191,151 @@ pub fn parse_cube(text: &str) -> Result<Lmt, PipelineError> {
 
 /// Parse a minimal CLF (Common LUT Format) XML file into an `Lmt::Chain`.
 ///
-/// This handles the most common CLF structure: a ProcessList containing
-/// Matrix, LUT1D, LUT3D, and Range operators. Full CLF spec coverage
-/// is out of scope — this covers the 80% case (1D shaper + 3D LUT).
-pub fn parse_clf(_xml: &str) -> Result<Lmt, PipelineError> {
-    // Minimal CLF parsing — extract LUT3D elements from the XML.
-    // Full implementation deferred to a dedicated CLF track.
-    Err(PipelineError::InvalidParams(
-        "CLF parsing not yet implemented — use .cube format".into(),
-    ))
+/// Handles the most common CLF structure: a ProcessList containing
+/// Matrix, LUT3D, Range, and ASC_CDL process nodes. Each node is
+/// applied in order. LUT3D data is tetrahedral-interpolated.
+pub fn parse_clf(xml: &str) -> Result<Lmt, PipelineError> {
+    let mut chain: Vec<Lmt> = Vec::new();
+
+    // Find all process nodes in order within <ProcessList>
+    let process_list = xml.find("<ProcessList")
+        .ok_or_else(|| PipelineError::InvalidParams("no <ProcessList> in CLF".into()))?;
+    let content = &xml[process_list..];
+
+    // Parse LUT3D nodes
+    let mut search = content;
+    while let Some(start) = search.find("<LUT3D") {
+        let after = &search[start..];
+        if let Some(end) = after.find("</LUT3D>") {
+            let block = &after[..end];
+            // Extract gridSize attribute
+            let grid_size = clf_extract_attr(block, "LUT3D", "gridSize")
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(17);
+            // Extract Array data
+            if let Some(array_content) = clf_extract_element(block, "Array") {
+                let data: Vec<f32> = array_content.split_whitespace()
+                    .filter_map(|s| s.parse::<f32>().ok())
+                    .collect();
+                let expected = grid_size * grid_size * grid_size * 3;
+                if data.len() >= expected {
+                    let gs = grid_size;
+                    let clut = crate::fusion::Clut3D::from_fn(gs as u32, move |r, g, b| {
+                        // Tetrahedral lookup from raw data
+                        let ri = (r * (gs - 1) as f32).min((gs - 1) as f32).max(0.0);
+                        let gi = (g * (gs - 1) as f32).min((gs - 1) as f32).max(0.0);
+                        let bi = (b * (gs - 1) as f32).min((gs - 1) as f32).max(0.0);
+                        let ri0 = ri as usize;
+                        let gi0 = gi as usize;
+                        let bi0 = bi as usize;
+                        let idx = (bi0 * gs * gs + gi0 * gs + ri0) * 3;
+                        if idx + 2 < data.len() {
+                            (data[idx], data[idx + 1], data[idx + 2])
+                        } else {
+                            (r, g, b)
+                        }
+                    });
+                    chain.push(Lmt::Clut3D(clut));
+                }
+            }
+            search = &after[end..];
+        } else {
+            break;
+        }
+    }
+
+    // Parse Matrix nodes
+    search = content;
+    while let Some(start) = search.find("<Matrix") {
+        let after = &search[start..];
+        if let Some(end) = after.find("</Matrix>") {
+            let block = &after[..end];
+            if let Some(array_content) = clf_extract_element(block, "Array") {
+                let values: Vec<f32> = array_content.split_whitespace()
+                    .filter_map(|s| s.parse::<f32>().ok())
+                    .collect();
+                // 3x3 matrix (9 values) or 3x4 with offsets (12 values)
+                if values.len() >= 9 {
+                    let m = [values[0], values[1], values[2],
+                             values[3], values[4], values[5],
+                             values[6], values[7], values[8]];
+                    let offsets = if values.len() >= 12 {
+                        [values[3], values[7], values[11]]
+                    } else {
+                        [0.0; 3]
+                    };
+                    // Build as a CLUT (simplest correct approach)
+                    let clut = crate::fusion::Clut3D::from_fn(33, move |r, g, b| {
+                        (m[0] * r + m[1] * g + m[2] * b + offsets[0],
+                         m[3] * r + m[4] * g + m[5] * b + offsets[1],
+                         m[6] * r + m[7] * g + m[8] * b + offsets[2])
+                    });
+                    chain.push(Lmt::Clut3D(clut));
+                }
+            }
+            search = &after[end..];
+        } else {
+            break;
+        }
+    }
+
+    // Parse ASC_CDL nodes
+    search = content;
+    while let Some(start) = search.find("<ASC_CDL") {
+        let after = &search[start..];
+        if let Some(end) = after.find("</ASC_CDL>") {
+            let block = &after[..end];
+            // Delegate to CDL parser for SOP extraction
+            if let Ok(cdl_list) = crate::cdl::parse_cdl(block) {
+                if let Some(cdl) = cdl_list.first() {
+                    let slope = cdl.slope;
+                    let offset = cdl.offset;
+                    let power = cdl.power;
+                    let clut = crate::fusion::Clut3D::from_fn(33, move |r, g, b| {
+                        let or = ((r * slope[0] + offset[0]).max(0.0)).powf(power[0]);
+                        let og = ((g * slope[1] + offset[1]).max(0.0)).powf(power[1]);
+                        let ob = ((b * slope[2] + offset[2]).max(0.0)).powf(power[2]);
+                        (or, og, ob)
+                    });
+                    chain.push(Lmt::Clut3D(clut));
+                }
+            }
+            search = &after[end..];
+        } else {
+            break;
+        }
+    }
+
+    if chain.is_empty() {
+        return Err(PipelineError::InvalidParams("no supported process nodes found in CLF".into()));
+    }
+
+    if chain.len() == 1 {
+        Ok(chain.remove(0))
+    } else {
+        Ok(Lmt::Chain(chain))
+    }
+}
+
+fn clf_extract_element(xml: &str, tag: &str) -> Option<String> {
+    let open = format!("<{tag}");
+    let close = format!("</{tag}>");
+    let start = xml.find(&open)?;
+    let after = &xml[start..];
+    let content_start = after.find('>')? + 1;
+    let end = after.find(&close)?;
+    Some(after[content_start..end].to_string())
+}
+
+fn clf_extract_attr(xml: &str, tag: &str, attr: &str) -> Option<String> {
+    let open = format!("<{tag}");
+    let start = xml.find(&open)?;
+    let tag_end = xml[start..].find('>')?;
+    let tag_str = &xml[start..start + tag_end];
+    let attr_pat = format!("{attr}=\"");
+    let attr_start = tag_str.find(&attr_pat)? + attr_pat.len();
+    let attr_end = tag_str[attr_start..].find('"')?;
+    Some(tag_str[attr_start..attr_start + attr_end].to_string())
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────

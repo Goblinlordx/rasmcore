@@ -104,7 +104,7 @@ pub struct TransformPresetInfo {
 
 /// All built-in transform presets.
 pub fn preset_list() -> Vec<TransformPresetInfo> {
-    vec![
+    let mut presets = vec![
         // IDTs — source → ACES (one-directional)
         TransformPresetInfo { name: "idt-srgb", display_name: "sRGB (IDT)", kind: TransformKind::Idt, source_space: "sRGB", target_space: "ACEScg", vendor: "Academy", description: "sRGB/Rec.709 input to ACEScg" },
         TransformPresetInfo { name: "idt-rec709", display_name: "Rec.709 (IDT)", kind: TransformKind::Idt, source_space: "Rec.709", target_space: "ACEScg", vendor: "Academy", description: "Rec.709 input to ACEScg" },
@@ -120,7 +120,10 @@ pub fn preset_list() -> Vec<TransformPresetInfo> {
         TransformPresetInfo { name: "csc-acescct-to-cg", display_name: "ACEScct to ACEScg", kind: TransformKind::Csc, source_space: "ACEScct", target_space: "ACEScg", vendor: "Academy", description: "Log to linear compositing space" },
         // Utility
         TransformPresetInfo { name: "identity", display_name: "Identity", kind: TransformKind::Lmt, source_space: "any", target_space: "any", vendor: "Academy", description: "Passthrough (no-op)" },
-    ]
+    ];
+    // Add camera IDT presets
+    presets.extend(crate::camera_idt::camera_preset_list());
+    presets
 }
 
 /// Load a built-in preset by name.
@@ -182,6 +185,11 @@ pub fn load_preset(name: &str) -> Result<ColorTransform, PipelineError> {
         "csc-acescct-to-cg" => Ok(csc_preset(name, ColorSpace::AcesCct, ColorSpace::AcesCg, TransformKind::Csc)),
         // Utility
         "identity" => Ok(csc_preset(name, ColorSpace::Linear, ColorSpace::Linear, TransformKind::Lmt)),
+        // Camera IDTs
+        name if name.starts_with("idt-arri-") || name.starts_with("idt-sony-")
+            || name.starts_with("idt-red-") || name.starts_with("idt-bmd-") => {
+            crate::camera_idt::load_camera_preset(name)
+        }
         _ => Err(PipelineError::InvalidParams(format!("unknown transform preset: {name}"))),
     }
 }
@@ -195,8 +203,14 @@ pub fn parse_transform(data: &[u8], format_hint: Option<&str>) -> Result<ColorTr
     let format = format_hint.unwrap_or_else(|| {
         if text.contains("LUT_3D_SIZE") || text.contains("LUT_1D_SIZE") {
             "cube"
-        } else if text.trim_start().starts_with("<?xml") || text.contains("<ProcessList") {
+        } else if text.contains("<ProcessList") {
             "clf"
+        } else if text.contains("<ColorCorrection") || text.contains("<ColorDecisionList")
+            || text.contains("<ColorCorrectionCollection") || text.contains("<SOPNode") {
+            "cdl"
+        } else if text.trim_start().starts_with("<?xml") {
+            // Generic XML — could be CLF or CDL, check further
+            if text.contains("<ProcessList") { "clf" } else { "cdl" }
         } else {
             "unknown"
         }
@@ -221,6 +235,22 @@ pub fn parse_transform(data: &[u8], format_hint: Option<&str>) -> Result<ColorTr
                 source_space: ColorSpace::Linear,
                 target_space: ColorSpace::Linear,
                 inner: ColorTransformInner::Lmt(lmt),
+            })
+        }
+        "cdl" => {
+            let cdl_list = crate::cdl::parse_cdl(text)?;
+            let cdl = &cdl_list[0]; // Use first correction
+            Ok(ColorTransform {
+                name: cdl.id.clone().unwrap_or_else(|| "custom-cdl".into()),
+                kind: TransformKind::Cdl,
+                source_space: ColorSpace::Linear,
+                target_space: ColorSpace::Linear,
+                inner: ColorTransformInner::Cdl {
+                    slope: cdl.slope,
+                    offset: cdl.offset,
+                    power: cdl.power,
+                    saturation: cdl.saturation,
+                },
             })
         }
         _ => Err(PipelineError::InvalidParams(format!("unsupported transform format: {format}"))),
