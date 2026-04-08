@@ -8,38 +8,7 @@ use crate::node::PipelineError;
 use crate::ops::Filter;
 use std::f32::consts::PI;
 
-// ─── Bilinear sampling helper ──────────────────────────────────────────────
-
-#[inline(always)]
-fn sample_bilinear(input: &[f32], width: u32, height: u32, fx: f32, fy: f32) -> [f32; 4] {
-    let ix = fx.floor() as i32;
-    let iy = fy.floor() as i32;
-    let dx = fx - ix as f32;
-    let dy = fy - iy as f32;
-
-    let x0 = ix.max(0).min(width as i32 - 1) as usize;
-    let x1 = (ix + 1).max(0).min(width as i32 - 1) as usize;
-    let y0 = iy.max(0).min(height as i32 - 1) as usize;
-    let y1 = (iy + 1).max(0).min(height as i32 - 1) as usize;
-
-    let w = width as usize;
-    let i00 = (y0 * w + x0) * 4;
-    let i10 = (y0 * w + x1) * 4;
-    let i01 = (y1 * w + x0) * 4;
-    let i11 = (y1 * w + x1) * 4;
-
-    let mut out = [0.0f32; 4];
-    for c in 0..4 {
-        let p00 = input[i00 + c];
-        let p10 = input[i10 + c];
-        let p01 = input[i01 + c];
-        let p11 = input[i11 + c];
-        let top = p00 + dx * (p10 - p00);
-        let bot = p01 + dx * (p11 - p01);
-        out[c] = top + dy * (bot - top);
-    }
-    out
-}
+use super::helpers::{gpu_params_wh, sample_bilinear};
 
 /// WGSL bilinear sampling helper — prepended to each distortion shader.
 const SAMPLE_BILINEAR_WGSL: &str = r#"
@@ -61,13 +30,6 @@ fn sample_bilinear_f32(fx: f32, fy: f32) -> vec4<f32> {
 "#;
 
 // ─── GPU param helpers ─────────────────────────────────────────────────────
-
-fn gpu_params_wh(width: u32, height: u32) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(32);
-    buf.extend_from_slice(&width.to_le_bytes());
-    buf.extend_from_slice(&height.to_le_bytes());
-    buf
-}
 
 fn gpu_params_push_f32(buf: &mut Vec<u8>, v: f32) {
     buf.extend_from_slice(&v.to_le_bytes());

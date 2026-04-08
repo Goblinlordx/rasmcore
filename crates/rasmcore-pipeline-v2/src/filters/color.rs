@@ -16,72 +16,7 @@ use crate::node::PipelineError;
 use crate::noise;
 use crate::ops::{Filter, GpuFilter};
 
-// ─── Color Space Helpers ───────────────────────────────────────────────────
-
-/// RGB [0,1] → HSL (H in [0,360], S in [0,1], L in [0,1]).
-fn rgb_to_hsl(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
-    let max = r.max(g).max(b);
-    let min = r.min(g).min(b);
-    let l = (max + min) * 0.5;
-    if (max - min).abs() < 1e-7 {
-        return (0.0, 0.0, l);
-    }
-    let d = max - min;
-    let s = if l > 0.5 {
-        d / (2.0 - max - min)
-    } else {
-        d / (max + min)
-    };
-    let h = if (max - r).abs() < 1e-7 {
-        let mut h = (g - b) / d;
-        if g < b {
-            h += 6.0;
-        }
-        h * 60.0
-    } else if (max - g).abs() < 1e-7 {
-        ((b - r) / d + 2.0) * 60.0
-    } else {
-        ((r - g) / d + 4.0) * 60.0
-    };
-    (h, s, l)
-}
-
-/// HSL → RGB [0,1].
-fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (f32, f32, f32) {
-    if s.abs() < 1e-7 {
-        return (l, l, l);
-    }
-    let q = if l < 0.5 {
-        l * (1.0 + s)
-    } else {
-        l + s - l * s
-    };
-    let p = 2.0 * l - q;
-    let h_norm = h / 360.0;
-    let r = hue_to_rgb(p, q, h_norm + 1.0 / 3.0);
-    let g = hue_to_rgb(p, q, h_norm);
-    let b = hue_to_rgb(p, q, h_norm - 1.0 / 3.0);
-    (r, g, b)
-}
-
-fn hue_to_rgb(p: f32, q: f32, mut t: f32) -> f32 {
-    if t < 0.0 {
-        t += 1.0;
-    }
-    if t > 1.0 {
-        t -= 1.0;
-    }
-    if t < 1.0 / 6.0 {
-        return p + (q - p) * 6.0 * t;
-    }
-    if t < 0.5 {
-        return q;
-    }
-    if t < 2.0 / 3.0 {
-        return p + (q - p) * (2.0 / 3.0 - t) * 6.0;
-    }
-    p
-}
+use super::helpers::{rgb_to_hsl, hsl_to_rgb, luminance};
 
 /// RGB [0,1] → CIE Lab (L in [0,100], a,b in ~[-128,127]).
 /// Assumes sRGB input → linearize → D65 XYZ → Lab.
@@ -158,11 +93,6 @@ fn linear_to_srgb_comp(c: f32) -> f32 {
     } else {
         1.055 * c.powf(1.0 / 2.4) - 0.055
     }
-}
-
-/// BT.709 luminance from linear RGB.
-fn bt709_luma(r: f32, g: f32, b: f32) -> f32 {
-    0.2126 * r + 0.7152 * g + 0.0722 * b
 }
 
 // ─── ClutOp Trait ──────────────────────────────────────────────────────────
@@ -419,7 +349,7 @@ impl Filter for Colorize {
         let amt = self.amount;
         let mut out = input.to_vec();
         for pixel in out.chunks_exact_mut(4) {
-            let luma = bt709_luma(pixel[0], pixel[1], pixel[2]);
+            let luma = luminance(pixel[0], pixel[1], pixel[2]);
             pixel[0] = pixel[0] + (luma * tr - pixel[0]) * amt;
             pixel[1] = pixel[1] + (luma * tg - pixel[1]) * amt;
             pixel[2] = pixel[2] + (luma * tb - pixel[2]) * amt;
@@ -436,7 +366,7 @@ impl ClutOp for Colorize {
     fn build_clut(&self) -> Clut3D {
         let (tr, tg, tb, amt) = (self.target_r, self.target_g, self.target_b, self.amount);
         Clut3D::from_fn(33, move |r, g, b| {
-            let luma = bt709_luma(r, g, b);
+            let luma = luminance(r, g, b);
             (
                 r + (luma * tr - r) * amt,
                 g + (luma * tg - g) * amt,
@@ -533,8 +463,8 @@ impl Filter for PhotoFilter {
             let mut ng = g + (fg - g) * d;
             let mut nb = b + (fb - b) * d;
             if preserve {
-                let orig_luma = bt709_luma(r, g, b);
-                let new_luma = bt709_luma(nr, ng, nb);
+                let orig_luma = luminance(r, g, b);
+                let new_luma = luminance(nr, ng, nb);
                 if new_luma > 1e-7 {
                     let scale = orig_luma / new_luma;
                     nr *= scale;
@@ -568,8 +498,8 @@ impl ClutOp for PhotoFilter {
             let mut ng = g + (fg - g) * d;
             let mut nb = b + (fb - b) * d;
             if preserve {
-                let orig_luma = bt709_luma(r, g, b);
-                let new_luma = bt709_luma(nr, ng, nb);
+                let orig_luma = luminance(r, g, b);
+                let new_luma = luminance(nr, ng, nb);
                 if new_luma > 1e-7 {
                     let scale = orig_luma / new_luma;
                     nr *= scale;
@@ -900,7 +830,7 @@ impl Filter for GradientMap {
         let lut = build_gradient_lut(&self.stops);
         let mut out = input.to_vec();
         for pixel in out.chunks_exact_mut(4) {
-            let luma = bt709_luma(pixel[0], pixel[1], pixel[2]);
+            let luma = luminance(pixel[0], pixel[1], pixel[2]);
             let idx = (luma * 255.0).round().clamp(0.0, 255.0) as usize;
             pixel[0] = lut[idx * 3];
             pixel[1] = lut[idx * 3 + 1];
@@ -2092,7 +2022,7 @@ mod tests {
         let f = GradientMap { stops };
         let input = test_pixel(0.5, 0.5, 0.5);
         let out = f.compute(&input, 1, 1).unwrap();
-        let luma = bt709_luma(0.5, 0.5, 0.5);
+        let luma = luminance(0.5, 0.5, 0.5);
         assert_rgb_close(&out, (luma, luma, luma), 0.02, "gradient bw");
     }
 

@@ -4,35 +4,7 @@
 use crate::node::{GpuShader, PipelineError};
 use crate::ops::Filter;
 
-fn gpu_params_wh(width: u32, height: u32) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(48);
-    buf.extend_from_slice(&width.to_le_bytes());
-    buf.extend_from_slice(&height.to_le_bytes());
-    buf
-}
-fn gpu_push_f32(buf: &mut Vec<u8>, v: f32) { buf.extend_from_slice(&v.to_le_bytes()); }
-fn gpu_push_u32(buf: &mut Vec<u8>, v: u32) { buf.extend_from_slice(&v.to_le_bytes()); }
-
-fn sample_bilinear(input: &[f32], width: u32, height: u32, fx: f32, fy: f32) -> [f32; 4] {
-    let ix = fx.floor() as i32;
-    let iy = fy.floor() as i32;
-    let dx = fx - ix as f32;
-    let dy = fy - iy as f32;
-    let x0 = ix.max(0).min(width as i32 - 1) as usize;
-    let x1 = (ix + 1).max(0).min(width as i32 - 1) as usize;
-    let y0 = iy.max(0).min(height as i32 - 1) as usize;
-    let y1 = (iy + 1).max(0).min(height as i32 - 1) as usize;
-    let w = width as usize;
-    let mut out = [0.0f32; 4];
-    for c in 0..4 {
-        let p00 = input[(y0 * w + x0) * 4 + c];
-        let p10 = input[(y0 * w + x1) * 4 + c];
-        let p01 = input[(y1 * w + x0) * 4 + c];
-        let p11 = input[(y1 * w + x1) * 4 + c];
-        out[c] = (p00 + dx * (p10 - p00)) + dy * ((p01 + dx * (p11 - p01)) - (p00 + dx * (p10 - p00)));
-    }
-    out
-}
+use super::helpers::{gpu_params_wh, gpu_push_f32, gpu_push_u32, sample_bilinear, hsl_to_rgb};
 
 const SAMPLE_BILINEAR_WGSL: &str = r#"
 fn sample_bilinear_f32(fx: f32, fy: f32) -> vec4<f32> {
@@ -993,19 +965,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {{
     }
 
     fn tile_overlap(&self) -> u32 { self.template_size / 2 }
-}
-
-// ─── Helpers ───────────────────────────────────────────────────────────────
-
-fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (f32, f32, f32) {
-    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
-    let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
-    let m = l - c / 2.0;
-    let (r, g, b) = match (h / 60.0) as u32 {
-        0 => (c, x, 0.0), 1 => (x, c, 0.0), 2 => (0.0, c, x),
-        3 => (0.0, x, c), 4 => (x, 0.0, c), _ => (c, 0.0, x),
-    };
-    (r + m, g + m, b + m)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

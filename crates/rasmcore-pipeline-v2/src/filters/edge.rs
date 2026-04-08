@@ -7,33 +7,7 @@
 use crate::node::{GpuShader, PipelineError};
 use crate::ops::Filter;
 
-// ─── Helpers ───────────────────────────────────────────────────────────────
-
-#[inline]
-fn luma(r: f32, g: f32, b: f32) -> f32 {
-    0.2126 * r + 0.7152 * g + 0.0722 * b
-}
-
-/// Sample luminance at (x, y) with clamped bounds.
-#[inline]
-fn sample_luma(input: &[f32], w: usize, h: usize, x: i32, y: i32) -> f32 {
-    let sx = x.clamp(0, w as i32 - 1) as usize;
-    let sy = y.clamp(0, h as i32 - 1) as usize;
-    let idx = (sy * w + sx) * 4;
-    luma(input[idx], input[idx + 1], input[idx + 2])
-}
-
-/// Apply 3x3 convolution kernel at (cx, cy) on luminance channel.
-#[inline]
-fn convolve3x3(input: &[f32], w: usize, h: usize, cx: i32, cy: i32, kernel: &[f32; 9]) -> f32 {
-    let mut sum = 0.0f32;
-    for ky in 0..3i32 {
-        for kx in 0..3i32 {
-            sum += sample_luma(input, w, h, cx + kx - 1, cy + ky - 1) * kernel[(ky * 3 + kx) as usize];
-        }
-    }
-    sum
-}
+use super::helpers::{luminance, convolve3x3};
 
 // ─── Sobel ─────────────────────────────────────────────────────────────────
 
@@ -338,7 +312,7 @@ impl Filter for ThresholdBinary {
         let t = self.threshold;
         let mut out = input.to_vec();
         for px in out.chunks_exact_mut(4) {
-            let l = luma(px[0], px[1], px[2]);
+            let l = luminance(px[0], px[1], px[2]);
             let v = if l >= t { 1.0 } else { 0.0 };
             px[0] = v; px[1] = v; px[2] = v;
         }
@@ -409,7 +383,7 @@ impl Filter for OtsuThreshold {
         // Build 256-bin luminance histogram
         let mut hist = [0u32; 256];
         for px in input.chunks_exact(4) {
-            let l = luma(px[0], px[1], px[2]).clamp(0.0, 1.0);
+            let l = luminance(px[0], px[1], px[2]).clamp(0.0, 1.0);
             hist[(l * 255.0) as usize] += 1;
         }
         // Otsu's algorithm
@@ -437,7 +411,7 @@ impl Filter for OtsuThreshold {
         // Apply
         let mut out = input.to_vec();
         for px in out.chunks_exact_mut(4) {
-            let l = luma(px[0], px[1], px[2]);
+            let l = luminance(px[0], px[1], px[2]);
             let v = if l >= threshold { 1.0 } else { 0.0 };
             px[0] = v; px[1] = v; px[2] = v;
         }
@@ -538,7 +512,7 @@ impl Filter for TriangleThreshold {
     fn compute(&self, input: &[f32], _w: u32, _h: u32) -> Result<Vec<f32>, PipelineError> {
         let mut hist = [0u32; 256];
         for px in input.chunks_exact(4) {
-            let l = luma(px[0], px[1], px[2]).clamp(0.0, 1.0);
+            let l = luminance(px[0], px[1], px[2]).clamp(0.0, 1.0);
             hist[(l * 255.0) as usize] += 1;
         }
         // Find peak
@@ -564,7 +538,7 @@ impl Filter for TriangleThreshold {
         let threshold = best_t as f32 / 255.0;
         let mut out = input.to_vec();
         for px in out.chunks_exact_mut(4) {
-            let l = luma(px[0], px[1], px[2]);
+            let l = luminance(px[0], px[1], px[2]);
             let v = if l >= threshold { 1.0 } else { 0.0 };
             px[0] = v; px[1] = v; px[2] = v;
         }
@@ -662,7 +636,7 @@ impl Filter for AdaptiveThreshold {
             let mut row_sum = 0.0f64;
             for x in 0..w {
                 let idx = (y * w + x) * 4;
-                let l = luma(input[idx], input[idx + 1], input[idx + 2]) as f64;
+                let l = luminance(input[idx], input[idx + 1], input[idx + 2]) as f64;
                 row_sum += l;
                 integral[(y + 1) * (w + 1) + (x + 1)] = row_sum + integral[y * (w + 1) + (x + 1)];
             }
@@ -681,7 +655,7 @@ impl Filter for AdaptiveThreshold {
                 let local_mean = (sum / area) as f32;
 
                 let idx = (y as usize * w + x as usize) * 4;
-                let l = luma(input[idx], input[idx + 1], input[idx + 2]);
+                let l = luminance(input[idx], input[idx + 1], input[idx + 2]);
                 let v = if l >= local_mean - offset { 1.0 } else { 0.0 };
                 out[idx] = v; out[idx + 1] = v; out[idx + 2] = v;
                 out[idx + 3] = input[idx + 3];

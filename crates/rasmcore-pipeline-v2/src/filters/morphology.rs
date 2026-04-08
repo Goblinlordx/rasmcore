@@ -7,14 +7,7 @@
 use crate::node::{GpuShader, PipelineError};
 use crate::ops::Filter;
 
-// ─── GPU helpers ───────────────────────────────────────────────────────────
-
-fn gpu_params_wh(width: u32, height: u32) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(16);
-    buf.extend_from_slice(&width.to_le_bytes());
-    buf.extend_from_slice(&height.to_le_bytes());
-    buf
-}
+use super::helpers::gpu_params_wh;
 
 fn gpu_params_push_u32(buf: &mut Vec<u8>, v: u32) {
     buf.extend_from_slice(&v.to_le_bytes());

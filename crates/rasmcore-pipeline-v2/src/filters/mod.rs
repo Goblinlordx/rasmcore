@@ -6,6 +6,7 @@
 //!
 //! No format dispatch. No u8/u16 paths. No PixelFormat. Just f32.
 
+pub mod helpers;
 pub mod adjustment;
 pub mod alpha;
 pub mod analysis;

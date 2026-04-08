@@ -17,6 +17,8 @@ use crate::registry::{
     OperationKind, ParamDescriptor, ParamMap, ParamType,
 };
 
+use super::helpers::rgb_to_hsl;
+
 // ─── ScopeNode wrapper ─────────────────────────────────────────────────────
 
 /// Node wrapper for scope filters that changes output dimensions.
@@ -134,28 +136,6 @@ fn clamp_buf(buf: &mut [f32]) {
     }
 }
 
-// ─── RGB → HSL (local, for vectorscope) ────────────────────────────────────
-
-fn rgb_to_hsl(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
-    let max = r.max(g).max(b);
-    let min = r.min(g).min(b);
-    let l = (max + min) * 0.5;
-    if (max - min).abs() < 1e-7 {
-        return (0.0, 0.0, l);
-    }
-    let d = max - min;
-    let s = if l > 0.5 { d / (2.0 - max - min) } else { d / (max + min) };
-    let h = if (max - r).abs() < 1e-7 {
-        let mut h = (g - b) / d;
-        if g < b { h += 6.0; }
-        h * 60.0
-    } else if (max - g).abs() < 1e-7 {
-        ((b - r) / d + 2.0) * 60.0
-    } else {
-        ((r - g) / d + 4.0) * 60.0
-    };
-    (h, s, l)
-}
 
 // ─── Scope implementations ─────────────────────────────────────────────────
 

@@ -14,6 +14,8 @@ use crate::node::PipelineError;
 use crate::noise;
 use crate::ops::{Filter, GpuFilter};
 
+use super::helpers::{gpu_params_wh, luminance};
+
 // PRNG and noise use the shared noise module (crate::noise).
 use noise::{Rng, SEED_GAUSSIAN_NOISE, SEED_UNIFORM_NOISE, SEED_SALT_PEPPER, SEED_POISSON_NOISE, SEED_GLITCH};
 
@@ -27,12 +29,6 @@ fn clamp_coord(v: i32, size: usize) -> usize {
     } else {
         v as usize
     }
-}
-
-/// Luminance (Rec. 709).
-#[inline]
-fn luminance(r: f32, g: f32, b: f32) -> f32 {
-    0.2126 * r + 0.7152 * g + 0.0722 * b
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -834,14 +830,6 @@ impl Filter for MirrorKaleidoscope {
 // ═══════════════════════════════════════════════════════════════════════════════
 // GPU Shaders — GpuFilter implementations for per-pixel effect filters
 // ═══════════════════════════════════════════════════════════════════════════════
-
-/// Helper: build standard params header (width, height) + extra f32/u32 fields.
-fn gpu_params_wh(width: u32, height: u32) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(8);
-    buf.extend_from_slice(&width.to_le_bytes());
-    buf.extend_from_slice(&height.to_le_bytes());
-    buf
-}
 
 fn gpu_params_push_f32(buf: &mut Vec<u8>, v: f32) {
     buf.extend_from_slice(&v.to_le_bytes());

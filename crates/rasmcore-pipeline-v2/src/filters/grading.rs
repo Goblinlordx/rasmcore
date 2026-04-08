@@ -9,76 +9,7 @@ use crate::noise;
 use crate::ops::{Filter, GpuFilter};
 
 use super::color::ClutOp;
-
-// ─── HSL helpers (re-exported from color module internals) ─────────────────
-// We duplicate these small helpers here to avoid making color module internals pub.
-
-fn rgb_to_hsl(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
-    let max = r.max(g).max(b);
-    let min = r.min(g).min(b);
-    let l = (max + min) * 0.5;
-    if (max - min).abs() < 1e-7 {
-        return (0.0, 0.0, l);
-    }
-    let d = max - min;
-    let s = if l > 0.5 {
-        d / (2.0 - max - min)
-    } else {
-        d / (max + min)
-    };
-    let h = if (max - r).abs() < 1e-7 {
-        let mut h = (g - b) / d;
-        if g < b {
-            h += 6.0;
-        }
-        h * 60.0
-    } else if (max - g).abs() < 1e-7 {
-        ((b - r) / d + 2.0) * 60.0
-    } else {
-        ((r - g) / d + 4.0) * 60.0
-    };
-    (h, s, l)
-}
-
-fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (f32, f32, f32) {
-    if s.abs() < 1e-7 {
-        return (l, l, l);
-    }
-    let q = if l < 0.5 {
-        l * (1.0 + s)
-    } else {
-        l + s - l * s
-    };
-    let p = 2.0 * l - q;
-    let h_norm = h / 360.0;
-    let r = hue_to_rgb(p, q, h_norm + 1.0 / 3.0);
-    let g = hue_to_rgb(p, q, h_norm);
-    let b = hue_to_rgb(p, q, h_norm - 1.0 / 3.0);
-    (r, g, b)
-}
-
-fn hue_to_rgb(p: f32, q: f32, mut t: f32) -> f32 {
-    if t < 0.0 {
-        t += 1.0;
-    }
-    if t > 1.0 {
-        t -= 1.0;
-    }
-    if t < 1.0 / 6.0 {
-        return p + (q - p) * 6.0 * t;
-    }
-    if t < 0.5 {
-        return q;
-    }
-    if t < 2.0 / 3.0 {
-        return p + (q - p) * (2.0 / 3.0 - t) * 6.0;
-    }
-    p
-}
-
-fn bt709_luma(r: f32, g: f32, b: f32) -> f32 {
-    0.2126 * r + 0.7152 * g + 0.0722 * b
-}
+use super::helpers::{rgb_to_hsl, hsl_to_rgb, luminance};
 
 // ─── Monotone Cubic Hermite Spline ─────────────────────────────────────────
 
@@ -354,7 +285,7 @@ fn asc_cdl_pixel(r: f32, g: f32, b: f32, cdl: &AscCdl) -> (f32, f32, f32) {
     let mut og = ((g * cdl.slope[1] + cdl.offset[1]).max(0.0)).powf(cdl.power[1]);
     let mut ob = ((b * cdl.slope[2] + cdl.offset[2]).max(0.0)).powf(cdl.power[2]);
     if cdl.saturation != 1.0 {
-        let luma = bt709_luma(or, og, ob);
+        let luma = luminance(or, og, ob);
         or = luma + (or - luma) * cdl.saturation;
         og = luma + (og - luma) * cdl.saturation;
         ob = luma + (ob - luma) * cdl.saturation;
@@ -454,7 +385,7 @@ impl Filter for SplitToning {
 }
 
 fn split_toning_pixel(r: f32, g: f32, b: f32, st: &SplitToning) -> (f32, f32, f32) {
-    let luma = bt709_luma(r, g, b);
+    let luma = luminance(r, g, b);
     let midpoint = 0.5 + st.balance * 0.5;
     let shadow_w = (1.0 - luma / midpoint.max(0.001)).clamp(0.0, 1.0) * st.strength;
     let highlight_w = ((luma - midpoint) / (1.0 - midpoint).max(0.001)).clamp(0.0, 1.0) * st.strength;
@@ -894,7 +825,7 @@ impl Filter for FilmGrain {
                 let sx = (x as f32 * inv_size) as u32;
                 let sy = (y as f32 * inv_size) as u32;
                 let (r, g, b) = (out[idx], out[idx + 1], out[idx + 2]);
-                let luma = bt709_luma(r, g, b);
+                let luma = luminance(r, g, b);
                 let intensity = 4.0 * luma * (1.0 - luma) * self.amount;
                 if self.color {
                     out[idx] = r + noise::noise_2d(sx, sy, seed) * intensity;

@@ -13,13 +13,9 @@ use crate::filters::spatial::GaussianBlur;
 use crate::node::PipelineError;
 use crate::ops::{Filter, GpuFilter};
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+use super::helpers::luminance;
 
-/// Luminance (Rec. 709) from f32 RGB.
-#[inline]
-fn luminance(r: f32, g: f32, b: f32) -> f32 {
-    0.2126 * r + 0.7152 * g + 0.0722 * b
-}
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
 /// Reflect-boundary coordinate clamping.
 #[inline]
