@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- IDT: Display P3 to ACEScg (AP1 linear, D60) -->
+<!-- Source: Academy (A.M.P.A.S.) — see licenses/ACES.txt -->
+<!-- Pipeline: sRGB-style EOTF (gamma→linear) → 3x3 matrix (P3 D65 → AP1 D60) -->
+<ProcessList id="IDT.DisplayP3_to_ACEScg" compCLFversion="3.0">
+    <Description>Display P3 to ACEScg — Input Device Transform</Description>
+    <!-- Step 1: sRGB-style EOTF (linearize — same curve as sRGB for desktop P3) -->
+    <Exponent inBitDepth="32f" outBitDepth="32f" style="monCurveFwd">
+        <ExponentParams exponent="2.4" offset="0.055" />
+    </Exponent>
+    <!-- Step 2: Display P3 (D65) linear → ACEScg (AP1, D60) via Bradford adaptation -->
+    <Matrix inBitDepth="32f" outBitDepth="32f">
+        <Array dim="3 3">
+             0.7439910823  0.2139564552  0.0420524625
+             0.0479591298  0.9361694813  0.0158713889
+             0.0054556939  0.0408940365  0.9536502696
+        </Array>
+    </Matrix>
+</ProcessList>

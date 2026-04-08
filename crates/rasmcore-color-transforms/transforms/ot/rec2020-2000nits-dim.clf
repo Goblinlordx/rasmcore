@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- OT: ACEScg to Rec.2020 (2000 nits, dim surround — premium HDR) -->
+<!-- Source: Academy (A.M.P.A.S.) — see licenses/ACES.txt -->
+<!-- WARNING: Simplified CSC without the ACES RRT/OT tonescale. -->
+<!-- For HDR, the tonescale is essential — this placeholder just does the -->
+<!-- color space conversion and EOTF encoding, which will clip highlights. -->
+<!-- The proper ACES 2.0 Output Transform will be added in a future track. -->
+<!-- NOTE: ST.2084 PQ EOTF requires a custom implementation; CLF has no -->
+<!-- native PQ node type. The Range clamp below is a placeholder. -->
+<ProcessList id="OT.ACEScg_to_Rec2020_PQ_2000nits" compCLFversion="3.0">
+    <Description>ACEScg to Rec.2020 PQ — Premium HDR (2000 nits, placeholder)</Description>
+    <!-- ACEScg (AP1, D60) → Rec.2020 (D65) linear -->
+    <Matrix inBitDepth="32f" outBitDepth="32f">
+        <Array dim="3 3">
+             1.0258259492 -0.0200303975 -0.0057955517
+            -0.0022343763  1.0045867917 -0.0023524155
+            -0.0050148987 -0.0252946498  1.0303095484
+        </Array>
+    </Matrix>
+    <!-- Placeholder: clamp to 0-1 range (PQ encoding not yet implemented) -->
+    <!-- Actual ST.2084 PQ curve maps 0-10000 nits; 2000 nits peak needs -->
+    <!-- linear scaling to 0.2 of PQ range before the perceptual curve. -->
+    <Range inBitDepth="32f" outBitDepth="32f">
+        <minInValue>0</minInValue>
+        <maxInValue>1</maxInValue>
+        <minOutValue>0</minOutValue>
+        <maxOutValue>1</maxOutValue>
+    </Range>
+</ProcessList>

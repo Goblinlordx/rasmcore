@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- OT: ACEScg to Display P3 (1000 nits, dim surround — HDR grading monitor) -->
+<!-- Source: Academy (A.M.P.A.S.) — see licenses/ACES.txt -->
+<!-- WARNING: Simplified CSC without the ACES RRT/OT tonescale. -->
+<!-- For HDR, the tonescale is essential — this placeholder just does the -->
+<!-- color space conversion and EOTF encoding, which will clip highlights. -->
+<!-- The proper ACES 2.0 Output Transform will be added in a future track. -->
+<!-- NOTE: ST.2084 PQ EOTF requires a custom implementation; CLF has no -->
+<!-- native PQ node type. The Range clamp below is a placeholder. -->
+<ProcessList id="OT.ACEScg_to_P3_PQ_1000nits" compCLFversion="3.0">
+    <Description>ACEScg to Display P3 PQ — HDR Grading Monitor (1000 nits, placeholder)</Description>
+    <!-- ACEScg (AP1, D60) → Display P3 (D65) linear -->
+    <Matrix inBitDepth="32f" outBitDepth="32f">
+        <Array dim="3 3">
+             1.3792570829 -0.3088597927 -0.0703972902
+            -0.0693074927  1.0822531590 -0.0129456663
+            -0.0021534812 -0.0454593520  1.0476128332
+        </Array>
+    </Matrix>
+    <!-- Placeholder: clamp to 0-1 range (PQ encoding not yet implemented) -->
+    <!-- Actual ST.2084 PQ curve maps 0-10000 nits; 1000 nits peak needs -->
+    <!-- linear scaling to 0.1 of PQ range before the perceptual curve. -->
+    <Range inBitDepth="32f" outBitDepth="32f">
+        <minInValue>0</minInValue>
+        <maxInValue>1</maxInValue>
+        <minOutValue>0</minOutValue>
+        <maxOutValue>1</maxOutValue>
+    </Range>
+</ProcessList>

@@ -46,16 +46,76 @@ pub fn builtins() -> Vec<BuiltinTransform> {
             format: "clf", data: include_bytes!("../transforms/idt/rec709.clf"),
         },
         BuiltinTransform {
+            name: "idt-rec2020", display_name: "Rec.2020 (IDT)", kind: "idt",
+            source_space: "Rec.2020", target_space: "ACEScg", vendor: "Academy",
+            description: "Rec.2020 input to ACEScg working space",
+            format: "clf", data: include_bytes!("../transforms/idt/rec2020.clf"),
+        },
+        BuiltinTransform {
+            name: "idt-p3", display_name: "Display P3 (IDT)", kind: "idt",
+            source_space: "Display P3", target_space: "ACEScg", vendor: "Academy",
+            description: "Display P3 input to ACEScg working space",
+            format: "clf", data: include_bytes!("../transforms/idt/display-p3.clf"),
+        },
+
+        // ─── SDR Output Transforms ─────────────────────────────────────
+        BuiltinTransform {
             name: "ot-srgb", display_name: "sRGB 100 nits (OT)", kind: "ot",
             source_space: "ACEScg", target_space: "sRGB", vendor: "Academy",
-            description: "ACEScg to sRGB display (simplified, no RRT tonemap)",
+            description: "ACEScg to sRGB desktop display (100 nits, dim surround)",
             format: "clf", data: include_bytes!("../transforms/ot/srgb-100nits.clf"),
         },
         BuiltinTransform {
             name: "ot-rec709", display_name: "Rec.709 100 nits (OT)", kind: "ot",
             source_space: "ACEScg", target_space: "Rec.709", vendor: "Academy",
-            description: "ACEScg to Rec.709 display (simplified, no RRT tonemap)",
+            description: "ACEScg to Rec.709 broadcast (100 nits, dim surround)",
             format: "clf", data: include_bytes!("../transforms/ot/rec709-100nits.clf"),
+        },
+        BuiltinTransform {
+            name: "ot-p3-48nits", display_name: "P3 48 nits Cinema (OT)", kind: "ot",
+            source_space: "ACEScg", target_space: "DCI-P3", vendor: "Academy",
+            description: "ACEScg to DCI-P3 cinema theatrical (48 nits, dark surround)",
+            format: "clf", data: include_bytes!("../transforms/ot/p3-48nits-dark.clf"),
+        },
+        BuiltinTransform {
+            name: "ot-p3-100nits", display_name: "P3 100 nits Desktop (OT)", kind: "ot",
+            source_space: "ACEScg", target_space: "Display P3", vendor: "Academy",
+            description: "ACEScg to Display P3 desktop monitor (100 nits, dim surround)",
+            format: "clf", data: include_bytes!("../transforms/ot/p3-100nits-dim.clf"),
+        },
+
+        // ─── HDR Output Transforms ─────────────────────────────────────
+        // Note: These are simplified CSCs without the ACES RRT tonescale.
+        // PQ/HLG encoding is placeholder until proper implementation.
+        BuiltinTransform {
+            name: "ot-p3-1000nits", display_name: "P3 PQ 1000 nits HDR (OT)", kind: "ot",
+            source_space: "ACEScg", target_space: "P3 PQ", vendor: "Academy",
+            description: "ACEScg to P3 HDR grading monitor (1000 nits PQ, placeholder)",
+            format: "clf", data: include_bytes!("../transforms/ot/p3-1000nits-dim.clf"),
+        },
+        BuiltinTransform {
+            name: "ot-rec2020-1000nits", display_name: "Rec.2020 PQ 1000 nits HDR10 (OT)", kind: "ot",
+            source_space: "ACEScg", target_space: "Rec.2020 PQ", vendor: "Academy",
+            description: "ACEScg to Rec.2020 HDR10 (1000 nits PQ, placeholder)",
+            format: "clf", data: include_bytes!("../transforms/ot/rec2020-1000nits-dim.clf"),
+        },
+        BuiltinTransform {
+            name: "ot-rec2020-2000nits", display_name: "Rec.2020 PQ 2000 nits (OT)", kind: "ot",
+            source_space: "ACEScg", target_space: "Rec.2020 PQ", vendor: "Academy",
+            description: "ACEScg to Rec.2020 premium HDR (2000 nits PQ, placeholder)",
+            format: "clf", data: include_bytes!("../transforms/ot/rec2020-2000nits-dim.clf"),
+        },
+        BuiltinTransform {
+            name: "ot-rec2020-4000nits", display_name: "Rec.2020 PQ 4000 nits Dolby (OT)", kind: "ot",
+            source_space: "ACEScg", target_space: "Rec.2020 PQ", vendor: "Academy",
+            description: "ACEScg to Rec.2020 Dolby Cinema (4000 nits PQ, placeholder)",
+            format: "clf", data: include_bytes!("../transforms/ot/rec2020-4000nits-dim.clf"),
+        },
+        BuiltinTransform {
+            name: "ot-rec2020-hlg", display_name: "Rec.2020 HLG 1000 nits (OT)", kind: "ot",
+            source_space: "ACEScg", target_space: "Rec.2020 HLG", vendor: "Academy",
+            description: "ACEScg to Rec.2020 HLG broadcast (1000 nits, placeholder)",
+            format: "clf", data: include_bytes!("../transforms/ot/rec2020-hlg-1000nits.clf"),
         },
         BuiltinTransform {
             name: "csc-acescg-to-cct", display_name: "ACEScg to ACEScct", kind: "csc",

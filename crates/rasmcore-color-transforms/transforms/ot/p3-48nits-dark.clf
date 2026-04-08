@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- OT: ACEScg to DCI-P3 (48 nits, dark surround — cinema theatrical) -->
+<!-- Source: Academy (A.M.P.A.S.) — see licenses/ACES.txt -->
+<!-- Note: Simplified CSC without RRT tonescale. -->
+<ProcessList id="OT.ACEScg_to_P3_48nits_dark" compCLFversion="3.0">
+    <Description>ACEScg to Display P3 — Cinema Theatrical (48 nits, dark surround)</Description>
+    <!-- ACEScg (AP1, D60) → Display P3 (D65) linear -->
+    <Matrix inBitDepth="32f" outBitDepth="32f">
+        <Array dim="3 3">
+             1.3792570829 -0.3088597927 -0.0703972902
+            -0.0693074927  1.0822531590 -0.0129456663
+            -0.0021534812 -0.0454593520  1.0476128332
+        </Array>
+    </Matrix>
+    <!-- Linear → gamma 2.6 (DCI cinema standard) -->
+    <Exponent inBitDepth="32f" outBitDepth="32f" style="basicRev">
+        <ExponentParams exponent="2.6" />
+    </Exponent>
+</ProcessList>

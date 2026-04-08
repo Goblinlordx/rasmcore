@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- IDT: Rec.2020 to ACEScg (AP1 linear, D60) -->
+<!-- Source: Academy (A.M.P.A.S.) — see licenses/ACES.txt -->
+<!-- Pipeline: Rec.2020 EOTF (gamma→linear) → 3x3 matrix (Rec.2020 D65 → AP1 D60) -->
+<ProcessList id="IDT.Rec2020_to_ACEScg" compCLFversion="3.0">
+    <Description>Rec.2020 to ACEScg — Input Device Transform</Description>
+    <!-- Step 1: Rec.2020 EOTF (linearize — BT.1886 gamma 2.4) -->
+    <Exponent inBitDepth="32f" outBitDepth="32f" style="basicFwd">
+        <ExponentParams exponent="2.4" />
+    </Exponent>
+    <!-- Step 2: Rec.2020 (D65) linear → ACEScg (AP1, D60) via Bradford adaptation -->
+    <Matrix inBitDepth="32f" outBitDepth="32f">
+        <Array dim="3 3">
+             0.9726707925  0.0193827910  0.0079464165
+             0.0022252181  0.9954317523  0.0023430296
+             0.0053312673  0.0248282780  0.9698404547
+        </Array>
+    </Matrix>
+</ProcessList>
