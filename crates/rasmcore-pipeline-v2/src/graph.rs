@@ -149,6 +149,10 @@ pub struct Graph {
     refs: std::collections::HashMap<String, u32>,
     /// Graph-level working color space for auto-conversion.
     working_color_space: Option<crate::color_space::ColorSpace>,
+    /// Whether automatic IDT/OT insertion is enabled (default: true).
+    color_managed: bool,
+    /// Display output transform preset name for auto-OT insertion (default: "ot-srgb").
+    display_transform: String,
 }
 
 impl Graph {
@@ -176,6 +180,8 @@ impl Graph {
             buffer_pool: None,
             refs: std::collections::HashMap::new(),
             working_color_space: None,
+            color_managed: true,
+            display_transform: "ot-srgb".into(),
         }
     }
 
@@ -195,6 +201,8 @@ impl Graph {
             buffer_pool: None,
             refs: std::collections::HashMap::new(),
             working_color_space: None,
+            color_managed: true,
+            display_transform: "ot-srgb".into(),
         }
     }
 
@@ -212,6 +220,26 @@ impl Graph {
     /// Get the current working color space, if set.
     pub fn working_color_space(&self) -> Option<crate::color_space::ColorSpace> {
         self.working_color_space
+    }
+
+    /// Enable or disable automatic IDT/OT insertion.
+    pub fn set_color_managed(&mut self, enabled: bool) {
+        self.color_managed = enabled;
+    }
+
+    /// Whether automatic color management is enabled.
+    pub fn is_color_managed(&self) -> bool {
+        self.color_managed
+    }
+
+    /// Set the display output transform preset for auto-OT insertion.
+    pub fn set_display_transform(&mut self, preset: &str) {
+        self.display_transform = preset.into();
+    }
+
+    /// Get the current display transform preset name.
+    pub fn display_transform(&self) -> &str {
+        &self.display_transform
     }
 
     /// Acquire a pixel buffer from the pool (or allocate if no pool set).
