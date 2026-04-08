@@ -136,42 +136,68 @@ fn csc_preset(name: &str, from: ColorSpace, to: ColorSpace, kind: TransformKind)
     }
 }
 
+fn ot_preset(
+    name: &str, target: ColorSpace,
+    peak: f32, gamut: crate::aces2::LimitingPrimaries, eotf: crate::aces2::Eotf,
+) -> ColorTransform {
+    ColorTransform {
+        name: name.into(),
+        kind: TransformKind::OutputTransform,
+        source_space: ColorSpace::AcesCg,
+        target_space: target,
+        inner: ColorTransformInner::Aces2OutputTransform(
+            crate::aces2::init_aces2_ot_params(peak, gamut, eotf),
+        ),
+    }
+}
+
 pub fn load_preset(name: &str) -> Result<ColorTransform, PipelineError> {
+    use crate::aces2::{LimitingPrimaries as LP, Eotf};
     match name {
         // IDTs — source → ACEScg
         "idt-srgb" => Ok(csc_preset(name, ColorSpace::Srgb, ColorSpace::AcesCg, TransformKind::Idt)),
         "idt-rec709" => Ok(csc_preset(name, ColorSpace::Rec709, ColorSpace::AcesCg, TransformKind::Idt)),
         "idt-rec2020" => Ok(csc_preset(name, ColorSpace::Rec2020, ColorSpace::AcesCg, TransformKind::Idt)),
         "idt-p3" => Ok(csc_preset(name, ColorSpace::DisplayP3, ColorSpace::AcesCg, TransformKind::Idt)),
-        // Output Transforms — ACEScg → display (ACES 2.0 algorithmic)
-        "ot-srgb" => Ok(ColorTransform {
-            name: name.into(), kind: TransformKind::OutputTransform,
-            source_space: ColorSpace::AcesCg, target_space: ColorSpace::Srgb,
-            inner: ColorTransformInner::Aces2OutputTransform(crate::aces2::init_aces2_ot_params(
-                100.0, crate::aces2::LimitingPrimaries::Rec709, crate::aces2::Eotf::Srgb,
-            )),
-        }),
-        "ot-rec709" => Ok(ColorTransform {
-            name: name.into(), kind: TransformKind::OutputTransform,
-            source_space: ColorSpace::AcesCg, target_space: ColorSpace::Rec709,
-            inner: ColorTransformInner::Aces2OutputTransform(crate::aces2::init_aces2_ot_params(
-                100.0, crate::aces2::LimitingPrimaries::Rec709, crate::aces2::Eotf::Bt1886,
-            )),
-        }),
-        "ot-rec2020" => Ok(ColorTransform {
-            name: name.into(), kind: TransformKind::OutputTransform,
-            source_space: ColorSpace::AcesCg, target_space: ColorSpace::Rec2020,
-            inner: ColorTransformInner::Aces2OutputTransform(crate::aces2::init_aces2_ot_params(
-                100.0, crate::aces2::LimitingPrimaries::Rec2020, crate::aces2::Eotf::Bt1886,
-            )),
-        }),
-        "ot-p3" => Ok(ColorTransform {
-            name: name.into(), kind: TransformKind::OutputTransform,
-            source_space: ColorSpace::AcesCg, target_space: ColorSpace::DisplayP3,
-            inner: ColorTransformInner::Aces2OutputTransform(crate::aces2::init_aces2_ot_params(
-                100.0, crate::aces2::LimitingPrimaries::P3, crate::aces2::Eotf::Srgb,
-            )),
-        }),
+
+        // ── Output Transforms — ACES 2.0 algorithmic ──────────────────────
+
+        // SDR 100 nit
+        "ot-srgb" | "ot-sdr-rec709-srgb"
+            => Ok(ot_preset(name, ColorSpace::Srgb, 100.0, LP::Rec709, Eotf::Srgb)),
+        "ot-rec709" | "ot-sdr-rec709"
+            => Ok(ot_preset(name, ColorSpace::Rec709, 100.0, LP::Rec709, Eotf::Bt1886)),
+        "ot-p3" | "ot-sdr-p3"
+            => Ok(ot_preset(name, ColorSpace::DisplayP3, 100.0, LP::P3, Eotf::Srgb)),
+        "ot-sdr-p3-bt1886"
+            => Ok(ot_preset(name, ColorSpace::DisplayP3, 100.0, LP::P3, Eotf::Bt1886)),
+        "ot-rec2020" | "ot-sdr-rec2020"
+            => Ok(ot_preset(name, ColorSpace::Rec2020, 100.0, LP::Rec2020, Eotf::Bt1886)),
+
+        // HDR PQ — P3 gamut
+        "ot-hdr-p3-600"
+            => Ok(ot_preset(name, ColorSpace::DisplayP3, 600.0, LP::P3, Eotf::Pq)),
+        "ot-hdr-p3-1000"
+            => Ok(ot_preset(name, ColorSpace::DisplayP3, 1000.0, LP::P3, Eotf::Pq)),
+        "ot-hdr-p3-2000"
+            => Ok(ot_preset(name, ColorSpace::DisplayP3, 2000.0, LP::P3, Eotf::Pq)),
+        "ot-hdr-p3-4000"
+            => Ok(ot_preset(name, ColorSpace::DisplayP3, 4000.0, LP::P3, Eotf::Pq)),
+
+        // HDR PQ — Rec.2020 gamut
+        "ot-hdr-rec2020-600"
+            => Ok(ot_preset(name, ColorSpace::Rec2020, 600.0, LP::Rec2020, Eotf::Pq)),
+        "ot-hdr-rec2020-1000"
+            => Ok(ot_preset(name, ColorSpace::Rec2020, 1000.0, LP::Rec2020, Eotf::Pq)),
+        "ot-hdr-rec2020-2000"
+            => Ok(ot_preset(name, ColorSpace::Rec2020, 2000.0, LP::Rec2020, Eotf::Pq)),
+        "ot-hdr-rec2020-4000"
+            => Ok(ot_preset(name, ColorSpace::Rec2020, 4000.0, LP::Rec2020, Eotf::Pq)),
+
+        // HLG (BBC/NHK broadcast HDR)
+        "ot-hlg-rec2020-1000"
+            => Ok(ot_preset(name, ColorSpace::Rec2020, 1000.0, LP::Rec2020, Eotf::Hlg)),
+
         // CSCs — working space conversions
         "csc-acescg-to-cct" => Ok(csc_preset(name, ColorSpace::AcesCg, ColorSpace::AcesCct, TransformKind::Csc)),
         "csc-acescct-to-cg" => Ok(csc_preset(name, ColorSpace::AcesCct, ColorSpace::AcesCg, TransformKind::Csc)),
