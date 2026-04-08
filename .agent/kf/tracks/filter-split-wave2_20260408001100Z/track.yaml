@@ -1,88 +1,103 @@
 id: filter-split-wave2_20260408001100Z
-title: "Split filter files — wave 2 (color, enhancement, spatial, effect, grading + remaining)"
+title: Split filter files — wave 2 (color, enhancement, spatial, effect, grading + remaining)
 type: refactor
 status: pending
 created: 2026-04-08
-updated: 2026-04-08
+updated: '2026-04-08'
 spec:
-  summary: |
-    Split the 5 large category files (87 structs, 10K+ lines) plus remaining
+  summary: 'Split the 5 large category files (87 structs, 10K+ lines) plus remaining
+
     categories into one-file-per-filter structure using the pattern proven
+
     in wave 1.
-  context: |
-    After wave 1 proves the split pattern on small files, wave 2 tackles:
+
+    '
+  context: 'After wave 1 proves the split pattern on small files, wave 2 tackles:
+
     - color.rs (2413 lines, 24 filters)
+
     - enhancement.rs (2261 lines, 16 filters)
+
     - effect.rs (1792 lines, 15 filters)
+
     - grading.rs (1721 lines, 17 filters)
+
     - spatial.rs (1064 lines, 14 filters)
+
     - edge.rs (794 lines, 8 filters)
+
     - morphology.rs (878 lines, 8 filters)
+
     - distortion.rs (834 lines, 10 filters)
+
     - draw.rs (620 lines, 7 filters)
+
     - mask.rs (499 lines, 7 filters)
+
     - tool.rs (varies, 7 filters)
+
     - scope.rs (595 lines, 4 filters)
+
     - analysis.rs (varies, several filters)
 
+
     This is a high-conflict refactor — must wait for perceptual-saturation
+
     and cie-white-balance tracks which both modify color.rs.
+
+    '
   acceptance_criteria:
-    - All remaining filter files split into per-filter structure
-    - ~164 individual filter files, each self-contained
-    - All V2Filter registrations preserved
-    - All tests pass from new locations
-    - No functional change
-    - WASM build succeeds
-  out_of_scope: |
-    Changing any filter behavior.
+  - All remaining filter files split into per-filter structure
+  - ~164 individual filter files, each self-contained
+  - All V2Filter registrations preserved
+  - All tests pass from new locations
+  - No functional change
+  - WASM build succeeds
+  out_of_scope: 'Changing any filter behavior.
+
     Fixing the [0,1] clamping audit (separate track after split).
-  technical_notes: |
-    Same pattern as wave 1. The large files share internal helpers that
-    were extracted to filters/helpers.rs in the prerequisite track.
 
-    For files with local helpers used only within the category (e.g.,
-    edge.rs has convolve3x3), these become category-level helpers:
-      filters/edge/helpers.rs  (convolve3x3, sample_luma)
-      filters/edge/sobel.rs   (uses super::helpers::convolve3x3)
-
-    For grading.rs which has complex manual registrations (curves, CDL, LGG):
-    these become individual files with their registration code inline.
+    '
+  technical_notes: "Same pattern as wave 1. The large files share internal helpers that\nwere extracted to filters/helpers.rs\
+    \ in the prerequisite track.\n\nFor files with local helpers used only within the category (e.g.,\nedge.rs has convolve3x3),\
+    \ these become category-level helpers:\n  filters/edge/helpers.rs  (convolve3x3, sample_luma)\n  filters/edge/sobel.rs\
+    \   (uses super::helpers::convolve3x3)\n\nFor grading.rs which has complex manual registrations (curves, CDL, LGG):\n\
+    these become individual files with their registration code inline.\n"
 plan:
-  - phase: "Color and grading (highest line count)"
-    tasks:
-      - text: "Split color.rs — 24 filters into filters/color/*.rs"
-        done: false
-      - text: "Split grading.rs — 17 filters into filters/grading/*.rs"
-        done: false
-      - text: "Verify color and grading tests pass"
-        done: false
-  - phase: "Enhancement, effect, spatial"
-    tasks:
-      - text: "Split enhancement.rs — 16 filters"
-        done: false
-      - text: "Split effect.rs — 15 filters"
-        done: false
-      - text: "Split spatial.rs — 14 filters with gaussian_kernel_1d as category helper"
-        done: false
-      - text: "Verify all tests pass"
-        done: false
-  - phase: "Remaining categories"
-    tasks:
-      - text: "Split edge.rs with convolve3x3 as category helper"
-        done: false
-      - text: "Split morphology, distortion, draw, mask, tool, scope, analysis"
-        done: false
-      - text: "Verify all tests pass"
-        done: false
-  - phase: "Final verification"
-    tasks:
-      - text: "Full cargo test --workspace passes"
-        done: false
-      - text: "WASM build succeeds"
-        done: false
-      - text: "No public API changes — all re-exports match old paths"
-        done: false
-      - text: "Generator and scope files split (simple, few filters each)"
-        done: false
+- phase: Color and grading (highest line count)
+  tasks:
+  - text: Split color.rs — 24 filters into filters/color/*.rs
+    done: true
+  - text: Split grading.rs — 17 filters into filters/grading/*.rs
+    done: true
+  - text: Verify color and grading tests pass
+    done: true
+- phase: Enhancement, effect, spatial
+  tasks:
+  - text: Split enhancement.rs — 16 filters
+    done: true
+  - text: Split effect.rs — 15 filters
+    done: true
+  - text: Split spatial.rs — 14 filters with gaussian_kernel_1d as category helper
+    done: true
+  - text: Verify all tests pass
+    done: true
+- phase: Remaining categories
+  tasks:
+  - text: Split edge.rs with convolve3x3 as category helper
+    done: true
+  - text: Split morphology, distortion, draw, mask, tool, scope, analysis
+    done: true
+  - text: Verify all tests pass
+    done: true
+- phase: Final verification
+  tasks:
+  - text: Full cargo test --workspace passes
+    done: true
+  - text: WASM build succeeds
+    done: true
+  - text: No public API changes — all re-exports match old paths
+    done: true
+  - text: Generator and scope files split (simple, few filters each)
+    done: true
 extra: {}
