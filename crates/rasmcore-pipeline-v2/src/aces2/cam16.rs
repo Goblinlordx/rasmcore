@@ -31,6 +31,11 @@ fn post_adaptation_cone_response_fwd(v: f32) -> f32 {
     ra.copysign(v)
 }
 
+/// Inverse cone response compression (public for tonescale module).
+pub fn post_adaptation_cone_response_inv_pub(v: f32) -> f32 {
+    post_adaptation_cone_response_inv(v)
+}
+
 /// Inverse cone response compression.
 #[inline(always)]
 fn post_adaptation_cone_response_inv(v: f32) -> f32 {
