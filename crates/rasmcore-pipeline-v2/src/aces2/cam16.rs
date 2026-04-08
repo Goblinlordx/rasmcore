@@ -261,4 +261,64 @@ mod tests {
         let y_back = j_to_y(j, &p);
         assert!((y_back - y).abs() < 0.001, "Y roundtrip: {} vs {}", y_back, y);
     }
+
+    #[test]
+    fn cam16_fwd_matches_ocio_reference() {
+        use super::super::params::*;
+        let ref_dir = match reference_dir() {
+            Some(d) => d,
+            None => {
+                eprintln!("SKIP: reference vectors not found. Run ./tests/aces2-vectors/generate.sh");
+                return;
+            }
+        };
+
+        let ref_path = ref_dir.join("cam16_fwd_ap0.bin");
+        let p = init_jmh_params(&AP0_PRIMS);
+
+        // Custom validation: skip hue comparison when chroma (M) is near zero,
+        // since atan2(~0, ~0) produces numerically unstable results.
+        let vectors = load_reference_vectors(&ref_path).expect("Failed to load cam16_fwd_ap0.bin");
+        let mut pass = 0usize;
+        let mut fail = 0usize;
+        let mut max_err = 0.0f32;
+        let tolerance = 2e-3; // f32 precision — M errors up to ~0.002 for near-achromatic
+
+        for (i, v) in vectors.iter().enumerate() {
+            let actual = rgb_to_jmh(&v.input, &p);
+            let j_err = (actual[0] - v.output[0]).abs();
+            let m_err = (actual[1] - v.output[1]).abs();
+            // Only compare hue when both actual and expected M are above threshold
+            let h_err = if actual[1] > 0.1 && v.output[1] > 0.1 {
+                // Hue wraps at 360 — use circular distance
+                let dh = (actual[2] - v.output[2]).abs();
+                dh.min(360.0 - dh)
+            } else {
+                0.0 // hue undefined for achromatic
+            };
+            let vec_err = j_err.max(m_err).max(h_err);
+            max_err = max_err.max(vec_err);
+
+            if vec_err > tolerance {
+                if fail < 10 {
+                    eprintln!("  FAIL vec[{i}]: in=[{:.4},{:.4},{:.4}] J_err:{:.6} M_err:{:.6} h_err:{:.3}",
+                        v.input[0], v.input[1], v.input[2],
+                        j_err, m_err, h_err);
+                }
+                fail += 1;
+            } else {
+                pass += 1;
+            }
+        }
+
+        let (pass, fail, max_err) = (pass, fail, max_err);
+
+        eprintln!("CAM16 fwd: {pass} pass, {fail} fail, max_err={max_err:.8}");
+
+        if fail > 0 {
+            panic!("CAM16 forward: {fail}/{} vectors exceed tolerance (max_err={max_err:.8})",
+                   pass + fail);
+        }
+        assert!(pass > 0, "No reference vectors loaded");
+    }
 }
