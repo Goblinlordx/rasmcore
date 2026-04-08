@@ -282,8 +282,8 @@ impl Pipeline {
     /// the display OT when color-managed. For scene-referred formats (exr, tiff,
     /// hdr), outputs working-space pixels directly.
     pub fn write(&self, format: &str, quality: Option<u8>) -> Result<Vec<u8>, PipelineError> {
-        let is_scene_referred = matches!(format, "exr" | "tiff" | "tif" | "hdr");
-        let pixels = if self.graph.borrow().is_color_managed() && !is_scene_referred {
+        let scene_referred = v2::registry::is_scene_referred_format(format);
+        let pixels = if self.graph.borrow().is_color_managed() && !scene_referred {
             self.render_display()?
         } else {
             self.render()?

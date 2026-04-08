@@ -1322,11 +1322,16 @@ pub fn derive_v2_encoder(input: TokenStream) -> TokenStream {
     let mut mime = String::new();
     let mut extensions_str = String::new();
     let mut enc_doc_path = String::new();
+    let mut scene_referred = false;
 
     for attr in &input.attrs {
         if !attr.path().is_ident("codec") { continue; }
         let _ = attr.parse_nested_meta(|meta| {
             let key = meta.path.get_ident().unwrap().to_string();
+            if key == "scene_referred" {
+                scene_referred = true;
+                return Ok(());
+            }
             let value = meta.value()?;
             let lit: LitStr = value.parse()?;
             match key.as_str() {
@@ -1429,6 +1434,7 @@ pub fn derive_v2_encoder(input: TokenStream) -> TokenStream {
             extensions: &#ext_ident,
             params: &#params_ident,
             doc_path: #enc_doc_path,
+            scene_referred: #scene_referred,
             encode: #struct_name::encode,
         };
         inventory::submit!(&#reg_ident);

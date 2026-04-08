@@ -74,7 +74,7 @@ pub use registry::{
     ParamMap, TypedRef, FilterFactory, FilterFactoryRegistration,
     create_filter_node, registered_filter_factories,
     EncoderFactory, EncoderFactoryRegistration,
-    encode_via_registry, registered_encoders,
+    encode_via_registry, registered_encoders, is_scene_referred_format,
     DecoderFactory, DecoderFactoryRegistration, DecodedImageV2,
     decode_via_registry, decode_with_hint_via_registry, registered_decoders,
 };

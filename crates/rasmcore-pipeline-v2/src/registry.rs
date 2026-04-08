@@ -450,6 +450,11 @@ pub struct EncoderFactoryRegistration {
     pub params: &'static [ParamDescriptor],
     /// Relative path to AsciiDoc documentation file. Empty = no docs.
     pub doc_path: &'static str,
+    /// Whether this format expects scene-referred (linear) input.
+    /// When true, the pipeline skips auto-OT insertion on write().
+    /// Formats like EXR, TIFF-float, HDR are scene-referred.
+    /// Formats like PNG, JPEG, WebP are display-referred.
+    pub scene_referred: bool,
     /// Encode function.
     pub encode: EncoderFactory,
 }
@@ -469,6 +474,16 @@ pub fn encode_via_registry(
         .copied()
         .find(|r| r.name == format || r.extensions.contains(&format))
         .map(|r| (r.encode)(pixels, width, height, params))
+}
+
+/// Check if a format is scene-referred (skips OT) by querying the encoder registry.
+pub fn is_scene_referred_format(format: &str) -> bool {
+    inventory::iter::<&'static EncoderFactoryRegistration>
+        .into_iter()
+        .copied()
+        .find(|r| r.name == format || r.extensions.contains(&format))
+        .map(|r| r.scene_referred)
+        .unwrap_or(false) // unknown formats default to display-referred
 }
 
 /// List all registered encoders.
