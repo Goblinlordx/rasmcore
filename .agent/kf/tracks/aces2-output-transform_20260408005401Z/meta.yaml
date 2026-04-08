@@ -1,5 +1,5 @@
 title: Port ACES 2.0 Output Transform — Rust CPU + WGSL GPU shader
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-08'

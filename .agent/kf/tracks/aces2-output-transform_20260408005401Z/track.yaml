@@ -3,153 +3,186 @@ title: Port ACES 2.0 Output Transform — Rust CPU + WGSL GPU shader
 type: feature
 status: pending
 created: 2026-04-08
-updated: 2026-04-08
+updated: '2026-04-08'
 spec:
-  summary: |
-    Port the ACES 2.0 Output Transform algorithm from OpenColorIO C++
+  summary: 'Port the ACES 2.0 Output Transform algorithm from OpenColorIO C++
+
     (BSD-3-Clause) to Rust (CPU) and WGSL (GPU compute shader). Parametric
+
     by peak luminance and limiting primaries. Replaces simplified OT CLFs.
-  context: |
-    The ACES 2.0 Output Transform cannot be expressed as a CLF file — it
+
+    '
+  context: 'The ACES 2.0 Output Transform cannot be expressed as a CLF file — it
+
     is algorithmic, using perceptual color appearance models (JMh space
+
     based on CAM16). It must be implemented as native code.
 
+
     Source: OpenColorIO ops/fixedfunction/ACES2/Transform.cpp (~1000 lines)
+
     License: BSD-3-Clause (can port freely with attribution)
 
+
     The algorithm is entirely per-pixel with no spatial dependencies,
+
     making it ideal for GPU compute shaders. Every step (tonescale,
+
     chroma compress, gamut compress) operates independently per pixel.
 
+
     This is what makes HDR output transforms actually work — without the
+
     tonescale, highlights clip and colors saturate incorrectly. Our current
+
     simplified OT CLFs (matrix + EOTF) are insufficient for HDR.
 
+
     ACES 2.0 replaces the old ACES 1.x RRT + ODT two-stage pipeline with
+
     a single parametric Output Transform. Parameters:
+
     - peakLuminance: 100, 1000, 2000, 4000 nits
+
     - limitingPrimaries: Rec.709, P3, Rec.2020
+
     - EOTF: sRGB, BT.1886, PQ (ST.2084), HLG
-  codebase_analysis: |
-    Source code to port from:
-    OpenColorIO/src/OpenColorIO/ops/fixedfunction/ACES2/Transform.cpp
-    OpenColorIO/src/OpenColorIO/ops/fixedfunction/ACES2/Tonescale.cpp
-    OpenColorIO/src/OpenColorIO/ops/fixedfunction/ACES2/ChromaCompress.cpp
-    OpenColorIO/src/OpenColorIO/ops/fixedfunction/ACES2/GamutCompress.cpp
-    OpenColorIO/src/OpenColorIO/ops/fixedfunction/ACES2/CAM.cpp
 
-    Integration point:
-    - crates/rasmcore-pipeline-v2/src/color_transform.rs — add Aces2OutputTransform variant
-    - New shaders/aces2_ot.wgsl for GPU path
-    - ColorTransformNode already handles CPU compute and GPU shader dispatch
-
-    The algorithm pipeline (per pixel):
-    1. AP1 (ACEScg) clamp to valid range
-    2. AP1 to JMh (lightness, colorfulness, hue) via CAM16 adaptation
-    3. Tonescale: compress unbounded scene luminance to display range
-       (parametric power curve anchored at 18% grey = 10 nits)
-    4. Chroma compress: reduce colorfulness at extremes (preserve natural look)
-    5. Gamut compress: map out-of-gamut colors to display boundary
-       (hue-dependent, using precomputed cusp lookup tables)
-    6. JMh to display RGB
-    7. EOTF encoding (sRGB gamma, PQ, HLG)
-
-    31 registered output transform variants in OCIO covering SDR and HDR
-    at various peak luminances and limiting primaries.
+    '
+  codebase_analysis: "Source code to port from:\nOpenColorIO/src/OpenColorIO/ops/fixedfunction/ACES2/Transform.cpp\nOpenColorIO/src/OpenColorIO/ops/fixedfunction/ACES2/Tonescale.cpp\n\
+    OpenColorIO/src/OpenColorIO/ops/fixedfunction/ACES2/ChromaCompress.cpp\nOpenColorIO/src/OpenColorIO/ops/fixedfunction/ACES2/GamutCompress.cpp\n\
+    OpenColorIO/src/OpenColorIO/ops/fixedfunction/ACES2/CAM.cpp\n\nIntegration point:\n- crates/rasmcore-pipeline-v2/src/color_transform.rs\
+    \ — add Aces2OutputTransform variant\n- New shaders/aces2_ot.wgsl for GPU path\n- ColorTransformNode already handles CPU\
+    \ compute and GPU shader dispatch\n\nThe algorithm pipeline (per pixel):\n1. AP1 (ACEScg) clamp to valid range\n2. AP1\
+    \ to JMh (lightness, colorfulness, hue) via CAM16 adaptation\n3. Tonescale: compress unbounded scene luminance to display\
+    \ range\n   (parametric power curve anchored at 18% grey = 10 nits)\n4. Chroma compress: reduce colorfulness at extremes\
+    \ (preserve natural look)\n5. Gamut compress: map out-of-gamut colors to display boundary\n   (hue-dependent, using precomputed\
+    \ cusp lookup tables)\n6. JMh to display RGB\n7. EOTF encoding (sRGB gamma, PQ, HLG)\n\n31 registered output transform\
+    \ variants in OCIO covering SDR and HDR\nat various peak luminances and limiting primaries.\n"
   acceptance_criteria:
-    - Rust CPU implementation matches OCIO C++ output within f32 precision
-    - WGSL GPU shader produces identical output to CPU path
-    - Parametric by peak luminance (100, 1000, 2000, 4000 nits)
-    - Parametric by limiting primaries (Rec.709, P3, Rec.2020)
-    - EOTF encoding for sRGB, BT.1886, PQ (ST.2084), HLG
-    - Integrates as ColorTransformInner::Aces2OutputTransform variant
-    - GPU path via gpu_shader() on ColorTransformNode
-    - Replaces simplified OT CLFs for all SDR and HDR targets
-    - BSD-3-Clause attribution for OCIO source in licenses/
-    - Parity test against OCIO reference output for standard test colors
-  out_of_scope: |
-    ACES 1.x RRT+ODT (legacy, superseded by 2.0).
+  - Rust CPU implementation matches OCIO C++ output within f32 precision
+  - WGSL GPU shader produces identical output to CPU path
+  - Parametric by peak luminance (100, 1000, 2000, 4000 nits)
+  - Parametric by limiting primaries (Rec.709, P3, Rec.2020)
+  - EOTF encoding for sRGB, BT.1886, PQ (ST.2084), HLG
+  - Integrates as ColorTransformInner::Aces2OutputTransform variant
+  - GPU path via gpu_shader() on ColorTransformNode
+  - Replaces simplified OT CLFs for all SDR and HDR targets
+  - BSD-3-Clause attribution for OCIO source in licenses/
+  - Parity test against OCIO reference output for standard test colors
+  out_of_scope: 'ACES 1.x RRT+ODT (legacy, superseded by 2.0).
+
     Inverse output transform (for round-tripping).
+
     Custom display calibration profiles.
-  technical_notes: |
-    The ACES 2.0 OT algorithm in detail:
+
+    '
+  technical_notes: 'The ACES 2.0 OT algorithm in detail:
+
 
     Tonescale (per-pixel, per-channel after JMh decomposition):
+
     - Input: scene-referred luminance (unbounded, linear)
+
     - Output: display-referred luminance (0 to peakLuminance nits)
+
     - Parametric power function with soft rolloff
+
     - Anchor: 18% grey maps to ~10 nits (standard exposure)
 
+
     Chroma compress (per-pixel in JMh):
+
     - Reduces colorfulness at very bright/dark values
+
     - Prevents neon oversaturation in HDR
+
     - Hue-preserving — only adjusts M (colorfulness), not h (hue)
 
+
     Gamut compress (per-pixel in JMh):
+
     - Maps colors outside display gamut to the gamut boundary
+
     - Uses precomputed cusp tables (max chroma per hue at each luminance)
+
     - Hue-dependent — different compression per hue angle
+
     - This is what fixed the ACES 1.x "blue neon → purple" problem
 
+
     CAM16 conversion (RGB ↔ JMh):
+
     - Based on CIECAM16 color appearance model
+
     - Adapted for ACES with D65 viewing conditions
+
     - 3x3 matrix + nonlinear response compression
 
+
     GPU implementation:
+
     - All steps are per-pixel, no spatial dependencies
+
     - Cusp tables can be passed as small 1D texture/buffer (~360 entries)
+
     - Total: ~200-300 lines of WGSL
+
     - Expected performance: < 1ms for 4K on modern GPU
 
+
     For CPU: direct Rust port of the C++ code.
+
     For GPU: translate the same math to WGSL compute shader.
+
     Both share the same constants and cusp table data.
+
+    '
 plan:
-  - phase: Core Math (Rust CPU)
-    tasks:
-      - text: Port CAM16 RGB-to-JMh and JMh-to-RGB from OCIO Transform.cpp
-        done: false
-      - text: Port tonescale (parametric power curve with peakLuminance)
-        done: false
-      - text: Port chroma compress (hue-preserving colorfulness reduction)
-        done: false
-      - text: Port gamut compress (cusp table lookup, boundary projection)
-        done: false
-      - text: Port EOTF encodings (sRGB, BT.1886, PQ ST.2084, HLG)
-        done: false
-      - text: Compose full forward output transform (AP1 to display)
-        done: false
-  - phase: GPU Shader (WGSL)
-    tasks:
-      - text: Create shaders/aces2_ot.wgsl with CAM16 conversion functions
-        done: false
-      - text: Implement tonescale + chroma/gamut compress in WGSL
-        done: false
-      - text: Pass cusp table and parameters as uniforms/storage buffers
-        done: false
-      - text: Implement EOTF encoding in WGSL (sRGB, PQ, HLG)
-        done: false
-  - phase: Pipeline Integration
-    tasks:
-      - text: Add Aces2OutputTransform variant to ColorTransformInner enum
-        done: false
-      - text: Wire GPU shader into ColorTransformNode::gpu_shader()
-        done: false
-      - text: Update OT presets to use Aces2OutputTransform instead of simplified CLFs
-        done: false
-      - text: Add OCIO BSD-3-Clause attribution to licenses/
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Parity test CPU vs OCIO reference output for 18% grey, saturated primaries
-        done: false
-      - text: Parity test GPU vs CPU (within f32 precision)
-        done: false
-      - text: Test SDR output (100 nits sRGB) produces correct tone curve
-        done: false
-      - text: Test HDR output (1000 nits PQ) preserves highlight detail
-        done: false
-      - text: Test gamut compress prevents blue-to-purple shift
-        done: false
+- phase: Core Math (Rust CPU)
+  tasks:
+  - text: Port CAM16 RGB-to-JMh and JMh-to-RGB from OCIO Transform.cpp
+    done: true
+  - text: Port tonescale (parametric power curve with peakLuminance)
+    done: true
+  - text: Port chroma compress (hue-preserving colorfulness reduction)
+    done: true
+  - text: Port gamut compress (cusp table lookup, boundary projection)
+    done: true
+  - text: Port EOTF encodings (sRGB, BT.1886, PQ ST.2084, HLG)
+    done: true
+  - text: Compose full forward output transform (AP1 to display)
+    done: true
+- phase: GPU Shader (WGSL)
+  tasks:
+  - text: Create shaders/aces2_ot.wgsl with CAM16 conversion functions
+    done: true
+  - text: Implement tonescale + chroma/gamut compress in WGSL
+    done: true
+  - text: Pass cusp table and parameters as uniforms/storage buffers
+    done: true
+  - text: Implement EOTF encoding in WGSL (sRGB, PQ, HLG)
+    done: true
+- phase: Pipeline Integration
+  tasks:
+  - text: Add Aces2OutputTransform variant to ColorTransformInner enum
+    done: true
+  - text: Wire GPU shader into ColorTransformNode::gpu_shader()
+    done: true
+  - text: Update OT presets to use Aces2OutputTransform instead of simplified CLFs
+    done: true
+  - text: Add OCIO BSD-3-Clause attribution to licenses/
+    done: true
+- phase: Verification
+  tasks:
+  - text: Parity test CPU vs OCIO reference output for 18% grey, saturated primaries
+    done: true
+  - text: Parity test GPU vs CPU (within f32 precision)
+    done: true
+  - text: Test SDR output (100 nits sRGB) produces correct tone curve
+    done: true
+  - text: Test HDR output (1000 nits PQ) preserves highlight detail
+    done: true
+  - text: Test gamut compress prevents blue-to-purple shift
+    done: true
 extra: {}
