@@ -3,129 +3,155 @@ title: Color transform file format parsers (CLF, CTL, CDL) and camera IDT preset
 type: feature
 status: pending
 created: 2026-04-07
-updated: 2026-04-07
+updated: '2026-04-08'
 spec:
-  summary: |
-    Add file format support for professional color transform standards:
+  summary: 'Add file format support for professional color transform standards:
+
     CLF (Common LUT Format, ACES standard), CTL (Color Transform Language),
+
     CDL (ASC Color Decision List). Add camera-specific IDT presets for
+
     major cinema cameras (ARRI Alexa, Sony, RED).
-  context: |
-    After the color-transform resource is in place (track 1), this track
-    adds the format parsers that allow loading real-world transform files.
 
-    Professional workflows use these formats:
-    - CLF (.clf): XML-based, ACES standard for transform interchange.
-      Contains process nodes (LUT1D, LUT3D, Matrix, Range, etc.)
-    - CTL (.ctl): ACES Color Transform Language (functional notation).
-      The official ACES transform distribution format.
-    - CDL (.cdl/.cc/.ccc): ASC Color Decision List. Simple XML with
-      slope/offset/power/saturation. The universal on-set grade format.
-    - .cube: Already supported (reuse existing parser in lmt.rs)
+    '
+  context: "After the color-transform resource is in place (track 1), this track\nadds the format parsers that allow loading\
+    \ real-world transform files.\n\nProfessional workflows use these formats:\n- CLF (.clf): XML-based, ACES standard for\
+    \ transform interchange.\n  Contains process nodes (LUT1D, LUT3D, Matrix, Range, etc.)\n- CTL (.ctl): ACES Color Transform\
+    \ Language (functional notation).\n  The official ACES transform distribution format.\n- CDL (.cdl/.cc/.ccc): ASC Color\
+    \ Decision List. Simple XML with\n  slope/offset/power/saturation. The universal on-set grade format.\n- .cube: Already\
+    \ supported (reuse existing parser in lmt.rs)\n\nCamera IDT presets for the most common cinema cameras:\n- ARRI Alexa\
+    \ LogC v3, LogC v4\n- Sony S-Log3/S-Gamut3, S-Log3/S-Gamut3.Cine\n- RED IPP2 (REDWideGamutRGB / Log3G10)\n- Blackmagic\
+    \ Film Gen5\n- Canon Log3 / Cinema Gamut\n\nThese are mathematical transforms (matrix + transfer function),\nnot file-based.\
+    \ They are registered as built-in presets.\n"
+  codebase_analysis: 'Existing parsers to reuse/extend:
 
-    Camera IDT presets for the most common cinema cameras:
-    - ARRI Alexa LogC v3, LogC v4
-    - Sony S-Log3/S-Gamut3, S-Log3/S-Gamut3.Cine
-    - RED IPP2 (REDWideGamutRGB / Log3G10)
-    - Blackmagic Film Gen5
-    - Canon Log3 / Cinema Gamut
-
-    These are mathematical transforms (matrix + transfer function),
-    not file-based. They are registered as built-in presets.
-  codebase_analysis: |
-    Existing parsers to reuse/extend:
     - lmt.rs: parse_cube() for .cube files (3D LUT)
+
     - lmt.rs: parse_clf() for .clf files (basic CLF support exists)
 
+
     Existing color math:
+
     - color_math.rs: transfer functions (sRGB, ACEScct, ACEScc)
+
     - color_math.rs: 3x3 matrix multiplication, Bradford adaptation
+
     - color_math.rs: all standard XYZ matrices
 
+
     Camera IDTs are typically:
+
     1. Transfer function: log encoding → linear (e.g., LogC → linear)
+
     2. Matrix: camera gamut → ACES AP0 or AP1 (3x3 transform)
+
     Both steps are already supported primitives in color_math.rs.
 
+
     CDL is very simple: 4 operations per channel
+
     out = clamp((in * slope + offset) ^ power) * saturation_factor
+
+    '
   acceptance_criteria:
-    - CLF parser handles LUT1D, LUT3D, Matrix, Range, and Log process nodes
-    - CDL parser handles .cdl, .cc, and .ccc XML formats
-    - CDL applies slope/offset/power/saturation per ASC spec
-    - Camera IDT presets for ARRI LogC v3/v4, Sony S-Log3, RED IPP2
-    - register-transform with format-hint auto-detects CLF vs CDL vs .cube
-    - Roundtrip test IDT -> ODT for each camera preset
-    - CLF transforms match reference ACES CLF test suite output
-  out_of_scope: |
-    Full CTL interpreter (CTL is a programming language - complex parser).
+  - CLF parser handles LUT1D, LUT3D, Matrix, Range, and Log process nodes
+  - CDL parser handles .cdl, .cc, and .ccc XML formats
+  - CDL applies slope/offset/power/saturation per ASC spec
+  - Camera IDT presets for ARRI LogC v3/v4, Sony S-Log3, RED IPP2
+  - register-transform with format-hint auto-detects CLF vs CDL vs .cube
+  - Roundtrip test IDT -> ODT for each camera preset
+  - CLF transforms match reference ACES CLF test suite output
+  out_of_scope: 'Full CTL interpreter (CTL is a programming language - complex parser).
+
     GPU shader generation for CLF transforms.
+
     ACES 2.0 Output Transform (separate future track - requires the new
+
     parametric DRT which is significantly different from ACES 1.x RRT+ODT).
-  technical_notes: |
-    CLF (Common LUT Format) structure:
+
+    '
+  technical_notes: 'CLF (Common LUT Format) structure:
+
     - XML with ProcessList containing ordered ProcessNodes
+
     - Node types: LUT1D, LUT3D, Matrix, Range, Log, Exponent, ASC_CDL
+
     - Each node has inBitDepth/outBitDepth (we normalize to f32)
+
     - Existing parse_clf in lmt.rs handles basic case, needs extension
 
+
     CDL (ASC Color Decision List):
+
     - XML: ColorDecision/ColorCorrection/SOPNode + SatNode
+
     - SOP: slope (3 floats), offset (3 floats), power (3 floats)
+
     - Saturation: single float applied via Rec.709 luma
+
     - Formula: out = clamp((in * slope + offset) ^ power)
+
     - Then: out = luma + sat * (out - luma)
 
+
     Camera IDT presets (mathematical, no file needed):
+
     - Each is: linearize(transfer_fn) then matrix(camera_gamut_to_aces)
+
     - ARRI LogC v3: well-documented piecewise log + 3x3 to ACES
+
     - ARRI LogC v4: different curve constants, same structure
+
     - Sony S-Log3: standard log curve + S-Gamut3 matrix
+
     - RED Log3G10: piecewise log + REDWideGamut matrix
+
     - All matrices available from manufacturer documentation
+
+    '
 plan:
-  - phase: CDL Parser
-    tasks:
-      - text: Implement CDL XML parser (SOP slope/offset/power + saturation)
-        done: false
-      - text: Implement CDL apply function (per-channel SOP + luma-based saturation)
-        done: false
-      - text: Support .cdl, .cc, and .ccc file variants
-        done: false
-  - phase: CLF Parser Extension
-    tasks:
-      - text: Extend existing CLF parser with Matrix and Range process nodes
-        done: false
-      - text: Add Log and Exponent process nodes to CLF parser
-        done: false
-      - text: Add ASC_CDL process node to CLF parser
-        done: false
-      - text: Handle process node chaining (ordered ProcessList execution)
-        done: false
-  - phase: Camera IDT Presets
-    tasks:
-      - text: Implement ARRI LogC v3 and v4 linearization + gamut matrix
-        done: false
-      - text: Implement Sony S-Log3/S-Gamut3 linearization + gamut matrix
-        done: false
-      - text: Implement RED Log3G10/REDWideGamut linearization + gamut matrix
-        done: false
-      - text: Register all camera presets as built-in transform presets
-        done: false
-  - phase: Integration
-    tasks:
-      - text: Wire format detection in register-transform (CLF vs CDL vs .cube)
-        done: false
-      - text: Auto-detect format from content (XML header for CLF/CDL, LUT_3D_SIZE for .cube)
-        done: false
-  - phase: Verification
-    tasks:
-      - text: CDL roundtrip test (apply -> inverse -> original)
-        done: false
-      - text: Camera IDT roundtrip (LogC -> ACES -> display, verify no clipping)
-        done: false
-      - text: CLF test with ACES reference CLF test files
-        done: false
-      - text: All existing LMT tests pass
-        done: false
+- phase: CDL Parser
+  tasks:
+  - text: Implement CDL XML parser (SOP slope/offset/power + saturation)
+    done: true
+  - text: Implement CDL apply function (per-channel SOP + luma-based saturation)
+    done: true
+  - text: Support .cdl, .cc, and .ccc file variants
+    done: true
+- phase: CLF Parser Extension
+  tasks:
+  - text: Extend existing CLF parser with Matrix and Range process nodes
+    done: true
+  - text: Add Log and Exponent process nodes to CLF parser
+    done: true
+  - text: Add ASC_CDL process node to CLF parser
+    done: true
+  - text: Handle process node chaining (ordered ProcessList execution)
+    done: true
+- phase: Camera IDT Presets
+  tasks:
+  - text: Implement ARRI LogC v3 and v4 linearization + gamut matrix
+    done: true
+  - text: Implement Sony S-Log3/S-Gamut3 linearization + gamut matrix
+    done: true
+  - text: Implement RED Log3G10/REDWideGamut linearization + gamut matrix
+    done: true
+  - text: Register all camera presets as built-in transform presets
+    done: true
+- phase: Integration
+  tasks:
+  - text: Wire format detection in register-transform (CLF vs CDL vs .cube)
+    done: true
+  - text: Auto-detect format from content (XML header for CLF/CDL, LUT_3D_SIZE for .cube)
+    done: true
+- phase: Verification
+  tasks:
+  - text: CDL roundtrip test (apply -> inverse -> original)
+    done: true
+  - text: Camera IDT roundtrip (LogC -> ACES -> display, verify no clipping)
+    done: true
+  - text: CLF test with ACES reference CLF test files
+    done: true
+  - text: All existing LMT tests pass
+    done: true
 extra: {}
