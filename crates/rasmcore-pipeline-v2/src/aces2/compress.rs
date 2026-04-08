@@ -279,9 +279,86 @@ mod tests {
         assert!(shared.limit_j_max > 0.0, "limit_j_max: {}", shared.limit_j_max);
         assert!(shared.model_gamma_inv > 0.0, "model_gamma_inv: {}", shared.model_gamma_inv);
         assert_eq!(shared.reach_m_table.len(), TABLE_TOTAL_SIZE);
-        // All reach M values should be positive
         for (i, &v) in shared.reach_m_table.iter().enumerate() {
             assert!(v >= 0.0, "reach_m_table[{i}] = {v} (should be >= 0)");
         }
+    }
+
+    #[test]
+    fn tonescale_compress_matches_ocio_reference() {
+        use super::super::params::*;
+        let ref_dir = match reference_dir() {
+            Some(d) => d,
+            None => { eprintln!("SKIP: reference vectors not found"); return; }
+        };
+
+        let ref_path = ref_dir.join("tonescale_compress_100nit.bin");
+        let vectors = match load_reference_vectors(&ref_path) {
+            Some(v) => v,
+            None => { eprintln!("SKIP: tonescale_compress_100nit.bin not found"); return; }
+        };
+
+        // Initialize all params (same as OCIO does for SDR 100 nit)
+        let p_in = init_jmh_params(&AP0_PRIMS);
+        let p_reach = init_jmh_params(&AP1_PRIMS);
+        let ts = init_tonescale_params(100.0);
+        let shared = init_shared_compression_params(100.0, &p_in, &p_reach);
+        let cc = init_chroma_compress_params(100.0, &ts);
+
+        let tolerance = 5e-3; // Start generous, tighten as we match OCIO closer
+        let mut pass = 0usize;
+        let mut fail = 0usize;
+        let mut max_err = 0.0f32;
+
+        for (i, v) in vectors.iter().enumerate() {
+            let jmh_in = v.input; // J, M, h from CAM16
+            let h = jmh_in[2];
+
+            // Our implementation: tonescale via Aab then chroma compress
+            let h_rad = to_radians(h);
+            let cos_hr = h_rad.cos();
+            let sin_hr = h_rad.sin();
+
+            // Tonescale: J → J_ts via achromatic channel
+            let aab = jmh_to_aab_with_trig(&jmh_in, cos_hr, sin_hr, &p_in);
+            let j_ts = tonescale_a_to_j_fwd(aab[0], &p_in, &ts);
+
+            // Chroma compress norm
+            let mnorm = chroma_compress_norm(cos_hr, sin_hr, cc.chroma_compress_scale);
+
+            // Resolve shared params for this hue
+            let rp = resolve_compression_params(h, &shared);
+
+            // Chroma compress
+            let result = chroma_compress_fwd(&jmh_in, j_ts, mnorm, &rp, &cc);
+
+            // Compare J and M (skip hue for near-achromatic)
+            let j_err = (result[0] - v.output[0]).abs();
+            let m_err = (result[1] - v.output[1]).abs();
+            let h_err = if result[1] > 0.1 && v.output[1] > 0.1 {
+                let dh = (result[2] - v.output[2]).abs();
+                dh.min(360.0 - dh)
+            } else { 0.0 };
+
+            let vec_err = j_err.max(m_err).max(h_err);
+            max_err = max_err.max(vec_err);
+
+            if vec_err > tolerance {
+                if fail < 10 {
+                    eprintln!("  FAIL vec[{i}]: J_err:{j_err:.6} M_err:{m_err:.6} h_err:{h_err:.3}");
+                }
+                fail += 1;
+            } else {
+                pass += 1;
+            }
+        }
+
+        eprintln!("Tonescale+compress: {pass} pass, {fail} fail, max_err={max_err:.6}");
+
+        if fail > 0 {
+            panic!("Tonescale+compress: {fail}/{} exceed tolerance (max_err={max_err:.6})",
+                   pass + fail);
+        }
+        assert!(pass > 0);
     }
 }
