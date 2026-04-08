@@ -49,7 +49,7 @@ fn lgg_channel(val: f32, lift: f32, gamma: f32, gain: f32) -> f32 {
     } else {
         0.0
     };
-    (gain * gammaed).clamp(0.0, 1.0)
+    gain * gammaed
 }
 
 fn lgg_pixel(r: f32, g: f32, b: f32, lgg: &LiftGammaGain) -> (f32, f32, f32) {

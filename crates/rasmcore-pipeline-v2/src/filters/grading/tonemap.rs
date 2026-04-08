@@ -54,7 +54,7 @@ impl Filter for TonemapDrago {
         let bias_pow = (self.bias.ln() / 0.5f32.ln()).max(0.01);
         let mut out = input.to_vec();
         let drago = |v: f32| -> f32 {
-            if v <= 0.0 { 0.0 } else { ((1.0 + v).ln() / log_max).powf(1.0 / bias_pow).clamp(0.0, 1.0) }
+            if v <= 0.0 { 0.0 } else { ((1.0 + v).ln() / log_max).powf(1.0 / bias_pow) }
         };
         for pixel in out.chunks_exact_mut(4) {
             pixel[0] = drago(pixel[0]);
@@ -78,7 +78,7 @@ impl ClutOp for TonemapDrago {
                 if v <= 0.0 {
                     0.0
                 } else {
-                    ((1.0 + v).ln() / log_max).powf(1.0 / bias_pow).clamp(0.0, 1.0)
+                    ((1.0 + v).ln() / log_max).powf(1.0 / bias_pow)
                 }
             };
             (drago(r), drago(g), drago(b))
@@ -109,7 +109,7 @@ impl Filter for TonemapFilmic {
         let mut out = input.to_vec();
         let (a, b, c, d, e) = (self.a, self.b, self.c, self.d, self.e);
         let filmic = |x: f32| -> f32 {
-            (x * (a * x + b) / (x * (c * x + d) + e)).clamp(0.0, 1.0)
+            x * (a * x + b) / (x * (c * x + d) + e)
         };
         for pixel in out.chunks_exact_mut(4) {
             pixel[0] = filmic(pixel[0]);
@@ -131,7 +131,7 @@ impl ClutOp for TonemapFilmic {
             let filmic = |x: f32| -> f32 {
                 let num = x * (a * x + b);
                 let den = x * (c * x + d) + e;
-                (num / den).clamp(0.0, 1.0)
+                num / den
             };
             (filmic(r), filmic(g), filmic(bi))
         })

@@ -39,8 +39,9 @@ impl Filter for TriangleThreshold {
     fn compute(&self, input: &[f32], _w: u32, _h: u32) -> Result<Vec<f32>, PipelineError> {
         let mut hist = [0u32; 256];
         for px in input.chunks_exact(4) {
-            let l = luminance(px[0], px[1], px[2]).clamp(0.0, 1.0);
-            hist[(l * 255.0) as usize] += 1;
+            let l = luminance(px[0], px[1], px[2]);
+            let bin = ((l * 255.0).round().max(0.0) as usize).min(255);
+            hist[bin] += 1;
         }
         // Find peak
         let peak_idx = hist.iter().enumerate().max_by_key(|&(_, &v)| v).map(|(i, _)| i).unwrap_or(0);

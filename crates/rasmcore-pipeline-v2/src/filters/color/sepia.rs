@@ -20,9 +20,9 @@ impl Filter for Sepia {
         let mut out = input.to_vec();
         for pixel in out.chunks_exact_mut(4) {
             let (r, g, b) = (pixel[0], pixel[1], pixel[2]);
-            let sr = (r * 0.393 + g * 0.769 + b * 0.189).min(1.0);
-            let sg = (r * 0.349 + g * 0.686 + b * 0.168).min(1.0);
-            let sb = (r * 0.272 + g * 0.534 + b * 0.131).min(1.0);
+            let sr = r * 0.393 + g * 0.769 + b * 0.189;
+            let sg = r * 0.349 + g * 0.686 + b * 0.168;
+            let sb = r * 0.272 + g * 0.534 + b * 0.131;
             pixel[0] = inv * r + t * sr;
             pixel[1] = inv * g + t * sg;
             pixel[2] = inv * b + t * sb;
@@ -40,9 +40,9 @@ impl ClutOp for Sepia {
         let t = self.intensity;
         let inv = 1.0 - t;
         Clut3D::from_fn(33, move |r, g, b| {
-            let sr = (r * 0.393 + g * 0.769 + b * 0.189).min(1.0);
-            let sg = (r * 0.349 + g * 0.686 + b * 0.168).min(1.0);
-            let sb = (r * 0.272 + g * 0.534 + b * 0.131).min(1.0);
+            let sr = r * 0.393 + g * 0.769 + b * 0.189;
+            let sg = r * 0.349 + g * 0.686 + b * 0.168;
+            let sb = r * 0.272 + g * 0.534 + b * 0.131;
             (inv * r + t * sr, inv * g + t * sg, inv * b + t * sb)
         })
     }

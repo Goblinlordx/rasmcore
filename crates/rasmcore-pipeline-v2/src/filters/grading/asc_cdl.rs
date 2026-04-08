@@ -56,7 +56,7 @@ fn asc_cdl_pixel(r: f32, g: f32, b: f32, cdl: &AscCdl) -> (f32, f32, f32) {
         og = luma + (og - luma) * cdl.saturation;
         ob = luma + (ob - luma) * cdl.saturation;
     }
-    (or.clamp(0.0, 1.0), og.clamp(0.0, 1.0), ob.clamp(0.0, 1.0))
+    (or, og, ob)
 }
 
 impl ClutOp for AscCdl {

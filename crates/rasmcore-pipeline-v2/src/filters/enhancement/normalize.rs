@@ -20,8 +20,8 @@ impl Filter for Normalize {
         for c in 0..3 {
             let mut hist = [0u32; 256];
             for pixel in input.chunks_exact(4) {
-                let bin = (pixel[c].clamp(0.0, 1.0) * 255.0) as usize;
-                hist[bin.min(255)] += 1;
+                let bin = ((pixel[c].max(0.0) * 255.0) as usize).min(255);
+                hist[bin] += 1;
             }
 
             // Find black point (skip bottom black_clip fraction)

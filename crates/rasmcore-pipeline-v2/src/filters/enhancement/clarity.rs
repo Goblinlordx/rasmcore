@@ -26,7 +26,7 @@ impl Filter for Clarity {
         let mut out = input.to_vec();
 
         for (pixel, blurred_pixel) in out.chunks_exact_mut(4).zip(blurred.chunks_exact(4)) {
-            let luma = luminance(pixel[0], pixel[1], pixel[2]).clamp(0.0, 1.0);
+            let luma = luminance(pixel[0], pixel[1], pixel[2]);
             let aw = amount * 4.0 * luma * (1.0 - luma); // midtone-weighted amount
             pixel[0] += aw * (pixel[0] - blurred_pixel[0]);
             pixel[1] += aw * (pixel[1] - blurred_pixel[1]);

@@ -41,8 +41,8 @@ impl Filter for Equalize {
         for c in 0..3 {
             let mut hist = [0u32; 256];
             for pixel in input.chunks_exact(4) {
-                let bin = (pixel[c].clamp(0.0, 1.0) * 255.0) as usize;
-                hist[bin.min(255)] += 1;
+                let bin = ((pixel[c].max(0.0) * 255.0) as usize).min(255);
+                hist[bin] += 1;
             }
 
             // Build CDF
@@ -57,8 +57,8 @@ impl Filter for Equalize {
 
             if denom > 0 {
                 for pixel in out.chunks_exact_mut(4) {
-                    let bin = (pixel[c].clamp(0.0, 1.0) * 255.0) as usize;
-                    pixel[c] = (cdf[bin.min(255)] - cdf_min) as f32 / denom as f32;
+                    let bin = ((pixel[c].max(0.0) * 255.0) as usize).min(255);
+                    pixel[c] = (cdf[bin] - cdf_min) as f32 / denom as f32;
                 }
             }
         }

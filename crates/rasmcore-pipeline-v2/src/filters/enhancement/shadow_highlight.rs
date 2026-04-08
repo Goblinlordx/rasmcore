@@ -41,7 +41,7 @@ impl Filter for ShadowHighlight {
         // Extract luminance and blur it
         let luma: Vec<f32> = input
             .chunks_exact(4)
-            .map(|p| luminance(p[0], p[1], p[2]).clamp(0.0, 1.0))
+            .map(|p| luminance(p[0], p[1], p[2]))
             .collect();
 
         // Blur luminance
@@ -55,7 +55,7 @@ impl Filter for ShadowHighlight {
         for y in 0..h {
             for x in 0..w {
                 let idx = (y * w + x) * 4;
-                let bl = blurred_luma[y * w + x].clamp(0.0, 1.0);
+                let bl = blurred_luma[y * w + x];
 
                 // Shadow weight: strongest at dark pixels
                 let sw = 1.0 - bl;

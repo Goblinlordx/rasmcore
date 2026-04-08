@@ -22,7 +22,7 @@ impl Filter for Laplacian {
         let scale = self.scale;
         for y in 0..h {
             for x in 0..w {
-                let v = (convolve3x3(input, w, h, x as i32, y as i32, &LAPLACIAN_K).abs() * scale).clamp(0.0, 1.0);
+                let v = convolve3x3(input, w, h, x as i32, y as i32, &LAPLACIAN_K).abs() * scale;
                 let idx = (y * w + x) * 4;
                 out[idx] = v; out[idx + 1] = v; out[idx + 2] = v;
                 out[idx + 3] = input[idx + 3];
@@ -61,7 +61,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let x = i32(gid.x); let y = i32(gid.y);
     if (gid.x >= params.width || gid.y >= params.height) { return; }
     let v = sample_luma(x,y-1) + sample_luma(x-1,y) - 4.0*sample_luma(x,y) + sample_luma(x+1,y) + sample_luma(x,y+1);
-    let mag = clamp(abs(v) * params.scale, 0.0, 1.0);
+    let mag = abs(v) * params.scale;
     let idx = gid.y * params.width + gid.x;
     store_pixel(idx, vec4(mag, mag, mag, load_pixel(idx).w));
 }

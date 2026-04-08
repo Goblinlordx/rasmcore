@@ -26,8 +26,7 @@ impl Filter for Sobel {
             for x in 0..w {
                 let gx = convolve3x3(input, w, h, x as i32, y as i32, &SOBEL_X);
                 let gy = convolve3x3(input, w, h, x as i32, y as i32, &SOBEL_Y);
-                let mag = (gx * gx + gy * gy).sqrt() * scale;
-                let v = mag.clamp(0.0, 1.0);
+                let v = (gx * gx + gy * gy).sqrt() * scale;
                 let idx = (y * w + x) * 4;
                 out[idx] = v;
                 out[idx + 1] = v;
@@ -72,7 +71,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
            - sample_luma(x-1,y+1) + sample_luma(x+1,y+1);
     let gy = -sample_luma(x-1,y-1) - 2.0*sample_luma(x,y-1) - sample_luma(x+1,y-1)
            + sample_luma(x-1,y+1) + 2.0*sample_luma(x,y+1) + sample_luma(x+1,y+1);
-    let mag = clamp(sqrt(gx*gx + gy*gy) * params.scale, 0.0, 1.0);
+    let mag = sqrt(gx*gx + gy*gy) * params.scale;
     let idx = gid.y * params.width + gid.x;
     let a = load_pixel(idx).w;
     store_pixel(idx, vec4(mag, mag, mag, a));

@@ -36,10 +36,8 @@ impl Filter for OilPaint {
                 for ny in y0..y1 {
                     for nx in x0..x1 {
                         let idx = (ny * w + nx) * 4;
-                        let intensity = (luminance(input[idx], input[idx + 1], input[idx + 2])
-                            .clamp(0.0, 1.0)
-                            * 255.0) as usize;
-                        let bin = intensity.min(BINS - 1);
+                        let intensity = luminance(input[idx], input[idx + 1], input[idx + 2]);
+                        let bin = ((intensity.max(0.0) * 255.0) as usize).min(BINS - 1);
                         count[bin] += 1;
                         sum_r[bin] += input[idx];
                         sum_g[bin] += input[idx + 1];

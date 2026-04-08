@@ -40,8 +40,9 @@ impl Filter for OtsuThreshold {
         // Build 256-bin luminance histogram
         let mut hist = [0u32; 256];
         for px in input.chunks_exact(4) {
-            let l = luminance(px[0], px[1], px[2]).clamp(0.0, 1.0);
-            hist[(l * 255.0) as usize] += 1;
+            let l = luminance(px[0], px[1], px[2]);
+            let bin = ((l * 255.0).round().max(0.0) as usize).min(255);
+            hist[bin] += 1;
         }
         // Otsu's algorithm
         let total = npx as f64;

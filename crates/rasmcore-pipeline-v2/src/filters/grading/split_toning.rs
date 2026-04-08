@@ -52,7 +52,7 @@ fn split_toning_pixel(r: f32, g: f32, b: f32, st: &SplitToning) -> (f32, f32, f3
     let or = r + (st.shadow_color[0] - r) * shadow_w + (st.highlight_color[0] - r) * highlight_w;
     let og = g + (st.shadow_color[1] - g) * shadow_w + (st.highlight_color[1] - g) * highlight_w;
     let ob = b + (st.shadow_color[2] - b) * shadow_w + (st.highlight_color[2] - b) * highlight_w;
-    (or.clamp(0.0, 1.0), og.clamp(0.0, 1.0), ob.clamp(0.0, 1.0))
+    (or, og, ob)
 }
 
 impl ClutOp for SplitToning {

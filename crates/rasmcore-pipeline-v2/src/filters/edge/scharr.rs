@@ -26,7 +26,7 @@ impl Filter for Scharr {
             for x in 0..w {
                 let gx = convolve3x3(input, w, h, x as i32, y as i32, &SCHARR_X);
                 let gy = convolve3x3(input, w, h, x as i32, y as i32, &SCHARR_Y);
-                let v = ((gx * gx + gy * gy).sqrt() * scale).clamp(0.0, 1.0);
+                let v = (gx * gx + gy * gy).sqrt() * scale;
                 let idx = (y * w + x) * 4;
                 out[idx] = v; out[idx + 1] = v; out[idx + 2] = v;
                 out[idx + 3] = input[idx + 3];
@@ -69,7 +69,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
            - 3.0*sample_luma(x-1,y+1) + 3.0*sample_luma(x+1,y+1);
     let gy = -3.0*sample_luma(x-1,y-1) - 10.0*sample_luma(x,y-1) - 3.0*sample_luma(x+1,y-1)
            + 3.0*sample_luma(x-1,y+1) + 10.0*sample_luma(x,y+1) + 3.0*sample_luma(x+1,y+1);
-    let mag = clamp(sqrt(gx*gx + gy*gy) * params.scale, 0.0, 1.0);
+    let mag = sqrt(gx*gx + gy*gy) * params.scale;
     let idx = gid.y * params.width + gid.x;
     store_pixel(idx, vec4(mag, mag, mag, load_pixel(idx).w));
 }
