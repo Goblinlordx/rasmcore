@@ -58,6 +58,108 @@ pub fn builtins() -> Vec<BuiltinTransform> {
             format: "clf", data: include_bytes!("../transforms/idt/display-p3.clf"),
         },
 
+        // ─── Camera IDTs (from OCIO-Config-ACES, BSD-3-Clause) ────────
+        // Note: These output to ACES2065-1 (AP0), not ACEScg (AP1).
+        // The pipeline applies AP0→AP1 conversion after these.
+        BuiltinTransform {
+            name: "idt-arri-logc4", display_name: "ARRI LogC4", kind: "idt",
+            source_space: "ARRI LogC4", target_space: "ACES2065-1", vendor: "ARRI",
+            description: "ARRI ALEXA 35 LogC4 to ACES2065-1",
+            format: "clf", data: include_bytes!("../transforms/idt/arri-logc4.clf"),
+        },
+        BuiltinTransform {
+            name: "idt-sony-slog3-sgamut3", display_name: "Sony S-Log3 S-Gamut3", kind: "idt",
+            source_space: "Sony S-Log3 S-Gamut3", target_space: "ACES2065-1", vendor: "Sony",
+            description: "Sony S-Log3 / S-Gamut3 to ACES2065-1",
+            format: "clf", data: include_bytes!("../transforms/idt/sony-slog3-sgamut3.clf"),
+        },
+        BuiltinTransform {
+            name: "idt-sony-slog3-sgamut3cine", display_name: "Sony S-Log3 S-Gamut3.Cine", kind: "idt",
+            source_space: "Sony S-Log3 S-Gamut3.Cine", target_space: "ACES2065-1", vendor: "Sony",
+            description: "Sony S-Log3 / S-Gamut3.Cine to ACES2065-1",
+            format: "clf", data: include_bytes!("../transforms/idt/sony-slog3-sgamut3cine.clf"),
+        },
+        BuiltinTransform {
+            name: "idt-red-log3g10", display_name: "RED Log3G10 REDWideGamutRGB", kind: "idt",
+            source_space: "RED Log3G10", target_space: "ACES2065-1", vendor: "RED",
+            description: "RED Log3G10 / REDWideGamutRGB to ACES2065-1",
+            format: "clf", data: include_bytes!("../transforms/idt/red-log3g10-rwg.clf"),
+        },
+        BuiltinTransform {
+            name: "idt-canon-clog3", display_name: "Canon CLog3 CinemaGamut", kind: "idt",
+            source_space: "Canon CLog3", target_space: "ACES2065-1", vendor: "Canon",
+            description: "Canon CLog3 / CinemaGamut-D55 to ACES2065-1",
+            format: "clf", data: include_bytes!("../transforms/idt/canon-clog3.clf"),
+        },
+        BuiltinTransform {
+            name: "idt-panasonic-vlog", display_name: "Panasonic V-Log V-Gamut", kind: "idt",
+            source_space: "Panasonic V-Log", target_space: "ACES2065-1", vendor: "Panasonic",
+            description: "Panasonic V-Log / V-Gamut to ACES2065-1",
+            format: "clf", data: include_bytes!("../transforms/idt/panasonic-vlog.clf"),
+        },
+        BuiltinTransform {
+            name: "idt-bmd-gen5", display_name: "Blackmagic BMDFilm Gen5", kind: "idt",
+            source_space: "Blackmagic BMDFilm Gen5", target_space: "ACES2065-1", vendor: "Blackmagic",
+            description: "Blackmagic BMDFilm / Wide Gamut Gen5 to ACES2065-1",
+            format: "clf", data: include_bytes!("../transforms/idt/blackmagic-gen5.clf"),
+        },
+        BuiltinTransform {
+            name: "idt-bmd-dwg", display_name: "Blackmagic DaVinci Wide Gamut", kind: "idt",
+            source_space: "DaVinci Wide Gamut", target_space: "ACES2065-1", vendor: "Blackmagic",
+            description: "DaVinci Intermediate / DaVinci Wide Gamut to ACES2065-1",
+            format: "clf", data: include_bytes!("../transforms/idt/blackmagic-dwg.clf"),
+        },
+        BuiltinTransform {
+            name: "idt-apple-log", display_name: "Apple Log", kind: "idt",
+            source_space: "Apple Log", target_space: "ACES2065-1", vendor: "Apple",
+            description: "Apple Log (iPhone 15 Pro+) to ACES2065-1",
+            format: "clf", data: include_bytes!("../transforms/idt/apple-log.clf"),
+        },
+        BuiltinTransform {
+            name: "idt-dji-dlog", display_name: "DJI D-Log D-Gamut", kind: "idt",
+            source_space: "DJI D-Log", target_space: "ACES2065-1", vendor: "DJI",
+            description: "DJI D-Log / D-Gamut to ACES2065-1",
+            format: "clf", data: include_bytes!("../transforms/idt/dji-dlog.clf"),
+        },
+
+        // ─── Utility CLFs (from OCIO, BSD-3-Clause) ───────────────────
+        BuiltinTransform {
+            name: "util-srgb-curve", display_name: "sRGB Curve", kind: "utility",
+            source_space: "Linear", target_space: "sRGB", vendor: "OCIO",
+            description: "sRGB transfer function (IEC 61966-2-1)",
+            format: "clf", data: include_bytes!("../transforms/utility/srgb-curve.clf"),
+        },
+        BuiltinTransform {
+            name: "util-rec1886-curve", display_name: "Rec.1886 Curve", kind: "utility",
+            source_space: "Linear", target_space: "Rec.1886", vendor: "OCIO",
+            description: "BT.1886 EOTF (gamma 2.4 pure power)",
+            format: "clf", data: include_bytes!("../transforms/utility/rec1886-curve.clf"),
+        },
+        BuiltinTransform {
+            name: "util-pq-curve", display_name: "ST.2084 PQ Curve", kind: "utility",
+            source_space: "Linear", target_space: "PQ", vendor: "OCIO",
+            description: "ST.2084 Perceptual Quantizer EOTF",
+            format: "clf", data: include_bytes!("../transforms/utility/st2084-pq-curve.clf"),
+        },
+        BuiltinTransform {
+            name: "util-ap0-to-rec709", display_name: "AP0 to Linear Rec.709", kind: "utility",
+            source_space: "ACES2065-1", target_space: "Linear Rec.709", vendor: "OCIO",
+            description: "ACES2065-1 (AP0) to Linear Rec.709 (D65)",
+            format: "clf", data: include_bytes!("../transforms/utility/ap0-to-rec709.clf"),
+        },
+        BuiltinTransform {
+            name: "util-ap0-to-p3", display_name: "AP0 to Linear P3-D65", kind: "utility",
+            source_space: "ACES2065-1", target_space: "Linear P3-D65", vendor: "OCIO",
+            description: "ACES2065-1 (AP0) to Linear P3-D65",
+            format: "clf", data: include_bytes!("../transforms/utility/ap0-to-p3.clf"),
+        },
+        BuiltinTransform {
+            name: "util-ap0-to-rec2020", display_name: "AP0 to Linear Rec.2020", kind: "utility",
+            source_space: "ACES2065-1", target_space: "Linear Rec.2020", vendor: "OCIO",
+            description: "ACES2065-1 (AP0) to Linear Rec.2020",
+            format: "clf", data: include_bytes!("../transforms/utility/ap0-to-rec2020.clf"),
+        },
+
         // ─── SDR Output Transforms ─────────────────────────────────────
         BuiltinTransform {
             name: "ot-srgb", display_name: "sRGB 100 nits (OT)", kind: "ot",
