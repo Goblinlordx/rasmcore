@@ -939,6 +939,15 @@ impl Graph {
     /// Replace a node in the graph (for optimizer fusion).
     ///
     /// The cache for this node is invalidated.
+    /// Rewire a node's primary upstream to a new target.
+    pub fn set_node_upstream(&mut self, node_id: u32, new_upstream: u32) -> bool {
+        if let Some(node) = self.nodes.get_mut(node_id as usize) {
+            node.set_upstream(new_upstream)
+        } else {
+            false
+        }
+    }
+
     pub fn replace_node(&mut self, node_id: u32, node: Box<dyn Node>) {
         self.nodes[node_id as usize] = node;
         self.cache.invalidate(node_id);

@@ -142,6 +142,11 @@ impl<F: Filter + 'static> Node for FilterNode<F> {
         vec![self.upstream]
     }
 
+    fn set_upstream(&mut self, new_upstream: u32) -> bool {
+        self.upstream = new_upstream;
+        true
+    }
+
     fn capabilities(&self) -> NodeCapabilities {
         NodeCapabilities {
             gpu: self.filter.gpu_shader_body().is_some(),

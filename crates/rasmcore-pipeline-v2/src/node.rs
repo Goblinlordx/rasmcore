@@ -333,6 +333,13 @@ pub trait Node {
         None
     }
 
+    /// Rewire this node's primary upstream to a different node ID.
+    /// Used by graph passes that insert nodes (e.g., CSC insertion).
+    /// Returns false if rewiring is not supported.
+    fn set_upstream(&mut self, _new_upstream: u32) -> bool {
+        false
+    }
+
     /// If this node is an LMT node, return the underlying Lmt value.
     /// Used by the fusion optimizer to flatten Chain LMTs into individual nodes.
     /// Default: None (not an LMT node).

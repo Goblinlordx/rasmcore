@@ -787,10 +787,85 @@ impl Node for FusedClutNode {
 pub fn optimize(graph: &mut Graph) {
     // Note: the caller (request_full, gpu_plan) emits the trace event.
     // Don't emit here to avoid double-counting.
+    insert_preferred_csc_nodes(graph);
     flatten_lmt_chains(graph);
     fuse_analytical_chains(graph);
     fuse_affine_chains(graph);
     fuse_clut_chains(graph);
+}
+
+/// Insert CSC nodes around filters that declare a preferred color space.
+///
+/// When color management is enabled and the working space differs from a
+/// filter's preferred_color_space(), this pass inserts ColorConvertNode
+/// pairs: working→preferred before, preferred→working after.
+///
+/// These CSC nodes are CLUT-fusable, so the subsequent fuse_clut_chains
+/// pass merges them with the grading CLUTs into a single 3D LUT.
+fn insert_preferred_csc_nodes(graph: &mut Graph) {
+    use crate::color_convert::ColorConvertNode;
+    use crate::color_space::ColorSpace;
+
+    if !graph.is_color_managed() {
+        return;
+    }
+    let working = graph.working_color_space().unwrap_or(ColorSpace::AcesCg);
+
+    let n = graph.node_count() as usize;
+    // Collect nodes that need CSC wrapping (can't mutate graph while iterating)
+    let mut to_wrap: Vec<(u32, ColorSpace)> = Vec::new();
+    for i in 0..n {
+        let node = graph.get_node(i as u32);
+        if let Some(preferred) = node.preferred_color_space() {
+            if preferred != working {
+                to_wrap.push((i as u32, preferred));
+            }
+        }
+    }
+
+    // Insert CSC pairs for each node. Process in forward order so IDs stay valid
+    // (we only append new nodes and rewire, never remove).
+    for (node_id, preferred) in to_wrap {
+        let node = graph.get_node(node_id);
+        let upstream_ids = node.upstream_ids();
+        if upstream_ids.len() != 1 { continue; } // only wrap single-input nodes
+        let original_upstream = upstream_ids[0];
+        let info = node.info();
+
+        // Add CSC: working → preferred (before the grading node)
+        let csc_before = ColorConvertNode::new(
+            original_upstream,
+            NodeInfo { color_space: preferred, ..info.clone() },
+            working,
+            preferred,
+        );
+        let csc_before_id = graph.add_node(Box::new(csc_before));
+
+        // Rewire the grading node to take CSC output as upstream
+        graph.set_node_upstream(node_id, csc_before_id);
+
+        // Add CSC: preferred → working (after the grading node)
+        let csc_after = ColorConvertNode::new(
+            node_id,
+            NodeInfo { color_space: working, ..info },
+            preferred,
+            working,
+        );
+        let csc_after_id = graph.add_node(Box::new(csc_after));
+
+        // Rewire downstream: any node that references node_id now references csc_after_id
+        let total = graph.node_count() as usize;
+        for j in 0..total {
+            let j_id = j as u32;
+            if j_id == csc_after_id || j_id == csc_before_id || j_id == node_id {
+                continue;
+            }
+            let ups = graph.get_node(j_id).upstream_ids();
+            if ups.contains(&node_id) {
+                graph.set_node_upstream(j_id, csc_after_id);
+            }
+        }
+    }
 }
 
 /// Flatten Lmt::Chain nodes into individual LmtNodes.
