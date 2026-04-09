@@ -34,49 +34,47 @@ spec:
     icc_to_color_space() that reads ICC desc tag, matches against known strings. (4) In v1_to_v2(), derive color space from
     metadata before defaulting to sRGB. (5) Add metadata field to graph SourceNode so it flows through. (6) Encoder receives
     metadata for roundtrip embedding.'
-plan: []
-extra: {}
 plan:
-  - phase: MetadataSet in V2
-    tasks:
-      - text: Add MetadataSet type to rasmcore-pipeline-v2 (re-export from V1 or define V2-native equivalent)
-        done: false
-      - text: Replace icc_profile field on V2 DecodedImage with metadata field of type MetadataSet
-        done: false
-      - text: Update all V2 decoder impls to populate MetadataSet instead of bare icc_profile
-        done: false
-      - text: Update v1_to_v2 conversion to carry full MetadataSet
-        done: false
-  - phase: Color space derivation
-    tasks:
-      - text: Add icc_to_color_space() that matches ICC desc tag against known profiles (sRGB, Display P3, Adobe RGB, Rec.2020)
-        done: false
-      - text: Add exif_color_space() that reads EXIF ColorSpace tag (1=sRGB, 2=Adobe RGB)
-        done: false
-      - text: Update v1_to_v2 to derive ColorSpace from metadata before falling back to sRGB
-        done: false
-      - text: Tests with ICC profiles from known devices (iPhone P3, DSLR Adobe RGB)
-        done: false
-  - phase: Pipeline flow
-    tasks:
-      - text: Add metadata field to SourceNode so metadata flows through the graph
-        done: false
-      - text: Add node_metadata(node_id) method to Graph for retrieving metadata from any node
-        done: false
-      - text: Pass metadata to encoder on write for EXIF/ICC roundtrip
-        done: false
-  - phase: Verification
-    tasks:
-      - text: JPEG with P3 ICC decoded as DisplayP3
-        done: false
-      - text: JPEG with no ICC defaults to Srgb
-        done: false
-      - text: PNG cICP still works (no regression)
-        done: false
-      - text: WASM build succeeds
-        done: false
-  - phase: Cleanup
-    tasks:
-      - text: Archive superseded codec-colorspace-detect track
-        done: false
+- phase: MetadataSet in V2
+  tasks:
+  - text: Add MetadataSet type to rasmcore-pipeline-v2 (re-export from V1 or define V2-native equivalent)
+    done: true
+  - text: Replace icc_profile field on V2 DecodedImage with metadata field of type MetadataSet
+    done: true
+  - text: Update all V2 decoder impls to populate MetadataSet instead of bare icc_profile
+    done: true
+  - text: Update v1_to_v2 conversion to carry full MetadataSet
+    done: true
+- phase: Color space derivation
+  tasks:
+  - text: Add icc_to_color_space() that matches ICC desc tag against known profiles (sRGB, Display P3, Adobe RGB, Rec.2020)
+    done: true
+  - text: Add exif_color_space() that reads EXIF ColorSpace tag (1=sRGB, 2=Adobe RGB)
+    done: true
+  - text: Update v1_to_v2 to derive ColorSpace from metadata before falling back to sRGB
+    done: true
+  - text: Tests with ICC profiles from known devices (iPhone P3, DSLR Adobe RGB)
+    done: true
+- phase: Pipeline flow
+  tasks:
+  - text: Add metadata field to SourceNode so metadata flows through the graph
+    done: true
+  - text: Add node_metadata(node_id) method to Graph for retrieving metadata from any node
+    done: true
+  - text: Pass metadata to encoder on write for EXIF/ICC roundtrip
+    done: true
+- phase: Verification
+  tasks:
+  - text: JPEG with P3 ICC decoded as DisplayP3
+    done: true
+  - text: JPEG with no ICC defaults to Srgb
+    done: true
+  - text: PNG cICP still works (no regression)
+    done: true
+  - text: WASM build succeeds
+    done: true
+- phase: Cleanup
+  tasks:
+  - text: Archive superseded codec-colorspace-detect track
+    done: true
 extra: {}
