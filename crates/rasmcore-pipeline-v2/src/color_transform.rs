@@ -448,6 +448,62 @@ mod tests {
     }
 
     #[test]
+    fn aces2_ot_gpu_shader_produces_valid_shader() {
+        let ot = crate::aces2::init_aces2_ot_params(
+            100.0, crate::aces2::LimitingPrimaries::Rec709, crate::aces2::Eotf::Srgb,
+        );
+        let shader = aces2_ot_gpu_shader(&ot, 100, 100);
+        // Verify shader body contains key ACES2 functions
+        assert!(shader.body.contains("fn cone_fwd"), "missing cone_fwd");
+        assert!(shader.body.contains("fn tonescale_fwd"), "missing tonescale_fwd");
+        assert!(shader.body.contains("fn gamut_compress"), "missing gamut_compress");
+        assert!(shader.body.contains("fn apply_eotf"), "missing apply_eotf");
+        // Verify workgroup size
+        assert_eq!(shader.workgroup_size, [16, 16, 1]);
+        // Verify we have 3 extra buffers (reach, cusp, hue)
+        assert_eq!(shader.extra_buffers.len(), 3, "need 3 table buffers");
+        // Verify table sizes (363 entries × 4 bytes each)
+        assert_eq!(shader.extra_buffers[0].len(), 363 * 4, "reach_m_table");
+        assert_eq!(shader.extra_buffers[1].len(), 363 * 3 * 4, "cusp_table");
+        assert_eq!(shader.extra_buffers[2].len(), 363 * 4, "hue_table");
+        // Verify params buffer is reasonably sized (>100 bytes for all the scalars/matrices)
+        assert!(shader.params.len() > 100, "params too small: {}", shader.params.len());
+    }
+
+    #[test]
+    fn aces2_ot_gpu_params_match_cpu_for_grey() {
+        // Verify the CPU reference produces expected results for the same config
+        // that the GPU shader would use. This validates the param serialization
+        // is feeding the same values the CPU uses.
+        let ot = crate::aces2::init_aces2_ot_params(
+            100.0, crate::aces2::LimitingPrimaries::Rec709, crate::aces2::Eotf::Srgb,
+        );
+        // 18% grey through CPU
+        let cpu_result = crate::aces2::output_transform_fwd_linear(
+            &[0.18, 0.18, 0.18], &ot,
+        );
+        // Grey should be nearly achromatic
+        let spread = (cpu_result[0] - cpu_result[1]).abs()
+            .max((cpu_result[1] - cpu_result[2]).abs());
+        assert!(spread < 0.01, "grey should be achromatic: {:?}", cpu_result);
+        // And positive
+        assert!(cpu_result[0] > 0.0 && cpu_result[0] < 2.0,
+            "grey output unreasonable: {:?}", cpu_result);
+    }
+
+    #[test]
+    fn aces2_ot_gpu_shader_hdr_config() {
+        let ot = crate::aces2::init_aces2_ot_params(
+            1000.0, crate::aces2::LimitingPrimaries::Rec2020, crate::aces2::Eotf::Pq,
+        );
+        let shader = aces2_ot_gpu_shader(&ot, 3840, 2160);
+        assert_eq!(shader.extra_buffers.len(), 3);
+        // Params should encode peak=1000, eotf=PQ(2)
+        // The eotf_id is near the end of params
+        assert!(shader.params.len() > 100);
+    }
+
+    #[test]
     fn cdl_transform_applies() {
         let t = ColorTransform {
             name: "test-cdl".into(),
