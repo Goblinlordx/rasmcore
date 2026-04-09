@@ -1,0 +1,67 @@
+id: gpu-setup-dispatch_20260409080500Z
+title: GPU executor setup dispatch with cacheable storage buffers
+type: feature
+status: pending
+created: '2026-04-09'
+updated: '2026-04-09'
+spec:
+  summary: Add GpuSetup to GpuShader for declaring setup compute dispatches that produce cacheable storage buffers. Executor
+    hashes params, caches output buffers, dispatches only on cache miss. Both dispatches go in one command encoder.
+  context: 'The ACES 2.0 OT GPU shader needs precomputed tables (reach_m, cusp, hue — 7KB total). Currently built on CPU and
+    uploaded. A table-build WGSL shader exists (stashed) that can compute these on GPU from scalar params. This track adds
+    the executor infrastructure: a setup dispatch that produces storage buffers, cached by params hash, reused across frames.
+    Both setup and per-pixel dispatches go in one command encoder (one queue.submit).'
+  codebase_analysis: 'WgpuExecutorV2 already has extra_cache (HashMap<u64, wgpu::Buffer>) that caches read-only storage buffers
+    by content hash via get_or_create_extra(). The execute() method chains GpuShader ops with ping-pong buffers in a single
+    command encoder. dispatch_pass() binds extra_buffers at binding(3+). GpuShader struct has extra_buffers: Vec<Vec<u8>>
+    for read-only data. Need: a new GpuSetup struct on GpuShader that declares output buffer sizes, and executor logic to
+    dispatch setup, cache outputs by params hash, and feed them as extra_buffers to the main pass.'
+  acceptance_criteria:
+  - GpuSetup struct with body, workgroup_size, dispatch_size, params, output_buffer_sizes
+  - GpuShader has optional setup field
+  - Executor dispatches setup shader on cache miss, caches output buffers by params hash
+  - Executor skips setup dispatch on cache hit, reuses cached buffers
+  - Setup and per-pixel dispatches go in same command encoder (one submit)
+  - ACES OT uses GpuSetup for table build — no CPU table upload on GPU path
+  - GPU parity test passes with setup-dispatched tables
+  out_of_scope: Eviction policy for extra_cache. Multi-node setup chains. CPU fallback changes.
+  technical_notes: '1. Add GpuSetup struct: body (WGSL), workgroup_size, dispatch_size, params (Vec<u8>), output_buffer_sizes
+    (Vec<usize>). 2. Add setup: Option<GpuSetup> field to GpuShader. 3. In executor execute(): before dispatch loop, for each
+    op with setup, hash setup.params, check extra_cache. On miss: allocate read-write output buffers, dispatch setup shader
+    in same encoder, store in extra_cache. On hit: retrieve cached buffers. 4. Prepend setup output buffers to the op''s extra_buffers
+    for dispatch_pass. 5. Wire ACES OT: gpu_shader() returns GpuSetup with table-build shader, output sizes [363*4, 363*3*4,
+    363*4], and the OT per-pixel shader reads from those buffers. 6. Remove CPU table upload from ACES OT gpu_shader() path.'
+plan:
+  - phase: GpuSetup Struct and Node Trait
+    tasks:
+      - text: Add GpuSetup struct to node.rs (body, workgroup_size, dispatch_size, params, output_buffer_sizes)
+        done: false
+      - text: Add setup field (Option<GpuSetup>) to GpuShader struct
+        done: false
+  - phase: Executor Integration
+    tasks:
+      - text: Add dispatch_setup() method to WgpuExecutorV2 that allocates output buffers, dispatches setup shader, returns buffer handles
+        done: false
+      - text: Add setup_cache (HashMap<u64, Vec<wgpu::Buffer>>) to WgpuExecutorV2 for caching setup output buffers by params hash
+        done: false
+      - text: In execute(), before dispatch loop, process setup shaders - check cache, dispatch on miss, prepend output buffers to extra_buffers
+        done: false
+      - text: Ensure setup and per-pixel dispatches use same command encoder (one submit)
+        done: false
+  - phase: ACES OT Integration
+    tasks:
+      - text: Merge stashed aces2_tables.wgsl from kf/stash/aces2-gpu-table-build branch
+        done: false
+      - text: Wire ACES OT gpu_shader() to return GpuSetup with table-build shader and output sizes
+        done: false
+      - text: Remove CPU table serialization from ACES OT GPU path (setup produces them)
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Test setup dispatch executes and produces correct buffer sizes
+        done: false
+      - text: Test cache hit skips setup dispatch on second run
+        done: false
+      - text: Test ACES OT GPU parity with setup-dispatched tables matches CPU reference
+        done: false
+extra: {}
