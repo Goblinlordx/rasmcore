@@ -698,8 +698,15 @@ impl Node for FusedPointOpNode {
         NodeCapabilities {
             analytic: true,
             gpu: true,
+            clut: true,
             ..Default::default()
         }
+    }
+
+    fn fusion_clut(&self) -> Option<Clut3D> {
+        Some(Clut3D::from_fn(33, |r, g, b| {
+            (self.luts[0].apply(r), self.luts[1].apply(g), self.luts[2].apply(b))
+        }))
     }
 }
 

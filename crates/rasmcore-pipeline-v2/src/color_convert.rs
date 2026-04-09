@@ -74,8 +74,8 @@ impl Node for ColorConvertNode {
         NodeCapabilities {
             analytic: false,
             affine: false,
-            clut: false,
-            gpu: false, // GPU shaders for color conversion added in future
+            clut: true,
+            gpu: false,
         }
     }
 
@@ -86,6 +86,15 @@ impl Node for ColorConvertNode {
 
     fn expected_input_color_space(&self) -> ColorSpace {
         self.from
+    }
+
+    fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
+        Some(crate::fusion::Clut3D::from_fn(33, |r, g, b| {
+            // Apply conversion to a single pixel
+            let mut px = [r, g, b, 1.0];
+            convert_color_space(&mut px, self.from, self.to);
+            (px[0], px[1], px[2])
+        }))
     }
 }
 
