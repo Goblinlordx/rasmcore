@@ -1,91 +1,84 @@
 id: skeletonize-convergence_20260409083100Z
-title: "Skeletonize until convergence — remove fixed iteration limit"
+title: Skeletonize until convergence — remove fixed iteration limit
 type: bug
 status: pending
 created: 2026-04-09
-updated: 2026-04-09
+updated: '2026-04-09'
 spec:
-  summary: |
-    Remove the user-facing iterations param from Skeletonize. Default to
+  summary: 'Remove the user-facing iterations param from Skeletonize. Default to
+
     iterating until convergence with a safety cap of min(w,h)/2. Implement
+
     convergence_check in the GPU executor so the GPU path also stops early.
-  context: |
-    The Zhang-Suen thinning algorithm is defined as iterating until no pixels
+
+    '
+  context: 'The Zhang-Suen thinning algorithm is defined as iterating until no pixels
+
     change. The CPU path already has this logic (line 187: if !changed break)
+
     but is limited by the iterations param (default 50). The GPU path generates
+
     iterations*2 shader passes with convergence_check set, but the native
+
     executor (WgpuExecutorV2) ignores convergence_check entirely.
 
+
     Result: for images larger than ~100px, 50 iterations may not be enough
+
     for full convergence. The user has to guess. For the GPU path, convergence
+
     detection is declared but non-functional.
-  codebase_analysis: |
-    CPU path (morphology/skeletonize.rs:146-188):
-    - Loop for 0..self.iterations, with early break if !changed
-    - Already correct logic, just needs the cap raised
 
-    GPU path (morphology/skeletonize.rs:205-248):
-    - Generates self.iterations * 2 GpuShader passes upfront
-    - Each step2 pass has convergence_check: Some(change_buf_id)
-    - Uses atomic<u32> change counter in reduction buffer
-    - WgpuExecutorV2::execute() and dispatch_pass() DO NOT check convergence
-
-    GPU executor (rasmcore-gpu-native/src/lib.rs):
-    - No convergence_check handling in execute() or dispatch_pass()
-    - The field is present on GpuShader struct but completely ignored
-    - Need to: after each pass with convergence_check, read back the
-      buffer and skip remaining passes if all zeros
-
-    Theoretical max iterations: min(width, height) / 2
-    (each iteration can erode at most 1 pixel from each side)
+    '
+  codebase_analysis: "CPU path (morphology/skeletonize.rs:146-188):\n- Loop for 0..self.iterations, with early break if !changed\n\
+    - Already correct logic, just needs the cap raised\n\nGPU path (morphology/skeletonize.rs:205-248):\n- Generates self.iterations\
+    \ * 2 GpuShader passes upfront\n- Each step2 pass has convergence_check: Some(change_buf_id)\n- Uses atomic<u32> change\
+    \ counter in reduction buffer\n- WgpuExecutorV2::execute() and dispatch_pass() DO NOT check convergence\n\nGPU executor\
+    \ (rasmcore-gpu-native/src/lib.rs):\n- No convergence_check handling in execute() or dispatch_pass()\n- The field is present\
+    \ on GpuShader struct but completely ignored\n- Need to: after each pass with convergence_check, read back the\n  buffer\
+    \ and skip remaining passes if all zeros\n\nTheoretical max iterations: min(width, height) / 2\n(each iteration can erode\
+    \ at most 1 pixel from each side)\n"
   acceptance_criteria:
-    - iterations param removed from Skeletonize struct
-    - CPU path uses max_iters = min(w, h) / 2 as safety cap
-    - CPU path still breaks early on convergence (existing behavior)
-    - GPU executor implements convergence_check — reads back reduction buffer after flagged pass, skips remaining if all zeros
-    - GPU path generates max_iters * 2 passes with convergence_check
-    - Test that small binary shapes converge in fewer passes than max
-    - Test that result is identical regardless of iterations cap (as long as sufficient)
-  out_of_scope: |
-    Per-workgroup convergence flags (optimization noted in code comments).
+  - iterations param removed from Skeletonize struct
+  - CPU path uses max_iters = min(w, h) / 2 as safety cap
+  - CPU path still breaks early on convergence (existing behavior)
+  - GPU executor implements convergence_check — reads back reduction buffer after flagged pass, skips remaining if all zeros
+  - GPU path generates max_iters * 2 passes with convergence_check
+  - Test that small binary shapes converge in fewer passes than max
+  - Test that result is identical regardless of iterations cap (as long as sufficient)
+  out_of_scope: 'Per-workgroup convergence flags (optimization noted in code comments).
+
     Other filters that might benefit from convergence_check.
-  technical_notes: |
-    CPU change: replace self.iterations with computed max.
-      let max_iters = (width.min(height) / 2).max(1) as usize;
-      for _ in 0..max_iters { ... if !changed { break; } }
 
-    GPU change in executor: after dispatch_pass(), if op.convergence_check
-    is Some(buf_id), read back the reduction buffer. If all bytes are zero,
-    skip remaining passes.
-
-    The convergence_check readback is a single u32 (4 bytes) — negligible
-    cost compared to the compute pass. It requires a GPU→CPU sync point
-    per flagged pass, which is acceptable for iterative algorithms.
-
-    The reduction buffer must be re-initialized to zero before each
-    iteration pair (step1 + step2). Currently initial_data is set on
-    the first pass only. Need to ensure the counter resets.
+    '
+  technical_notes: "CPU change: replace self.iterations with computed max.\n  let max_iters = (width.min(height) / 2).max(1)\
+    \ as usize;\n  for _ in 0..max_iters { ... if !changed { break; } }\n\nGPU change in executor: after dispatch_pass(),\
+    \ if op.convergence_check\nis Some(buf_id), read back the reduction buffer. If all bytes are zero,\nskip remaining passes.\n\
+    \nThe convergence_check readback is a single u32 (4 bytes) — negligible\ncost compared to the compute pass. It requires\
+    \ a GPU→CPU sync point\nper flagged pass, which is acceptable for iterative algorithms.\n\nThe reduction buffer must be\
+    \ re-initialized to zero before each\niteration pair (step1 + step2). Currently initial_data is set on\nthe first pass\
+    \ only. Need to ensure the counter resets.\n"
 plan:
-  - phase: "CPU convergence fix"
-    tasks:
-      - text: "Replace iterations param with computed max_iters = min(w,h)/2"
-        done: false
-      - text: "Keep iterations as optional safety-cap param with very high default (10000)"
-        done: false
-      - text: "Test convergence on a known shape (cross pattern should converge to single pixel)"
-        done: false
-  - phase: "GPU executor convergence_check"
-    tasks:
-      - text: "Add convergence_check handling to WgpuExecutorV2 dispatch loop"
-        done: false
-      - text: "After flagged pass, read back reduction buffer and check for all-zero"
-        done: false
-      - text: "Skip remaining passes if converged"
-        done: false
-  - phase: "Verification"
-    tasks:
-      - text: "Test GPU convergence detection with real GPU (skip if no GPU)"
-        done: false
-      - text: "All existing morphology tests pass"
-        done: false
+- phase: CPU convergence fix
+  tasks:
+  - text: Replace iterations param with computed max_iters = min(w,h)/2
+    done: true
+  - text: Keep iterations as optional safety-cap param with very high default (10000)
+    done: true
+  - text: Test convergence on a known shape (cross pattern should converge to single pixel)
+    done: true
+- phase: GPU executor convergence_check
+  tasks:
+  - text: Add convergence_check handling to WgpuExecutorV2 dispatch loop
+    done: true
+  - text: After flagged pass, read back reduction buffer and check for all-zero
+    done: true
+  - text: Skip remaining passes if converged
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test GPU convergence detection with real GPU (skip if no GPU)
+    done: true
+  - text: All existing morphology tests pass
+    done: true
 extra: {}
