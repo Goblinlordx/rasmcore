@@ -19,37 +19,35 @@ spec:
   out_of_scope: Parsed EXIF field access (structured ExifData). That is host-side SDK parsing of raw EXIF bytes. This track
     only exposes raw bytes.
   technical_notes: ''
-plan: []
-extra: {}
 plan:
-  - phase: WIT Types
-    tasks:
-      - text: Add image-metadata record to WIT with exif, xmp, iptc, icc-profile as option<buffer>
-        done: false
-      - text: Add format-specific-chunk record (key string, value buffer)
-        done: false
-      - text: Add node-metadata method to image-pipeline-v2 returning image-metadata
-        done: false
-      - text: Add metadata method to source resource
-        done: false
-  - phase: WASM Adapter
-    tasks:
-      - text: Wire node-metadata to Graph::node_metadata()
-        done: false
-      - text: Wire source metadata to SourceResource
-        done: false
-      - text: Convert MetadataSet to WIT image-metadata record
-        done: false
-  - phase: SDK
-    tasks:
-      - text: Add metadata getter to Pipeline class in fluent SDK
-        done: false
-      - text: Add ImageMetadata TypeScript interface
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Round-trip test - load JPEG with EXIF, read metadata via WIT, verify EXIF bytes present
-        done: false
-      - text: WASM component builds
-        done: false
+- phase: WIT Types
+  tasks:
+  - text: Add image-metadata record to WIT with exif, xmp, iptc, icc-profile as option<buffer>
+    done: true
+  - text: Add format-specific-chunk record (key string, value buffer)
+    done: true
+  - text: Add node-metadata method to image-pipeline-v2 returning image-metadata
+    done: true
+  - text: Add metadata method to source resource
+    done: false
+- phase: WASM Adapter
+  tasks:
+  - text: Wire node-metadata to Graph::node_metadata()
+    done: true
+  - text: Wire source metadata to SourceResource
+    done: true
+  - text: Convert MetadataSet to WIT image-metadata record
+    done: true
+- phase: SDK
+  tasks:
+  - text: Add metadata getter to Pipeline class in fluent SDK
+    done: true
+  - text: Add ImageMetadata TypeScript interface
+    done: true
+- phase: Verification
+  tasks:
+  - text: Round-trip test - load JPEG with EXIF, read metadata via WIT, verify EXIF bytes present
+    done: true
+  - text: WASM component builds
+    done: true
 extra: {}
