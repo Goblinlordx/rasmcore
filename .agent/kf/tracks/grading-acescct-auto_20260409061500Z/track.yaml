@@ -27,34 +27,34 @@ spec:
     nodes around grading runs when color-managed. 5. Result: entire chain (exposure+CSC+LGG+curves+CSC) fuses to single CLUT
     → one GPU LUT3D pass.'
 plan:
-  - phase: Fusion Infrastructure
-    tasks:
-      - text: Add fusion_clut() to FusedPointOpNode — sample per-channel F32Luts across 3D grid to bridge analytic to CLUT fusion
-        done: false
-      - text: Add fusion_clut() to ColorConvertNode — apply convert_color_space to each CLUT sample point
-        done: false
-  - phase: Filter Preferred Color Space
-    tasks:
-      - text: Add preferred_color_space() to Filter trait with default None
-        done: false
-      - text: Delegate preferred_color_space() from FilterNode to its inner Filter
-        done: false
-      - text: Grading filters (LGG, curves x4, split_toning, asc_cdl, hue_curves x4) return Some(ACEScct)
-        done: false
-  - phase: Graph Pass
-    tasks:
-      - text: Add insert_preferred_csc_nodes() graph pass that walks nodes and inserts CSC pairs around runs with preferred_color_space
-        done: false
-      - text: Call the pass in optimize() before fuse_analytical_chains, gated on color_managed
-        done: false
-      - text: Skip insertion when working space already matches preferred
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Test that a grading chain in ACEScg produces a single fused CLUT after optimization
-        done: false
-      - text: Test that fused output matches sequential CSC+grade+CSC output within CLUT precision
-        done: false
-      - text: Test that color_managed=false skips CSC insertion
-        done: false
+- phase: Fusion Infrastructure
+  tasks:
+  - text: Add fusion_clut() to FusedPointOpNode — sample per-channel F32Luts across 3D grid to bridge analytic to CLUT fusion
+    done: true
+  - text: Add fusion_clut() to ColorConvertNode — apply convert_color_space to each CLUT sample point
+    done: true
+- phase: Filter Preferred Color Space
+  tasks:
+  - text: Add preferred_color_space() to Filter trait with default None
+    done: true
+  - text: Delegate preferred_color_space() from FilterNode to its inner Filter
+    done: true
+  - text: Grading filters (LGG, curves x4, split_toning, asc_cdl, hue_curves x4) return Some(ACEScct)
+    done: true
+- phase: Graph Pass
+  tasks:
+  - text: Add insert_preferred_csc_nodes() graph pass that walks nodes and inserts CSC pairs around runs with preferred_color_space
+    done: true
+  - text: Call the pass in optimize() before fuse_analytical_chains, gated on color_managed
+    done: true
+  - text: Skip insertion when working space already matches preferred
+    done: true
+- phase: Verification
+  tasks:
+  - text: Test that a grading chain in ACEScg produces a single fused CLUT after optimization
+    done: true
+  - text: Test that fused output matches sequential CSC+grade+CSC output within CLUT precision
+    done: true
+  - text: Test that color_managed=false skips CSC insertion
+    done: true
 extra: {}
