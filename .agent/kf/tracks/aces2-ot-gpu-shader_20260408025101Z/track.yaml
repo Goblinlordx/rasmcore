@@ -3,119 +3,93 @@ title: ACES 2.0 Output Transform — WGSL GPU shader validated against CPU refer
 type: feature
 status: pending
 created: 2026-04-08
-updated: 2026-04-08
+updated: '2026-04-09'
 spec:
-  summary: |
-    Translate the ACES 2.0 OT reference Rust implementation to a WGSL
+  summary: 'Translate the ACES 2.0 OT reference Rust implementation to a WGSL
+
     compute shader. Validated against the CPU reference — GPU output must
+
     match CPU within f32 precision for the same test colors.
-  context: |
-    After the CPU reference port is complete and validated against OCIO,
+
+    '
+  context: 'After the CPU reference port is complete and validated against OCIO,
+
     this track translates the same algorithm to WGSL for GPU execution.
+
     The CPU reference is the ground truth — the GPU shader must match it.
 
+
     The algorithm is entirely per-pixel with no spatial dependencies,
+
     making it ideal for GPU compute. The only non-trivial GPU concern
+
     is passing the precomputed cusp tables as storage buffers.
-  codebase_analysis: |
-    Files to create:
-    - crates/rasmcore-pipeline-v2/src/shaders/aces2_ot.wgsl
 
-    Files to modify:
-    - crates/rasmcore-pipeline-v2/src/color_transform.rs: wire gpu_shader()
-      for Aces2OutputTransform variant in ColorTransformNode
-
-    Existing patterns:
-    - shaders/clut3d.wgsl: extra storage buffer for LUT data (same pattern
-      for cusp tables)
-    - FusedClutNode::gpu_shader(): returns GpuShader with extra_buffers
-
-    GPU data layout:
-    - Params uniform: width, height, peak_luminance, limiting_primaries_id, eotf_id
-    - Storage buffer 0: reach_m_table (363 f32 entries)
-    - Storage buffer 1: gamut_cusp_table (363 x 3 = 1089 f32 entries)
-    - Storage buffer 2: hue_table (363 f32 entries)
-    - Total extra data: approximately 7KB
-
-    The WGSL shader will be approximately 200-300 lines — the math is
-    the same as the Rust CPU code, just in WGSL syntax.
+    '
+  codebase_analysis: "Files to create:\n- crates/rasmcore-pipeline-v2/src/shaders/aces2_ot.wgsl\n\nFiles to modify:\n- crates/rasmcore-pipeline-v2/src/color_transform.rs:\
+    \ wire gpu_shader()\n  for Aces2OutputTransform variant in ColorTransformNode\n\nExisting patterns:\n- shaders/clut3d.wgsl:\
+    \ extra storage buffer for LUT data (same pattern\n  for cusp tables)\n- FusedClutNode::gpu_shader(): returns GpuShader\
+    \ with extra_buffers\n\nGPU data layout:\n- Params uniform: width, height, peak_luminance, limiting_primaries_id, eotf_id\n\
+    - Storage buffer 0: reach_m_table (363 f32 entries)\n- Storage buffer 1: gamut_cusp_table (363 x 3 = 1089 f32 entries)\n\
+    - Storage buffer 2: hue_table (363 f32 entries)\n- Total extra data: approximately 7KB\n\nThe WGSL shader will be approximately\
+    \ 200-300 lines — the math is\nthe same as the Rust CPU code, just in WGSL syntax.\n"
   acceptance_criteria:
-    - WGSL compute shader implements full ACES 2.0 OT pipeline
-    - CAM16 conversion, tonescale, chroma compress, gamut compress in WGSL
-    - Cusp tables passed as storage buffers via gpu_extra_buffers
-    - Parameters (peak luminance, primaries, eotf) as uniform struct
-    - ColorTransformNode::gpu_shader() returns the WGSL for Aces2OutputTransform
-    - GPU output matches CPU reference within f32 precision (max error less than 1/255)
-    - Parity tested for the same test color set as CPU track
-    - Workgroup size 16x16x1
-  out_of_scope: |
-    Inverse transform. ACES 1.x support. CPU implementation (done in prior track).
-  technical_notes: |
-    WGSL shader structure:
+  - WGSL compute shader implements full ACES 2.0 OT pipeline
+  - CAM16 conversion, tonescale, chroma compress, gamut compress in WGSL
+  - Cusp tables passed as storage buffers via gpu_extra_buffers
+  - Parameters (peak luminance, primaries, eotf) as uniform struct
+  - ColorTransformNode::gpu_shader() returns the WGSL for Aces2OutputTransform
+  - GPU output matches CPU reference within f32 precision (max error less than 1/255)
+  - Parity tested for the same test color set as CPU track
+  - Workgroup size 16x16x1
+  out_of_scope: 'Inverse transform. ACES 1.x support. CPU implementation (done in prior track).
 
-    struct Params {
-      width: u32, height: u32,
-      peak_luminance: f32,
-      limiting_primaries: u32,  // 0=Rec709, 1=P3, 2=Rec2020
-      eotf: u32,                // 0=sRGB, 1=BT1886, 2=PQ, 3=HLG
-      // CAM16 precomputed scalars
-      F_L_n: f32, cz: f32, inv_cz: f32, A_w_J: f32,
-      // Tonescale params
-      n_r: f32, g: f32, t_1: f32, s_2: f32, u_2: f32, m_2: f32,
-      // Chroma/gamut params
-      sat: f32, compr: f32, chroma_compress_scale: f32,
-      mid_J: f32, focus_dist: f32, limit_J_max: f32,
-      _pad: u32,
-    }
-
-    Bindings:
-    group(0) binding(2): uniform Params
-    group(0) binding(3): storage reach_m_table (array of f32)
-    group(0) binding(4): storage gamut_cusp_table (array of f32)
-    group(0) binding(5): storage hue_table (array of f32)
-
-    The gpu_params_with_info() method on the Aces2OutputTransform
-    serializes all precomputed scalars into the uniform buffer.
-    The gpu_extra_buffers() returns the three table arrays.
-
-    Expected performance: less than 1ms for 4K (3840x2160) on modern GPU.
-    The algorithm has no branches that diverge significantly per-pixel
-    (hue-dependent lookups are smooth interpolations, not conditionals).
+    '
+  technical_notes: "WGSL shader structure:\n\nstruct Params {\n  width: u32, height: u32,\n  peak_luminance: f32,\n  limiting_primaries:\
+    \ u32,  // 0=Rec709, 1=P3, 2=Rec2020\n  eotf: u32,                // 0=sRGB, 1=BT1886, 2=PQ, 3=HLG\n  // CAM16 precomputed\
+    \ scalars\n  F_L_n: f32, cz: f32, inv_cz: f32, A_w_J: f32,\n  // Tonescale params\n  n_r: f32, g: f32, t_1: f32, s_2:\
+    \ f32, u_2: f32, m_2: f32,\n  // Chroma/gamut params\n  sat: f32, compr: f32, chroma_compress_scale: f32,\n  mid_J: f32,\
+    \ focus_dist: f32, limit_J_max: f32,\n  _pad: u32,\n}\n\nBindings:\ngroup(0) binding(2): uniform Params\ngroup(0) binding(3):\
+    \ storage reach_m_table (array of f32)\ngroup(0) binding(4): storage gamut_cusp_table (array of f32)\ngroup(0) binding(5):\
+    \ storage hue_table (array of f32)\n\nThe gpu_params_with_info() method on the Aces2OutputTransform\nserializes all precomputed\
+    \ scalars into the uniform buffer.\nThe gpu_extra_buffers() returns the three table arrays.\n\nExpected performance: less\
+    \ than 1ms for 4K (3840x2160) on modern GPU.\nThe algorithm has no branches that diverge significantly per-pixel\n(hue-dependent\
+    \ lookups are smooth interpolations, not conditionals).\n"
 plan:
-  - phase: WGSL Shader
-    tasks:
-      - text: Create shaders/aces2_ot.wgsl with Params struct and table bindings
-        done: false
-      - text: Port CAM16 RGB-to-JMh and JMh-to-RGB to WGSL
-        done: false
-      - text: Port tonescale (parametric power curve) to WGSL
-        done: false
-      - text: Port chroma_compress_norm (trigonometric polynomial) to WGSL
-        done: false
-      - text: Port chroma_compress_fwd and toe functions to WGSL
-        done: false
-      - text: Port gamut_compress_fwd with table lookups to WGSL
-        done: false
-      - text: Port EOTF encoding (sRGB, BT.1886, PQ, HLG) to WGSL
-        done: false
-      - text: Compose main() calling all steps in order
-        done: false
-  - phase: Pipeline Integration
-    tasks:
-      - text: Implement gpu_shader() for Aces2OutputTransform in ColorTransformNode
-        done: false
-      - text: Serialize precomputed params to uniform buffer
-        done: false
-      - text: Serialize cusp tables to extra storage buffers
-        done: false
-  - phase: Parity Validation
-    tasks:
-      - text: Test GPU vs CPU for 18% grey (SDR and HDR)
-        done: false
-      - text: Test GPU vs CPU for saturated primaries and secondaries
-        done: false
-      - text: Test GPU vs CPU for out-of-gamut and HDR highlights
-        done: false
-      - text: Verify max per-pixel error is less than 1/255
-        done: false
+- phase: WGSL Shader
+  tasks:
+  - text: Create shaders/aces2_ot.wgsl with Params struct and table bindings
+    done: true
+  - text: Port CAM16 RGB-to-JMh and JMh-to-RGB to WGSL
+    done: true
+  - text: Port tonescale (parametric power curve) to WGSL
+    done: true
+  - text: Port chroma_compress_norm (trigonometric polynomial) to WGSL
+    done: true
+  - text: Port chroma_compress_fwd and toe functions to WGSL
+    done: true
+  - text: Port gamut_compress_fwd with table lookups to WGSL
+    done: true
+  - text: Port EOTF encoding (sRGB, BT.1886, PQ, HLG) to WGSL
+    done: true
+  - text: Compose main() calling all steps in order
+    done: true
+- phase: Pipeline Integration
+  tasks:
+  - text: Implement gpu_shader() for Aces2OutputTransform in ColorTransformNode
+    done: true
+  - text: Serialize precomputed params to uniform buffer
+    done: true
+  - text: Serialize cusp tables to extra storage buffers
+    done: true
+- phase: Parity Validation
+  tasks:
+  - text: Test GPU vs CPU for 18% grey (SDR and HDR)
+    done: true
+  - text: Test GPU vs CPU for saturated primaries and secondaries
+    done: true
+  - text: Test GPU vs CPU for out-of-gamut and HDR highlights
+    done: true
+  - text: Verify max per-pixel error is less than 1/255
+    done: true
 extra: {}
