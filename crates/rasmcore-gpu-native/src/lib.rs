@@ -786,6 +786,23 @@ impl GpuExecutor for WgpuExecutorV2 {
                 height,
             )?;
 
+            // Convergence check: read back the flagged reduction buffer.
+            // If all zeros → algorithm converged, skip remaining passes.
+            if let Some(conv_buf_id) = op.convergence_check {
+                if let Some(conv_buf) = reduction_bufs.get(&conv_buf_id) {
+                    let bytes = self.readback_buffer(conv_buf, conv_buf.size())?;
+                    if bytes.iter().all(|&b| b == 0) {
+                        // Converged. Swap so write_buf has the final output.
+                        if i < ops.len() - 1 {
+                            std::mem::swap(&mut read_buf, &mut write_buf);
+                        }
+                        break;
+                    }
+                    // Reset counter to zero for the next iteration pair.
+                    self.queue.write_buffer(conv_buf, 0, &vec![0u8; conv_buf.size() as usize]);
+                }
+            }
+
             if i < ops.len() - 1 {
                 std::mem::swap(&mut read_buf, &mut write_buf);
             }

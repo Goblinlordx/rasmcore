@@ -118,13 +118,18 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
 /// Skeletonize — iterative morphological thinning to 1-pixel skeleton.
 /// Operates on luminance: pixel is "on" if luma > threshold.
+///
+/// Iterates until convergence (no pixels change). The `max_iterations`
+/// param is a safety cap — the theoretical maximum is min(w,h)/2.
+/// Set to 0 for automatic (uses min(w,h)/2).
 #[derive(Clone, rasmcore_macros::V2Filter)]
 #[filter(name = "skeletonize", category = "morphology")]
 pub struct Skeletonize {
     #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
     pub threshold: f32,
-    #[param(min = 1, max = 100, step = 1, default = 50)]
-    pub iterations: u32,
+    /// Safety cap on iterations. 0 = automatic (min(w,h)/2).
+    #[param(min = 0, max = 10000, step = 1, default = 0)]
+    pub max_iterations: u32,
 }
 
 impl Filter for Skeletonize {
@@ -142,8 +147,14 @@ impl Filter for Skeletonize {
             }
         }
 
-        // Zhang-Suen thinning algorithm
-        for _ in 0..self.iterations {
+        // Zhang-Suen thinning algorithm — iterate until convergence.
+        // Theoretical max: min(w,h)/2 (each iteration erodes at most 1px per side).
+        let max_iters = if self.max_iterations > 0 {
+            self.max_iterations as usize
+        } else {
+            (w.min(h) / 2).max(1)
+        };
+        for _ in 0..max_iters {
             let mut changed = false;
 
             // Step 1
@@ -219,7 +230,14 @@ impl Filter for Skeletonize {
         // Passes 1..N: Zhang-Suen sub-iterations
         // Each iteration = step1 + step2. Both write to the same atomic counter.
         // Convergence check only on step2 — checks combined changes from both steps.
-        for _ in 0..self.iterations {
+        // Theoretical max: min(w,h)/2. The executor's convergence_check support
+        // will skip remaining passes once the change counter is zero.
+        let max_iters = if self.max_iterations > 0 {
+            self.max_iterations
+        } else {
+            (width.min(height) / 2).max(1)
+        };
+        for _ in 0..max_iters {
             for sub in 0..2u32 {
                 let mut params = gpu_params_wh(width, height);
                 params.extend_from_slice(&self.threshold.to_le_bytes());
