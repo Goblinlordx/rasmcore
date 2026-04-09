@@ -1,0 +1,28 @@
+id: aces2-gpu-table-build_20260409080000Z
+title: ACES 2.0 OT GPU table build — compute tables on GPU from params
+type: feature
+status: pending
+created: '2026-04-09'
+updated: '2026-04-09'
+spec:
+  summary: Build reach_m, cusp, and hue tables via a GPU compute shader instead of CPU-to-GPU upload. Dispatch once per OT
+    config change, reuse buffers for all subsequent frames.
+  context: The ACES 2.0 OT GPU shader currently receives precomputed tables as storage buffers uploaded from CPU. These tables
+    (7KB total) are computed per-config by the CPU table build in compress.rs. Instead, a setup compute shader can build them
+    directly in GPU memory from just the scalar params, avoiding the CPU table build and CPU-to-GPU transfer entirely for
+    the GPU path.
+  codebase_analysis: ''
+  acceptance_criteria:
+  - WGSL table-build shader computes reach_m, cusp, and hue tables from scalar params only
+  - Tables built on GPU match CPU-built tables within f32 precision
+  - Setup dispatch runs once per config, buffers reused for subsequent frames
+  - No CPU table data uploaded to GPU — only scalar params
+  - Per-pixel OT shader reads from GPU-built tables identically to CPU-uploaded tables
+  out_of_scope: CPU table build changes. Inverse transform. Non-ACES OT configs.
+  technical_notes: 'Create aces2_ot_tables.wgsl — a compute shader dispatched as 363x1x1 (one thread per hue degree). Each
+    thread: (1) builds reach_m via binary search using CAM16 jmh_to_rgb, (2) finds display cusp J,M via corner interpolation
+    + binary search, (3) finds gamma_top_inv via binary search, (4) writes hue_table entry (trivial). Reuse CAM16/math functions
+    from aces2_ot.wgsl via shared include. Output: 3 storage buffers (reach_m, cusp, hue) that become input to the per-pixel
+    OT shader. Wire as a setup dispatch in ColorTransformNode — runs once when config changes, cached for subsequent frames.'
+plan: []
+extra: {}
