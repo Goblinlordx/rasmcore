@@ -1,0 +1,28 @@
+id: external-clf-provider_20260409104500Z
+title: External CLF provider — on-demand loading for all transforms
+type: feature
+status: pending
+created: '2026-04-09'
+updated: '2026-04-09'
+spec:
+  summary: Move all CLF data out of the WASM binary. The crate exports a manifest (metadata only) and a register_pack() function.
+    The SDK fetches CLF bytes externally and passes them to register_pack(). CLF files ship as static assets.
+  context: rasmcore-color-transforms currently embeds ~2MB of CLF data via include_bytes. This bloats the WASM binary. Move
+    all CLF data to external static assets. The crate provides only a manifest (name, kind, filename per entry) and a register_pack(callback,
+    entries) function. The SDK fetches CLFs from a configurable base URL and calls register_pack.
+  codebase_analysis: ''
+  acceptance_criteria:
+  - Crate exports manifest() returning metadata for all transforms (no embedded data)
+  - Crate exports register_pack(callback, entries) that registers from caller-provided bytes
+  - SDK TransformPack class fetches CLFs from configurable base URL
+  - CLF files available as static assets (not embedded in WASM)
+  - WASM binary size reduced by ~2MB
+  out_of_scope: CLF parser changes. New transform types. Pipeline-side registration API changes.
+  technical_notes: '1. Replace include_bytes with a manifest-only approach: TransformEntry struct with name, display_name,
+    kind, filename. 2. register_pack(register_fn, entries) takes a callback and name/bytes pairs, calls register(bytes, format,
+    name) for each. 3. SDK TransformPack class: constructor takes baseUrl, registerAll(pipeline) fetches each CLF and calls
+    pipeline.registerTransform(). 4. CLF files ship in the npm package as static assets or hosted on CDN. 5. Existing builtins()
+    function can remain for backwards compat but data fields become empty (or removed). 6. Follow ML model-pack pattern: manifest
+    is metadata, data fetched on demand.'
+plan: []
+extra: {}
