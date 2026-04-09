@@ -7,7 +7,7 @@
 use crate::color_math;
 use crate::color_space::ColorSpace;
 use crate::lmt::Lmt;
-use crate::node::{Node, NodeInfo, NodeCapabilities, PipelineError, Upstream, InputRectEstimate};
+use crate::node::{Node, NodeInfo, NodeCapabilities, GpuShader, PipelineError, Upstream, InputRectEstimate};
 use crate::rect::Rect;
 
 /// What kind of transform this is (metadata for validation/UI).
@@ -307,11 +307,86 @@ impl Node for ColorTransformNode {
     fn upstream_ids(&self) -> Vec<u32> { vec![self.upstream] }
 
     fn capabilities(&self) -> NodeCapabilities {
-        NodeCapabilities::default() // CPU only for now; GPU shader in future track
+        let has_gpu = matches!(self.transform.inner, ColorTransformInner::Aces2OutputTransform(_));
+        NodeCapabilities {
+            gpu: has_gpu,
+            ..Default::default()
+        }
+    }
+
+    fn gpu_shader(&self, width: u32, height: u32) -> Option<GpuShader> {
+        match &self.transform.inner {
+            ColorTransformInner::Aces2OutputTransform(ot) => {
+                Some(aces2_ot_gpu_shader(ot, width, height))
+            }
+            _ => None,
+        }
     }
 
     fn input_rect(&self, output: Rect, _bounds_w: u32, _bounds_h: u32) -> InputRectEstimate {
         InputRectEstimate::Exact(output) // point operation, no spatial expansion
+    }
+
+    fn set_upstream(&mut self, new_upstream: u32) -> bool {
+        self.upstream = new_upstream;
+        true
+    }
+}
+
+/// Build GPU shader for ACES 2.0 Output Transform.
+fn aces2_ot_gpu_shader(ot: &crate::aces2::Aces2OtParams, width: u32, height: u32) -> GpuShader {
+    use crate::aces2::constants::{AP0_PRIMS, AP1_PRIMS, rgb_to_rgb_f33};
+
+    // Serialize uniform params — must match the WGSL Params struct layout exactly
+    let mut params: Vec<u8> = Vec::with_capacity(512);
+
+    // Helper: append f32/u32/matrix to the buffer
+    macro_rules! p {
+        (u32 $v:expr) => { params.extend_from_slice(&($v).to_le_bytes()) };
+        (f32 $v:expr) => { params.extend_from_slice(&($v).to_le_bytes()) };
+        (m33 $m:expr) => { for &v in ($m).iter() { params.extend_from_slice(&v.to_le_bytes()); } };
+    }
+
+    let ap0_to_ap1 = rgb_to_rgb_f33(&AP0_PRIMS, &AP1_PRIMS);
+    let ap1_to_ap0 = rgb_to_rgb_f33(&AP1_PRIMS, &AP0_PRIMS);
+    let upper_bound = 8.0 * (128.0 + 768.0 * ((ot.peak_luminance / 100.0).ln() / (10000.0_f32 / 100.0).ln()));
+    let eotf_id: u32 = match ot.eotf {
+        crate::aces2::Eotf::Srgb => 0, crate::aces2::Eotf::Bt1886 => 1,
+        crate::aces2::Eotf::Pq => 2, crate::aces2::Eotf::Hlg => 3,
+    };
+
+    p!(u32 width); p!(u32 height);
+    p!(m33 &ot.p_in.matrix_rgb_to_cam16_c);
+    p!(m33 &ot.p_in.matrix_cone_response_to_aab);
+    p!(m33 &ot.p_out.matrix_aab_to_cone_response);
+    p!(m33 &ot.p_out.matrix_cam16_c_to_rgb);
+    p!(f32 ot.p_in.f_l_n); p!(f32 ot.p_in.cz); p!(f32 ot.p_in.inv_cz); p!(f32 ot.p_in.a_w_j);
+    p!(m33 &ap0_to_ap1); p!(m33 &ap1_to_ap0);
+    p!(f32 upper_bound);
+    p!(f32 ot.tone.n_r); p!(f32 ot.tone.g); p!(f32 ot.tone.t_1); p!(f32 ot.tone.s_2); p!(f32 ot.tone.m_2);
+    p!(f32 ot.chroma.sat); p!(f32 ot.chroma.sat_thr); p!(f32 ot.chroma.compr); p!(f32 ot.chroma.chroma_compress_scale);
+    p!(f32 ot.shared.limit_j_max); p!(f32 ot.shared.model_gamma_inv);
+    p!(f32 ot.gamut.mid_j); p!(f32 ot.gamut.focus_dist); p!(f32 ot.gamut.lower_hull_gamma_inv);
+    p!(u32 eotf_id); p!(f32 ot.peak_luminance); p!(u32 0u32);
+
+    // Serialize table storage buffers
+    let reach_buf: Vec<u8> = ot.shared.reach_m_table.iter()
+        .flat_map(|v| v.to_le_bytes()).collect();
+    let cusp_buf: Vec<u8> = ot.gamut.gamut_cusp_table.iter()
+        .flat_map(|arr| arr.iter().flat_map(|v| v.to_le_bytes()))
+        .collect();
+    let hue_buf: Vec<u8> = ot.gamut.hue_table.iter()
+        .flat_map(|v| v.to_le_bytes()).collect();
+
+    GpuShader {
+        body: include_str!("shaders/aces2_ot.wgsl").to_string(),
+        entry_point: "main",
+        workgroup_size: [16, 16, 1],
+        params,
+        extra_buffers: vec![reach_buf, cusp_buf, hue_buf],
+        reduction_buffers: vec![],
+        convergence_check: None,
+        loop_dispatch: None,
     }
 }
 
