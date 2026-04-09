@@ -1362,4 +1362,91 @@ mod tests {
         assert!((below - 0.0).abs() < 1e-4, "below range: {below}");
         assert!((above - 1.0).abs() < 1e-4, "above range: {above}");
     }
+
+    // ── CSC insertion + fusion tests ──
+
+    /// Minimal source node for testing.
+    struct TestSource { info: crate::node::NodeInfo, pixels: Vec<f32> }
+    impl crate::node::Node for TestSource {
+        fn info(&self) -> crate::node::NodeInfo { self.info.clone() }
+        fn compute(&self, _: crate::rect::Rect, _: &mut dyn crate::node::Upstream) -> Result<Vec<f32>, crate::node::PipelineError> {
+            Ok(self.pixels.clone())
+        }
+        fn upstream_ids(&self) -> Vec<u32> { vec![] }
+    }
+
+    fn make_test_graph(color_managed: bool) -> (Graph, u32, u32) {
+        use crate::color_space::ColorSpace;
+        let mut graph = Graph::new(1024);
+        graph.set_color_managed(color_managed);
+        graph.set_working_color_space(ColorSpace::AcesCg);
+
+        let info = crate::node::NodeInfo { width: 2, height: 2, color_space: ColorSpace::AcesCg };
+        let src = graph.add_node(Box::new(TestSource { info: info.clone(), pixels: vec![0.5; 16] }));
+        let lgg = crate::filters::grading::lift_gamma_gain::LiftGammaGain {
+            lift: [0.0, 0.0, 0.0], gamma: [1.0, 1.0, 1.0], gain: [1.2, 1.2, 1.2],
+        };
+        let lgg_id = graph.add_node(Box::new(
+            crate::filter_node::FilterNode::new(src, info, lgg),
+        ));
+        (graph, src, lgg_id)
+    }
+
+    #[test]
+    fn csc_insertion_skipped_when_not_color_managed() {
+        let (mut graph, _, _) = make_test_graph(false);
+        let count_before = graph.node_count();
+        insert_preferred_csc_nodes(&mut graph);
+        assert_eq!(graph.node_count(), count_before, "No CSC when not color managed");
+    }
+
+    #[test]
+    fn csc_insertion_adds_nodes_when_color_managed() {
+        let (mut graph, _, _) = make_test_graph(true);
+        let count_before = graph.node_count();
+        insert_preferred_csc_nodes(&mut graph);
+        assert_eq!(graph.node_count(), count_before + 2, "Should insert 2 CSC nodes");
+    }
+
+    #[test]
+    fn fused_grading_matches_sequential() {
+        use crate::color_space::ColorSpace;
+        use crate::color_math::convert_color_space;
+        use crate::ops::Filter;
+
+        let test_rgb = [0.3_f32, 0.5, 0.1];
+        let lgg = crate::filters::grading::lift_gamma_gain::LiftGammaGain {
+            lift: [0.02, 0.01, 0.0], gamma: [0.9, 1.0, 1.1], gain: [1.1, 1.0, 0.95],
+        };
+
+        // Sequential: ACEScg → ACEScct → grade → ACEScg
+        let mut sequential = [test_rgb[0], test_rgb[1], test_rgb[2], 1.0];
+        convert_color_space(&mut sequential, ColorSpace::AcesCg, ColorSpace::AcesCct);
+        let graded = lgg.compute(&sequential, 1, 1).unwrap();
+        let mut seq_result = [graded[0], graded[1], graded[2], 1.0];
+        convert_color_space(&mut seq_result, ColorSpace::AcesCct, ColorSpace::AcesCg);
+
+        // Fused: compose 3 CLUTs (CSC→cct + LGG + CSC→cg)
+        let csc_in = crate::color_convert::ColorConvertNode::new(0,
+            crate::node::NodeInfo { width: 1, height: 1, color_space: ColorSpace::AcesCct },
+            ColorSpace::AcesCg, ColorSpace::AcesCct);
+        let csc_out = crate::color_convert::ColorConvertNode::new(0,
+            crate::node::NodeInfo { width: 1, height: 1, color_space: ColorSpace::AcesCg },
+            ColorSpace::AcesCct, ColorSpace::AcesCg);
+
+        use crate::node::Node;
+        let clut_in = csc_in.fusion_clut().unwrap();
+        let clut_grade = lgg.fusion_clut().unwrap();
+        let clut_out = csc_out.fusion_clut().unwrap();
+
+        let composed = compose_cluts(&clut_out, &compose_cluts(&clut_grade, &clut_in));
+        let fused = composed.sample(test_rgb[0], test_rgb[1], test_rgb[2]);
+
+        let max_err = (fused.0 - seq_result[0]).abs()
+            .max((fused.1 - seq_result[1]).abs())
+            .max((fused.2 - seq_result[2]).abs());
+        assert!(max_err < 0.02,
+            "Fused [{:.4},{:.4},{:.4}] vs sequential [{:.4},{:.4},{:.4}] max_err={:.6}",
+            fused.0, fused.1, fused.2, seq_result[0], seq_result[1], seq_result[2], max_err);
+    }
 }
