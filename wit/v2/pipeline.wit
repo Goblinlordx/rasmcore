@@ -186,30 +186,67 @@ interface pipeline-v2 {
 
     // ─── Image Metadata ──────────────────────────────────────────────
 
-    /// A format-specific metadata chunk (e.g., PNG tEXt, GIF comment).
-    record metadata-chunk {
-        /// Chunk key (e.g., "png:text:Title", "gif:comment").
-        key: string,
-        /// Raw chunk value bytes.
-        value: buffer,
+    /// A typed metadata value — supports primitives, raw bytes, and one level
+    /// of nesting (list of child entries). For deeper structures, encode as
+    /// bytes and parse on the host.
+    ///
+    /// WIT does not allow recursive types, so nesting is limited to one level.
+    /// In practice this covers all standard metadata: top-level kind ("exif",
+    /// "icc") → value (bytes or child entries with primitive values).
+    variant metadata-value {
+        /// UTF-8 string value.
+        text(string),
+        /// Floating-point number.
+        number(f64),
+        /// Integer value.
+        integer(s64),
+        /// Boolean value.
+        flag(bool),
+        /// Raw binary data (ICC profiles, raw EXIF bytes, etc.).
+        bytes(buffer),
+        /// Child entries (one level of nesting).
+        /// Each child has a string key and a flat-metadata-value (no further nesting).
+        children(list<flat-metadata-entry>),
     }
 
-    /// Image metadata — EXIF, XMP, IPTC, ICC profile, and format-specific chunks.
-    ///
-    /// All fields carry raw bytes. The host SDK parses them (e.g., EXIF tag decoding).
-    /// The pipeline preserves metadata through the graph for write-time roundtrip.
-    record image-metadata {
-        /// Raw EXIF bytes (APP1 payload for JPEG, eXIf chunk for PNG).
-        exif: option<buffer>,
-        /// Raw XMP bytes (XML string as UTF-8).
-        xmp: option<buffer>,
-        /// Raw IPTC-IIM bytes (APP13 payload for JPEG).
-        iptc: option<buffer>,
-        /// ICC color profile bytes.
-        icc-profile: option<buffer>,
-        /// Format-specific metadata chunks.
-        format-specific: list<metadata-chunk>,
+    /// A flat (non-recursive) metadata value — used inside children lists.
+    variant flat-metadata-value {
+        text(string),
+        number(f64),
+        integer(s64),
+        flag(bool),
+        bytes(buffer),
     }
+
+    /// A flat key-value entry (used inside children lists).
+    record flat-metadata-entry {
+        key: string,
+        value: flat-metadata-value,
+    }
+
+    /// A single top-level key-value metadata entry.
+    record metadata-entry {
+        /// Entry key (e.g., "exif", "icc", "orientation", "camera").
+        key: string,
+        /// Entry value.
+        value: metadata-value,
+    }
+
+    /// Image metadata — generic key-value structure.
+    ///
+    /// Top-level entries are metadata kinds: "exif", "icc", "xmp", "iptc",
+    /// format-specific keys like "png:text", etc.
+    ///
+    /// Example:
+    ///   [
+    ///     { key: "icc", value: bytes(<raw icc data>) },
+    ///     { key: "exif", value: bytes(<raw exif data>) },
+    ///     { key: "exif:parsed", value: children([
+    ///       { key: "orientation", value: integer(6) },
+    ///       { key: "camera", value: text("iPhone 15 Pro") },
+    ///     ]) },
+    ///   ]
+    type image-metadata = list<metadata-entry>;
 
     // ─── Layer Cache ────────────────────────────────────────────────────
 

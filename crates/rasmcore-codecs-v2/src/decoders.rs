@@ -372,7 +372,7 @@ pub fn probe_metadata(data: &[u8]) -> Result<DecodedImageMetadata, PipelineError
 
 // ─── Fast metadata-only parsers ───────────────────────────────────────────
 
-use rasmcore_pipeline_v2::image_metadata::ImageMetadata;
+use rasmcore_pipeline_v2::image_metadata::{ImageMetadata, MetadataValue};
 use rasmcore_pipeline_v2::ops::DecodedImageMetadata;
 
 /// JPEG metadata-only: parse APP markers + SOF dimensions without Huffman decode.
@@ -409,24 +409,24 @@ fn probe_jpeg_metadata(data: &[u8]) -> Result<DecodedImageMetadata, PipelineErro
             // APP1 — EXIF or XMP
             0xE1 => {
                 if seg_end > seg_start + 6 && &data[seg_start..seg_start + 6] == b"Exif\0\0" {
-                    metadata.exif = Some(data[seg_start + 6..seg_end].to_vec());
+                    metadata.set("exif", MetadataValue::Bytes(data[seg_start + 6..seg_end].to_vec()));
                 } else if seg_end > seg_start + 29 && data[seg_start..].starts_with(b"http://ns.adobe.com/xap/1.0/") {
                     let xmp_start = data[seg_start..seg_end].iter().position(|&b| b == 0).unwrap_or(28) + 1;
-                    metadata.xmp = Some(data[seg_start + xmp_start..seg_end].to_vec());
+                    metadata.set("xmp", MetadataValue::Bytes(data[seg_start + xmp_start..seg_end].to_vec()));
                 }
             }
             // APP2 — ICC profile
             0xE2 => {
                 if seg_end > seg_start + 14 && &data[seg_start..seg_start + 12] == b"ICC_PROFILE\0" {
                     // Simplified: take first chunk (multi-chunk ICC not handled here)
-                    if metadata.icc_profile.is_none() {
-                        metadata.icc_profile = Some(data[seg_start + 14..seg_end].to_vec());
+                    if metadata.get("icc").is_none() {
+                        metadata.set("icc", MetadataValue::Bytes(data[seg_start + 14..seg_end].to_vec()));
                     }
                 }
             }
             // APP13 — IPTC
             0xED => {
-                metadata.iptc = Some(data[seg_start..seg_end].to_vec());
+                metadata.set("iptc", MetadataValue::Bytes(data[seg_start..seg_end].to_vec()));
             }
             _ => {}
         }
@@ -475,19 +475,16 @@ fn probe_png_metadata(data: &[u8]) -> Result<DecodedImageMetadata, PipelineError
                 if let Some(null_pos) = data[chunk_data_start..chunk_data_end].iter().position(|&b| b == 0) {
                     let profile_start = chunk_data_start + null_pos + 2; // skip name + compression method
                     if profile_start < chunk_data_end {
-                        metadata.icc_profile = Some(data[profile_start..chunk_data_end].to_vec());
+                        metadata.set("icc", MetadataValue::Bytes(data[profile_start..chunk_data_end].to_vec()));
                     }
                 }
             }
             b"eXIf" => {
-                metadata.exif = Some(data[chunk_data_start..chunk_data_end].to_vec());
+                metadata.set("exif", MetadataValue::Bytes(data[chunk_data_start..chunk_data_end].to_vec()));
             }
             b"tEXt" | b"iTXt" => {
                 if let Ok(text) = std::str::from_utf8(&data[chunk_data_start..chunk_data_end]) {
-                    metadata.format_specific.push(rasmcore_pipeline_v2::image_metadata::MetadataChunk {
-                        key: "text".into(),
-                        value: text.as_bytes().to_vec(),
-                    });
+                    metadata.set("text", MetadataValue::Bytes(text.as_bytes().to_vec()));
                 }
             }
             b"IDAT" | b"IEND" => break, // stop before pixel data
@@ -558,13 +555,13 @@ fn probe_webp_metadata(data: &[u8]) -> Result<DecodedImageMetadata, PipelineErro
                 }
             }
             b"ICCP" => {
-                metadata.icc_profile = Some(data[chunk_start..chunk_end].to_vec());
+                metadata.set("icc", MetadataValue::Bytes(data[chunk_start..chunk_end].to_vec()));
             }
             b"EXIF" => {
-                metadata.exif = Some(data[chunk_start..chunk_end].to_vec());
+                metadata.set("exif", MetadataValue::Bytes(data[chunk_start..chunk_end].to_vec()));
             }
             b"XMP " => {
-                metadata.xmp = Some(data[chunk_start..chunk_end].to_vec());
+                metadata.set("xmp", MetadataValue::Bytes(data[chunk_start..chunk_end].to_vec()));
             }
             _ => {}
         }

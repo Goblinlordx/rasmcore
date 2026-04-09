@@ -946,16 +946,10 @@ impl wit::GuestSource for SourceResource {
         }
     }
 
-    fn metadata(&self) -> wit::ImageMetadata {
+    fn metadata(&self) -> Vec<wit::MetadataEntry> {
         // SourceResource doesn't carry ImageMetadata yet (pipeline flow
         // track will add it). Return empty for now.
-        wit::ImageMetadata {
-            exif: None,
-            xmp: None,
-            iptc: None,
-            icc_profile: None,
-            format_specific: vec![],
-        }
+        vec![]
     }
 }
 
@@ -1131,17 +1125,11 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
         })
     }
 
-    fn node_metadata(&self, node: u32) -> Result<wit::ImageMetadata, RasmcoreError> {
+    fn node_metadata(&self, node: u32) -> Result<Vec<wit::MetadataEntry>, RasmcoreError> {
         // For now, return empty metadata — source nodes will carry metadata
         // once the graph propagation is wired (SourceNode stores ImageMetadata).
         let _ = PipelineResource::node_info(self, node).map_err(to_wit_error)?;
-        Ok(wit::ImageMetadata {
-            exif: None,
-            xmp: None,
-            iptc: None,
-            icc_profile: None,
-            format_specific: vec![],
-        })
+        Ok(vec![])
     }
 
     fn apply_filter(

@@ -137,15 +137,25 @@ for (const op of filters) {
 
 ts += `// ─── Metadata types ─────────────────────────────────────────────────────────
 
-/** Image metadata — raw bytes for EXIF, XMP, IPTC, ICC.
- *  Parse with host-side libraries (e.g., exifr for EXIF, icc-profile for ICC). */
-export interface ImageMetadata {
-  exif?: Uint8Array;
-  xmp?: Uint8Array;
-  iptc?: Uint8Array;
-  iccProfile?: Uint8Array;
-  formatSpecific?: Array<{ key: string; value: Uint8Array }>;
+/** A typed metadata value — recursive, supports any metadata structure. */
+export type MetadataValue =
+  | { tag: 'text'; val: string }
+  | { tag: 'number'; val: number }
+  | { tag: 'integer'; val: bigint }
+  | { tag: 'flag'; val: boolean }
+  | { tag: 'bytes'; val: Uint8Array }
+  | { tag: 'items'; val: MetadataValue[] }
+  | { tag: 'entries'; val: MetadataEntry[] };
+
+/** A single key-value metadata entry. */
+export interface MetadataEntry {
+  key: string;
+  value: MetadataValue;
 }
+
+/** Image metadata — generic recursive key-value structure.
+ *  Top-level keys are metadata kinds: "exif", "icc", "xmp", "iptc", etc. */
+export type ImageMetadata = MetadataEntry[];
 
 // ─── Pipeline class ──────────────────────────────────────────────────────────
 
