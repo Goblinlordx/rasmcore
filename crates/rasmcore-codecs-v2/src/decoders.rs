@@ -339,6 +339,252 @@ pub fn detect_format(data: &[u8]) -> Option<&'static str> {
     None
 }
 
+/// Probe metadata without decoding pixels — fast path for file browsers.
+///
+/// Parses only headers/metadata from the image data. For formats with
+/// optimized metadata paths (JPEG, PNG, WebP), this is 10-100x faster
+/// than full decode because it skips pixel decompression.
+pub fn probe_metadata(data: &[u8]) -> Result<DecodedImageMetadata, PipelineError> {
+    // Try format-specific fast paths first
+    if JpegDecoder.can_decode(data) {
+        return probe_jpeg_metadata(data);
+    }
+    if PngDecoder.can_decode(data) {
+        return probe_png_metadata(data);
+    }
+    if WebpDecoder.can_decode(data) {
+        return probe_webp_metadata(data);
+    }
+
+    // Fallback: full decode, discard pixels (uses default trait impl)
+    if let Some(format) = detect_format(data) {
+        let decoded = decode_with_hint(data, format)?;
+        return Ok(DecodedImageMetadata {
+            width: decoded.info.width,
+            height: decoded.info.height,
+            color_space: decoded.info.color_space,
+            metadata: decoded.metadata,
+        });
+    }
+
+    Err(PipelineError::ComputeError("no decoder matched for metadata probe".into()))
+}
+
+// ─── Fast metadata-only parsers ───────────────────────────────────────────
+
+use rasmcore_pipeline_v2::image_metadata::ImageMetadata;
+use rasmcore_pipeline_v2::ops::DecodedImageMetadata;
+
+/// JPEG metadata-only: parse APP markers + SOF dimensions without Huffman decode.
+fn probe_jpeg_metadata(data: &[u8]) -> Result<DecodedImageMetadata, PipelineError> {
+    let mut metadata = ImageMetadata::new();
+    let mut width = 0u32;
+    let mut height = 0u32;
+    let mut pos = 2; // skip SOI (0xFF 0xD8)
+
+    while pos + 4 < data.len() {
+        if data[pos] != 0xFF {
+            pos += 1;
+            continue;
+        }
+        let marker = data[pos + 1];
+        if marker == 0xD9 || marker == 0xDA { break; } // EOI or SOS — stop before pixel data
+        if marker == 0x00 || marker == 0xFF {
+            pos += 1;
+            continue;
+        }
+
+        let seg_len = u16::from_be_bytes([data[pos + 2], data[pos + 3]]) as usize;
+        let seg_start = pos + 4;
+        let seg_end = (pos + 2 + seg_len).min(data.len());
+
+        match marker {
+            // SOF0-SOF15 (except SOF4 = DHT, SOF12 = DAC)
+            0xC0..=0xCF if marker != 0xC4 && marker != 0xCC => {
+                if seg_end >= seg_start + 5 {
+                    height = u16::from_be_bytes([data[seg_start + 1], data[seg_start + 2]]) as u32;
+                    width = u16::from_be_bytes([data[seg_start + 3], data[seg_start + 4]]) as u32;
+                }
+            }
+            // APP1 — EXIF or XMP
+            0xE1 => {
+                if seg_end > seg_start + 6 && &data[seg_start..seg_start + 6] == b"Exif\0\0" {
+                    metadata.exif = Some(data[seg_start + 6..seg_end].to_vec());
+                } else if seg_end > seg_start + 29 && data[seg_start..].starts_with(b"http://ns.adobe.com/xap/1.0/") {
+                    let xmp_start = data[seg_start..seg_end].iter().position(|&b| b == 0).unwrap_or(28) + 1;
+                    metadata.xmp = Some(data[seg_start + xmp_start..seg_end].to_vec());
+                }
+            }
+            // APP2 — ICC profile
+            0xE2 => {
+                if seg_end > seg_start + 14 && &data[seg_start..seg_start + 12] == b"ICC_PROFILE\0" {
+                    // Simplified: take first chunk (multi-chunk ICC not handled here)
+                    if metadata.icc_profile.is_none() {
+                        metadata.icc_profile = Some(data[seg_start + 14..seg_end].to_vec());
+                    }
+                }
+            }
+            // APP13 — IPTC
+            0xED => {
+                metadata.iptc = Some(data[seg_start..seg_end].to_vec());
+            }
+            _ => {}
+        }
+
+        pos = pos + 2 + seg_len;
+    }
+
+    if width == 0 || height == 0 {
+        return Err(PipelineError::ComputeError("JPEG: no SOF frame found".into()));
+    }
+
+    Ok(DecodedImageMetadata {
+        width,
+        height,
+        color_space: rasmcore_pipeline_v2::ColorSpace::Srgb,
+        metadata,
+    })
+}
+
+/// PNG metadata-only: parse chunks before IDAT for dimensions + metadata.
+fn probe_png_metadata(data: &[u8]) -> Result<DecodedImageMetadata, PipelineError> {
+    let mut metadata = ImageMetadata::new();
+    let mut width = 0u32;
+    let mut height = 0u32;
+
+    if data.len() < 8 { return Err(PipelineError::ComputeError("PNG too short".into())); }
+    let mut pos = 8; // skip PNG signature
+
+    while pos + 12 <= data.len() {
+        let chunk_len = u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
+        let chunk_type = &data[pos + 4..pos + 8];
+        let chunk_data_start = pos + 8;
+        let chunk_data_end = (chunk_data_start + chunk_len).min(data.len());
+
+        match chunk_type {
+            b"IHDR" => {
+                if chunk_len >= 8 {
+                    width = u32::from_be_bytes([data[chunk_data_start], data[chunk_data_start + 1],
+                                                data[chunk_data_start + 2], data[chunk_data_start + 3]]);
+                    height = u32::from_be_bytes([data[chunk_data_start + 4], data[chunk_data_start + 5],
+                                                 data[chunk_data_start + 6], data[chunk_data_start + 7]]);
+                }
+            }
+            b"iCCP" => {
+                // ICC profile (compressed) — extract raw for now
+                if let Some(null_pos) = data[chunk_data_start..chunk_data_end].iter().position(|&b| b == 0) {
+                    let profile_start = chunk_data_start + null_pos + 2; // skip name + compression method
+                    if profile_start < chunk_data_end {
+                        metadata.icc_profile = Some(data[profile_start..chunk_data_end].to_vec());
+                    }
+                }
+            }
+            b"eXIf" => {
+                metadata.exif = Some(data[chunk_data_start..chunk_data_end].to_vec());
+            }
+            b"tEXt" | b"iTXt" => {
+                if let Ok(text) = std::str::from_utf8(&data[chunk_data_start..chunk_data_end]) {
+                    metadata.format_specific.push(rasmcore_pipeline_v2::image_metadata::MetadataChunk {
+                        key: "text".into(),
+                        value: text.as_bytes().to_vec(),
+                    });
+                }
+            }
+            b"IDAT" | b"IEND" => break, // stop before pixel data
+            _ => {}
+        }
+
+        pos = chunk_data_end + 4; // skip CRC
+    }
+
+    if width == 0 || height == 0 {
+        return Err(PipelineError::ComputeError("PNG: no IHDR found".into()));
+    }
+
+    Ok(DecodedImageMetadata {
+        width,
+        height,
+        color_space: rasmcore_pipeline_v2::ColorSpace::Srgb,
+        metadata,
+    })
+}
+
+/// WebP metadata-only: parse RIFF chunks for dimensions + metadata.
+fn probe_webp_metadata(data: &[u8]) -> Result<DecodedImageMetadata, PipelineError> {
+    let mut metadata = ImageMetadata::new();
+    let mut width = 0u32;
+    let mut height = 0u32;
+
+    if data.len() < 12 { return Err(PipelineError::ComputeError("WebP too short".into())); }
+    let mut pos = 12; // skip RIFF + size + WEBP
+
+    while pos + 8 <= data.len() {
+        let fourcc = &data[pos..pos + 4];
+        let chunk_size = u32::from_le_bytes([data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7]]) as usize;
+        let chunk_start = pos + 8;
+        let chunk_end = (chunk_start + chunk_size).min(data.len());
+
+        match fourcc {
+            b"VP8 " => {
+                // Lossy VP8 header — first 10 bytes contain dimensions
+                if chunk_size >= 10 && chunk_end >= chunk_start + 10 {
+                    let d = &data[chunk_start..];
+                    // VP8 bitstream starts at byte 3 after frame tag
+                    if d.len() >= 10 && d[3] == 0x9D && d[4] == 0x01 && d[5] == 0x2A {
+                        width = u16::from_le_bytes([d[6], d[7]]) as u32 & 0x3FFF;
+                        height = u16::from_le_bytes([d[8], d[9]]) as u32 & 0x3FFF;
+                    }
+                }
+                break; // don't parse pixel data
+            }
+            b"VP8L" => {
+                // Lossless VP8L header
+                if chunk_size >= 5 && chunk_end >= chunk_start + 5 {
+                    let d = &data[chunk_start..];
+                    if d[0] == 0x2F {
+                        let bits = u32::from_le_bytes([d[1], d[2], d[3], d[4]]);
+                        width = (bits & 0x3FFF) + 1;
+                        height = ((bits >> 14) & 0x3FFF) + 1;
+                    }
+                }
+                break;
+            }
+            b"VP8X" => {
+                // Extended WebP header — has canvas dimensions
+                if chunk_size >= 10 && chunk_end >= chunk_start + 10 {
+                    let d = &data[chunk_start..];
+                    width = (u32::from_le_bytes([d[4], d[5], d[6], 0]) & 0xFFFFFF) + 1;
+                    height = (u32::from_le_bytes([d[7], d[8], d[9], 0]) & 0xFFFFFF) + 1;
+                }
+            }
+            b"ICCP" => {
+                metadata.icc_profile = Some(data[chunk_start..chunk_end].to_vec());
+            }
+            b"EXIF" => {
+                metadata.exif = Some(data[chunk_start..chunk_end].to_vec());
+            }
+            b"XMP " => {
+                metadata.xmp = Some(data[chunk_start..chunk_end].to_vec());
+            }
+            _ => {}
+        }
+
+        // Chunks are padded to even size
+        pos = chunk_start + ((chunk_size + 1) & !1);
+    }
+
+    if width == 0 || height == 0 {
+        return Err(PipelineError::ComputeError("WebP: no dimensions found".into()));
+    }
+
+    Ok(DecodedImageMetadata {
+        width,
+        height,
+        color_space: rasmcore_pipeline_v2::ColorSpace::Srgb,
+        metadata,
+    })
+}
+
 /// List all supported V2 decode formats.
 pub fn supported_formats() -> Vec<&'static str> {
     vec![

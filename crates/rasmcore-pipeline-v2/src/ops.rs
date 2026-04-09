@@ -201,11 +201,38 @@ pub trait Decoder {
     /// Linear for EXR/HDR — the promote/linearize stage handles conversion).
     fn decode(&self, data: &[u8]) -> Result<DecodedImage, PipelineError>;
 
+    /// Decode only metadata and dimensions — no pixel decompression.
+    ///
+    /// Returns (metadata, width, height, color_space). This is much faster
+    /// than `decode()` for large images because it skips decompressing
+    /// pixel data. Useful for file browsers, batch metadata extraction,
+    /// and pre-flight color space detection.
+    ///
+    /// Default: falls back to `decode()` and discards pixels.
+    fn decode_metadata(&self, data: &[u8]) -> Result<DecodedImageMetadata, PipelineError> {
+        let decoded = self.decode(data)?;
+        Ok(DecodedImageMetadata {
+            width: decoded.info.width,
+            height: decoded.info.height,
+            color_space: decoded.info.color_space,
+            metadata: decoded.metadata,
+        })
+    }
+
     /// Check if this decoder can handle the given data (magic byte detection).
     fn can_decode(&self, data: &[u8]) -> bool;
 
     /// File extensions this decoder handles.
     fn extensions(&self) -> &[&str];
+}
+
+/// Metadata-only decode result — no pixel data.
+#[derive(Debug, Clone)]
+pub struct DecodedImageMetadata {
+    pub width: u32,
+    pub height: u32,
+    pub color_space: crate::color_space::ColorSpace,
+    pub metadata: crate::image_metadata::ImageMetadata,
 }
 
 /// Image encoder — converts f32 pixel data to encoded bytes.
