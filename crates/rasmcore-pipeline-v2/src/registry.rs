@@ -502,6 +502,7 @@ pub struct DecodedImageV2 {
     pub width: u32,
     pub height: u32,
     pub color_space: crate::color_space::ColorSpace,
+    pub metadata: crate::image_metadata::ImageMetadata,
 }
 
 /// Decode function: takes encoded bytes → f32 RGBA pixels.

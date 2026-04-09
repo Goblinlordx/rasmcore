@@ -108,6 +108,7 @@ impl PngDecoderAdapter {
             width: info.width,
             height: info.height,
             color_space: rasmcore_pipeline_v2::color_space::ColorSpace::Linear,
+            metadata: rasmcore_pipeline_v2::image_metadata::ImageMetadata::default(),
         })
     }
 }
@@ -130,6 +131,7 @@ fn decoded_to_v2(
         width: d.info.width,
         height: d.info.height,
         color_space: d.info.color_space,
+        metadata: d.metadata,
     }
 }
 

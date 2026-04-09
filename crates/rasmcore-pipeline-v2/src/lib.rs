@@ -45,6 +45,7 @@ pub mod analysis_buffer;
 pub mod gpu_shaders;
 pub mod aces_audit;
 pub mod noise;
+pub mod image_metadata;
 pub mod lmt;
 pub mod cdl;
 pub mod camera_idt;

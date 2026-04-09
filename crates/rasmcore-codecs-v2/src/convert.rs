@@ -15,9 +15,19 @@ use rasmcore_pipeline_v2::PipelineError;
 /// operates entirely in linear light. The encoder re-applies the sRGB transfer
 /// function on output.
 pub fn v1_to_v2(v1: V1DecodedImage) -> Result<V2DecodedImage, PipelineError> {
-    let v1_cs = v1.info.color_space;
+    use rasmcore_pipeline_v2::image_metadata::{ImageMetadata, derive_color_space};
+
     let pixels = pixels_to_f32_rgba(&v1.pixels, v1.info.format, v1.info.width, v1.info.height)?;
-    let color_space = map_color_space(v1_cs);
+
+    // Build metadata from V1 fields
+    let metadata = ImageMetadata {
+        icc_profile: v1.icc_profile,
+        ..Default::default()
+    };
+
+    // Derive color space from metadata (ICC profile, EXIF), fallback to V1's declared space
+    let color_space = derive_color_space(&metadata)
+        .unwrap_or_else(|| map_color_space(v1.info.color_space));
 
     // Linearize sRGB sources — V2 pipeline is f32 linear throughout.
     let pixels = if color_space == V2ColorSpace::Srgb {
@@ -37,7 +47,7 @@ pub fn v1_to_v2(v1: V1DecodedImage) -> Result<V2DecodedImage, PipelineError> {
                 color_space
             },
         },
-        icc_profile: v1.icc_profile,
+        metadata,
     })
 }
 

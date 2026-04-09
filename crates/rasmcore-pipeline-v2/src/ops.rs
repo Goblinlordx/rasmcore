@@ -237,10 +237,10 @@ pub trait Encoder {
 pub struct DecodedImage {
     /// f32 RGBA pixel data (width * height * 4 elements).
     pub pixels: Vec<f32>,
-    /// Image metadata.
+    /// Image dimensions and color space.
     pub info: NodeInfo,
-    /// Optional ICC profile data.
-    pub icc_profile: Option<Vec<u8>>,
+    /// Image metadata (EXIF, XMP, IPTC, ICC profile, format-specific).
+    pub metadata: crate::image_metadata::ImageMetadata,
 }
 
 /// Spatial transform — changes image dimensions.
