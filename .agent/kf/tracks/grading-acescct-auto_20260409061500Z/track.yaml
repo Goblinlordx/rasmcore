@@ -1,0 +1,30 @@
+id: grading-acescct-auto_20260409061500Z
+title: Auto-insert ACEScct CSC around grading nodes when color-managed
+type: feature
+status: pending
+created: '2026-04-09'
+updated: '2026-04-09'
+spec:
+  summary: Graph pass before fusion auto-inserts CSC nodes (ACEScg to ACEScct and back) around grading filter runs when color
+    management is enabled. CSC nodes made CLUT-fusable so fusion merges the entire run into one GPU CLUT. Grading filters
+    unchanged — they declare preferred_color_space(ACEScct).
+  context: Grading controls (LGG, curves, CDL, etc.) feel touchy in linear ACEScg. Professional tools grade in log space.
+    Rather than modifying each filter, the graph auto-inserts CSC conversion nodes around grading runs when color-managed.
+    Fusion merges CSC+grading into one CLUT — zero runtime cost.
+  codebase_analysis: ''
+  acceptance_criteria:
+  - ColorConvertNode implements fusion_clut() for fusable color space conversion
+  - Grading filters (LGG, curves x4, split_toning, asc_cdl, hue_curves x4) declare preferred_color_space ACEScct
+  - Graph pass inserts CSC nodes around grading runs when color_managed and working space is ACEScg
+  - Fusion merges CSC+grading run into single CLUT
+  - No CSC insertion when color_managed is false
+  - No CSC insertion when working space already matches preferred (e.g. user set ACEScct)
+  out_of_scope: Modifying grading filter math. Non-grading filters. Manual mode behavior changes.
+  technical_notes: '1. Make ColorConvertNode (ACEScg<->ACEScct) expressible as analytic PointOpExpr (per-channel transfer
+    function). 2. Add fusion_clut() to FusedPointOpNode — sample the per-channel F32Luts across a 3D grid. This bridges analytic→CLUT
+    fusion: after fuse_analytical_chains merges exposure+CSC into a FusedPointOpNode, fuse_clut_chains picks it up alongside
+    grading CLUTs. 3. Grading filters declare preferred_color_space(ACEScct). 4. New graph pass (before fusion): insert CSC
+    nodes around grading runs when color-managed. 5. Result: entire chain (exposure+CSC+LGG+curves+CSC) fuses to single CLUT
+    → one GPU LUT3D pass.'
+plan: []
+extra: {}
