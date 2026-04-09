@@ -238,7 +238,7 @@ impl Filter for Skeletonize {
                     }],
                     // Only check after step2 — both steps accumulate into same counter
                     convergence_check: if sub == 1 { Some(change_buf_id) } else { None },
-                    loop_dispatch: None,
+                    loop_dispatch: None, setup: None,
                 };
                 passes.push(shader);
             }

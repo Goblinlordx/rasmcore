@@ -131,7 +131,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             GpuShader {
                 body: init_wgsl.to_string(), entry_point: "main", workgroup_size: [256, 1, 1],
                 params: init_p, extra_buffers: vec![], convergence_check: None,
-            loop_dispatch: None,
+            loop_dispatch: None, setup: None,
                 reduction_buffers: vec![ReductionBuffer { id: label_buf_id, initial_data: vec![0u8; label_size], read_write: true }],
             },
         ];
@@ -139,7 +139,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             passes.push(GpuShader {
                 body: prop_wgsl.to_string(), entry_point: "main", workgroup_size: [256, 1, 1],
                 params: prop_p.clone(), extra_buffers: vec![], convergence_check: Some(change_buf_id),
-                loop_dispatch: None,
+                loop_dispatch: None, setup: None,
                 reduction_buffers: vec![
                     ReductionBuffer { id: label_buf_id, initial_data: vec![], read_write: true },
                     ReductionBuffer { id: change_buf_id, initial_data: vec![0u8; change_size], read_write: true },

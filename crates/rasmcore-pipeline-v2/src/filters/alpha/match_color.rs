@@ -134,7 +134,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {{
             extra_buffers: vec![],
             reduction_buffers: vec![sum_reduction.read_buffer(&sum_passes)],
             convergence_check: None,
-            loop_dispatch: None,
+            loop_dispatch: None, setup: None,
         };
 
         Some(vec![sum_passes.pass1, sum_passes.pass2, apply_shader])

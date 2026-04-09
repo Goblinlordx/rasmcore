@@ -123,7 +123,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             body: energy_wgsl.to_string(), entry_point: "main",
             workgroup_size: [256, 1, 1], params: energy_p,
             extra_buffers: vec![], convergence_check: None,
-            loop_dispatch: None,
+            loop_dispatch: None, setup: None,
             reduction_buffers: vec![ReductionBuffer {
                 id: dp_buf_id, initial_data: vec![0u8; dp_buf_size], read_write: true,
             }],
@@ -165,7 +165,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             body: dp_row_wgsl.to_string(), entry_point: "main",
             workgroup_size: [256, 1, 1], params: row_p,
             extra_buffers: vec![], convergence_check: None,
-            loop_dispatch: Some(crate::node::LoopDispatch { count: _h, param_offset: 8 }),
+            loop_dispatch: Some(crate::node::LoopDispatch { count: _h, param_offset: 8 }), setup: None,
             reduction_buffers: vec![ReductionBuffer {
                 id: dp_buf_id, initial_data: vec![], read_write: true,
             }],

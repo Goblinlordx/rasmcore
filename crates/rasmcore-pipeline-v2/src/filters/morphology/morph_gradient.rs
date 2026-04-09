@@ -66,7 +66,7 @@ impl Filter for MorphGradient {
                         read_write: true,
                     }],
             convergence_check: None,
-            loop_dispatch: None,
+            loop_dispatch: None, setup: None,
                 }
             },
             // Pass 3: erode from original (buf 0)

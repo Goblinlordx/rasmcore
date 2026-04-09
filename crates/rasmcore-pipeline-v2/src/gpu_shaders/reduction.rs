@@ -167,7 +167,7 @@ impl GpuReduction {
                 read_write: true,
             }],
             convergence_check: None,
-            loop_dispatch: None,
+            loop_dispatch: None, setup: None,
         };
 
         let pass2 = GpuShader {
@@ -182,7 +182,7 @@ impl GpuReduction {
                 read_write: true,
             }],
             convergence_check: None,
-            loop_dispatch: None,
+            loop_dispatch: None, setup: None,
         };
 
         ReductionPasses {
@@ -229,7 +229,7 @@ impl GpuReduction {
                 read_write: true,
             }],
             convergence_check: None,
-            loop_dispatch: None,
+            loop_dispatch: None, setup: None,
         };
 
         let pass2 = GpuShader {
@@ -244,7 +244,7 @@ impl GpuReduction {
                 read_write: true,
             }],
             convergence_check: None,
-            loop_dispatch: None,
+            loop_dispatch: None, setup: None,
         };
 
         ReductionPasses {
@@ -292,7 +292,7 @@ impl GpuReduction {
                 read_write: true,
             }],
             convergence_check: None,
-            loop_dispatch: None,
+            loop_dispatch: None, setup: None,
         };
 
         let pass2 = GpuShader {
@@ -307,7 +307,7 @@ impl GpuReduction {
                 read_write: true,
             }],
             convergence_check: None,
-            loop_dispatch: None,
+            loop_dispatch: None, setup: None,
         };
 
         ReductionPasses {

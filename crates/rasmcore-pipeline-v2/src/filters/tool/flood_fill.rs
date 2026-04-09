@@ -116,7 +116,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {{
                 read_write: true,
             }],
             convergence_check: None,
-            loop_dispatch: None,
+            loop_dispatch: None, setup: None,
         };
 
         // Expand pass: for each unfilled pixel, check 4 neighbors in mask.
@@ -196,7 +196,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {{
                     ReductionBuffer { id: change_buf_id, initial_data: vec![0u8; change_size], read_write: true },
                 ],
                 convergence_check: Some(change_buf_id),
-                loop_dispatch: None,
+                loop_dispatch: None, setup: None,
             });
         }
 

@@ -278,7 +278,7 @@ pub fn brush_gpu_shaders(
         extra_buffers: vec![dab_bytes, tip_bytes],
         reduction_buffers: vec![],
         convergence_check: None,
-        loop_dispatch: None,
+        loop_dispatch: None, setup: None,
     };
 
     let composite = crate::node::GpuShader {
@@ -289,7 +289,7 @@ pub fn brush_gpu_shaders(
         extra_buffers: vec![layer_bytes],
         reduction_buffers: vec![],
         convergence_check: None,
-        loop_dispatch: None,
+        loop_dispatch: None, setup: None,
     };
 
     vec![stamp, composite]

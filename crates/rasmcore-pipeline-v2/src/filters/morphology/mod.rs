@@ -238,7 +238,7 @@ pub(super) fn make_snapshot_shader(width: u32, height: u32, buf_id: u32) -> GpuS
             read_write: true,
         }],
             convergence_check: None,
-            loop_dispatch: None,
+            loop_dispatch: None, setup: None,
     }
 }
 
@@ -258,7 +258,7 @@ pub(super) fn make_sub_shader(wgsl: &str, width: u32, height: u32, buf_id: u32) 
             read_write: false,    // read-only on this pass
         }],
             convergence_check: None,
-            loop_dispatch: None,
+            loop_dispatch: None, setup: None,
     }
 }
 
@@ -279,7 +279,7 @@ pub(super) fn make_erode_from_snap_shader(width: u32, height: u32, radius: u32, 
             read_write: false,
         }],
             convergence_check: None,
-            loop_dispatch: None,
+            loop_dispatch: None, setup: None,
     }
 }
 

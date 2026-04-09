@@ -55,7 +55,7 @@ pub mod filters;
 
 // Re-export core types at crate root
 pub use rect::{Rect, Overlap, tiles, extract_tile, place_tile};
-pub use node::{Node, NodeInfo, NodeCapabilities, GpuShader, TileHint, PipelineError, Upstream, InputRectEstimate, AcesCompliance};
+pub use node::{Node, NodeInfo, NodeCapabilities, GpuShader, GpuSetup, TileHint, PipelineError, Upstream, InputRectEstimate, AcesCompliance};
 pub use aces_audit::{AcesViolation, AcesAuditResult};
 pub use color_space::ColorSpace;
 pub use gpu::{GpuError, GpuExecutor};

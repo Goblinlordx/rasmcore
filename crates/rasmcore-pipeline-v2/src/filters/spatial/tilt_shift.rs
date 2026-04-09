@@ -125,7 +125,7 @@ impl GpuFilter for TiltShift {
                 params: h_params,
                 extra_buffers: vec![kernel_bytes.clone()],
                 reduction_buffers: vec![],
-                convergence_check: None, loop_dispatch: None,
+                convergence_check: None, loop_dispatch: None, setup: None,
             },
             GpuShader {
                 body: spatial::GAUSSIAN_BLUR_V.to_string(),
@@ -134,7 +134,7 @@ impl GpuFilter for TiltShift {
                 params: v_params,
                 extra_buffers: vec![kernel_bytes],
                 reduction_buffers: vec![],
-                convergence_check: None, loop_dispatch: None,
+                convergence_check: None, loop_dispatch: None, setup: None,
             },
             GpuShader {
                 body: spatial::TILT_SHIFT_BLEND.to_string(),
@@ -143,7 +143,7 @@ impl GpuFilter for TiltShift {
                 params: blend_params,
                 extra_buffers: vec![vec![0u8; (n * 16) as usize]], // placeholder for original (snapshot)
                 reduction_buffers: vec![],
-                convergence_check: None, loop_dispatch: None,
+                convergence_check: None, loop_dispatch: None, setup: None,
             },
         ]
     }

@@ -80,6 +80,33 @@ pub struct GpuShader {
     /// algorithms (e.g., seam carving DP) where each iteration processes
     /// one row/column and depends on the previous.
     pub loop_dispatch: Option<LoopDispatch>,
+    /// Optional setup compute that produces cacheable storage buffers.
+    /// Output buffers are prepended to `extra_buffers` for the main dispatch.
+    pub setup: Option<GpuSetup>,
+}
+
+/// Setup compute dispatch — runs once per config, produces cacheable storage buffers.
+///
+/// The executor hashes `params`, checks its cache, and either reuses cached output
+/// buffers or dispatches this shader. Output buffers are prepended to the main
+/// shader's `extra_buffers` — the per-pixel shader reads them at binding(3+).
+///
+/// Both setup and per-pixel dispatches go into the same command encoder (one submit).
+#[derive(Debug, Clone)]
+pub struct GpuSetup {
+    /// WGSL shader body (standalone — not composed with io_f32).
+    pub body: String,
+    /// Entry point function name.
+    pub entry_point: &'static str,
+    /// Workgroup size.
+    pub workgroup_size: [u32; 3],
+    /// Dispatch size (number of workgroups in each dimension).
+    pub dispatch_size: [u32; 3],
+    /// Serialized scalar parameters (input to the setup shader).
+    /// The hash of this determines cache key.
+    pub params: Vec<u8>,
+    /// Sizes in bytes of each output storage buffer to allocate.
+    pub output_buffer_sizes: Vec<usize>,
 }
 
 /// Loop dispatch configuration — run a shader N times with incrementing index.
@@ -107,7 +134,7 @@ impl GpuShader {
             extra_buffers: vec![],
             reduction_buffers: vec![],
             convergence_check: None,
-            loop_dispatch: None,
+            loop_dispatch: None, setup: None,
         }
     }
 

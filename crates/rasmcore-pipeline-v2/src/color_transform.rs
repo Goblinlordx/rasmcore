@@ -386,7 +386,7 @@ fn aces2_ot_gpu_shader(ot: &crate::aces2::Aces2OtParams, width: u32, height: u32
         extra_buffers: vec![reach_buf, cusp_buf, hue_buf],
         reduction_buffers: vec![],
         convergence_check: None,
-        loop_dispatch: None,
+        loop_dispatch: None, setup: None,
     }
 }
 

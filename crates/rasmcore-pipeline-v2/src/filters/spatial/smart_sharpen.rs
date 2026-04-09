@@ -102,7 +102,7 @@ impl GpuFilter for SmartSharpen {
                 params: bilateral_params,
                 extra_buffers: vec![],
                 reduction_buffers: vec![],
-                convergence_check: None, loop_dispatch: None,
+                convergence_check: None, loop_dispatch: None, setup: None,
             },
             GpuShader {
                 body: spatial::SHARPEN_APPLY.to_string(),
@@ -111,7 +111,7 @@ impl GpuFilter for SmartSharpen {
                 params: sharpen_params,
                 extra_buffers: vec![vec![0u8; (n * 16) as usize]], // placeholder for original
                 reduction_buffers: vec![],
-                convergence_check: None, loop_dispatch: None,
+                convergence_check: None, loop_dispatch: None, setup: None,
             },
         ]
     }
