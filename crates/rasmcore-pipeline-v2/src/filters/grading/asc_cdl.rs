@@ -44,6 +44,10 @@ impl Filter for AscCdl {
     fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
         Some(ClutOp::build_clut(self))
     }
+
+    fn preferred_color_space(&self) -> Option<crate::color_space::ColorSpace> {
+        Some(crate::color_space::ColorSpace::AcesCct)
+    }
 }
 
 fn asc_cdl_pixel(r: f32, g: f32, b: f32, cdl: &AscCdl) -> (f32, f32, f32) {

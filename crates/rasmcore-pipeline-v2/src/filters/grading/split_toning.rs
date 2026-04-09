@@ -42,6 +42,10 @@ impl Filter for SplitToning {
     fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
         Some(ClutOp::build_clut(self))
     }
+
+    fn preferred_color_space(&self) -> Option<crate::color_space::ColorSpace> {
+        Some(crate::color_space::ColorSpace::AcesCct)
+    }
 }
 
 fn split_toning_pixel(r: f32, g: f32, b: f32, st: &SplitToning) -> (f32, f32, f32) {

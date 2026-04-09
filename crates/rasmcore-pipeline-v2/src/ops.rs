@@ -130,6 +130,14 @@ pub trait Filter {
         None
     }
 
+    /// Preferred color space for this filter's operation.
+    /// When Some(cs), the graph auto-inserts CSC nodes around this filter
+    /// when color management is enabled and the working space differs.
+    /// Grading filters return Some(ACEScct) for natural slider response.
+    fn preferred_color_space(&self) -> Option<crate::color_space::ColorSpace> {
+        None
+    }
+
     // --- Analysis buffer protocol ---
 
     /// Analysis buffers this filter produces (for cross-node GPU sharing).

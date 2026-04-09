@@ -45,6 +45,10 @@ impl Filter for HueVsSat {
     fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
         Some(ClutOp::build_clut(self))
     }
+
+    fn preferred_color_space(&self) -> Option<crate::color_space::ColorSpace> {
+        Some(crate::color_space::ColorSpace::AcesCct)
+    }
 }
 
 impl ClutOp for HueVsSat {
@@ -98,6 +102,10 @@ impl Filter for HueVsLum {
 
     fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
         Some(ClutOp::build_clut(self))
+    }
+
+    fn preferred_color_space(&self) -> Option<crate::color_space::ColorSpace> {
+        Some(crate::color_space::ColorSpace::AcesCct)
     }
 }
 
@@ -153,6 +161,10 @@ impl Filter for LumVsSat {
     fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
         Some(ClutOp::build_clut(self))
     }
+
+    fn preferred_color_space(&self) -> Option<crate::color_space::ColorSpace> {
+        Some(crate::color_space::ColorSpace::AcesCct)
+    }
 }
 
 impl ClutOp for LumVsSat {
@@ -206,6 +218,10 @@ impl Filter for SatVsSat {
 
     fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
         Some(ClutOp::build_clut(self))
+    }
+
+    fn preferred_color_space(&self) -> Option<crate::color_space::ColorSpace> {
+        Some(crate::color_space::ColorSpace::AcesCct)
     }
 }
 

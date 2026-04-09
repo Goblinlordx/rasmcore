@@ -39,6 +39,10 @@ impl Filter for CurvesMaster {
     fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
         Some(ClutOp::build_clut(self))
     }
+
+    fn preferred_color_space(&self) -> Option<crate::color_space::ColorSpace> {
+        Some(crate::color_space::ColorSpace::AcesCct)
+    }
 }
 
 impl ClutOp for CurvesMaster {
@@ -88,6 +92,10 @@ impl Filter for CurvesRed {
     fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
         Some(ClutOp::build_clut(self))
     }
+
+    fn preferred_color_space(&self) -> Option<crate::color_space::ColorSpace> {
+        Some(crate::color_space::ColorSpace::AcesCct)
+    }
 }
 
 impl ClutOp for CurvesRed {
@@ -135,6 +143,10 @@ impl Filter for CurvesGreen {
     fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
         Some(ClutOp::build_clut(self))
     }
+
+    fn preferred_color_space(&self) -> Option<crate::color_space::ColorSpace> {
+        Some(crate::color_space::ColorSpace::AcesCct)
+    }
 }
 
 impl ClutOp for CurvesGreen {
@@ -181,6 +193,10 @@ impl Filter for CurvesBlue {
 
     fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
         Some(ClutOp::build_clut(self))
+    }
+
+    fn preferred_color_space(&self) -> Option<crate::color_space::ColorSpace> {
+        Some(crate::color_space::ColorSpace::AcesCct)
     }
 }
 

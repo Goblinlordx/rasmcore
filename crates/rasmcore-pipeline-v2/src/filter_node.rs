@@ -159,6 +159,10 @@ impl<F: Filter + 'static> Node for FilterNode<F> {
         self.filter.fusion_clut()
     }
 
+    fn preferred_color_space(&self) -> Option<crate::color_space::ColorSpace> {
+        self.filter.preferred_color_space()
+    }
+
     fn tile_hint(&self) -> Option<TileHint> {
         let r = self.filter.tile_overlap();
         if r > 0 {

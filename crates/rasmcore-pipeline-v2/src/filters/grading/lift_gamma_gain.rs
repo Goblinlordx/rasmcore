@@ -40,6 +40,10 @@ impl Filter for LiftGammaGain {
     fn fusion_clut(&self) -> Option<crate::fusion::Clut3D> {
         Some(ClutOp::build_clut(self))
     }
+
+    fn preferred_color_space(&self) -> Option<crate::color_space::ColorSpace> {
+        Some(crate::color_space::ColorSpace::AcesCct)
+    }
 }
 
 fn lgg_channel(val: f32, lift: f32, gamma: f32, gain: f32) -> f32 {
