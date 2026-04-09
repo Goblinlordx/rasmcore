@@ -135,7 +135,19 @@ for (const op of filters) {
 
 // ─── Pipeline class ─────────────────────────────────────────────────────────
 
-ts += `// ─── Pipeline class ──────────────────────────────────────────────────────────
+ts += `// ─── Metadata types ─────────────────────────────────────────────────────────
+
+/** Image metadata — raw bytes for EXIF, XMP, IPTC, ICC.
+ *  Parse with host-side libraries (e.g., exifr for EXIF, icc-profile for ICC). */
+export interface ImageMetadata {
+  exif?: Uint8Array;
+  xmp?: Uint8Array;
+  iptc?: Uint8Array;
+  iccProfile?: Uint8Array;
+  formatSpecific?: Array<{ key: string; value: Uint8Array }>;
+}
+
+// ─── Pipeline class ──────────────────────────────────────────────────────────
 
 export interface ReadConfig {
   hint?: string;
@@ -180,6 +192,12 @@ export class Pipeline {
   /** Get image dimensions and color space. */
   get info() {
     return this._pipe.nodeInfo(this._node);
+  }
+
+  /** Get image metadata (EXIF, XMP, IPTC, ICC profile).
+   *  Returns raw byte buffers — parse with a host-side EXIF/XMP library. */
+  get metadata(): ImageMetadata {
+    return this._pipe.nodeMetadata(this._node);
   }
 
   /** Get raw f32 RGBA pixel data. */

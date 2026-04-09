@@ -184,6 +184,33 @@ interface pipeline-v2 {
         detail: option<string>,
     }
 
+    // ─── Image Metadata ──────────────────────────────────────────────
+
+    /// A format-specific metadata chunk (e.g., PNG tEXt, GIF comment).
+    record metadata-chunk {
+        /// Chunk key (e.g., "png:text:Title", "gif:comment").
+        key: string,
+        /// Raw chunk value bytes.
+        value: buffer,
+    }
+
+    /// Image metadata — EXIF, XMP, IPTC, ICC profile, and format-specific chunks.
+    ///
+    /// All fields carry raw bytes. The host SDK parses them (e.g., EXIF tag decoding).
+    /// The pipeline preserves metadata through the graph for write-time roundtrip.
+    record image-metadata {
+        /// Raw EXIF bytes (APP1 payload for JPEG, eXIf chunk for PNG).
+        exif: option<buffer>,
+        /// Raw XMP bytes (XML string as UTF-8).
+        xmp: option<buffer>,
+        /// Raw IPTC-IIM bytes (APP13 payload for JPEG).
+        iptc: option<buffer>,
+        /// ICC color profile bytes.
+        icc-profile: option<buffer>,
+        /// Format-specific metadata chunks.
+        format-specific: list<metadata-chunk>,
+    }
+
     // ─── Layer Cache ────────────────────────────────────────────────────
 
     /// Layer cache statistics.
@@ -286,6 +313,8 @@ interface pipeline-v2 {
         from-pixels: static func(data: buffer, width: u32, height: u32, format: host-pixel-format) -> source;
         /// Get the decoded image dimensions and color space.
         info: func() -> node-info;
+        /// Get image metadata (EXIF, XMP, IPTC, ICC) from this source.
+        metadata: func() -> image-metadata;
     }
 
     /// Brush preset info — metadata for UI display.
@@ -321,6 +350,11 @@ interface pipeline-v2 {
         read-pixels: func(data: buffer, width: u32, height: u32, format: host-pixel-format) -> result<node-id, rasmcore-error>;
         /// Get node output metadata.
         node-info: func(node: node-id) -> result<node-info, rasmcore-error>;
+        /// Get image metadata (EXIF, XMP, IPTC, ICC) for a source node.
+        ///
+        /// Returns the metadata extracted by the decoder. Only meaningful for
+        /// source nodes (read/read-source). Filter nodes return empty metadata.
+        node-metadata: func(node: node-id) -> result<image-metadata, rasmcore-error>;
         /// Apply a named filter to a source node.
         apply-filter: func(source: node-id, name: string, params: buffer) -> result<node-id, rasmcore-error>;
         /// Apply a named transform.

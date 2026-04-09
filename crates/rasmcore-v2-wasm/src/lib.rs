@@ -945,6 +945,18 @@ impl wit::GuestSource for SourceResource {
             },
         }
     }
+
+    fn metadata(&self) -> wit::ImageMetadata {
+        // SourceResource doesn't carry ImageMetadata yet (pipeline flow
+        // track will add it). Return empty for now.
+        wit::ImageMetadata {
+            exif: None,
+            xmp: None,
+            iptc: None,
+            icc_profile: None,
+            format_specific: vec![],
+        }
+    }
 }
 
 
@@ -1116,6 +1128,19 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
                 ColorSpace::Rec709 => wit::ColorSpace::Rec709,
                 _ => wit::ColorSpace::Unknown,
             },
+        })
+    }
+
+    fn node_metadata(&self, node: u32) -> Result<wit::ImageMetadata, RasmcoreError> {
+        // For now, return empty metadata — source nodes will carry metadata
+        // once the graph propagation is wired (SourceNode stores ImageMetadata).
+        let _ = PipelineResource::node_info(self, node).map_err(to_wit_error)?;
+        Ok(wit::ImageMetadata {
+            exif: None,
+            xmp: None,
+            iptc: None,
+            icc_profile: None,
+            format_specific: vec![],
         })
     }
 
