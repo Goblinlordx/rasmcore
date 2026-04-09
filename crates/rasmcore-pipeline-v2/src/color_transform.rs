@@ -369,24 +369,45 @@ fn aces2_ot_gpu_shader(ot: &crate::aces2::Aces2OtParams, width: u32, height: u32
     p!(f32 ot.gamut.mid_j); p!(f32 ot.gamut.focus_dist); p!(f32 ot.gamut.lower_hull_gamma_inv);
     p!(u32 eotf_id); p!(f32 ot.peak_luminance); p!(u32 0u32);
 
-    // Serialize table storage buffers
-    let reach_buf: Vec<u8> = ot.shared.reach_m_table.iter()
-        .flat_map(|v| v.to_le_bytes()).collect();
-    let cusp_buf: Vec<u8> = ot.gamut.gamut_cusp_table.iter()
-        .flat_map(|arr| arr.iter().flat_map(|v| v.to_le_bytes()))
-        .collect();
-    let hue_buf: Vec<u8> = ot.gamut.hue_table.iter()
-        .flat_map(|v| v.to_le_bytes()).collect();
+    // Build setup params: append reach + limiting gamut CAM16 matrices
+    let p_reach = crate::aces2::cam16::init_jmh_params(&AP1_PRIMS);
+    let p_limit = &ot.p_out;
+    let mut setup_params = params.clone();
+    macro_rules! sp {
+        (m33 $m:expr) => { for &v in ($m).iter() { setup_params.extend_from_slice(&v.to_le_bytes()); } };
+    }
+    sp!(m33 &p_reach.matrix_rgb_to_cam16_c);
+    sp!(m33 &p_reach.matrix_cone_response_to_aab);
+    sp!(m33 &p_reach.matrix_aab_to_cone_response);
+    sp!(m33 &p_reach.matrix_cam16_c_to_rgb);
+    sp!(m33 &p_limit.matrix_rgb_to_cam16_c);
+    sp!(m33 &p_limit.matrix_cone_response_to_aab);
+
+    let table_sizes = [
+        363 * 4,       // reach_m_table: 363 f32
+        363 * 3 * 4,   // cusp_table: 363 × 3 f32
+        363 * 4,       // hue_table: 363 f32
+    ];
+
+    let setup = crate::node::GpuSetup {
+        body: include_str!("shaders/aces2_tables.wgsl").to_string(),
+        entry_point: "main",
+        workgroup_size: [64, 1, 1],
+        dispatch_size: [6, 1, 1], // ceil(363/64) = 6 workgroups
+        params: setup_params,
+        output_buffer_sizes: table_sizes.to_vec(),
+    };
 
     GpuShader {
-        body: include_str!("shaders/aces2_ot.wgsl").to_string(),
+        body: crate::filter_node::compose_shader(include_str!("shaders/aces2_ot.wgsl")),
         entry_point: "main",
         workgroup_size: [16, 16, 1],
         params,
-        extra_buffers: vec![reach_buf, cusp_buf, hue_buf],
+        extra_buffers: vec![], // tables come from setup, not CPU upload
         reduction_buffers: vec![],
         convergence_check: None,
-        loop_dispatch: None, setup: None,
+        loop_dispatch: None,
+        setup: Some(setup),
     }
 }
 
@@ -460,13 +481,17 @@ mod tests {
         assert!(shader.body.contains("fn apply_eotf"), "missing apply_eotf");
         // Verify workgroup size
         assert_eq!(shader.workgroup_size, [16, 16, 1]);
-        // Verify we have 3 extra buffers (reach, cusp, hue)
-        assert_eq!(shader.extra_buffers.len(), 3, "need 3 table buffers");
-        // Verify table sizes (363 entries × 4 bytes each)
-        assert_eq!(shader.extra_buffers[0].len(), 363 * 4, "reach_m_table");
-        assert_eq!(shader.extra_buffers[1].len(), 363 * 3 * 4, "cusp_table");
-        assert_eq!(shader.extra_buffers[2].len(), 363 * 4, "hue_table");
-        // Verify params buffer is reasonably sized (>100 bytes for all the scalars/matrices)
+        // Tables now come from GpuSetup, not extra_buffers
+        assert!(shader.extra_buffers.is_empty(), "tables should come from setup, not extra_buffers");
+        // Verify setup shader exists
+        let setup = shader.setup.as_ref().expect("should have GpuSetup");
+        assert_eq!(setup.output_buffer_sizes.len(), 3, "need 3 output buffers");
+        assert_eq!(setup.output_buffer_sizes[0], 363 * 4, "reach_m_table size");
+        assert_eq!(setup.output_buffer_sizes[1], 363 * 3 * 4, "cusp_table size");
+        assert_eq!(setup.output_buffer_sizes[2], 363 * 4, "hue_table size");
+        assert_eq!(setup.dispatch_size, [6, 1, 1], "dispatch workgroups");
+        assert!(setup.body.contains("fn build_reach_m"), "setup should contain table build");
+        // Verify params buffer is reasonably sized
         assert!(shader.params.len() > 100, "params too small: {}", shader.params.len());
     }
 
@@ -497,9 +522,8 @@ mod tests {
             1000.0, crate::aces2::LimitingPrimaries::Rec2020, crate::aces2::Eotf::Pq,
         );
         let shader = aces2_ot_gpu_shader(&ot, 3840, 2160);
-        assert_eq!(shader.extra_buffers.len(), 3);
-        // Params should encode peak=1000, eotf=PQ(2)
-        // The eotf_id is near the end of params
+        assert!(shader.setup.is_some(), "HDR config should have setup");
+        assert!(shader.extra_buffers.is_empty(), "tables from setup, not CPU");
         assert!(shader.params.len() > 100);
     }
 

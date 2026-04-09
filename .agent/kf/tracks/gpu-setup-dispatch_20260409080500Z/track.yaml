@@ -32,36 +32,38 @@ spec:
     for dispatch_pass. 5. Wire ACES OT: gpu_shader() returns GpuSetup with table-build shader, output sizes [363*4, 363*3*4,
     363*4], and the OT per-pixel shader reads from those buffers. 6. Remove CPU table upload from ACES OT gpu_shader() path.'
 plan:
-  - phase: GpuSetup Struct and Node Trait
-    tasks:
-      - text: Add GpuSetup struct to node.rs (body, workgroup_size, dispatch_size, params, output_buffer_sizes)
-        done: false
-      - text: Add setup field (Option<GpuSetup>) to GpuShader struct
-        done: false
-  - phase: Executor Integration
-    tasks:
-      - text: Add dispatch_setup() method to WgpuExecutorV2 that allocates output buffers, dispatches setup shader, returns buffer handles
-        done: false
-      - text: Add setup_cache (HashMap<u64, Vec<wgpu::Buffer>>) to WgpuExecutorV2 for caching setup output buffers by params hash
-        done: false
-      - text: In execute(), before dispatch loop, process setup shaders - check cache, dispatch on miss, prepend output buffers to extra_buffers
-        done: false
-      - text: Ensure setup and per-pixel dispatches use same command encoder (one submit)
-        done: false
-  - phase: ACES OT Integration
-    tasks:
-      - text: Merge stashed aces2_tables.wgsl from kf/stash/aces2-gpu-table-build branch
-        done: false
-      - text: Wire ACES OT gpu_shader() to return GpuSetup with table-build shader and output sizes
-        done: false
-      - text: Remove CPU table serialization from ACES OT GPU path (setup produces them)
-        done: false
-  - phase: Verification
-    tasks:
-      - text: Test setup dispatch executes and produces correct buffer sizes
-        done: false
-      - text: Test cache hit skips setup dispatch on second run
-        done: false
-      - text: Test ACES OT GPU parity with setup-dispatched tables matches CPU reference
-        done: false
+- phase: GpuSetup Struct and Node Trait
+  tasks:
+  - text: Add GpuSetup struct to node.rs (body, workgroup_size, dispatch_size, params, output_buffer_sizes)
+    done: true
+  - text: Add setup field (Option<GpuSetup>) to GpuShader struct
+    done: true
+- phase: Executor Integration
+  tasks:
+  - text: Add dispatch_setup() method to WgpuExecutorV2 that allocates output buffers, dispatches setup shader, returns buffer
+      handles
+    done: true
+  - text: Add setup_cache (HashMap<u64, Vec<wgpu::Buffer>>) to WgpuExecutorV2 for caching setup output buffers by params hash
+    done: true
+  - text: In execute(), before dispatch loop, process setup shaders - check cache, dispatch on miss, prepend output buffers
+      to extra_buffers
+    done: true
+  - text: Ensure setup and per-pixel dispatches use same command encoder (one submit)
+    done: true
+- phase: ACES OT Integration
+  tasks:
+  - text: Merge stashed aces2_tables.wgsl from kf/stash/aces2-gpu-table-build branch
+    done: false
+  - text: Wire ACES OT gpu_shader() to return GpuSetup with table-build shader and output sizes
+    done: false
+  - text: Remove CPU table serialization from ACES OT GPU path (setup produces them)
+    done: false
+- phase: Verification
+  tasks:
+  - text: Test setup dispatch executes and produces correct buffer sizes
+    done: false
+  - text: Test cache hit skips setup dispatch on second run
+    done: false
+  - text: Test ACES OT GPU parity with setup-dispatched tables matches CPU reference
+    done: false
 extra: {}
