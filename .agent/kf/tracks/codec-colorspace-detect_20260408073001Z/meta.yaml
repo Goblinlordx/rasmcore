@@ -1,6 +1,7 @@
 title: Improve codec color space detection from image metadata
-status: pending
+status: archived
 type: feature
 approved: false
 created: '2026-04-08'
-updated: '2026-04-08'
+updated: '2026-04-09'
+archived_at: '2026-04-09'

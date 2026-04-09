@@ -1,0 +1,54 @@
+id: metadata-only-decode_20260409104202Z
+title: Metadata-only decode path (no pixel decoding)
+type: feature
+status: pending
+created: '2026-04-09'
+updated: '2026-04-09'
+spec:
+  summary: Add decode_metadata_only to Decoder trait that parses metadata (EXIF, ICC, XMP, dimensions) without decoding pixel
+    data. Useful for file browsers, batch metadata extraction, and pre-flight color space detection.
+  context: Current decoders must fully decode pixel data to get metadata. For file browsers, batch metadata extraction, and
+    pre-flight color space detection, we need a fast path that parses only headers/metadata without decoding compressed pixel
+    data. V1 decoders already have the parsing logic — this adds a trait method that stops after metadata extraction.
+  codebase_analysis: ''
+  acceptance_criteria:
+  - Decoder trait has decode_metadata method returning MetadataSet + dimensions without pixel data
+  - JPEG metadata-only parses APP markers (EXIF, ICC, XMP) without Huffman decoding
+  - PNG metadata-only parses chunks before IDAT (cICP, iCCP, tEXt, eXIf)
+  - WebP metadata-only parses RIFF chunks (ICCP, EXIF, XMP) without VP8 decoding
+  - Metadata-only path is at least 10x faster than full decode for large images
+  - WIT probe-metadata method exposed on pipeline resource
+  out_of_scope: Parsing EXIF fields into structured data. Streaming metadata from partial file reads. Metadata editing/modification.
+  technical_notes: ''
+plan: []
+extra: {}
+plan:
+  - phase: Decoder Trait Extension
+    tasks:
+      - text: Add decode_metadata(&self, data) -> Result<(MetadataSet, u32, u32)> to Decoder trait with default impl
+        done: false
+      - text: Add probe_metadata(data) dispatch function in codecs-v2
+        done: false
+  - phase: Format Implementations
+    tasks:
+      - text: JPEG - parse APP markers (EXIF APP1, ICC APP2, XMP APP1) without Huffman decode
+        done: false
+      - text: PNG - parse pre-IDAT chunks (cICP, iCCP, tEXt, eXIf) without decompressing image data
+        done: false
+      - text: WebP - parse RIFF chunks (ICCP, EXIF, XMP) without VP8 decode
+        done: false
+      - text: HEIC - parse ISOBMFF boxes for ICC and EXIF without HEVC decode
+        done: false
+  - phase: WIT Integration
+    tasks:
+      - text: Add probe-metadata method to pipeline WIT (takes buffer, returns image-metadata + dimensions)
+        done: false
+      - text: Wire WASM adapter
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Metadata-only JPEG is 10x+ faster than full decode for a 4000x3000 image
+        done: false
+      - text: All metadata fields match full-decode results
+        done: false
+extra: {}

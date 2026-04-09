@@ -1,0 +1,8 @@
+title: Expose image metadata via WIT interface
+status: pending
+type: feature
+approved: false
+created: '2026-04-09'
+updated: '2026-04-09'
+deps:
+- v2-metadata-plumbing_20260409104200Z
