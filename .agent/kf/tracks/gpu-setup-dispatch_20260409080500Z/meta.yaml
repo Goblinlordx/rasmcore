@@ -1,5 +1,5 @@
 title: GPU executor setup dispatch with cacheable storage buffers
-status: pending
+status: completed
 type: feature
 approved: false
 created: '2026-04-09'

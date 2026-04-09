@@ -53,17 +53,17 @@ plan:
 - phase: ACES OT Integration
   tasks:
   - text: Merge stashed aces2_tables.wgsl from kf/stash/aces2-gpu-table-build branch
-    done: false
+    done: true
   - text: Wire ACES OT gpu_shader() to return GpuSetup with table-build shader and output sizes
-    done: false
+    done: true
   - text: Remove CPU table serialization from ACES OT GPU path (setup produces them)
-    done: false
+    done: true
 - phase: Verification
   tasks:
   - text: Test setup dispatch executes and produces correct buffer sizes
-    done: false
+    done: true
   - text: Test cache hit skips setup dispatch on second run
-    done: false
+    done: true
   - text: Test ACES OT GPU parity with setup-dispatched tables matches CPU reference
-    done: false
+    done: true
 extra: {}
