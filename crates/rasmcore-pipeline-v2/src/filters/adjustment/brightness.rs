@@ -2,17 +2,20 @@ use crate::lmt::{self, Lmt};
 use crate::node::PipelineError;
 use crate::ops::{Filter, PointOpExpr};
 
-/// Brightness adjustment — additive offset in perceptual (log) space.
+/// Brightness adjustment — additive offset.
 ///
-/// Operates in ACEScct working space so that equal offsets produce
-/// perceptually uniform brightness changes — matching the behavior
-/// of consumer editors (GIMP, Photoshop legacy, phone apps).
+/// Operates in the graph's current working space. When the graph has a
+/// configured working color space (e.g., ACEScg with color management),
+/// the fusion optimizer handles CSC wrapping automatically.
 ///
-/// For physically-accurate exposure control in linear light, use `Exposure`.
+/// In linear space: physically accurate but perceptually non-uniform.
+/// In ACEScct/log space: perceptually uniform ("consumer" feel).
+///
+/// For physically-accurate exposure control, use `Exposure` (multiplicative EV stops).
 #[derive(Clone, rasmcore_macros::V2Filter)]
 #[filter(name = "brightness", category = "adjustment", cost = "O(n)", doc = "docs/operations/filters/adjustment/brightness.adoc")]
 pub struct Brightness {
-    /// Additive offset applied to each RGB channel (in ACEScct log space).
+    /// Additive offset applied to each RGB channel.
     #[param(min = -1.0, max = 1.0, step = 0.02, default = 0.0)]
     pub amount: f32,
 }
@@ -33,10 +36,6 @@ impl Filter for Brightness {
 
     fn analytic_expression_per_channel(&self) -> Option<[PointOpExpr; 3]> {
         self.to_lmt().to_analytical()
-    }
-
-    fn preferred_color_space(&self) -> Option<crate::color_space::ColorSpace> {
-        Some(crate::color_space::ColorSpace::AcesCct)
     }
 }
 

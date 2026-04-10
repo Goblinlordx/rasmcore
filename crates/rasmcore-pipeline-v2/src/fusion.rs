@@ -809,7 +809,7 @@ fn insert_preferred_csc_nodes(graph: &mut Graph) {
     if !graph.is_color_managed() {
         return;
     }
-    let working = graph.working_color_space().unwrap_or(ColorSpace::AcesCg);
+    let working = graph.working_color_space().unwrap_or(ColorSpace::Linear);
 
     let n = graph.node_count() as usize;
     // Collect nodes that need CSC wrapping (can't mutate graph while iterating)
