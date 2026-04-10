@@ -340,9 +340,62 @@ pub fn checkerboard(width: u32, height: u32, cell_size: u32, ...) -> Vec<u8> {
 }
 ```
 
-### Compositors
+### Compositors (V2)
 
-Compositors combine two images:
+Compositors combine two images (foreground + background). They implement the
+`Compositor` trait and are wrapped by `CompositorNode` with two upstream
+connections. Use `#[derive(V2Compositor)]` for automatic registration.
+
+```rust
+use rasmcore_pipeline_v2::node::PipelineError;
+use rasmcore_pipeline_v2::ops::Compositor;
+
+#[derive(rasmcore_macros::V2Compositor, Clone)]
+#[compositor(name = "my_blend", category = "composite", cost = "O(n)")]
+pub struct MyBlend {
+    /// Blend opacity (0 = bg only, 1 = fully blended)
+    #[param(min = 0.0, max = 1.0, step = 0.05, default = 1.0)]
+    pub opacity: f32,
+}
+
+impl Compositor for MyBlend {
+    fn compute(
+        &self,
+        fg: &[f32],
+        bg: &[f32],
+        _w: u32,
+        _h: u32,
+    ) -> Result<Vec<f32>, PipelineError> {
+        let mut out = Vec::with_capacity(bg.len());
+        for (a, b) in fg.chunks_exact(4).zip(bg.chunks_exact(4)) {
+            out.push(b[0] * (1.0 - self.opacity) + a[0] * self.opacity);
+            out.push(b[1] * (1.0 - self.opacity) + a[1] * self.opacity);
+            out.push(b[2] * (1.0 - self.opacity) + a[2] * self.opacity);
+            out.push(b[3]); // alpha from background
+        }
+        Ok(out)
+    }
+}
+```
+
+The `#[derive(V2Compositor)]` macro generates:
+- `Default` implementation from `#[param(default = ...)]` values
+- `ParamDescriptor` statics for SDK/UI generation
+- `CompositorFactoryRegistration` submitted to `inventory`
+- `OperationRegistration` with `OperationKind::Compositor`
+
+WIT interface: `apply-compositor(source-a, source-b, name, params)` in `pipeline.wit`.
+
+GPU acceleration: implement `gpu_shader_body()` on your `Compositor` trait impl.
+GPU shaders use `load_pixel_a(idx)` and `load_pixel_b(idx)` (dual-input bindings).
+
+Built-in compositors:
+- `porter_duff_over` — alpha compositing with opacity control
+- `blend_dual` — 25-mode dual-input blend (ISO 32000-2)
+
+### Compositors (V1 — deprecated)
+
+V1 compositors use the `register_compositor` macro (bare function style):
 
 ```rust
 #[rasmcore_macros::register_compositor(
