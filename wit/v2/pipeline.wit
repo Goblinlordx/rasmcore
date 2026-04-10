@@ -480,8 +480,13 @@ interface pipeline-v2 {
         // ─── Execution ───
         /// Execute the pipeline and encode output.
         write: func(node: node-id, format: string, quality: option<u8>) -> result<buffer, rasmcore-error>;
-        /// Execute and return raw f32 pixel data (no encoding).
+        /// Execute and return f32 pixel data with output transform applied.
+        /// Converts from pipeline working space (Linear) to sRGB for display.
+        /// For raw linear pixels (GPU display, EXR), use render-linear().
         render: func(node: node-id) -> result<pixel-buffer, rasmcore-error>;
+        /// Execute and return raw f32 pixel data in pipeline working space (Linear).
+        /// No output transform applied. Use for GPU dispatch or HDR workflows.
+        render-linear: func(node: node-id) -> result<pixel-buffer, rasmcore-error>;
 
         // ─── GPU Dispatch (host-side) ───
         /// Get the GPU execution plan for a node, if a GPU chain exists.

@@ -38,6 +38,30 @@ use rasmcore_pipeline_v2::{
 use rasmcore_pipeline_v2::ColorSpace;
 use rasmcore_pipeline_v2::gpu_shaders::pixel_source::{self, HostPixelFormat};
 
+// ─── Output Color Space ──────────────────────────────────────────────────────
+
+/// Determine the preferred output color space for a format.
+///
+/// Each image format has a natural color space. SDR display formats (PNG, JPEG,
+/// WebP) expect sRGB gamma-encoded pixels. HDR/scene-referred formats (EXR, HDR,
+/// FITS) expect linear. Fallback is sRGB.
+fn output_cs_for_format(format: &str) -> ColorSpace {
+    match format {
+        "exr" | "hdr" | "fits" => ColorSpace::Linear,
+        _ => ColorSpace::Srgb, // PNG, JPEG, WebP, BMP, GIF, TIFF, AVIF, etc.
+    }
+}
+
+/// Apply the output transform: convert working-space pixels to the format's
+/// preferred color space. No-op if already in the target space.
+fn apply_output_transform(pixels: &mut [f32], info: &NodeInfo, format: &str) {
+    let target_cs = output_cs_for_format(format);
+    let source_cs = info.color_space;
+    if source_cs != target_cs {
+        v2::color_math::convert_color_space(pixels, source_cs, target_cs);
+    }
+}
+
 // ─── Instance-Level Resource Registry ────────────────────────────────────────
 
 thread_local! {
@@ -674,8 +698,12 @@ impl PipelineResource {
         format: &str,
         quality: Option<u8>,
     ) -> Result<Vec<u8>, PipelineError> {
-        let pixels = self.graph.borrow_mut().request_full(node_id)?;
+        let mut pixels = self.graph.borrow_mut().request_full(node_id)?;
         let info = self.graph.borrow().node_info(node_id)?;
+
+        // Apply output transform: convert from working space (Linear) to
+        // the format's preferred color space (sRGB for web formats, Linear for EXR/HDR).
+        apply_output_transform(&mut pixels, &info, format);
 
         // Try V2 registry first, fall back to old codecs-v2 encode
         let mut params = v2::ParamMap::new();
@@ -690,9 +718,25 @@ impl PipelineResource {
         }
     }
 
+    /// Render pixels with output transform applied (sRGB by default).
+    ///
+    /// Returns f32 pixels in sRGB color space for display. Callers that
+    /// need raw linear working-space pixels should use `render_linear()`.
     pub fn render(&self, node_id: u32) -> Result<Vec<f32>, PipelineError> {
-        let pixels = self.graph.borrow_mut().request_full(node_id)?;
+        let mut pixels = self.graph.borrow_mut().request_full(node_id)?;
+        let info = self.graph.borrow().node_info(node_id)?;
+
+        // Default output transform: Linear → sRGB for display
+        apply_output_transform(&mut pixels, &info, "png");
         Ok(pixels)
+    }
+
+    /// Render raw f32 pixels in the pipeline's working color space (Linear).
+    ///
+    /// No output transform applied. Use for GPU display paths, EXR workflows,
+    /// or any consumer that handles color space conversion externally.
+    pub fn render_linear(&self, node_id: u32) -> Result<Vec<f32>, PipelineError> {
+        self.graph.borrow_mut().request_full(node_id)
     }
 
     /// Get layer cache statistics (if a cache is set).
@@ -1271,6 +1315,10 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
 
     fn render(&self, node: u32) -> Result<Vec<f32>, RasmcoreError> {
         self.render(node).map_err(to_wit_error)
+    }
+
+    fn render_linear(&self, node: u32) -> Result<Vec<f32>, RasmcoreError> {
+        self.render_linear(node).map_err(to_wit_error)
     }
 
     fn render_gpu_plan(&self, node: u32) -> Result<Option<wit::GpuPlan>, RasmcoreError> {
