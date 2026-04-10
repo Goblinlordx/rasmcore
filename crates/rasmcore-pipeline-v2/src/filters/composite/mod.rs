@@ -14,12 +14,16 @@
 //! via `ColorSpace::luma_coefficients()` — NOT hardcoded.
 
 pub mod blend;
+pub mod blend_dual;
 pub mod blend_if;
+pub mod porter_duff;
 pub mod premultiply;
 pub mod unpremultiply;
 
 pub use blend::Blend;
+pub use blend_dual::BlendDual;
 pub use blend_if::BlendIf;
+pub use porter_duff::PorterDuffOver;
 pub use premultiply::Premultiply;
 pub use unpremultiply::Unpremultiply;
 
