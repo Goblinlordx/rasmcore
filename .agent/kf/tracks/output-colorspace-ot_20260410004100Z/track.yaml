@@ -3,132 +3,151 @@ title: Auto-insert output color space transform based on format registration
 type: feature
 status: pending
 created: 2026-04-10
-updated: 2026-04-10
+updated: '2026-04-10'
 spec:
-  summary: |
-    Each encoder/decoder registration declares its preferred output color space.
+  summary: 'Each encoder/decoder registration declares its preferred output color space.
+
     The pipeline auto-inserts a color space conversion (OT) before render/write
-    to match the format's declared space. Fallback is sRGB if not declared.
-  context: |
-    Currently render() returns f32 linear (working space) with no output
+
+    to match the format''s declared space. Fallback is sRGB if not declared.
+
+    '
+  context: 'Currently render() returns f32 linear (working space) with no output
+
     transform. The caller must manually apply sRGB gamma, which is fragile
+
     and led to the docs playground brightness=0 bug (linear values displayed
+
     as sRGB → everything looks dark).
 
+
     The pipeline already auto-inserts IDT/CSC nodes on the input side (e.g.,
+
     sRGB→Linear on decode, Linear→ACEScct around grading nodes). The same
+
     pattern should apply on output: the format declares its preferred color
+
     space, and the pipeline inserts the appropriate OT node.
 
+
     Existing infrastructure:
+
     - ColorConvertNode (color_convert.rs) handles arbitrary CS conversions
+
     - ViewTransformNode handles Linear→sRGB, Linear→Rec709, ACES RRT+ODT
-    - NodeInfo.color_space tracks each node's output space
+
+    - NodeInfo.color_space tracks each node''s output space
+
     - StaticEncoderRegistration has format metadata via inventory
+
     - StaticDecoderRegistration has format metadata via inventory
 
+
     The fix is NOT hardcoding sRGB. Each codec declares its preferred
+
     output color space in its registration. PNG/JPEG/WebP → sRGB.
+
     EXR/HDR → Linear. FITS → Linear. The pipeline reads this from the
+
     registration and inserts the appropriate conversion.
-  codebase_analysis: |
-    Files to modify:
 
-    1. crates/rasmcore-image/src/domain/encoder/mod.rs
-       - Add preferred_output_color_space field to StaticEncoderRegistration
-       - Add lookup function: output_color_space_for_format(format) -> ColorSpace
-
-    2. crates/rasmcore-image/src/domain/encoder/*.rs (each encoder)
-       - Add preferred_output_color_space to each registration
-       - PNG/JPEG/WebP/BMP/GIF/ICO/TGA/QOI/DDS → Srgb
-       - EXR/HDR/FITS → Linear
-       - TIFF → Srgb (default, can be overridden)
-       - AVIF/HEIC → Srgb (SDR default)
-
-    3. crates/rasmcore-image/src/domain/decoder/mod.rs
-       - Add preferred_color_space to StaticDecoderRegistration
-       - Same per-format mapping (decoder declares what CS its output is in)
-
-    4. V2 pipeline render/write path
-       - Before returning pixels, check the output node's color_space
-       - If it doesn't match the target format's preferred CS, insert
-         a ColorConvertNode
-       - For render(): use sRGB as default (web display)
-       - For write(format): look up format's registered preferred CS
-
-    5. docs/site/src/lib/playground-worker.ts
-       - Remove the manual sRGB gamma hack (the pipeline now handles it)
-       - render() returns sRGB-space f32, so just quantize directly
-
-    Existing infrastructure is sufficient — no new node types needed.
-    ColorConvertNode already handles Linear↔sRGB and all other pairs.
+    '
+  codebase_analysis: "Files to modify:\n\n1. crates/rasmcore-image/src/domain/encoder/mod.rs\n   - Add preferred_output_color_space\
+    \ field to StaticEncoderRegistration\n   - Add lookup function: output_color_space_for_format(format) -> ColorSpace\n\n\
+    2. crates/rasmcore-image/src/domain/encoder/*.rs (each encoder)\n   - Add preferred_output_color_space to each registration\n\
+    \   - PNG/JPEG/WebP/BMP/GIF/ICO/TGA/QOI/DDS → Srgb\n   - EXR/HDR/FITS → Linear\n   - TIFF → Srgb (default, can be overridden)\n\
+    \   - AVIF/HEIC → Srgb (SDR default)\n\n3. crates/rasmcore-image/src/domain/decoder/mod.rs\n   - Add preferred_color_space\
+    \ to StaticDecoderRegistration\n   - Same per-format mapping (decoder declares what CS its output is in)\n\n4. V2 pipeline\
+    \ render/write path\n   - Before returning pixels, check the output node's color_space\n   - If it doesn't match the target\
+    \ format's preferred CS, insert\n     a ColorConvertNode\n   - For render(): use sRGB as default (web display)\n   - For\
+    \ write(format): look up format's registered preferred CS\n\n5. docs/site/src/lib/playground-worker.ts\n   - Remove the\
+    \ manual sRGB gamma hack (the pipeline now handles it)\n   - render() returns sRGB-space f32, so just quantize directly\n\
+    \nExisting infrastructure is sufficient — no new node types needed.\nColorConvertNode already handles Linear↔sRGB and\
+    \ all other pairs.\n"
   acceptance_criteria:
-    - StaticEncoderRegistration has preferred_output_color_space field
-    - Each encoder registration declares its preferred color space
-    - PNG, JPEG, WebP, BMP, GIF, ICO, TGA, QOI, DDS declare sRGB
-    - EXR, HDR, FITS declare Linear
-    - write() auto-inserts OT node when pipeline output CS != format CS
-    - render() auto-inserts OT to sRGB by default (overridable)
-    - Fallback is sRGB when format has no preferred CS declared
-    - brightness=0 in docs playground produces identical before/after
-    - EXR write still outputs linear f32 (no gamma applied)
-    - Existing tests pass unchanged
-    - WASM build succeeds
-  out_of_scope: |
-    ICC profile-based output transforms. HDR display output (PQ/HLG).
+  - StaticEncoderRegistration has preferred_output_color_space field
+  - Each encoder registration declares its preferred color space
+  - PNG, JPEG, WebP, BMP, GIF, ICO, TGA, QOI, DDS declare sRGB
+  - EXR, HDR, FITS declare Linear
+  - write() auto-inserts OT node when pipeline output CS != format CS
+  - render() auto-inserts OT to sRGB by default (overridable)
+  - Fallback is sRGB when format has no preferred CS declared
+  - brightness=0 in docs playground produces identical before/after
+  - EXR write still outputs linear f32 (no gamma applied)
+  - Existing tests pass unchanged
+  - WASM build succeeds
+  out_of_scope: 'ICC profile-based output transforms. HDR display output (PQ/HLG).
+
     Per-node output CS override (beyond what ViewTransformNode provides).
+
     GPU shader for the OT (ColorConvertNode is CPU-only, CLUT fusion covers it).
-  technical_notes: |
-    The preferred_output_color_space field uses the existing ColorSpace enum
+
+    '
+  technical_notes: 'The preferred_output_color_space field uses the existing ColorSpace enum
+
     from rasmcore-pipeline-v2. Since the encoder registration is in
+
     rasmcore-image which depends on rasmcore-pipeline-v2, this is a direct
+
     import.
 
+
     For render() without a target format, the default output CS is sRGB.
+
     A new WIT method render-linear() can be added for callers that want
+
     raw linear pixels (GPU display path, EXR workflows).
 
+
     The OT insertion happens at the adapter layer (pipeline_adapter.rs or
+
     the generated code), not in the graph engine. The graph stays format-
+
     agnostic. The adapter knows the target format and inserts the
+
     appropriate final node before calling request_full().
 
+
     The playground manual gamma fix should be reverted as part of this
+
     track — once render() returns sRGB, the playground just does
+
     f32[i] * 255 again (which is now correct because f32 is sRGB-range).
+
+    '
 plan:
-  - phase: Encoder registration extension
-    tasks:
-      - text: Add preferred_output_color_space field to StaticEncoderRegistration
-        done: false
-      - text: Add output_color_space_for_format() lookup function
-        done: false
-      - text: Declare sRGB for PNG, JPEG, WebP, BMP, GIF, ICO, TGA, QOI, DDS registrations
-        done: false
-      - text: Declare Linear for EXR, HDR, FITS registrations
-        done: false
-      - text: Declare sRGB for TIFF, AVIF, HEIC, JP2 registrations (SDR default)
-        done: false
-  - phase: Pipeline OT auto-insertion
-    tasks:
-      - text: In write() adapter path, look up format preferred CS and insert ColorConvertNode if needed
-        done: false
-      - text: In render() adapter path, insert ColorConvertNode to sRGB by default
-        done: false
-      - text: Add render-linear() WIT method that returns raw working-space pixels (no OT)
-        done: false
-      - text: Ensure OT node participates in fusion/caching (no special handling needed)
-        done: false
-  - phase: Cleanup and verification
-    tasks:
-      - text: Revert manual sRGB gamma hack in docs playground-worker.ts
-        done: false
-      - text: Test brightness=0 produces identity output in docs playground
-        done: false
-      - text: Test EXR write still outputs linear f32
-        done: false
-      - text: All existing pipeline tests pass
-        done: false
-      - text: WASM build succeeds
-        done: false
+- phase: Encoder registration extension
+  tasks:
+  - text: Add preferred_output_color_space field to StaticEncoderRegistration
+    done: true
+  - text: Add output_color_space_for_format() lookup function
+    done: true
+  - text: Declare sRGB for PNG, JPEG, WebP, BMP, GIF, ICO, TGA, QOI, DDS registrations
+    done: true
+  - text: Declare Linear for EXR, HDR, FITS registrations
+    done: true
+  - text: Declare sRGB for TIFF, AVIF, HEIC, JP2 registrations (SDR default)
+    done: true
+- phase: Pipeline OT auto-insertion
+  tasks:
+  - text: In write() adapter path, look up format preferred CS and insert ColorConvertNode if needed
+    done: true
+  - text: In render() adapter path, insert ColorConvertNode to sRGB by default
+    done: true
+  - text: Add render-linear() WIT method that returns raw working-space pixels (no OT)
+    done: true
+  - text: Ensure OT node participates in fusion/caching (no special handling needed)
+    done: true
+- phase: Cleanup and verification
+  tasks:
+  - text: Revert manual sRGB gamma hack in docs playground-worker.ts
+    done: true
+  - text: Test brightness=0 produces identity output in docs playground
+    done: true
+  - text: Test EXR write still outputs linear f32
+    done: true
+  - text: All existing pipeline tests pass
+    done: true
+  - text: WASM build succeeds
+    done: true
 extra: {}
