@@ -10,7 +10,7 @@
  * GpuHandlerV2 and injects the result back into the pipeline cache.
  */
 
-import { Pipeline } from '../sdk/v2/fluent/index';
+import { Pipeline } from '../sdk/pipeline';
 import { GpuHandlerV2, type GpuShader } from './gpu-handler-v2';
 
 let PipelineClass = null;
@@ -58,7 +58,7 @@ function createPipeline(bytes) {
 
 async function initSDK() {
   try {
-    const sdk = await import('../sdk/v2/rasmcore-v2-image.js');
+    const sdk = await import('../sdk/wasm/rasmcore-v2-image.js');
     PipelineClass = sdk.pipelineV2.ImagePipelineV2;
     LayerCacheClass = sdk.pipelineV2.LayerCache;
 

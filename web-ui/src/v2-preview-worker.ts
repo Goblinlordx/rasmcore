@@ -6,9 +6,9 @@
  * The worker is a thin message handler around the SDK API.
  */
 
-import { Pipeline } from '../sdk/v2/fluent/index';
+import { Pipeline } from '../sdk/pipeline';
 import { GpuHandlerV2, type GpuShader } from './gpu-handler-v2';
-import { RenderTarget } from '../../sdk/v2/lib/render-target';
+import { RenderTarget } from '../sdk/lib/render-target';
 
 const PREVIEW_MAX = 720;
 
@@ -114,7 +114,7 @@ function logTrace(trace, totalMs: number) {
 
 async function initSDK() {
   try {
-    const sdk = await import('../sdk/v2/rasmcore-v2-image.js');
+    const sdk = await import('../sdk/wasm/rasmcore-v2-image.js');
     PipelineClass = sdk.pipelineV2.ImagePipelineV2;
     SourceClass = sdk.pipelineV2.Source;
     LayerCacheClass = sdk.pipelineV2.LayerCache;

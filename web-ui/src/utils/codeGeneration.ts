@@ -13,7 +13,7 @@ export function generateCode(
   quality: number,
 ): string {
   const lines: string[] = [];
-  lines.push(`import { rcimage } from '@rasmcore/sdk';`);
+  lines.push(`import { Pipeline } from '@rasmcore/image';`);
   lines.push('');
 
   const visibleLayers = layers.filter((l) => l.visible);
