@@ -1384,6 +1384,285 @@ pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// V2 Compositor Derive — auto-registers CompositorFactoryRegistration
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Derive macro for V2 compositor registration.
+///
+/// The struct must implement `rasmcore_pipeline_v2::Compositor`.
+/// Generates: `Default`, `ParamDescriptor` statics, `CompositorFactoryRegistration`,
+/// and `OperationRegistration` — submitted to `inventory` automatically.
+///
+/// ```ignore
+/// #[derive(V2Compositor, Clone)]
+/// #[compositor(name = "porter_duff_over", category = "composite")]
+/// pub struct PorterDuffOver {
+///     #[param(min = 0.0, max = 1.0, default = 1.0)]
+///     pub opacity: f32,
+/// }
+/// ```
+#[proc_macro_derive(V2Compositor, attributes(compositor, param))]
+pub fn derive_v2_compositor(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as ItemStruct);
+    let struct_name = &input.ident;
+
+    let mut comp_name = String::new();
+    let mut comp_category = String::new();
+    let mut display_name_override = String::new();
+    let mut cost = String::new();
+
+    for attr in &input.attrs {
+        if !attr.path().is_ident("compositor") {
+            continue;
+        }
+        let _ = attr.parse_nested_meta(|meta| {
+            let key = meta.path.get_ident().unwrap().to_string();
+            let value = meta.value()?;
+            let lit: LitStr = value.parse()?;
+            match key.as_str() {
+                "name" => comp_name = lit.value(),
+                "category" => comp_category = lit.value(),
+                "display_name" => display_name_override = lit.value(),
+                "cost" => cost = lit.value(),
+                _ => {}
+            }
+            Ok(())
+        });
+    }
+
+    if comp_name.is_empty() || comp_category.is_empty() {
+        return syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "derive(V2Compositor) requires #[compositor(name = \"...\", category = \"...\")]",
+        )
+        .to_compile_error()
+        .into();
+    }
+
+    let display_name = if display_name_override.is_empty() {
+        comp_name
+            .split('_')
+            .map(|w| {
+                let mut c = w.chars();
+                match c.next() {
+                    None => String::new(),
+                    Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    } else {
+        display_name_override
+    };
+
+    let fields = match &input.fields {
+        Fields::Named(f) => f.named.iter().collect::<Vec<_>>(),
+        _ => vec![],
+    };
+
+    let mut param_descriptors = Vec::new();
+    let mut factory_setters = Vec::new();
+    let mut default_entries = Vec::new();
+
+    for field in &fields {
+        let fname = field.ident.as_ref().unwrap();
+        let fname_str = fname.to_string();
+        let ftype = &field.ty;
+        let ftype_str = quote!(#ftype).to_string().replace(' ', "");
+
+        let field_doc = field
+            .attrs
+            .iter()
+            .filter(|a| a.path().is_ident("doc"))
+            .filter_map(|a| {
+                if let syn::Meta::NameValue(nv) = &a.meta
+                    && let syn::Expr::Lit(syn::ExprLit {
+                        lit: Lit::Str(s), ..
+                    }) = &nv.value
+                {
+                    return Some(s.value());
+                }
+                None
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim()
+            .to_string();
+
+        let mut min_val = quote! { None };
+        let mut max_val = quote! { None };
+        let mut step_val = quote! { None };
+        let mut default_f64: Option<f64> = None;
+        let mut hint_val = quote! { None };
+
+        for attr in &field.attrs {
+            if !attr.path().is_ident("param") {
+                continue;
+            }
+            let _ = attr.parse_nested_meta(|meta| {
+                let key = meta.path.get_ident().unwrap().to_string();
+                let value = meta.value()?;
+                let lit: Lit = value.parse()?;
+                match key.as_str() {
+                    "min" => {
+                        let v: f64 = match &lit {
+                            Lit::Float(f) => f.base10_parse().unwrap_or(0.0),
+                            Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64,
+                            _ => 0.0,
+                        };
+                        min_val = quote! { Some(#v) };
+                    }
+                    "max" => {
+                        let v: f64 = match &lit {
+                            Lit::Float(f) => f.base10_parse().unwrap_or(0.0),
+                            Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64,
+                            _ => 0.0,
+                        };
+                        max_val = quote! { Some(#v) };
+                    }
+                    "step" => {
+                        let v: f64 = match &lit {
+                            Lit::Float(f) => f.base10_parse().unwrap_or(0.0),
+                            Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64,
+                            _ => 0.0,
+                        };
+                        step_val = quote! { Some(#v) };
+                    }
+                    "default" => {
+                        let v: f64 = match &lit {
+                            Lit::Float(f) => f.base10_parse().unwrap_or(0.0),
+                            Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64,
+                            Lit::Bool(b) => if b.value { 1.0 } else { 0.0 },
+                            _ => 0.0,
+                        };
+                        default_f64 = Some(v);
+                    }
+                    "hint" => {
+                        if let Lit::Str(s) = &lit {
+                            let h = s.value();
+                            hint_val = quote! { Some(#h) };
+                        }
+                    }
+                    _ => {}
+                }
+                Ok(())
+            });
+        }
+
+        let default_val_token = match default_f64 {
+            Some(v) => quote! { Some(#v) },
+            None => quote! { None },
+        };
+        let default_expr = match default_f64 {
+            Some(v) if ftype_str == "bool" => {
+                let bv = v != 0.0;
+                quote! { #bv }
+            }
+            Some(v) => {
+                let lit = proc_macro2::Literal::f64_unsuffixed(v);
+                quote! { #lit as #ftype }
+            }
+            None => quote! { Default::default() },
+        };
+
+        let param_type = match ftype_str.as_str() {
+            "f32" => quote! { rasmcore_pipeline_v2::ParamType::F32 },
+            "f64" => quote! { rasmcore_pipeline_v2::ParamType::F64 },
+            "u32" | "u16" | "u8" | "u64" => quote! { rasmcore_pipeline_v2::ParamType::U32 },
+            "i32" | "i16" | "i8" => quote! { rasmcore_pipeline_v2::ParamType::I32 },
+            "bool" => quote! { rasmcore_pipeline_v2::ParamType::Bool },
+            _ => quote! { rasmcore_pipeline_v2::ParamType::F32 },
+        };
+
+        param_descriptors.push(quote! { rasmcore_pipeline_v2::ParamDescriptor {
+            name: #fname_str, value_type: #param_type,
+            min: #min_val, max: #max_val, step: #step_val,
+            default: #default_val_token, hint: #hint_val, description: #field_doc,
+            constraints: &[],
+        }});
+
+        let setter = match ftype_str.as_str() {
+            "f32" => quote! { #fname: params.get_f32(#fname_str) },
+            "f64" => quote! { #fname: params.get_f32(#fname_str) as f64 },
+            "u32" => quote! { #fname: params.get_u32(#fname_str) },
+            "u16" => quote! { #fname: params.get_u32(#fname_str) as u16 },
+            "u8" => quote! { #fname: params.get_u32(#fname_str) as u8 },
+            "i32" => quote! { #fname: params.get_i32(#fname_str) },
+            "u64" => quote! { #fname: params.get_u64(#fname_str) },
+            "bool" => quote! { #fname: params.get_bool(#fname_str) },
+            _ => quote! { #fname: Default::default() },
+        };
+        factory_setters.push(setter);
+        default_entries.push(quote! { #fname: #default_expr });
+    }
+
+    let param_count = param_descriptors.len();
+    let params_ident = format_ident!(
+        "__V2C_PARAMS_{}",
+        comp_name.to_uppercase().replace('-', "_")
+    );
+    let reg_ident = format_ident!("__V2C_REG_{}", comp_name.to_uppercase().replace('-', "_"));
+    let opreg_ident = format_ident!(
+        "__V2C_OPREG_{}",
+        comp_name.to_uppercase().replace('-', "_")
+    );
+
+    let factory_body = if fields.is_empty() {
+        quote! { Box::new(rasmcore_pipeline_v2::CompositorNode::new(upstream_a, upstream_b, info, #struct_name)) }
+    } else {
+        quote! {
+            let c = #struct_name { #(#factory_setters),* };
+            Box::new(rasmcore_pipeline_v2::CompositorNode::new(upstream_a, upstream_b, info, c))
+        }
+    };
+
+    let default_impl = if fields.is_empty() {
+        quote! {}
+    } else {
+        quote! {
+            impl ::std::default::Default for #struct_name {
+                fn default() -> Self { Self { #(#default_entries),* } }
+            }
+        }
+    };
+
+    let expanded = quote! {
+        #default_impl
+
+        #[doc(hidden)]
+        #[allow(non_upper_case_globals)]
+        static #params_ident: [rasmcore_pipeline_v2::ParamDescriptor; #param_count] = [#(#param_descriptors),*];
+
+        #[doc(hidden)]
+        #[allow(non_upper_case_globals)]
+        static #reg_ident: rasmcore_pipeline_v2::CompositorFactoryRegistration = rasmcore_pipeline_v2::CompositorFactoryRegistration {
+            name: #comp_name, display_name: #display_name, category: #comp_category,
+            params: &#params_ident, cost: #cost,
+            factory: |upstream_a, upstream_b, info, params| { #factory_body },
+        };
+        inventory::submit!(&#reg_ident);
+
+        #[doc(hidden)]
+        #[allow(non_upper_case_globals)]
+        static #opreg_ident: rasmcore_pipeline_v2::OperationRegistration = rasmcore_pipeline_v2::OperationRegistration {
+            name: #comp_name,
+            display_name: #display_name,
+            category: #comp_category,
+            kind: rasmcore_pipeline_v2::OperationKind::Compositor,
+            params: &#params_ident,
+            capabilities: rasmcore_pipeline_v2::OperationCapabilities {
+                gpu: false, analytic: false, affine: false, clut: false,
+            },
+            doc_path: "",
+            cost: #cost,
+        };
+        inventory::submit!(&#opreg_ident);
+    };
+
+    TokenStream::from(expanded)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // V2 Encoder Derive — auto-registers EncoderFactoryRegistration
 // ═══════════════════════════════════════════════════════════════════════════════
 

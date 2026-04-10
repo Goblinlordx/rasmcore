@@ -24,6 +24,8 @@ pub enum OperationKind {
     Transform,
     /// Color space conversion (sRGB→Linear, Linear→ACEScct, etc.)
     ColorConversion,
+    /// Compositor — combines two images (blend modes, alpha composite, etc.)
+    Compositor,
 }
 
 // ─── Parameter Descriptors ────────────────────────────────────────────────────
