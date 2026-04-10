@@ -1,0 +1,34 @@
+{
+  "name": "@rasmcore/image",
+  "version": "0.1.0",
+  "description": "Professional-grade image processing powered by WebAssembly — GPU-accelerated, f32 everywhere",
+  "license": "MIT",
+  "type": "module",
+  "main": "./rasmcore.js",
+  "types": "./rasmcore.d.ts",
+  "exports": {
+    ".": {
+      "import": "./rasmcore.js",
+      "types": "./rasmcore.d.ts"
+    },
+    "./pipeline": {
+      "import": "./pipeline.js",
+      "types": "./pipeline.d.ts"
+    },
+    "./runtime": {
+      "import": "./runtime.js",
+      "types": "./runtime.d.ts"
+    },
+    "./wasm": {
+      "import": "./wasm/rasmcore-v2-image.js",
+      "types": "./wasm/rasmcore-v2-image.d.ts"
+    }
+  },
+  "files": [
+    "*.js",
+    "*.d.ts",
+    "wasm/",
+    "shim/",
+    "lib/"
+  ]
+}
