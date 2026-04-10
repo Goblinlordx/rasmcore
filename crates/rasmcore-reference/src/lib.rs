@@ -21,6 +21,10 @@
 
 pub mod point_ops;
 pub mod color_ops;
+pub mod spatial_ops;
+pub mod enhancement_ops;
+pub mod grading_ops;
+pub mod edge_ops;
 
 // ─── Procedural Test Input Generators ───────────────────────────────────────
 
