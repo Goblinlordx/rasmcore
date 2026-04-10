@@ -183,6 +183,63 @@ mod tests {
     }
 
     #[test]
+    fn parity_with_u8_blend() {
+        // Compare f32 Porter-Duff against the V1 u8 formula for OPAQUE backgrounds.
+        // V1 uses simplified: out_c = fg_c * fg_a + bg_c * (1 - fg_a)
+        // V2 uses full Porter-Duff: out_c = (fg_c * fg_a + bg_c * bg_a * (1-fg_a)) / out_a
+        // These match when bg_a = 1.0 (opaque background), the common case.
+        let test_cases: Vec<([u8; 4], [u8; 4])> = vec![
+            ([255, 0, 0, 128], [0, 0, 255, 255]),      // semi-red over opaque blue
+            ([100, 200, 50, 64], [200, 100, 150, 255]), // low-alpha over opaque
+            ([0, 128, 255, 180], [255, 64, 0, 255]),    // varied over opaque
+            ([50, 100, 150, 1], [200, 200, 200, 255]),  // near-transparent over opaque
+            ([128, 128, 128, 255], [64, 64, 64, 255]),  // opaque over opaque
+        ];
+
+        let comp = PorterDuffOver { opacity: 1.0 };
+
+        for (fg_u8, bg_u8) in &test_cases {
+            // f32 path
+            let fg_f32: Vec<f32> = fg_u8.iter().map(|&v| v as f32 / 255.0).collect();
+            let bg_f32: Vec<f32> = bg_u8.iter().map(|&v| v as f32 / 255.0).collect();
+            let out_f32 = comp.compute(&fg_f32, &bg_f32, 1, 1).unwrap();
+
+            // u8 reference path
+            let fg_a = fg_u8[3] as u32;
+            let inv_a = 255 - fg_a;
+            let bg_a = bg_u8[3] as u32;
+            let out_r_u8 = ((fg_u8[0] as u32 * fg_a + bg_u8[0] as u32 * inv_a + 127) / 255) as u8;
+            let out_g_u8 = ((fg_u8[1] as u32 * fg_a + bg_u8[1] as u32 * inv_a + 127) / 255) as u8;
+            let out_b_u8 = ((fg_u8[2] as u32 * fg_a + bg_u8[2] as u32 * inv_a + 127) / 255) as u8;
+            let out_a_u8 = ((fg_a * 255 + bg_a * inv_a + 127) / 255) as u8;
+
+            // Convert f32 output to u8 for comparison
+            let out_r = (out_f32[0] * 255.0 + 0.5) as u8;
+            let out_g = (out_f32[1] * 255.0 + 0.5) as u8;
+            let out_b = (out_f32[2] * 255.0 + 0.5) as u8;
+            let out_a = (out_f32[3] * 255.0 + 0.5) as u8;
+
+            // Allow ±1 quantization difference
+            assert!(
+                (out_r as i32 - out_r_u8 as i32).abs() <= 1,
+                "R mismatch: f32={out_r} u8={out_r_u8} for fg={fg_u8:?} bg={bg_u8:?}"
+            );
+            assert!(
+                (out_g as i32 - out_g_u8 as i32).abs() <= 1,
+                "G mismatch: f32={out_g} u8={out_g_u8}"
+            );
+            assert!(
+                (out_b as i32 - out_b_u8 as i32).abs() <= 1,
+                "B mismatch: f32={out_b} u8={out_b_u8}"
+            );
+            assert!(
+                (out_a as i32 - out_a_u8 as i32).abs() <= 1,
+                "A mismatch: f32={out_a} u8={out_a_u8}"
+            );
+        }
+    }
+
+    #[test]
     fn opacity_half_attenuates_fg() {
         let fg = px(1.0, 0.0, 0.0, 1.0); // opaque red
         let bg = px(0.0, 0.0, 1.0, 1.0); // opaque blue
