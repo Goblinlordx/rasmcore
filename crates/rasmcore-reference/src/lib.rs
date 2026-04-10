@@ -21,6 +21,7 @@
 
 pub mod color_ops;
 pub mod color_ops2;
+pub mod enhancement_ops2;
 pub mod point_ops;
 pub mod spatial_ops2;
 
