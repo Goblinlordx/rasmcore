@@ -12,27 +12,25 @@ spec:
   acceptance_criteria: []
   out_of_scope: ''
   technical_notes: ''
-plan: []
-extra: {}
 plan:
-  - phase: Directional blur refs
-    tasks:
-      - text: "Implement motion_blur, zoom_blur, spin_blur references"
-        done: false
-  - phase: Advanced blur refs
-    tasks:
-      - text: "Implement lens_blur (disc kernel), bokeh_blur (hexagonal kernel) references"
-        done: false
-      - text: "Implement tilt_shift reference (depth-dependent blur)"
-        done: false
-  - phase: Threshold and edge refs
-    tasks:
-      - text: "Implement adaptive_threshold, scharr references"
-        done: false
-      - text: "Implement smart_sharpen reference (edge-aware unsharp mask)"
-        done: false
-  - phase: Verification
-    tasks:
-      - text: "All 9 reference self-tests pass"
-        done: false
+- phase: Directional blur refs
+  tasks:
+  - text: Implement motion_blur, zoom_blur, spin_blur references
+    done: true
+- phase: Advanced blur refs
+  tasks:
+  - text: Implement lens_blur (disc kernel), bokeh_blur (hexagonal kernel) references
+    done: true
+  - text: Implement tilt_shift reference (depth-dependent blur)
+    done: true
+- phase: Threshold and edge refs
+  tasks:
+  - text: Implement adaptive_threshold, scharr references
+    done: true
+  - text: Implement smart_sharpen reference (edge-aware unsharp mask)
+    done: true
+- phase: Verification
+  tasks:
+  - text: All 9 reference self-tests pass
+    done: true
 extra: {}
