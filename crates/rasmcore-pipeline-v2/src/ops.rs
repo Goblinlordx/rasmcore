@@ -203,6 +203,76 @@ pub trait GpuFilter {
     }
 }
 
+/// Dual-input compositor — combines two images into one.
+///
+/// All pixel data is `&[f32]`: RGBA, 4 floats per pixel, interleaved.
+/// `fg` (foreground/A) and `bg` (background/B) each have `width * height * 4` elements.
+/// Both inputs must have the same dimensions.
+///
+/// # Required
+/// - `compute()` — CPU implementation (always required as fallback)
+///
+/// # Optional capabilities
+/// Same GPU/fusion pattern as `Filter`, but with dual-input shader bindings.
+/// GPU shaders use `load_pixel_a(idx)` and `load_pixel_b(idx)` instead of
+/// `load_pixel(idx)`.
+pub trait Compositor {
+    /// CPU implementation (required). Combines foreground and background buffers.
+    fn compute(
+        &self,
+        fg: &[f32],
+        bg: &[f32],
+        width: u32,
+        height: u32,
+    ) -> Result<Vec<f32>, PipelineError>;
+
+    /// CPU implementation with full node info (color space, dimensions).
+    ///
+    /// Compositors that need color-space awareness override this instead of `compute()`.
+    /// Default: delegates to `compute()`, ignoring the color space.
+    fn compute_with_info(
+        &self,
+        fg: &[f32],
+        bg: &[f32],
+        info: &crate::node::NodeInfo,
+    ) -> Result<Vec<f32>, PipelineError> {
+        self.compute(fg, bg, info.width, info.height)
+    }
+
+    // ─── GPU acceleration ─────────────────────────────────────────────────
+
+    /// WGSL shader body (without io_f32_dual bindings).
+    /// Dual-input shaders receive `load_pixel_a(idx)` and `load_pixel_b(idx)`.
+    fn gpu_shader_body(&self) -> Option<&'static str> {
+        None
+    }
+
+    /// GPU workgroup dispatch size.
+    fn gpu_workgroup_size(&self) -> [u32; 3] {
+        [16, 16, 1]
+    }
+
+    /// GPU entry point name.
+    fn gpu_entry_point(&self) -> &'static str {
+        "main"
+    }
+
+    /// Serialize instance params to GPU uniform buffer (little-endian, 4-byte aligned).
+    fn gpu_params(&self, _width: u32, _height: u32) -> Option<Vec<u8>> {
+        None
+    }
+
+    /// GPU params with full node info (color space, dimensions).
+    fn gpu_params_with_info(&self, info: &crate::node::NodeInfo) -> Option<Vec<u8>> {
+        self.gpu_params(info.width, info.height)
+    }
+
+    /// Extra GPU storage buffers.
+    fn gpu_extra_buffers(&self) -> Vec<Vec<u8>> {
+        vec![]
+    }
+}
+
 /// Image decoder — converts encoded bytes to f32 pixel data.
 ///
 /// Always outputs f32 RGBA. Format-specific decoding (JPEG, PNG, EXR)

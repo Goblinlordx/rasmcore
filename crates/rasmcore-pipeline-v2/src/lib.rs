@@ -83,7 +83,8 @@ pub use registry::{
 // Re-export operation traits
 #[allow(deprecated)]
 pub use ops::{
-    AnalyticOp, DecodedImage, Decoder, Encoder, Filter, GpuFilter, PointOpExpr, Transform,
+    AnalyticOp, Compositor, DecodedImage, Decoder, Encoder, Filter, GpuFilter, PointOpExpr,
+    Transform,
 };
 
 // Re-export node wrappers
