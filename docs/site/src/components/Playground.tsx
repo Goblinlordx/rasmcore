@@ -56,7 +56,9 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
       }
 
       if (msgType === 'result') {
-        // Worker rendered CPU pixels — draw to canvas via ImageData
+        // Worker rendered sRGB pixels — draw via createImageBitmap + drawImage
+        // for color-managed display (putImageData bypasses color management,
+        // causing mismatch with the <img> "before" on wide-gamut displays).
         const canvas = afterCanvasRef.current;
         if (canvas) {
           const { width, height, imageData } = e.data;
@@ -65,7 +67,11 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
           const ctx = canvas.getContext('2d');
           if (ctx) {
             const u8 = new Uint8ClampedArray(imageData);
-            ctx.putImageData(new ImageData(u8, width, height), 0, 0);
+            const imgData = new ImageData(u8, width, height, { colorSpace: 'srgb' });
+            createImageBitmap(imgData, { colorSpaceConversion: 'default' }).then(bmp => {
+              ctx.drawImage(bmp, 0, 0);
+              bmp.close();
+            });
           }
         }
         setStaticUrl('');
