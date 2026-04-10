@@ -3,9 +3,9 @@
 //
 // Usage: node scripts/test-v2-wasm-roundtrip.mjs
 //
-// Requires: ./scripts/generate-v2-sdk.sh to have been run first
+// Requires: ./scripts/build-sdk.sh to have been run first
 
-import { pipelineV2 } from '../sdk/typescript/v2-generated/rasmcore-v2-image.js';
+import { pipelineV2 } from '../sdk/dist/wasm/rasmcore-v2-image.js';
 
 const { ImagePipelineV2 } = pipelineV2;
 
