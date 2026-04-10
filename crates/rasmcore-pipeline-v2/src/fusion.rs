@@ -804,56 +804,56 @@ pub fn optimize(graph: &mut Graph) {
 /// pass merges them with the grading CLUTs into a single 3D LUT.
 fn insert_preferred_csc_nodes(graph: &mut Graph) {
     use crate::color_convert::ColorConvertNode;
-    use crate::color_space::ColorSpace;
 
     if !graph.is_color_managed() {
         return;
     }
-    let working = graph.working_color_space().unwrap_or(ColorSpace::Linear);
 
     let n = graph.node_count() as usize;
-    // Collect nodes that need CSC wrapping (can't mutate graph while iterating)
-    let mut to_wrap: Vec<(u32, ColorSpace)> = Vec::new();
+    // Collect nodes that need CSC wrapping: (node_id, upstream_cs, preferred_cs)
+    let mut to_wrap: Vec<(u32, crate::color_space::ColorSpace, crate::color_space::ColorSpace)> = Vec::new();
     for i in 0..n {
         let node = graph.get_node(i as u32);
         if let Some(preferred) = node.preferred_color_space() {
-            if preferred != working {
-                to_wrap.push((i as u32, preferred));
+            let upstream_ids = node.upstream_ids();
+            if upstream_ids.len() != 1 { continue; }
+            // Use the actual upstream color space, not an assumed working space.
+            let upstream_cs = graph.get_node(upstream_ids[0]).info().color_space;
+            if preferred != upstream_cs {
+                to_wrap.push((i as u32, upstream_cs, preferred));
             }
         }
     }
 
-    // Insert CSC pairs for each node. Process in forward order so IDs stay valid
-    // (we only append new nodes and rewire, never remove).
-    for (node_id, preferred) in to_wrap {
+    // Insert CSC pairs. Forward order so IDs stay valid (append-only).
+    for (node_id, upstream_cs, preferred) in to_wrap {
         let node = graph.get_node(node_id);
         let upstream_ids = node.upstream_ids();
-        if upstream_ids.len() != 1 { continue; } // only wrap single-input nodes
+        if upstream_ids.len() != 1 { continue; }
         let original_upstream = upstream_ids[0];
         let info = node.info();
 
-        // Add CSC: working → preferred (before the grading node)
+        // CSC before: upstream_cs → preferred
         let csc_before = ColorConvertNode::new(
             original_upstream,
             NodeInfo { color_space: preferred, ..info.clone() },
-            working,
+            upstream_cs,
             preferred,
         );
         let csc_before_id = graph.add_node(Box::new(csc_before));
 
-        // Rewire the grading node to take CSC output as upstream
         graph.set_node_upstream(node_id, csc_before_id);
 
-        // Add CSC: preferred → working (after the grading node)
+        // CSC after: preferred → upstream_cs (restore original space)
         let csc_after = ColorConvertNode::new(
             node_id,
-            NodeInfo { color_space: working, ..info },
+            NodeInfo { color_space: upstream_cs, ..info },
             preferred,
-            working,
+            upstream_cs,
         );
         let csc_after_id = graph.add_node(Box::new(csc_after));
 
-        // Rewire downstream: any node that references node_id now references csc_after_id
+        // Rewire downstream nodes
         let total = graph.node_count() as usize;
         for j in 0..total {
             let j_id = j as u32;
