@@ -114,9 +114,9 @@ plan:
 - phase: Verification
   tasks:
   - text: 'Smoke test: make sdk produces self-contained sdk/dist/ with all files, correct imports, no broken references'
-    done: false
+    done: true
   - text: 'Smoke test: make web-ui builds cleanly using new SDK — dev server loads and processes an image'
-    done: false
+    done: true
   - text: 'Smoke test: make docs builds cleanly — docs site playground can instantiate SDK'
-    done: false
+    done: true
 extra: {}
