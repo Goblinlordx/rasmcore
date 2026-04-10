@@ -2041,4 +2041,138 @@ mod tests {
         // Passthrough: output should match source
         assert_eq!(output, vec![0.5, 0.3, 0.1, 1.0]);
     }
+
+    #[test]
+    fn apply_porter_duff_compositor() {
+        let pipe = PipelineResource::new();
+
+        // Foreground: semi-transparent red
+        let fg = SourceNode {
+            pixels: vec![1.0, 0.0, 0.0, 0.5],
+            info: NodeInfo {
+                width: 1,
+                height: 1,
+                color_space: ColorSpace::Linear,
+            },
+        };
+        // Background: opaque blue
+        let bg = SourceNode {
+            pixels: vec![0.0, 0.0, 1.0, 1.0],
+            info: NodeInfo {
+                width: 1,
+                height: 1,
+                color_space: ColorSpace::Linear,
+            },
+        };
+        let fg_id = pipe.graph.borrow_mut().add_node(Box::new(fg));
+        let bg_id = pipe.graph.borrow_mut().add_node(Box::new(bg));
+
+        let params = ParamMap::new(); // opacity defaults to 1.0
+        let comp_id = pipe
+            .apply_compositor(fg_id, bg_id, "porter_duff_over", &params)
+            .unwrap();
+
+        let output = pipe.render(comp_id).unwrap();
+        // out_a = 0.5 + 1.0 * 0.5 = 1.0
+        // out_r = (1.0 * 0.5 + 0.0 * 1.0 * 0.5) / 1.0 = 0.5
+        // out_b = (0.0 * 0.5 + 1.0 * 1.0 * 0.5) / 1.0 = 0.5
+        assert!((output[0] - 0.5).abs() < 1e-5, "R: {}", output[0]);
+        assert!(output[1].abs() < 1e-5, "G: {}", output[1]);
+        assert!((output[2] - 0.5).abs() < 1e-5, "B: {}", output[2]);
+        assert!((output[3] - 1.0).abs() < 1e-5, "A: {}", output[3]);
+    }
+
+    #[test]
+    fn apply_blend_dual_compositor() {
+        let pipe = PipelineResource::new();
+
+        let fg = SourceNode {
+            pixels: vec![0.5, 0.8, 0.2, 1.0],
+            info: NodeInfo {
+                width: 1,
+                height: 1,
+                color_space: ColorSpace::Linear,
+            },
+        };
+        let bg = SourceNode {
+            pixels: vec![0.4, 0.6, 1.0, 1.0],
+            info: NodeInfo {
+                width: 1,
+                height: 1,
+                color_space: ColorSpace::Linear,
+            },
+        };
+        let fg_id = pipe.graph.borrow_mut().add_node(Box::new(fg));
+        let bg_id = pipe.graph.borrow_mut().add_node(Box::new(bg));
+
+        // Multiply mode (1), full opacity
+        let mut params = ParamMap::new();
+        params.ints.insert("mode".into(), 1);
+        params.floats.insert("opacity".into(), 1.0);
+        let comp_id = pipe
+            .apply_compositor(fg_id, bg_id, "blend_dual", &params)
+            .unwrap();
+
+        let output = pipe.render(comp_id).unwrap();
+        // multiply: 0.5*0.4=0.2, 0.8*0.6=0.48, 0.2*1.0=0.2
+        assert!((output[0] - 0.2).abs() < 1e-5, "R: {}", output[0]);
+        assert!((output[1] - 0.48).abs() < 1e-5, "G: {}", output[1]);
+        assert!((output[2] - 0.2).abs() < 1e-5, "B: {}", output[2]);
+    }
+
+    #[test]
+    fn compositor_dimension_mismatch_errors() {
+        let pipe = PipelineResource::new();
+
+        let a = SourceNode {
+            pixels: vec![1.0; 4],
+            info: NodeInfo {
+                width: 1,
+                height: 1,
+                color_space: ColorSpace::Linear,
+            },
+        };
+        let b = SourceNode {
+            pixels: vec![1.0; 16],
+            info: NodeInfo {
+                width: 2,
+                height: 2,
+                color_space: ColorSpace::Linear,
+            },
+        };
+        let a_id = pipe.graph.borrow_mut().add_node(Box::new(a));
+        let b_id = pipe.graph.borrow_mut().add_node(Box::new(b));
+
+        let params = ParamMap::new();
+        let result = pipe.apply_compositor(a_id, b_id, "porter_duff_over", &params);
+        assert!(result.is_err(), "should error on dimension mismatch");
+    }
+
+    #[test]
+    fn compositor_unknown_name_errors() {
+        let pipe = PipelineResource::new();
+
+        let a = SourceNode {
+            pixels: vec![1.0; 4],
+            info: NodeInfo {
+                width: 1,
+                height: 1,
+                color_space: ColorSpace::Linear,
+            },
+        };
+        let b = SourceNode {
+            pixels: vec![1.0; 4],
+            info: NodeInfo {
+                width: 1,
+                height: 1,
+                color_space: ColorSpace::Linear,
+            },
+        };
+        let a_id = pipe.graph.borrow_mut().add_node(Box::new(a));
+        let b_id = pipe.graph.borrow_mut().add_node(Box::new(b));
+
+        let params = ParamMap::new();
+        let result = pipe.apply_compositor(a_id, b_id, "nonexistent", &params);
+        assert!(result.is_err(), "should error on unknown compositor");
+    }
 }
