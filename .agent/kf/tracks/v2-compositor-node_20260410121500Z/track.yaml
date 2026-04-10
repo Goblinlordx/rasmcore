@@ -5,144 +5,175 @@ status: pending
 created: '2026-04-10'
 updated: '2026-04-10'
 spec:
-  summary: |
-    Add a dual-input compositor node to the V2 pipeline. Currently all filters are
+  summary: 'Add a dual-input compositor node to the V2 pipeline. Currently all filters are
+
     single-input (one upstream node). Compositing operations (blend two images,
+
     Porter-Duff alpha composite, displacement map) require two image inputs but
+
     have no V2 pipeline primitive. The blend filter self-blends as a workaround
+
     and explicitly references a "composite node" that does not exist.
-  context: |
-    The V2 pipeline (rasmcore-pipeline-v2) processes images as a DAG of nodes.
+
+    '
+  context: 'The V2 pipeline (rasmcore-pipeline-v2) processes images as a DAG of nodes.
+
     Every node implements the Node trait with upstream_ids() -> Vec<u32> and
+
     compute(request, upstream) where upstream.request(id, rect) can pull data
+
     from any upstream. This infrastructure ALREADY supports multi-input nodes.
 
+
     However, the Filter trait and FilterNode wrapper are single-input only:
+
     - Filter::compute(&self, input: &[f32], w, h) — one buffer
+
     - FilterNode has upstream: u32 (singular)
+
     - WIT apply-filter takes source: node-id (singular)
 
+
     The V1 system had #[register_compositor] and codegen for compositors:
+
     - rasmcore-macros has register_compositor proc macro (lib.rs:217)
+
     - rasmcore-codegen parses them (parse/simple_regs.rs)
+
     - param-manifest.json has compositors: [] slot
+
     But NO compositor functions are actually annotated in the current codebase.
 
+
     The old V1 domain has alpha_composite_over() (rasmcore-image/src/domain/composite.rs)
+
     operating on RGBA8 — this predates the f32 pipeline.
 
+
     The blend filter (filters/composite/blend.rs) explicitly notes:
+
     "This is a single-input filter... For two-layer compositing, use the
-    pipeline's composite node instead." — but that node does not exist.
-  codebase_analysis: |
-    Key files:
+
+    pipeline''s composite node instead." — but that node does not exist.
+
+    '
+  codebase_analysis: 'Key files:
+
     - crates/rasmcore-pipeline-v2/src/node.rs — Node trait, Upstream trait (multi-input ready)
+
     - crates/rasmcore-pipeline-v2/src/filter_node.rs — FilterNode (single upstream: u32)
+
     - crates/rasmcore-pipeline-v2/src/ops.rs — Filter trait (single &[f32] input)
+
     - crates/rasmcore-pipeline-v2/src/filters/composite/ — blend, blend_if, premultiply, unpremultiply
+
     - wit/v2/pipeline.wit:396 — apply-filter(source: node-id, name, params) — single source
+
     - crates/rasmcore-macros/src/lib.rs:217 — register_compositor proc macro (V1, unused)
+
     - crates/rasmcore-codegen/src/generate/manifest.rs — compositors slot in param-manifest
+
     - crates/rasmcore-image/src/domain/composite.rs — V1 RGBA8 Porter-Duff (not V2)
 
-    The Node trait's upstream_ids() -> Vec<u32> and Upstream::request(id, rect)
+
+    The Node trait''s upstream_ids() -> Vec<u32> and Upstream::request(id, rect)
+
     already support multi-input. CompositorNode just needs to use this.
 
-    GPU shader composition (filter_node.rs IO_F32 fragment) binds one input
-    and one output storage buffer. Dual-input shaders need a second input binding.
-  acceptance_criteria:
-    - Compositor trait in ops.rs with compute(&self, fg, bg, w, h) signature
-    - CompositorNode in compositor_node.rs wrapping two upstream IDs, implementing Node
-    - WIT apply-compositor(source-a, source-b, name, params) in pipeline.wit
-    - WASM adapter implements apply-compositor dispatching to registered compositors
-    - V2 derive macro support (#[derive(Compositor)] or #[filter(compositor = true)])
-    - At least one real compositor registered — Porter-Duff over (f32 version of existing V1)
-    - Blend filter refactored to dual-input compositor (fg + bg instead of self-blend)
-    - GPU dual-input IO fragment (io_f32_dual) with load_pixel_a/load_pixel_b
-    - param-manifest.json compositors list populated for registered compositors
-    - SDK codegen emits applyCompositor() method (TypeScript, Go, Python)
-    - Demo worker expandArgs handles apply-compositor calls
-    - Existing single-input blend filter preserved as deprecated alias or removed
-    - Unit tests for CompositorNode with two upstream sources in Graph
-    - Blend parity test — dual-input blend produces correct results for all 25 modes
-  out_of_scope: |
-    - N-input compositors (>2 inputs) — future extension, not needed now
-    - Displacement map filter (uses second image for UV offset) — separate track
-    - Layer stack compositing in web UI — already handled client-side
-    - Mask-based selective compositing (mask_combine already exists as single-input)
-  technical_notes: |
-    Approach:
-    1. Add Compositor trait alongside Filter in ops.rs — same pattern but two inputs
-    2. CompositorNode wraps (upstream_a: u32, upstream_b: u32, info, compositor)
-       and implements Node with upstream_ids() -> vec![upstream_a, upstream_b]
-    3. compute() calls upstream.request() for both IDs, passes both buffers to
-       compositor.compute(fg, bg, w, h)
-    4. GPU path: new io_f32_dual.wgsl fragment with input_a and input_b bindings
-       at @group(0) @binding(0) and @group(0) @binding(3) (or similar)
-    5. WIT: add apply-compositor to pipeline resource interface
-    6. Adapter: registry lookup by name, deserialize params, construct CompositorNode
-    7. Derive macro: extend rasmcore-macros to support compositor registration
-       (could be #[derive(Compositor)] with #[compositor(...)] attributes)
-    8. Codegen: extend rasmcore-codegen to generate pipeline nodes and WIT for compositors
-    9. The existing self-blend filter can be kept as-is for backward compat
-       (it's useful as a single-input effect), but the real blend should be a compositor
 
-    Size matching: both inputs must have the same dimensions. The WIT function should
-    error if source-a and source-b have different node-info dimensions. Future work
-    could add offset/alignment parameters.
+    GPU shader composition (filter_node.rs IO_F32 fragment) binds one input
+
+    and one output storage buffer. Dual-input shaders need a second input binding.
+
+    '
+  acceptance_criteria:
+  - Compositor trait in ops.rs with compute(&self, fg, bg, w, h) signature
+  - CompositorNode in compositor_node.rs wrapping two upstream IDs, implementing Node
+  - WIT apply-compositor(source-a, source-b, name, params) in pipeline.wit
+  - WASM adapter implements apply-compositor dispatching to registered compositors
+  - V2 derive macro support (#[derive(Compositor)] or
+  - At least one real compositor registered — Porter-Duff over (f32 version of existing V1)
+  - Blend filter refactored to dual-input compositor (fg + bg instead of self-blend)
+  - GPU dual-input IO fragment (io_f32_dual) with load_pixel_a/load_pixel_b
+  - param-manifest.json compositors list populated for registered compositors
+  - SDK codegen emits applyCompositor() method (TypeScript, Go, Python)
+  - Demo worker expandArgs handles apply-compositor calls
+  - Existing single-input blend filter preserved as deprecated alias or removed
+  - Unit tests for CompositorNode with two upstream sources in Graph
+  - Blend parity test — dual-input blend produces correct results for all 25 modes
+  out_of_scope: '- N-input compositors (>2 inputs) — future extension, not needed now
+
+    - Displacement map filter (uses second image for UV offset) — separate track
+
+    - Layer stack compositing in web UI — already handled client-side
+
+    - Mask-based selective compositing (mask_combine already exists as single-input)
+
+    '
+  technical_notes: "Approach:\n1. Add Compositor trait alongside Filter in ops.rs — same pattern but two inputs\n2. CompositorNode\
+    \ wraps (upstream_a: u32, upstream_b: u32, info, compositor)\n   and implements Node with upstream_ids() -> vec![upstream_a,\
+    \ upstream_b]\n3. compute() calls upstream.request() for both IDs, passes both buffers to\n   compositor.compute(fg, bg,\
+    \ w, h)\n4. GPU path: new io_f32_dual.wgsl fragment with input_a and input_b bindings\n   at @group(0) @binding(0) and\
+    \ @group(0) @binding(3) (or similar)\n5. WIT: add apply-compositor to pipeline resource interface\n6. Adapter: registry\
+    \ lookup by name, deserialize params, construct CompositorNode\n7. Derive macro: extend rasmcore-macros to support compositor\
+    \ registration\n   (could be #[derive(Compositor)] with #[compositor(...)] attributes)\n8. Codegen: extend rasmcore-codegen\
+    \ to generate pipeline nodes and WIT for compositors\n9. The existing self-blend filter can be kept as-is for backward\
+    \ compat\n   (it's useful as a single-input effect), but the real blend should be a compositor\n\nSize matching: both\
+    \ inputs must have the same dimensions. The WIT function should\nerror if source-a and source-b have different node-info\
+    \ dimensions. Future work\ncould add offset/alignment parameters.\n"
 plan:
-  - phase: Foundation
-    tasks:
-      - text: Add Compositor trait to ops.rs (compute with fg + bg inputs)
-        done: false
-      - text: Add CompositorNode to new compositor_node.rs (two upstream IDs, implements Node)
-        done: false
-      - text: Add io_f32_dual.wgsl GPU fragment (two input bindings + one output)
-        done: false
-      - text: Unit tests for CompositorNode with two SolidSource upstream nodes in Graph
-        done: false
-  - phase: Core Implementation
-    tasks:
-      - text: Implement Porter-Duff over compositor (f32 premultiplied alpha composite)
-        done: false
-      - text: Implement dual-input blend compositor (25 modes, fg + bg)
-        done: false
-      - text: GPU shaders for Porter-Duff over and blend compositor
-        done: false
-      - text: Tests for all 25 blend modes with two different input images
-        done: false
-  - phase: WIT + Adapter Integration
-    tasks:
-      - text: Add apply-compositor function to wit/v2/pipeline.wit
-        done: false
-      - text: Implement apply-compositor in WASM adapter (registry lookup + dispatch)
-        done: false
-      - text: Add compositor registration to pipeline registry
-        done: false
-      - text: Integration test — apply-compositor through WIT round-trip
-        done: false
-  - phase: Derive Macro + Codegen
-    tasks:
-      - text: Add compositor derive support to rasmcore-macros
-        done: false
-      - text: Extend rasmcore-codegen to parse and generate compositor artifacts
-        done: false
-      - text: Verify param-manifest.json compositors list is populated
-        done: false
-  - phase: SDK + Demo
-    tasks:
-      - text: SDK codegen emits applyCompositor() for TypeScript/Go/Python
-        done: false
-      - text: Demo worker expandArgs handles apply-compositor calls
-        done: false
-      - text: Update docs/extending.md compositor section with V2 examples
-        done: false
-  - phase: Verification
-    tasks:
-      - text: cargo test (native) — all new tests pass
-        done: false
-      - text: cargo component build — WASM component validates
-        done: false
-      - text: Blend parity test — dual-input matches V1 alpha_composite_over for Porter-Duff
-        done: false
+- phase: Foundation
+  tasks:
+  - text: Add Compositor trait to ops.rs (compute with fg + bg inputs)
+    done: true
+  - text: Add CompositorNode to new compositor_node.rs (two upstream IDs, implements Node)
+    done: true
+  - text: Add io_f32_dual.wgsl GPU fragment (two input bindings + one output)
+    done: true
+  - text: Unit tests for CompositorNode with two SolidSource upstream nodes in Graph
+    done: true
+- phase: Core Implementation
+  tasks:
+  - text: Implement Porter-Duff over compositor (f32 premultiplied alpha composite)
+    done: true
+  - text: Implement dual-input blend compositor (25 modes, fg + bg)
+    done: true
+  - text: GPU shaders for Porter-Duff over and blend compositor
+    done: true
+  - text: Tests for all 25 blend modes with two different input images
+    done: true
+- phase: WIT + Adapter Integration
+  tasks:
+  - text: Add apply-compositor function to wit/v2/pipeline.wit
+    done: true
+  - text: Implement apply-compositor in WASM adapter (registry lookup + dispatch)
+    done: true
+  - text: Add compositor registration to pipeline registry
+    done: true
+  - text: Integration test — apply-compositor through WIT round-trip
+    done: true
+- phase: Derive Macro + Codegen
+  tasks:
+  - text: Add compositor derive support to rasmcore-macros
+    done: true
+  - text: Extend rasmcore-codegen to parse and generate compositor artifacts
+    done: true
+  - text: Verify param-manifest.json compositors list is populated
+    done: true
+- phase: SDK + Demo
+  tasks:
+  - text: SDK codegen emits applyCompositor() for TypeScript/Go/Python
+    done: true
+  - text: Demo worker expandArgs handles apply-compositor calls
+    done: true
+  - text: Update docs/extending.md compositor section with V2 examples
+    done: true
+- phase: Verification
+  tasks:
+  - text: cargo test (native) — all new tests pass
+    done: true
+  - text: cargo component build — WASM component validates
+    done: true
+  - text: Blend parity test — dual-input matches V1 alpha_composite_over for Porter-Duff
+    done: true
 extra: {}
