@@ -13,33 +13,31 @@ spec:
   acceptance_criteria: []
   out_of_scope: ''
   technical_notes: ''
-plan: []
-extra: {}
 plan:
-  - phase: Noise effect refs
-    tasks:
-      - text: "Implement gaussian_noise, uniform_noise, salt_pepper_noise, poisson_noise refs"
-        done: false
-      - text: "Implement film_grain reference"
-        done: false
-  - phase: Visual effect refs
-    tasks:
-      - text: "Implement chromatic_aberration, chromatic_split references"
-        done: false
-      - text: "Implement oil_paint, charcoal, halftone references"
-        done: false
-      - text: "Implement glitch, light_leak, mirror_kaleidoscope, sparse_color references"
-        done: false
-  - phase: Distortion refs
-    tasks:
-      - text: "Implement barrel, spherize, swirl references"
-        done: false
-      - text: "Implement wave, ripple, polar, depolar references"
-        done: false
-      - text: "Implement displacement_map, liquify, mesh_warp references"
-        done: false
-  - phase: Verification
-    tasks:
-      - text: "All 24 reference self-tests pass"
-        done: false
+- phase: Noise effect refs
+  tasks:
+  - text: Implement gaussian_noise, uniform_noise, salt_pepper_noise, poisson_noise refs
+    done: true
+  - text: Implement film_grain reference
+    done: true
+- phase: Visual effect refs
+  tasks:
+  - text: Implement chromatic_aberration, chromatic_split references
+    done: true
+  - text: Implement oil_paint, charcoal, halftone references
+    done: true
+  - text: Implement glitch, light_leak, mirror_kaleidoscope, sparse_color references
+    done: true
+- phase: Distortion refs
+  tasks:
+  - text: Implement barrel, spherize, swirl references
+    done: true
+  - text: Implement wave, ripple, polar, depolar references
+    done: true
+  - text: Implement displacement_map, liquify, mesh_warp references
+    done: true
+- phase: Verification
+  tasks:
+  - text: All 24 reference self-tests pass
+    done: true
 extra: {}
