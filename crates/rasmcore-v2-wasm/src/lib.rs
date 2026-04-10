@@ -527,7 +527,6 @@ impl PipelineResource {
         params: &ParamMap,
     ) -> Result<u32, PipelineError> {
         let info = self.graph.borrow().node_info(source)?;
-        let upstream_cs = info.color_space;
 
         // Apply proxy scale to spatial params (hint = "rc.pixels")
         let scale = self.proxy_scale.get();
@@ -561,37 +560,13 @@ impl PipelineResource {
             }
         }
 
-        // Create filter to check its preferred color space
+        // Add filter node to graph. CSC wrapping (preferred_color_space) is
+        // handled by the fusion optimizer's insert_preferred_csc_nodes() pass —
+        // not here. Doing it here would double-wrap since the optimizer runs on
+        // every request_full().
         let node = create_filter_node(name, source, info.clone(), &scaled_params).ok_or_else(|| {
             PipelineError::InvalidParams(format!("unknown filter: {name}"))
         })?;
-
-        let preferred_cs = node.preferred_color_space();
-        let working_cs = self.graph.borrow().working_color_space();
-
-        // Filter preference wins, then graph working space
-        let target_cs = preferred_cs.or(working_cs);
-
-        if let Some(target) = target_cs {
-            if target != upstream_cs && upstream_cs != ColorSpace::Unknown {
-                // Auto-insert: convert upstream -> target -> filter -> convert back
-                let convert_to = v2::ColorConvertNode::new(source, info.clone(), upstream_cs, target);
-                let convert_to_id = self.graph.borrow_mut().add_node(Box::new(convert_to));
-
-                let converted_info = NodeInfo { color_space: target, ..info };
-                let filter_node = create_filter_node(name, convert_to_id, converted_info, &scaled_params)
-                    .expect("filter creation already validated");
-                let filter_id = self.graph.borrow_mut().add_node_with_hash(filter_node, filter_hash);
-
-                let filter_out_info = self.graph.borrow().node_info(filter_id)?;
-                let convert_back = v2::ColorConvertNode::new(filter_id, filter_out_info, target, upstream_cs);
-                let convert_back_id = self.graph.borrow_mut().add_node(Box::new(convert_back));
-
-                return Ok(convert_back_id);
-            }
-        }
-
-        // No conversion needed
         let id = self.graph.borrow_mut().add_node_with_hash(node, filter_hash);
         Ok(id)
     }
