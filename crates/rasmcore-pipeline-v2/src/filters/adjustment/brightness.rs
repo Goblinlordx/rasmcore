@@ -2,13 +2,17 @@ use crate::lmt::{self, Lmt};
 use crate::node::PipelineError;
 use crate::ops::{Filter, PointOpExpr};
 
-/// Brightness adjustment — additive offset.
+/// Brightness adjustment — additive offset in perceptual (log) space.
 ///
-/// `output = input + amount` (clamped to [0, 1] only at encode boundary).
+/// Operates in ACEScct working space so that equal offsets produce
+/// perceptually uniform brightness changes — matching the behavior
+/// of consumer editors (GIMP, Photoshop legacy, phone apps).
+///
+/// For physically-accurate exposure control in linear light, use `Exposure`.
 #[derive(Clone, rasmcore_macros::V2Filter)]
 #[filter(name = "brightness", category = "adjustment", cost = "O(n)", doc = "docs/operations/filters/adjustment/brightness.adoc")]
 pub struct Brightness {
-    /// Additive offset applied to each RGB channel.
+    /// Additive offset applied to each RGB channel (in ACEScct log space).
     #[param(min = -1.0, max = 1.0, step = 0.02, default = 0.0)]
     pub amount: f32,
 }
@@ -29,6 +33,10 @@ impl Filter for Brightness {
 
     fn analytic_expression_per_channel(&self) -> Option<[PointOpExpr; 3]> {
         self.to_lmt().to_analytical()
+    }
+
+    fn preferred_color_space(&self) -> Option<crate::color_space::ColorSpace> {
+        Some(crate::color_space::ColorSpace::AcesCct)
     }
 }
 
