@@ -49,7 +49,11 @@ inventory::collect!(&'static DecoderDispatchEntry);
 
 /// Find a decoder by format name or extension.
 pub fn find_decoder(format: &str) -> Option<&'static DecoderDispatchEntry> {
-    inventory::iter::<&'static DecoderDispatchEntry>.into_iter().copied().find(|&entry| entry.format == format || entry.extensions.contains(&format)).map(|v| v as _)
+    inventory::iter::<&'static DecoderDispatchEntry>
+        .into_iter()
+        .copied()
+        .find(|&entry| entry.format == format || entry.extensions.contains(&format))
+        .map(|v| v as _)
 }
 
 /// List all decode formats from the dispatch registry.
@@ -205,18 +209,18 @@ inventory::submit! { &DecoderDispatchEntry {
 /// format checks, then text heuristics.
 pub fn detect_format(header: &[u8]) -> Option<String> {
     // Collect and sort by priority
-    let mut entries: Vec<&DecoderDispatchEntry> =
-        inventory::iter::<&'static DecoderDispatchEntry>
-            .into_iter()
-            .copied()
-            .collect();
+    let mut entries: Vec<&DecoderDispatchEntry> = inventory::iter::<&'static DecoderDispatchEntry>
+        .into_iter()
+        .copied()
+        .collect();
     entries.sort_by_key(|e| e.priority);
 
     for entry in entries {
         if let Some(detect) = entry.detect_fn
-            && detect(header) {
-                return Some(entry.format.to_string());
-            }
+            && detect(header)
+        {
+            return Some(entry.format.to_string());
+        }
     }
 
     // LUT format detection (these return ColorLut3D, not DecodedImage,
@@ -527,12 +531,13 @@ pub fn decode_with_hint(
         if let Some(entry) = find_decoder(hint) {
             // If decoder has detection, validate the data matches
             if let Some(detect) = entry.detect_fn
-                && !detect(data) {
-                    return Err(ImageError::InvalidInput(format!(
-                        "data does not match format '{}' (detection rejected)",
-                        entry.format
-                    )));
-                }
+                && !detect(data)
+            {
+                return Err(ImageError::InvalidInput(format!(
+                    "data does not match format '{}' (detection rejected)",
+                    entry.format
+                )));
+            }
             return (entry.decode_fn)(data);
         }
         return Err(ImageError::UnsupportedFormat(format!(
@@ -541,18 +546,18 @@ pub fn decode_with_hint(
     }
 
     // Auto-detect: iterate registry by priority
-    let mut entries: Vec<&DecoderDispatchEntry> =
-        inventory::iter::<&'static DecoderDispatchEntry>
-            .into_iter()
-            .copied()
-            .collect();
+    let mut entries: Vec<&DecoderDispatchEntry> = inventory::iter::<&'static DecoderDispatchEntry>
+        .into_iter()
+        .copied()
+        .collect();
     entries.sort_by_key(|e| e.priority);
 
     for entry in &entries {
         if let Some(detect) = entry.detect_fn
-            && detect(data) {
-                return (entry.decode_fn)(data);
-            }
+            && detect(data)
+        {
+            return (entry.decode_fn)(data);
+        }
     }
 
     // No registered decoder matched
@@ -3661,7 +3666,8 @@ mod tests {
                 assert!(
                     diff < 1e-5,
                     "entry {i} channel {c}: orig={}, back={}, diff={diff}",
-                    orig[c], back[c]
+                    orig[c],
+                    back[c]
                 );
             }
         }

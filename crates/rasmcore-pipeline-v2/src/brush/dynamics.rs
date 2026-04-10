@@ -29,7 +29,11 @@ impl DynamicsCurve {
             let (x0, y0) = self.points[i];
             let (x1, y1) = self.points[i + 1];
             if t >= x0 && t <= x1 {
-                let seg_t = if (x1 - x0).abs() < 1e-10 { 0.0 } else { (t - x0) / (x1 - x0) };
+                let seg_t = if (x1 - x0).abs() < 1e-10 {
+                    0.0
+                } else {
+                    (t - x0) / (x1 - x0)
+                };
                 return y0 + seg_t * (y1 - y0);
             }
         }
@@ -53,7 +57,9 @@ mod tests {
 
     #[test]
     fn identity_curve() {
-        let c = DynamicsCurve { points: vec![(0.0, 0.0), (1.0, 1.0)] };
+        let c = DynamicsCurve {
+            points: vec![(0.0, 0.0), (1.0, 1.0)],
+        };
         assert!((c.evaluate(0.0) - 0.0).abs() < 1e-6);
         assert!((c.evaluate(0.5) - 0.5).abs() < 1e-6);
         assert!((c.evaluate(1.0) - 1.0).abs() < 1e-6);
@@ -61,7 +67,9 @@ mod tests {
 
     #[test]
     fn inverted_curve() {
-        let c = DynamicsCurve { points: vec![(0.0, 1.0), (1.0, 0.0)] };
+        let c = DynamicsCurve {
+            points: vec![(0.0, 1.0), (1.0, 0.0)],
+        };
         assert!((c.evaluate(0.0) - 1.0).abs() < 1e-6);
         assert!((c.evaluate(0.5) - 0.5).abs() < 1e-6);
         assert!((c.evaluate(1.0) - 0.0).abs() < 1e-6);
@@ -69,7 +77,9 @@ mod tests {
 
     #[test]
     fn multi_segment_curve() {
-        let c = DynamicsCurve { points: vec![(0.0, 0.0), (0.5, 1.0), (1.0, 0.5)] };
+        let c = DynamicsCurve {
+            points: vec![(0.0, 0.0), (0.5, 1.0), (1.0, 0.5)],
+        };
         assert!((c.evaluate(0.25) - 0.5).abs() < 1e-6);
         assert!((c.evaluate(0.5) - 1.0).abs() < 1e-6);
         assert!((c.evaluate(0.75) - 0.75).abs() < 1e-6);
@@ -77,7 +87,9 @@ mod tests {
 
     #[test]
     fn clamps_out_of_range() {
-        let c = DynamicsCurve { points: vec![(0.2, 0.3), (0.8, 0.9)] };
+        let c = DynamicsCurve {
+            points: vec![(0.2, 0.3), (0.8, 0.9)],
+        };
         assert_eq!(c.evaluate(0.0), 0.3);
         assert_eq!(c.evaluate(1.0), 0.9);
     }

@@ -208,9 +208,12 @@ fn strip_png_chunks(png_data: &[u8], chunk_types: &[&[u8; 4]]) -> Vec<u8> {
     result.extend_from_slice(&png_data[..PNG_SIG_LEN]);
     let mut pos = PNG_SIG_LEN;
     while pos + 12 <= png_data.len() {
-        let len =
-            u32::from_be_bytes([png_data[pos], png_data[pos + 1], png_data[pos + 2], png_data[pos + 3]])
-                as usize;
+        let len = u32::from_be_bytes([
+            png_data[pos],
+            png_data[pos + 1],
+            png_data[pos + 2],
+            png_data[pos + 3],
+        ]) as usize;
         let chunk_end = pos + 12 + len;
         if chunk_end > png_data.len() {
             // Malformed — copy rest and stop
@@ -541,7 +544,6 @@ pub fn embed_exif(png_data: &[u8], exif_data: &[u8]) -> Result<Vec<u8>, ImageErr
 
     Ok(result)
 }
-
 
 // ─── Encoder Registration ──────────────────────────────────────────────────
 
@@ -973,10 +975,7 @@ mod tests {
 
     #[test]
     fn cicp_mapping_bt2020() {
-        assert_eq!(
-            color_space_to_cicp(ColorSpace::Bt2020),
-            Some((9, 14, 0, 1))
-        );
+        assert_eq!(color_space_to_cicp(ColorSpace::Bt2020), Some((9, 14, 0, 1)));
     }
 
     #[test]
@@ -1119,14 +1118,8 @@ mod tests {
         let cicp_idx = chunks.iter().position(|c| c == "cICP").unwrap();
         let idat_idx = chunks.iter().position(|c| c == "IDAT").unwrap();
         let ihdr_idx = chunks.iter().position(|c| c == "IHDR").unwrap();
-        assert!(
-            cicp_idx > ihdr_idx,
-            "cICP must appear after IHDR"
-        );
-        assert!(
-            cicp_idx < idat_idx,
-            "cICP must appear before IDAT"
-        );
+        assert!(cicp_idx > ihdr_idx, "cICP must appear after IHDR");
+        assert!(cicp_idx < idat_idx, "cICP must appear before IDAT");
     }
 
     #[test]
@@ -1256,6 +1249,9 @@ mod tests {
         let decoded = crate::domain::decoder::decode(&encoded).unwrap();
         assert_eq!(decoded.info.color_space, ColorSpace::DisplayP3);
         assert_eq!(decoded.info.format, PixelFormat::Rgb16);
-        assert_eq!(decoded.pixels, pixels, "16-bit P3 roundtrip must be pixel-exact");
+        assert_eq!(
+            decoded.pixels, pixels,
+            "16-bit P3 roundtrip must be pixel-exact"
+        );
     }
 }

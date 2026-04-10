@@ -44,7 +44,8 @@ pub fn parse_cdl(xml: &str) -> Result<Vec<CdlValues>, PipelineError> {
     let mut remaining = xml;
     while let Some(cc_start) = remaining.find("<ColorCorrection") {
         let after = &remaining[cc_start..];
-        let cc_end = after.find("</ColorCorrection>")
+        let cc_end = after
+            .find("</ColorCorrection>")
             .ok_or_else(|| PipelineError::InvalidParams("unclosed <ColorCorrection>".into()))?;
         let block = &after[..cc_end + "</ColorCorrection>".len()];
 
@@ -71,8 +72,9 @@ pub fn parse_cdl(xml: &str) -> Result<Vec<CdlValues>, PipelineError> {
         // Parse SatNode: <Saturation>
         if let Some(sat_node) = extract_element(block, "SatNode") {
             if let Some(sat_str) = extract_element(&sat_node, "Saturation") {
-                cdl.saturation = sat_str.trim().parse::<f32>()
-                    .map_err(|_| PipelineError::InvalidParams(format!("invalid saturation: {sat_str}")))?;
+                cdl.saturation = sat_str.trim().parse::<f32>().map_err(|_| {
+                    PipelineError::InvalidParams(format!("invalid saturation: {sat_str}"))
+                })?;
             }
         }
 
@@ -93,7 +95,9 @@ pub fn parse_cdl(xml: &str) -> Result<Vec<CdlValues>, PipelineError> {
             cdl.power = parse_three_floats(&power)?;
         }
         if let Some(sat) = extract_element(xml, "Saturation") {
-            cdl.saturation = sat.trim().parse::<f32>()
+            cdl.saturation = sat
+                .trim()
+                .parse::<f32>()
                 .map_err(|_| PipelineError::InvalidParams("invalid saturation".into()))?;
         }
         // Only add if we found at least one SOP element
@@ -103,7 +107,9 @@ pub fn parse_cdl(xml: &str) -> Result<Vec<CdlValues>, PipelineError> {
     }
 
     if results.is_empty() {
-        return Err(PipelineError::InvalidParams("no CDL data found in XML".into()));
+        return Err(PipelineError::InvalidParams(
+            "no CDL data found in XML".into(),
+        ));
     }
 
     Ok(results)
@@ -155,12 +161,14 @@ fn extract_attr(xml: &str, tag: &str, attr: &str) -> Option<String> {
 }
 
 fn parse_three_floats(s: &str) -> Result<[f32; 3], PipelineError> {
-    let parts: Vec<f32> = s.split_whitespace()
+    let parts: Vec<f32> = s
+        .split_whitespace()
         .filter_map(|p| p.parse::<f32>().ok())
         .collect();
     if parts.len() < 3 {
         return Err(PipelineError::InvalidParams(format!(
-            "expected 3 floats, got {}: '{s}'", parts.len()
+            "expected 3 floats, got {}: '{s}'",
+            parts.len()
         )));
     }
     Ok([parts[0], parts[1], parts[2]])
@@ -210,7 +218,10 @@ mod tests {
 
     #[test]
     fn apply_cdl_slope_doubles() {
-        let cdl = CdlValues { slope: [2.0, 2.0, 2.0], ..CdlValues::default() };
+        let cdl = CdlValues {
+            slope: [2.0, 2.0, 2.0],
+            ..CdlValues::default()
+        };
         let mut pixels = vec![0.3, 0.3, 0.3, 1.0];
         apply_cdl(&mut pixels, &cdl);
         assert!((pixels[0] - 0.6).abs() < 1e-6);
@@ -218,20 +229,32 @@ mod tests {
 
     #[test]
     fn apply_cdl_saturation() {
-        let cdl = CdlValues { saturation: 0.0, ..CdlValues::default() };
+        let cdl = CdlValues {
+            saturation: 0.0,
+            ..CdlValues::default()
+        };
         let mut pixels = vec![1.0, 0.0, 0.0, 1.0]; // pure red
         apply_cdl(&mut pixels, &cdl);
         // With saturation=0, should be grayscale (luma)
-        let spread = (pixels[0] - pixels[1]).abs().max((pixels[1] - pixels[2]).abs());
+        let spread = (pixels[0] - pixels[1])
+            .abs()
+            .max((pixels[1] - pixels[2]).abs());
         assert!(spread < 1e-6, "saturation 0 should produce grayscale");
     }
 
     #[test]
     fn cdl_no_scene_referred_clamp() {
         // Scene-referred: slope can produce values > 1.0
-        let cdl = CdlValues { slope: [3.0, 3.0, 3.0], ..CdlValues::default() };
+        let cdl = CdlValues {
+            slope: [3.0, 3.0, 3.0],
+            ..CdlValues::default()
+        };
         let mut pixels = vec![0.5, 0.5, 0.5, 1.0];
         apply_cdl(&mut pixels, &cdl);
-        assert!((pixels[0] - 1.5).abs() < 1e-6, "should NOT clamp to 1.0: {}", pixels[0]);
+        assert!(
+            (pixels[0] - 1.5).abs() < 1e-6,
+            "should NOT clamp to 1.0: {}",
+            pixels[0]
+        );
     }
 }

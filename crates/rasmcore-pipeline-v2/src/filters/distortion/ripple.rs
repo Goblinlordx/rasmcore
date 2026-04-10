@@ -1,11 +1,11 @@
 //! Ripple distortion filter.
 
-use crate::node::{PipelineError};
+use crate::node::PipelineError;
 use crate::ops::Filter;
 
-use std::f32::consts::PI;
 use super::super::helpers::{gpu_params_wh, sample_bilinear};
 use super::{SAMPLE_BILINEAR_WGSL, gpu_params_push_f32, gpu_params_push_u32};
+use std::f32::consts::PI;
 
 // Ripple
 // ═══════════════════════════════════════════════════════════════════════════
@@ -79,8 +79,15 @@ impl Filter for Ripple {
         gpu_params_push_f32(&mut params, self.center_y);
         gpu_params_push_u32(&mut params, 0); // pad
         gpu_params_push_u32(&mut params, 0); // pad
-        Some(vec![crate::node::GpuShader::new(shader, "main", [16, 16, 1], params)])
+        Some(vec![crate::node::GpuShader::new(
+            shader,
+            "main",
+            [16, 16, 1],
+            params,
+        )])
     }
 
-    fn tile_overlap(&self) -> u32 { 0 }
+    fn tile_overlap(&self) -> u32 {
+        0
+    }
 }

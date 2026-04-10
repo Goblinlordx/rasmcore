@@ -1,8 +1,8 @@
 use std::io::Cursor;
 
+use super::set::MetadataSet;
 use crate::domain::color;
 use crate::domain::error::ImageError;
-use super::set::MetadataSet;
 
 /// EXIF orientation tag values (1-8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

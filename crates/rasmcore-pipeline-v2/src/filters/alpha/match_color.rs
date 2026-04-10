@@ -24,7 +24,9 @@ pub struct MatchColor {
 impl Filter for MatchColor {
     fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
         let n = (width * height) as usize;
-        if n == 0 { return Ok(input.to_vec()); }
+        if n == 0 {
+            return Ok(input.to_vec());
+        }
 
         // Compute mean and std per channel
         let mut sum = [0.0f64; 3];
@@ -52,7 +54,11 @@ impl Filter for MatchColor {
             (var[2] / n as f64).sqrt().max(0.001),
         ];
 
-        let target_mean = [self.target_mean_r as f64, self.target_mean_g as f64, self.target_mean_b as f64];
+        let target_mean = [
+            self.target_mean_r as f64,
+            self.target_mean_g as f64,
+            self.target_mean_b as f64,
+        ];
         let target_std = self.target_std as f64;
         let strength = self.strength;
 
@@ -62,7 +68,9 @@ impl Filter for MatchColor {
             for c in 0..3 {
                 let v = input[o + c] as f64;
                 let transferred = (v - mean[c]) * (target_std / std_in[c]) + target_mean[c];
-                out[o + c] = (input[o + c] + strength * (transferred as f32 - input[o + c])).max(0.0).min(1.0);
+                out[o + c] = (input[o + c] + strength * (transferred as f32 - input[o + c]))
+                    .max(0.0)
+                    .min(1.0);
             }
         }
         Ok(out)
@@ -134,7 +142,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {{
             extra_buffers: vec![],
             reduction_buffers: vec![sum_reduction.read_buffer(&sum_passes)],
             convergence_check: None,
-            loop_dispatch: None, setup: None,
+            loop_dispatch: None,
+            setup: None,
         };
 
         Some(vec![sum_passes.pass1, sum_passes.pass2, apply_shader])

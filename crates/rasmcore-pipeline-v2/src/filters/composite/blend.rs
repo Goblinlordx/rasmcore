@@ -33,7 +33,11 @@ pub struct Blend {
 impl Filter for Blend {
     fn compute(&self, input: &[f32], w: u32, h: u32) -> Result<Vec<f32>, PipelineError> {
         // Default path uses Rec.709 coefficients (Linear sRGB).
-        let info = NodeInfo { width: w, height: h, color_space: crate::color_space::ColorSpace::Linear };
+        let info = NodeInfo {
+            width: w,
+            height: h,
+            color_space: crate::color_space::ColorSpace::Linear,
+        };
         self.compute_with_info(input, &info)
     }
 
@@ -56,43 +60,66 @@ impl Filter for Blend {
                 // singularities use epsilon guards, not clamping.
                 // Reference: Nuke merge node — operates on unbounded scene-referred linear.
                 let blend_fn: fn(f32) -> f32 = match self.mode {
-                    1 => |b: f32| b * b,                    // Multiply — naturally extends
+                    1 => |b: f32| b * b,                       // Multiply — naturally extends
                     2 => |b: f32| 1.0 - (1.0 - b) * (1.0 - b), // Screen — naturally extends
-                    3 => |b: f32| {                         // Overlay — threshold at 0.5
-                        if b < 0.5 { 2.0 * b * b } else { 1.0 - 2.0 * (1.0 - b) * (1.0 - b) }
+                    3 => |b: f32| {
+                        // Overlay — threshold at 0.5
+                        if b < 0.5 {
+                            2.0 * b * b
+                        } else {
+                            1.0 - 2.0 * (1.0 - b) * (1.0 - b)
+                        }
                     },
-                    4 => |b: f32| {                         // SoftLight (ISO 32000-2)
+                    4 => |b: f32| {
+                        // SoftLight (ISO 32000-2)
                         if b <= 0.5 {
                             b - (1.0 - 2.0 * b) * b * (1.0 - b)
                         } else {
                             b + (2.0 * b - 1.0) * (soft_light_d(b.clamp(0.0, 1.0)) - b)
                         }
                     },
-                    5 => |b: f32| {                         // HardLight
-                        if b < 0.5 { 2.0 * b * b } else { 1.0 - 2.0 * (1.0 - b) * (1.0 - b) }
+                    5 => |b: f32| {
+                        // HardLight
+                        if b < 0.5 {
+                            2.0 * b * b
+                        } else {
+                            1.0 - 2.0 * (1.0 - b) * (1.0 - b)
+                        }
                     },
-                    6 => |b: f32| {                         // ColorDodge — epsilon guard, no cap
+                    6 => |b: f32| {
+                        // ColorDodge — epsilon guard, no cap
                         b / (1.0 - b).abs().max(1e-6)
                     },
-                    7 => |b: f32| {                         // ColorBurn — epsilon guard, no cap
+                    7 => |b: f32| {
+                        // ColorBurn — epsilon guard, no cap
                         1.0 - (1.0 - b) / b.abs().max(1e-6)
                     },
                     8 => |b: f32| b,    // Darken (identity for self-blend)
                     9 => |b: f32| b,    // Lighten (identity for self-blend)
                     10 => |_: f32| 0.0, // Difference (zero for self-blend)
-                    11 => |b: f32| b + b - 2.0 * b * b,    // Exclusion — naturally extends
-                    12 => |b: f32| b + b - 1.0,              // LinearBurn — allow negative (valid in linear)
-                    13 => |b: f32| b + b,                     // LinearDodge — allow > 1.0 (HDR)
-                    14 => |b: f32| {                         // VividLight — epsilon guards
+                    11 => |b: f32| b + b - 2.0 * b * b, // Exclusion — naturally extends
+                    12 => |b: f32| b + b - 1.0, // LinearBurn — allow negative (valid in linear)
+                    13 => |b: f32| b + b, // LinearDodge — allow > 1.0 (HDR)
+                    14 => |b: f32| {
+                        // VividLight — epsilon guards
                         if b <= 0.5 {
-                            if b.abs() > 1e-6 { 1.0 - (1.0 - b) / (2.0 * b) } else { 0.0 }
+                            if b.abs() > 1e-6 {
+                                1.0 - (1.0 - b) / (2.0 * b)
+                            } else {
+                                0.0
+                            }
                         } else {
                             b / (2.0 * (1.0 - b)).abs().max(1e-6)
                         }
                     },
-                    15 => |b: f32| 2.0 * b + b - 1.0,       // LinearLight — no clamp
-                    16 => |b: f32| {                         // PinLight
-                        if b < 0.5 { b.min(2.0 * b) } else { b.max(2.0 * b - 1.0) }
+                    15 => |b: f32| 2.0 * b + b - 1.0, // LinearLight — no clamp
+                    16 => |b: f32| {
+                        // PinLight
+                        if b < 0.5 {
+                            b.min(2.0 * b)
+                        } else {
+                            b.max(2.0 * b - 1.0)
+                        }
                     },
                     17 => |b: f32| if b + b >= 1.0 { 1.0 } else { 0.0 }, // HardMix
                     _ => |b: f32| b,
@@ -130,20 +157,28 @@ impl Filter for Blend {
             // A future track could implement scene-referred non-separable modes.
             21..=24 => {
                 for px in out.chunks_exact_mut(4) {
-                    let (r, g, b) = (px[0].clamp(0.0, 1.0), px[1].clamp(0.0, 1.0), px[2].clamp(0.0, 1.0));
+                    let (r, g, b) = (
+                        px[0].clamp(0.0, 1.0),
+                        px[1].clamp(0.0, 1.0),
+                        px[2].clamp(0.0, 1.0),
+                    );
                     let (ro, go, bo) = match self.mode {
-                        21 => { // Hue: hue from blend, sat+lum from base
+                        21 => {
+                            // Hue: hue from blend, sat+lum from base
                             let (sr, sg, sb) = set_sat(r, g, b, sat(r, g, b));
                             set_lum(sr, sg, sb, luma(r, g, b, coeffs), coeffs)
                         }
-                        22 => { // Saturation: sat from blend, hue+lum from base
+                        22 => {
+                            // Saturation: sat from blend, hue+lum from base
                             let (sr, sg, sb) = set_sat(r, g, b, sat(r, g, b));
                             set_lum(sr, sg, sb, luma(r, g, b, coeffs), coeffs)
                         }
-                        23 => { // Color: hue+sat from blend, lum from base
+                        23 => {
+                            // Color: hue+sat from blend, lum from base
                             set_lum(r, g, b, luma(r, g, b, coeffs), coeffs)
                         }
-                        24 => { // Luminosity: lum from blend, hue+sat from base
+                        24 => {
+                            // Luminosity: lum from blend, hue+sat from base
                             set_lum(r, g, b, luma(r, g, b, coeffs), coeffs)
                         }
                         _ => (r, g, b),
@@ -166,7 +201,11 @@ impl Filter for Blend {
 
     fn gpu_params(&self, width: u32, height: u32) -> Option<Vec<u8>> {
         // Default: Rec.709 luma coefficients (Linear sRGB)
-        let info = NodeInfo { width, height, color_space: crate::color_space::ColorSpace::Linear };
+        let info = NodeInfo {
+            width,
+            height,
+            color_space: crate::color_space::ColorSpace::Linear,
+        };
         self.gpu_params_with_info(&info)
     }
 
@@ -196,7 +235,10 @@ mod tests {
     #[test]
     fn blend_multiply_darkens() {
         let input = pixel(0.8, 0.8, 0.8, 1.0);
-        let f = Blend { mode: 1, opacity: 1.0 };
+        let f = Blend {
+            mode: 1,
+            opacity: 1.0,
+        };
         let out = f.compute(&input, 1, 1).unwrap();
         assert!(out[0] < 0.8, "multiply should darken: {}", out[0]);
         assert!((out[0] - 0.64).abs() < 1e-5); // 0.8 * 0.8
@@ -205,7 +247,10 @@ mod tests {
     #[test]
     fn blend_screen_brightens() {
         let input = pixel(0.5, 0.5, 0.5, 1.0);
-        let f = Blend { mode: 2, opacity: 1.0 };
+        let f = Blend {
+            mode: 2,
+            opacity: 1.0,
+        };
         let out = f.compute(&input, 1, 1).unwrap();
         assert!(out[0] > 0.5, "screen should brighten: {}", out[0]);
         assert!((out[0] - 0.75).abs() < 1e-5); // 1 - (1-0.5)*(1-0.5)
@@ -214,7 +259,10 @@ mod tests {
     #[test]
     fn blend_opacity_zero_is_identity() {
         let input = pixel(0.5, 0.3, 0.7, 1.0);
-        let f = Blend { mode: 1, opacity: 0.0 };
+        let f = Blend {
+            mode: 1,
+            opacity: 0.0,
+        };
         let out = f.compute(&input, 1, 1).unwrap();
         for i in 0..3 {
             assert!((out[i] - input[i]).abs() < 1e-6);
@@ -225,7 +273,10 @@ mod tests {
     fn blend_overlay_midtone() {
         // overlay at 0.5 => 2*0.5*0.5 = 0.5 (inflection point)
         let input = pixel(0.5, 0.5, 0.5, 1.0);
-        let f = Blend { mode: 3, opacity: 1.0 };
+        let f = Blend {
+            mode: 3,
+            opacity: 1.0,
+        };
         let out = f.compute(&input, 1, 1).unwrap();
         assert!((out[0] - 0.5).abs() < 1e-5);
     }
@@ -235,9 +286,16 @@ mod tests {
         // vivid_light at b=0.8 (>0.5): b / (2*(1-b)+eps) = 0.8 / 0.4 = 2.0
         // In linear/HDR: NOT clamped — result is 2.0
         let input = pixel(0.8, 0.8, 0.8, 1.0);
-        let f = Blend { mode: 14, opacity: 1.0 };
+        let f = Blend {
+            mode: 14,
+            opacity: 1.0,
+        };
         let out = f.compute(&input, 1, 1).unwrap();
-        assert!((out[0] - 2.0).abs() < 1e-4, "vivid_light(0.8) = 0.8/0.4 = 2.0: {}", out[0]);
+        assert!(
+            (out[0] - 2.0).abs() < 1e-4,
+            "vivid_light(0.8) = 0.8/0.4 = 2.0: {}",
+            out[0]
+        );
     }
 
     #[test]
@@ -245,9 +303,16 @@ mod tests {
         // vivid_light at b=0.3 (<=0.5): 1 - (1-0.3)/(2*0.3) = 1 - 0.7/0.6 ≈ -0.167
         // In linear/HDR: NOT clamped — negative is valid
         let input = pixel(0.3, 0.3, 0.3, 1.0);
-        let f = Blend { mode: 14, opacity: 1.0 };
+        let f = Blend {
+            mode: 14,
+            opacity: 1.0,
+        };
         let out = f.compute(&input, 1, 1).unwrap();
-        assert!(out[0] < 0.0, "vivid_light(0.3) should be negative in linear: {}", out[0]);
+        assert!(
+            out[0] < 0.0,
+            "vivid_light(0.3) should be negative in linear: {}",
+            out[0]
+        );
     }
 
     #[test]
@@ -255,23 +320,41 @@ mod tests {
         // linear_light self-blend: 3*b - 1
         // b=0.8 => 2.4-1 = 1.4 — NOT clamped in HDR
         let input = pixel(0.8, 0.8, 0.8, 1.0);
-        let f = Blend { mode: 15, opacity: 1.0 };
+        let f = Blend {
+            mode: 15,
+            opacity: 1.0,
+        };
         let out = f.compute(&input, 1, 1).unwrap();
-        assert!((out[0] - 1.4).abs() < 1e-5, "linear_light(0.8) = 1.4: {}", out[0]);
+        assert!(
+            (out[0] - 1.4).abs() < 1e-5,
+            "linear_light(0.8) = 1.4: {}",
+            out[0]
+        );
         // b=0.5 => 1.5-1 = 0.5
         let input2 = pixel(0.5, 0.5, 0.5, 1.0);
         let out2 = f.compute(&input2, 1, 1).unwrap();
-        assert!((out2[0] - 0.5).abs() < 1e-5, "linear_light(0.5) = {}", out2[0]);
+        assert!(
+            (out2[0] - 0.5).abs() < 1e-5,
+            "linear_light(0.5) = {}",
+            out2[0]
+        );
     }
 
     #[test]
     fn blend_pin_light_self_blend_identity() {
         // pin_light with self-blend is always identity
         let input = pixel(0.3, 0.7, 0.5, 1.0);
-        let f = Blend { mode: 16, opacity: 1.0 };
+        let f = Blend {
+            mode: 16,
+            opacity: 1.0,
+        };
         let out = f.compute(&input, 1, 1).unwrap();
         for i in 0..3 {
-            assert!((out[i] - input[i]).abs() < 1e-5, "pin_light ch{i}: {}", out[i]);
+            assert!(
+                (out[i] - input[i]).abs() < 1e-5,
+                "pin_light ch{i}: {}",
+                out[i]
+            );
         }
     }
 
@@ -279,7 +362,10 @@ mod tests {
     fn blend_hard_mix_threshold() {
         // hard_mix: 2*b >= 1 → 1, else 0
         let bright = pixel(0.6, 0.6, 0.6, 1.0);
-        let f = Blend { mode: 17, opacity: 1.0 };
+        let f = Blend {
+            mode: 17,
+            opacity: 1.0,
+        };
         let out = f.compute(&bright, 1, 1).unwrap();
         assert!((out[0] - 1.0).abs() < 1e-5, "hard_mix(0.6) should be 1.0");
 
@@ -291,7 +377,10 @@ mod tests {
     #[test]
     fn blend_dissolve_does_not_panic() {
         let input = pixel(0.5, 0.5, 0.5, 1.0);
-        let f = Blend { mode: 18, opacity: 0.5 };
+        let f = Blend {
+            mode: 18,
+            opacity: 0.5,
+        };
         let out = f.compute(&input, 1, 1).unwrap();
         assert_eq!(out.len(), 4);
     }
@@ -318,7 +407,8 @@ mod tests {
                 assert!(
                     (out[i] - input[i]).abs() < 0.02,
                     "HSL mode {mode} ch{i}: expected ~{}, got {}",
-                    input[i], out[i]
+                    input[i],
+                    out[i]
                 );
             }
         }
@@ -342,7 +432,10 @@ mod tests {
         // ISO 32000-2 SoftLight formula for self-blend at b=0.5:
         // b <= 0.5: b - (1-2*b)*b*(1-b) = 0.5 - 0*0.5*0.5 = 0.5
         let input = pixel(0.5, 0.5, 0.5, 1.0);
-        let f = Blend { mode: 4, opacity: 1.0 };
+        let f = Blend {
+            mode: 4,
+            opacity: 1.0,
+        };
         let out = f.compute(&input, 1, 1).unwrap();
         assert!((out[0] - 0.5).abs() < 1e-5, "soft_light(0.5) = {}", out[0]);
 
@@ -350,21 +443,36 @@ mod tests {
         // = 0.8 + 0.6*(0.8944-0.8) = 0.8 + 0.6*0.0944 ≈ 0.8567
         let input2 = pixel(0.8, 0.8, 0.8, 1.0);
         let out2 = f.compute(&input2, 1, 1).unwrap();
-        assert!((out2[0] - 0.8567).abs() < 0.01, "soft_light(0.8) = {}", out2[0]);
+        assert!(
+            (out2[0] - 0.8567).abs() < 0.01,
+            "soft_light(0.8) = {}",
+            out2[0]
+        );
     }
 
     #[test]
     fn blend_hsl_uses_colorspace_coefficients() {
         use crate::color_space::ColorSpace;
         let input = pixel(0.3, 0.6, 0.9, 1.0);
-        let f = Blend { mode: 24, opacity: 1.0 }; // luminosity mode
+        let f = Blend {
+            mode: 24,
+            opacity: 1.0,
+        }; // luminosity mode
 
         // Linear (Rec.709 coefficients)
-        let info_709 = NodeInfo { width: 1, height: 1, color_space: ColorSpace::Linear };
+        let info_709 = NodeInfo {
+            width: 1,
+            height: 1,
+            color_space: ColorSpace::Linear,
+        };
         let out_709 = f.compute_with_info(&input, &info_709).unwrap();
 
         // ACEScg (AP1 coefficients — different from Rec.709)
-        let info_ap1 = NodeInfo { width: 1, height: 1, color_space: ColorSpace::AcesCg };
+        let info_ap1 = NodeInfo {
+            width: 1,
+            height: 1,
+            color_space: ColorSpace::AcesCg,
+        };
         let out_ap1 = f.compute_with_info(&input, &info_ap1).unwrap();
 
         // For self-blend both are ~identity, but the coefficients differ
@@ -382,48 +490,94 @@ mod tests {
     fn blend_multiply_hdr() {
         // HDR: 2.0 * 2.0 = 4.0 (valid in scene-referred linear)
         let input = pixel(2.0, 0.5, 0.0, 1.0);
-        let f = Blend { mode: 1, opacity: 1.0 };
+        let f = Blend {
+            mode: 1,
+            opacity: 1.0,
+        };
         let out = f.compute(&input, 1, 1).unwrap();
-        assert!((out[0] - 4.0).abs() < 1e-5, "multiply HDR: 2*2=4, got {}", out[0]);
-        assert!((out[1] - 0.25).abs() < 1e-5, "multiply 0.5*0.5=0.25, got {}", out[1]);
+        assert!(
+            (out[0] - 4.0).abs() < 1e-5,
+            "multiply HDR: 2*2=4, got {}",
+            out[0]
+        );
+        assert!(
+            (out[1] - 0.25).abs() < 1e-5,
+            "multiply 0.5*0.5=0.25, got {}",
+            out[1]
+        );
     }
 
     #[test]
     fn blend_screen_hdr() {
         // Screen: 1 - (1-2.0)*(1-2.0) = 1 - (-1)*(-1) = 1 - 1 = 0
         let input = pixel(2.0, 2.0, 2.0, 1.0);
-        let f = Blend { mode: 2, opacity: 1.0 };
+        let f = Blend {
+            mode: 2,
+            opacity: 1.0,
+        };
         let out = f.compute(&input, 1, 1).unwrap();
         // Screen with >1 values: mathematically extends
-        assert!(out[0].is_finite(), "screen HDR should produce finite values");
+        assert!(
+            out[0].is_finite(),
+            "screen HDR should produce finite values"
+        );
     }
 
     #[test]
     fn blend_linear_dodge_hdr() {
         // LinearDodge: b + b = 2*b. For b=1.5, result = 3.0
         let input = pixel(1.5, 0.5, 3.0, 1.0);
-        let f = Blend { mode: 13, opacity: 1.0 };
+        let f = Blend {
+            mode: 13,
+            opacity: 1.0,
+        };
         let out = f.compute(&input, 1, 1).unwrap();
-        assert!((out[0] - 3.0).abs() < 1e-5, "linear dodge 1.5+1.5=3.0: {}", out[0]);
-        assert!((out[1] - 1.0).abs() < 1e-5, "linear dodge 0.5+0.5=1.0: {}", out[1]);
-        assert!((out[2] - 6.0).abs() < 1e-5, "linear dodge 3.0+3.0=6.0: {}", out[2]);
+        assert!(
+            (out[0] - 3.0).abs() < 1e-5,
+            "linear dodge 1.5+1.5=3.0: {}",
+            out[0]
+        );
+        assert!(
+            (out[1] - 1.0).abs() < 1e-5,
+            "linear dodge 0.5+0.5=1.0: {}",
+            out[1]
+        );
+        assert!(
+            (out[2] - 6.0).abs() < 1e-5,
+            "linear dodge 3.0+3.0=6.0: {}",
+            out[2]
+        );
     }
 
     #[test]
     fn blend_linear_burn_allows_negative() {
         // LinearBurn: b + b - 1. For b=0.3, result = -0.4 (valid in linear)
         let input = pixel(0.3, 0.3, 0.3, 1.0);
-        let f = Blend { mode: 12, opacity: 1.0 };
+        let f = Blend {
+            mode: 12,
+            opacity: 1.0,
+        };
         let out = f.compute(&input, 1, 1).unwrap();
-        assert!((out[0] - (-0.4)).abs() < 1e-5, "linear burn 0.3+0.3-1=-0.4: {}", out[0]);
+        assert!(
+            (out[0] - (-0.4)).abs() < 1e-5,
+            "linear burn 0.3+0.3-1=-0.4: {}",
+            out[0]
+        );
     }
 
     #[test]
     fn blend_hdr_values_not_clamped_on_input() {
         // Ensure HDR values pass through blend modes unclamped
         let input = pixel(5.0, 0.0, 0.0, 1.0);
-        let f = Blend { mode: 0, opacity: 0.0 }; // Normal, opacity 0 = identity
+        let f = Blend {
+            mode: 0,
+            opacity: 0.0,
+        }; // Normal, opacity 0 = identity
         let out = f.compute(&input, 1, 1).unwrap();
-        assert!((out[0] - 5.0).abs() < 1e-5, "HDR value should survive: {}", out[0]);
+        assert!(
+            (out[0] - 5.0).abs() < 1e-5,
+            "HDR value should survive: {}",
+            out[0]
+        );
     }
 }

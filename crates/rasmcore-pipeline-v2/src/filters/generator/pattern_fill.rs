@@ -13,10 +13,14 @@ use super::super::helpers::{gpu_params_wh, gpu_push_f32, gpu_push_u32};
 #[derive(Clone, rasmcore_macros::V2Filter)]
 #[filter(name = "pattern_fill", category = "generator")]
 pub struct PatternFill {
-    #[param(min = 4.0, max = 512.0, step = 1.0, default = 64.0)] pub tile_w: f32,
-    #[param(min = 4.0, max = 512.0, step = 1.0, default = 64.0)] pub tile_h: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)] pub offset_x: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)] pub offset_y: f32,
+    #[param(min = 4.0, max = 512.0, step = 1.0, default = 64.0)]
+    pub tile_w: f32,
+    #[param(min = 4.0, max = 512.0, step = 1.0, default = 64.0)]
+    pub tile_h: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)]
+    pub offset_x: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)]
+    pub offset_y: f32,
 }
 
 const PATTERN_FILL_WGSL: &str = r#"
@@ -63,9 +67,17 @@ impl Filter for PatternFill {
 
     fn gpu_shader_passes(&self, w: u32, h: u32) -> Option<Vec<GpuShader>> {
         let mut p = gpu_params_wh(w, h);
-        gpu_push_f32(&mut p, self.tile_w); gpu_push_f32(&mut p, self.tile_h);
-        gpu_push_f32(&mut p, self.offset_x); gpu_push_f32(&mut p, self.offset_y);
-        gpu_push_u32(&mut p, 0); gpu_push_u32(&mut p, 0);
-        Some(vec![GpuShader::new(PATTERN_FILL_WGSL.to_string(), "main", [256, 1, 1], p)])
+        gpu_push_f32(&mut p, self.tile_w);
+        gpu_push_f32(&mut p, self.tile_h);
+        gpu_push_f32(&mut p, self.offset_x);
+        gpu_push_f32(&mut p, self.offset_y);
+        gpu_push_u32(&mut p, 0);
+        gpu_push_u32(&mut p, 0);
+        Some(vec![GpuShader::new(
+            PATTERN_FILL_WGSL.to_string(),
+            "main",
+            [256, 1, 1],
+            p,
+        )])
     }
 }

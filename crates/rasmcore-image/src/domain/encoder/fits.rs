@@ -6,7 +6,11 @@ use super::super::types::{ImageInfo, PixelFormat};
 pub struct FitsEncodeConfig;
 
 /// Encode pixel data to FITS format (with config for uniform API).
-pub fn encode(pixels: &[u8], info: &ImageInfo, _config: &FitsEncodeConfig) -> Result<Vec<u8>, ImageError> {
+pub fn encode(
+    pixels: &[u8],
+    info: &ImageInfo,
+    _config: &FitsEncodeConfig,
+) -> Result<Vec<u8>, ImageError> {
     encode_pixels(pixels, info)
 }
 

@@ -43,7 +43,8 @@ impl Filter for LuminanceRange {
             let o = i * 4;
             let luma = input[o] * 0.2126 + input[o + 1] * 0.7152 + input[o + 2] * 0.0722;
             let lo = smoothstep_f32(self.low - self.softness, self.low + self.softness, luma);
-            let hi = 1.0 - smoothstep_f32(self.high - self.softness, self.high + self.softness, luma);
+            let hi =
+                1.0 - smoothstep_f32(self.high - self.softness, self.high + self.softness, luma);
             out[o + 3] = lo * hi;
         }
         Ok(out)
@@ -51,9 +52,17 @@ impl Filter for LuminanceRange {
 
     fn gpu_shader_passes(&self, width: u32, height: u32) -> Option<Vec<GpuShader>> {
         let mut p = gpu_params_wh(width, height);
-        gpu_push_f32(&mut p, self.low); gpu_push_f32(&mut p, self.high);
-        gpu_push_f32(&mut p, self.softness); gpu_push_u32(&mut p, 0);
-        gpu_push_u32(&mut p, 0); gpu_push_u32(&mut p, 0);
-        Some(vec![GpuShader::new(LUMINANCE_RANGE_WGSL.to_string(), "main", [256, 1, 1], p)])
+        gpu_push_f32(&mut p, self.low);
+        gpu_push_f32(&mut p, self.high);
+        gpu_push_f32(&mut p, self.softness);
+        gpu_push_u32(&mut p, 0);
+        gpu_push_u32(&mut p, 0);
+        gpu_push_u32(&mut p, 0);
+        Some(vec![GpuShader::new(
+            LUMINANCE_RANGE_WGSL.to_string(),
+            "main",
+            [256, 1, 1],
+            p,
+        )])
     }
 }

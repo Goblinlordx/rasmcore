@@ -64,7 +64,11 @@ pub struct FilterNode<F: Filter> {
 impl<F: Filter> FilterNode<F> {
     /// Create a FilterNode. Capabilities detected from the filter at runtime.
     pub fn new(upstream: u32, info: NodeInfo, filter: F) -> Self {
-        Self { upstream, info, filter }
+        Self {
+            upstream,
+            info,
+            filter,
+        }
     }
 
     /// Backward compat — alias for `new()`.
@@ -130,7 +134,8 @@ impl<F: Filter + 'static> Node for FilterNode<F> {
             extra_buffers: self.filter.gpu_extra_buffers(),
             reduction_buffers: vec![],
             convergence_check: None,
-            loop_dispatch: None, setup: None,
+            loop_dispatch: None,
+            setup: None,
         })
     }
 
@@ -203,7 +208,8 @@ impl<F: Filter + 'static> Node for FilterNode<F> {
         height: u32,
         mapping: &crate::analysis_buffer::NodeBufferMapping,
     ) -> Option<Vec<GpuShader>> {
-        self.filter.gpu_shader_passes_with_context(width, height, mapping)
+        self.filter
+            .gpu_shader_passes_with_context(width, height, mapping)
     }
 }
 
@@ -296,7 +302,8 @@ impl<F: Filter + GpuFilter + 'static> Node for GpuFilterNode<F> {
             extra_buffers: self.filter.extra_buffers(),
             reduction_buffers: vec![],
             convergence_check: None,
-            loop_dispatch: None, setup: None,
+            loop_dispatch: None,
+            setup: None,
         })
     }
 
@@ -321,9 +328,7 @@ impl<F: Filter + GpuFilter + 'static> Node for GpuFilterNode<F> {
 
     fn input_rect(&self, output: Rect, bounds_w: u32, bounds_h: u32) -> InputRectEstimate {
         if self.tile_overlap > 0 {
-            InputRectEstimate::Exact(
-                output.expand_uniform(self.tile_overlap, bounds_w, bounds_h),
-            )
+            InputRectEstimate::Exact(output.expand_uniform(self.tile_overlap, bounds_w, bounds_h))
         } else {
             InputRectEstimate::Exact(output.clamp(bounds_w, bounds_h))
         }
@@ -540,9 +545,9 @@ mod tests {
         )));
 
         let pixels = g.request_full(bright).unwrap();
-        assert!((pixels[0] - 6.0).abs() < 1e-6);   // 5.0 + 1.0 (no clamp!)
-        assert!((pixels[1] - 0.5).abs() < 1e-6);    // -0.5 + 1.0
-        assert!((pixels[2] - 101.0).abs() < 1e-6);  // 100.0 + 1.0
+        assert!((pixels[0] - 6.0).abs() < 1e-6); // 5.0 + 1.0 (no clamp!)
+        assert!((pixels[1] - 0.5).abs() < 1e-6); // -0.5 + 1.0
+        assert!((pixels[2] - 101.0).abs() < 1e-6); // 100.0 + 1.0
     }
 
     #[test]
@@ -638,35 +643,59 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     impl crate::node::Node for TestSource {
         fn info(&self) -> NodeInfo {
-            NodeInfo { width: self.width, height: self.height, color_space: ColorSpace::Linear }
+            NodeInfo {
+                width: self.width,
+                height: self.height,
+                color_space: ColorSpace::Linear,
+            }
         }
-        fn compute(&self, request: crate::rect::Rect, _up: &mut dyn crate::node::Upstream) -> Result<Vec<f32>, PipelineError> {
+        fn compute(
+            &self,
+            request: crate::rect::Rect,
+            _up: &mut dyn crate::node::Upstream,
+        ) -> Result<Vec<f32>, PipelineError> {
             let n = request.width as usize * request.height as usize;
             Ok(self.color.repeat(n))
         }
-        fn upstream_ids(&self) -> Vec<u32> { vec![] }
+        fn upstream_ids(&self) -> Vec<u32> {
+            vec![]
+        }
     }
 
     #[test]
     fn compute_with_info_receives_color_space() {
         let mut g = Graph::new(0);
         let src = g.add_node(Box::new(TestSource {
-            width: 2, height: 2, color: [0.5, 0.3, 0.1, 1.0],
+            width: 2,
+            height: 2,
+            color: [0.5, 0.3, 0.1, 1.0],
         }));
         let info = g.node_info(src).unwrap(); // Linear color space
 
-        let filter_id = g.add_node(Box::new(FilterNode::new(
-            src,
-            info,
-            ColorSpaceAwareFilter,
-        )));
+        let filter_id = g.add_node(Box::new(FilterNode::new(src, info, ColorSpaceAwareFilter)));
 
         let pixels = g.request_full(filter_id).unwrap();
 
         // In Linear color space, the filter doubles RGB
-        assert!((pixels[0] - 1.0).abs() < 1e-6, "R: 0.5 * 2 = 1.0, got {}", pixels[0]);
-        assert!((pixels[1] - 0.6).abs() < 1e-6, "G: 0.3 * 2 = 0.6, got {}", pixels[1]);
-        assert!((pixels[2] - 0.2).abs() < 1e-6, "B: 0.1 * 2 = 0.2, got {}", pixels[2]);
-        assert!((pixels[3] - 1.0).abs() < 1e-6, "A: unchanged, got {}", pixels[3]);
+        assert!(
+            (pixels[0] - 1.0).abs() < 1e-6,
+            "R: 0.5 * 2 = 1.0, got {}",
+            pixels[0]
+        );
+        assert!(
+            (pixels[1] - 0.6).abs() < 1e-6,
+            "G: 0.3 * 2 = 0.6, got {}",
+            pixels[1]
+        );
+        assert!(
+            (pixels[2] - 0.2).abs() < 1e-6,
+            "B: 0.1 * 2 = 0.2, got {}",
+            pixels[2]
+        );
+        assert!(
+            (pixels[3] - 1.0).abs() < 1e-6,
+            "A: unchanged, got {}",
+            pixels[3]
+        );
     }
 }

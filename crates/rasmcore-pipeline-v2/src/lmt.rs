@@ -10,10 +10,7 @@
 //! uniformly.
 
 use crate::fusion::Clut3D;
-use crate::node::{
-    Node, NodeCapabilities, NodeInfo, PipelineError,
-    Upstream,
-};
+use crate::node::{Node, NodeCapabilities, NodeInfo, PipelineError, Upstream};
 use crate::ops::PointOpExpr;
 use crate::rect::Rect;
 
@@ -121,7 +118,11 @@ pub struct LmtNode {
 
 impl LmtNode {
     pub fn new(upstream: u32, info: NodeInfo, lmt: Lmt) -> Self {
-        Self { upstream, info, lmt }
+        Self {
+            upstream,
+            info,
+            lmt,
+        }
     }
 
     /// Access the underlying LMT.
@@ -198,7 +199,8 @@ pub fn parse_clf(xml: &str) -> Result<Lmt, PipelineError> {
     let mut chain: Vec<Lmt> = Vec::new();
 
     // Find all process nodes in order within <ProcessList>
-    let process_list = xml.find("<ProcessList")
+    let process_list = xml
+        .find("<ProcessList")
         .ok_or_else(|| PipelineError::InvalidParams("no <ProcessList> in CLF".into()))?;
     let content = &xml[process_list..];
 
@@ -214,7 +216,8 @@ pub fn parse_clf(xml: &str) -> Result<Lmt, PipelineError> {
                 .unwrap_or(17);
             // Extract Array data
             if let Some(array_content) = clf_extract_element(block, "Array") {
-                let data: Vec<f32> = array_content.split_whitespace()
+                let data: Vec<f32> = array_content
+                    .split_whitespace()
                     .filter_map(|s| s.parse::<f32>().ok())
                     .collect();
                 let expected = grid_size * grid_size * grid_size * 3;
@@ -251,14 +254,16 @@ pub fn parse_clf(xml: &str) -> Result<Lmt, PipelineError> {
         if let Some(end) = after.find("</Matrix>") {
             let block = &after[..end];
             if let Some(array_content) = clf_extract_element(block, "Array") {
-                let values: Vec<f32> = array_content.split_whitespace()
+                let values: Vec<f32> = array_content
+                    .split_whitespace()
                     .filter_map(|s| s.parse::<f32>().ok())
                     .collect();
                 // 3x3 matrix (9 values) or 3x4 with offsets (12 values)
                 if values.len() >= 9 {
-                    let m = [values[0], values[1], values[2],
-                             values[3], values[4], values[5],
-                             values[6], values[7], values[8]];
+                    let m = [
+                        values[0], values[1], values[2], values[3], values[4], values[5],
+                        values[6], values[7], values[8],
+                    ];
                     let offsets = if values.len() >= 12 {
                         [values[3], values[7], values[11]]
                     } else {
@@ -266,9 +271,11 @@ pub fn parse_clf(xml: &str) -> Result<Lmt, PipelineError> {
                     };
                     // Build as a CLUT (simplest correct approach)
                     let clut = crate::fusion::Clut3D::from_fn(33, move |r, g, b| {
-                        (m[0] * r + m[1] * g + m[2] * b + offsets[0],
-                         m[3] * r + m[4] * g + m[5] * b + offsets[1],
-                         m[6] * r + m[7] * g + m[8] * b + offsets[2])
+                        (
+                            m[0] * r + m[1] * g + m[2] * b + offsets[0],
+                            m[3] * r + m[4] * g + m[5] * b + offsets[1],
+                            m[6] * r + m[7] * g + m[8] * b + offsets[2],
+                        )
                     });
                     chain.push(Lmt::Clut3D(clut));
                 }
@@ -307,7 +314,9 @@ pub fn parse_clf(xml: &str) -> Result<Lmt, PipelineError> {
     }
 
     if chain.is_empty() {
-        return Err(PipelineError::InvalidParams("no supported process nodes found in CLF".into()));
+        return Err(PipelineError::InvalidParams(
+            "no supported process nodes found in CLF".into(),
+        ));
     }
 
     if chain.len() == 1 {
@@ -347,7 +356,11 @@ mod tests {
     use crate::graph::Graph;
 
     fn test_info(w: u32, h: u32) -> NodeInfo {
-        NodeInfo { width: w, height: h, color_space: ColorSpace::Linear }
+        NodeInfo {
+            width: w,
+            height: h,
+            color_space: ColorSpace::Linear,
+        }
     }
 
     // ── Source node for tests ────────────────────────────────────────────
@@ -415,7 +428,10 @@ mod tests {
         let pixels = vec![0.3, 0.6, 0.9, 1.0, 0.0, 0.5, 1.0, 0.8];
         let result = lmt.apply(&pixels);
         for i in 0..3 {
-            assert!((result[i] - pixels[i]).abs() < 0.01, "identity CLUT failed at channel {i}");
+            assert!(
+                (result[i] - pixels[i]).abs() < 0.01,
+                "identity CLUT failed at channel {i}"
+            );
         }
         assert_eq!(result[3], 1.0);
     }
@@ -494,7 +510,9 @@ mod tests {
     fn lmt_node_renders_in_graph() {
         let mut g = Graph::new(0);
         let src = g.add_node(Box::new(SolidSource {
-            w: 2, h: 2, color: [0.5, 0.3, 0.1, 1.0],
+            w: 2,
+            h: 2,
+            color: [0.5, 0.3, 0.1, 1.0],
         }));
         let info = g.node_info(src).unwrap();
         let lmt = analytical_uniform(PointOpExpr::Mul(
@@ -525,24 +543,31 @@ mod tests {
 
         // Simple brightness filter for comparison
         #[derive(Clone)]
-        struct Brightness { amount: f32 }
+        struct Brightness {
+            amount: f32,
+        }
         impl Filter for Brightness {
             fn compute(&self, input: &[f32], _w: u32, _h: u32) -> Result<Vec<f32>, PipelineError> {
-                Ok(input.iter().enumerate().map(|(i, &v)| {
-                    if i % 4 == 3 { v } else { v + self.amount }
-                }).collect())
+                Ok(input
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &v)| if i % 4 == 3 { v } else { v + self.amount })
+                    .collect())
             }
         }
 
         let mut g = Graph::new(0);
         let src = g.add_node(Box::new(SolidSource {
-            w: 2, h: 2, color: [0.5, 0.5, 0.5, 1.0],
+            w: 2,
+            h: 2,
+            color: [0.5, 0.5, 0.5, 1.0],
         }));
         let info = g.node_info(src).unwrap();
 
         // LmtNode: multiply by 2
         let lmt_node = g.add_node(Box::new(LmtNode::new(
-            src, info.clone(),
+            src,
+            info.clone(),
             analytical_uniform(PointOpExpr::Mul(
                 Box::new(PointOpExpr::Input),
                 Box::new(PointOpExpr::Constant(2.0)),
@@ -551,7 +576,8 @@ mod tests {
 
         // FilterNode: add 0.1
         let filter_node = g.add_node(Box::new(FilterNode::new(
-            lmt_node, info,
+            lmt_node,
+            info,
             Brightness { amount: 0.1 },
         )));
 
@@ -583,7 +609,11 @@ LUT_3D_SIZE 2
         let pixels = vec![0.5, 0.5, 0.5, 1.0];
         let result = lmt.apply(&pixels);
         for c in 0..3 {
-            assert!((result[c] - 0.5).abs() < 0.05, "identity cube failed at ch {c}: {}", result[c]);
+            assert!(
+                (result[c] - 0.5).abs() < 0.05,
+                "identity cube failed at ch {c}: {}",
+                result[c]
+            );
         }
     }
 
@@ -606,13 +636,16 @@ LUT_3D_SIZE 2
         // Two LmtNode(Analytical) should fuse into one FusedPointOpNode
         let mut g = Graph::new(0);
         let src = g.add_node(Box::new(SolidSource {
-            w: 2, h: 2, color: [0.5, 0.5, 0.5, 1.0],
+            w: 2,
+            h: 2,
+            color: [0.5, 0.5, 0.5, 1.0],
         }));
         let info = g.node_info(src).unwrap();
 
         // LMT 1: multiply by 2 (exposure +1 EV)
         let n1 = g.add_node(Box::new(LmtNode::new(
-            src, info.clone(),
+            src,
+            info.clone(),
             analytical_uniform(PointOpExpr::Mul(
                 Box::new(PointOpExpr::Input),
                 Box::new(PointOpExpr::Constant(2.0)),
@@ -621,7 +654,8 @@ LUT_3D_SIZE 2
 
         // LMT 2: multiply by 0.5 (exposure -1 EV)
         let n2 = g.add_node(Box::new(LmtNode::new(
-            n1, info,
+            n1,
+            info,
             analytical_uniform(PointOpExpr::Mul(
                 Box::new(PointOpExpr::Input),
                 Box::new(PointOpExpr::Constant(0.5)),
@@ -631,7 +665,11 @@ LUT_3D_SIZE 2
         // Should fuse: 2.0 * 0.5 = 1.0 (identity, but FusedPointOpNode still created)
         let result = g.request_full(n2).unwrap();
         // 0.5 * 2.0 * 0.5 = 0.5 (round-trip)
-        assert!((result[0] - 0.5).abs() < 1e-5, "fused LMT chain should produce 0.5, got {}", result[0]);
+        assert!(
+            (result[0] - 0.5).abs() < 1e-5,
+            "fused LMT chain should produce 0.5, got {}",
+            result[0]
+        );
     }
 
     #[test]
@@ -639,19 +677,23 @@ LUT_3D_SIZE 2
         // CDL converts to analytical, so it should fuse with adjacent analytical LMTs
         let mut g = Graph::new(0);
         let src = g.add_node(Box::new(SolidSource {
-            w: 1, h: 1, color: [0.5, 0.5, 0.5, 1.0],
+            w: 1,
+            h: 1,
+            color: [0.5, 0.5, 0.5, 1.0],
         }));
         let info = g.node_info(src).unwrap();
 
         // CDL: slope=2, offset=0, power=1 → just doubles (like exposure +1 EV)
         let n1 = g.add_node(Box::new(LmtNode::new(
-            src, info.clone(),
+            src,
+            info.clone(),
             analytical_cdl([2.0; 3], [0.0; 3], [1.0; 3]),
         )));
 
         // Analytical: add 0.1
         let n2 = g.add_node(Box::new(LmtNode::new(
-            n1, info,
+            n1,
+            info,
             analytical_uniform(PointOpExpr::Add(
                 Box::new(PointOpExpr::Input),
                 Box::new(PointOpExpr::Constant(0.1)),
@@ -660,7 +702,11 @@ LUT_3D_SIZE 2
 
         let result = g.request_full(n2).unwrap();
         // 0.5 * 2.0 + 0.1 = 1.1
-        assert!((result[0] - 1.1).abs() < 1e-4, "CDL+analytical fusion should produce 1.1, got {}", result[0]);
+        assert!(
+            (result[0] - 1.1).abs() < 1e-4,
+            "CDL+analytical fusion should produce 1.1, got {}",
+            result[0]
+        );
     }
 
     #[test]
@@ -669,12 +715,16 @@ LUT_3D_SIZE 2
         use crate::ops::Filter;
 
         #[derive(Clone)]
-        struct AddOffset { amount: f32 }
+        struct AddOffset {
+            amount: f32,
+        }
         impl Filter for AddOffset {
             fn compute(&self, input: &[f32], _w: u32, _h: u32) -> Result<Vec<f32>, PipelineError> {
-                Ok(input.iter().enumerate().map(|(i, &v)| {
-                    if i % 4 == 3 { v } else { v + self.amount }
-                }).collect())
+                Ok(input
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &v)| if i % 4 == 3 { v } else { v + self.amount })
+                    .collect())
             }
             fn analytic_expression_per_channel(&self) -> Option<[PointOpExpr; 3]> {
                 let expr = PointOpExpr::Add(
@@ -687,18 +737,23 @@ LUT_3D_SIZE 2
 
         let mut g = Graph::new(0);
         let src = g.add_node(Box::new(SolidSource {
-            w: 1, h: 1, color: [0.5, 0.5, 0.5, 1.0],
+            w: 1,
+            h: 1,
+            color: [0.5, 0.5, 0.5, 1.0],
         }));
         let info = g.node_info(src).unwrap();
 
         // FilterNode: add 0.1
         let f1 = g.add_node(Box::new(FilterNode::new(
-            src, info.clone(), AddOffset { amount: 0.1 },
+            src,
+            info.clone(),
+            AddOffset { amount: 0.1 },
         )));
 
         // LmtNode: multiply by 2
         let l1 = g.add_node(Box::new(LmtNode::new(
-            f1, info.clone(),
+            f1,
+            info.clone(),
             analytical_uniform(PointOpExpr::Mul(
                 Box::new(PointOpExpr::Input),
                 Box::new(PointOpExpr::Constant(2.0)),
@@ -707,12 +762,18 @@ LUT_3D_SIZE 2
 
         // FilterNode: add 0.05
         let f2 = g.add_node(Box::new(FilterNode::new(
-            l1, info, AddOffset { amount: 0.05 },
+            l1,
+            info,
+            AddOffset { amount: 0.05 },
         )));
 
         let result = g.request_full(f2).unwrap();
         // (0.5 + 0.1) * 2.0 + 0.05 = 1.25
-        assert!((result[0] - 1.25).abs() < 1e-4, "mixed chain should produce 1.25, got {}", result[0]);
+        assert!(
+            (result[0] - 1.25).abs() < 1e-4,
+            "mixed chain should produce 1.25, got {}",
+            result[0]
+        );
     }
 
     #[test]

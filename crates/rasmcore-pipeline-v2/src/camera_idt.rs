@@ -5,8 +5,10 @@
 //! 1. Linearize: apply inverse transfer function (log → linear)
 //! 2. Gamut convert: 3×3 matrix from camera gamut → ACES
 
-use crate::color_transform::{ColorTransform, ColorTransformInner, TransformKind, TransformPresetInfo};
 use crate::color_space::ColorSpace;
+use crate::color_transform::{
+    ColorTransform, ColorTransformInner, TransformKind, TransformPresetInfo,
+};
 use crate::fusion::Clut3D;
 use crate::lmt::Lmt;
 use crate::node::PipelineError;
@@ -15,29 +17,49 @@ use crate::node::PipelineError;
 pub fn camera_preset_list() -> Vec<TransformPresetInfo> {
     vec![
         TransformPresetInfo {
-            name: "idt-arri-logc3", display_name: "ARRI LogC v3 (EI 800)",
-            kind: TransformKind::Idt, source_space: "ARRI LogC v3", target_space: "ACEScg",
-            vendor: "ARRI", description: "Alexa LogC v3 (EI 800) to ACEScg",
+            name: "idt-arri-logc3",
+            display_name: "ARRI LogC v3 (EI 800)",
+            kind: TransformKind::Idt,
+            source_space: "ARRI LogC v3",
+            target_space: "ACEScg",
+            vendor: "ARRI",
+            description: "Alexa LogC v3 (EI 800) to ACEScg",
         },
         TransformPresetInfo {
-            name: "idt-arri-logc4", display_name: "ARRI LogC v4",
-            kind: TransformKind::Idt, source_space: "ARRI LogC v4", target_space: "ACEScg",
-            vendor: "ARRI", description: "ARRI LogC4 (ALEXA 35) to ACEScg",
+            name: "idt-arri-logc4",
+            display_name: "ARRI LogC v4",
+            kind: TransformKind::Idt,
+            source_space: "ARRI LogC v4",
+            target_space: "ACEScg",
+            vendor: "ARRI",
+            description: "ARRI LogC4 (ALEXA 35) to ACEScg",
         },
         TransformPresetInfo {
-            name: "idt-sony-slog3", display_name: "Sony S-Log3 / S-Gamut3",
-            kind: TransformKind::Idt, source_space: "S-Log3/S-Gamut3", target_space: "ACEScg",
-            vendor: "Sony", description: "Sony S-Log3 / S-Gamut3 to ACEScg",
+            name: "idt-sony-slog3",
+            display_name: "Sony S-Log3 / S-Gamut3",
+            kind: TransformKind::Idt,
+            source_space: "S-Log3/S-Gamut3",
+            target_space: "ACEScg",
+            vendor: "Sony",
+            description: "Sony S-Log3 / S-Gamut3 to ACEScg",
         },
         TransformPresetInfo {
-            name: "idt-red-ipp2", display_name: "RED IPP2 (Log3G10 / RWG)",
-            kind: TransformKind::Idt, source_space: "REDLog3G10/RWG", target_space: "ACEScg",
-            vendor: "RED", description: "RED Log3G10 / REDWideGamutRGB to ACEScg",
+            name: "idt-red-ipp2",
+            display_name: "RED IPP2 (Log3G10 / RWG)",
+            kind: TransformKind::Idt,
+            source_space: "REDLog3G10/RWG",
+            target_space: "ACEScg",
+            vendor: "RED",
+            description: "RED Log3G10 / REDWideGamutRGB to ACEScg",
         },
         TransformPresetInfo {
-            name: "idt-bmd-gen5", display_name: "Blackmagic Film Gen5",
-            kind: TransformKind::Idt, source_space: "BMD Film Gen5", target_space: "ACEScg",
-            vendor: "Blackmagic", description: "Blackmagic Film Gen5 to ACEScg",
+            name: "idt-bmd-gen5",
+            display_name: "Blackmagic Film Gen5",
+            kind: TransformKind::Idt,
+            source_space: "BMD Film Gen5",
+            target_space: "ACEScg",
+            vendor: "Blackmagic",
+            description: "Blackmagic Film Gen5 to ACEScg",
         },
     ]
 }
@@ -45,12 +67,34 @@ pub fn camera_preset_list() -> Vec<TransformPresetInfo> {
 /// Load a camera IDT preset by name.
 pub fn load_camera_preset(name: &str) -> Result<ColorTransform, PipelineError> {
     match name {
-        "idt-arri-logc3" => Ok(build_camera_idt(name, arri_logc3_linearize, &ARRI_WIDE_GAMUT_TO_ACES)),
-        "idt-arri-logc4" => Ok(build_camera_idt(name, arri_logc4_linearize, &ARRI_WIDE_GAMUT_4_TO_ACES)),
-        "idt-sony-slog3" => Ok(build_camera_idt(name, sony_slog3_linearize, &SONY_SGAMUT3_TO_ACES)),
-        "idt-red-ipp2" => Ok(build_camera_idt(name, red_log3g10_linearize, &RED_WIDE_GAMUT_TO_ACES)),
-        "idt-bmd-gen5" => Ok(build_camera_idt(name, bmd_film_gen5_linearize, &BMD_WIDE_GAMUT_TO_ACES)),
-        _ => Err(PipelineError::InvalidParams(format!("unknown camera IDT: {name}"))),
+        "idt-arri-logc3" => Ok(build_camera_idt(
+            name,
+            arri_logc3_linearize,
+            &ARRI_WIDE_GAMUT_TO_ACES,
+        )),
+        "idt-arri-logc4" => Ok(build_camera_idt(
+            name,
+            arri_logc4_linearize,
+            &ARRI_WIDE_GAMUT_4_TO_ACES,
+        )),
+        "idt-sony-slog3" => Ok(build_camera_idt(
+            name,
+            sony_slog3_linearize,
+            &SONY_SGAMUT3_TO_ACES,
+        )),
+        "idt-red-ipp2" => Ok(build_camera_idt(
+            name,
+            red_log3g10_linearize,
+            &RED_WIDE_GAMUT_TO_ACES,
+        )),
+        "idt-bmd-gen5" => Ok(build_camera_idt(
+            name,
+            bmd_film_gen5_linearize,
+            &BMD_WIDE_GAMUT_TO_ACES,
+        )),
+        _ => Err(PipelineError::InvalidParams(format!(
+            "unknown camera IDT: {name}"
+        ))),
     }
 }
 
@@ -107,9 +151,9 @@ fn arri_logc3_linearize(x: f32) -> f32 {
 // ARRI Wide Gamut 3 → ACES AP1 (ACEScg) matrix
 // Source: ACES IDT for ARRI Alexa (Academy reference)
 const ARRI_WIDE_GAMUT_TO_ACES: [[f32; 3]; 3] = [
-    [ 0.680206,  0.236137,  0.083658],
-    [ 0.085415,  1.017471, -0.102886],
-    [ 0.002057, -0.062563,  1.060506],
+    [0.680206, 0.236137, 0.083658],
+    [0.085415, 1.017471, -0.102886],
+    [0.002057, -0.062563, 1.060506],
 ];
 
 // ─── ARRI LogC v4 ────────────────────────────────────────────────────────────
@@ -131,9 +175,9 @@ fn arri_logc4_linearize(x: f32) -> f32 {
 
 // ARRI Wide Gamut 4 → ACES AP1 (approximate, from ARRI documentation)
 const ARRI_WIDE_GAMUT_4_TO_ACES: [[f32; 3]; 3] = [
-    [ 0.750957,  0.144422,  0.104621],
-    [ 0.000821,  1.007397, -0.008218],
-    [-0.000499, -0.034855,  1.035354],
+    [0.750957, 0.144422, 0.104621],
+    [0.000821, 1.007397, -0.008218],
+    [-0.000499, -0.034855, 1.035354],
 ];
 
 // ─── Sony S-Log3 / S-Gamut3 ─────────────────────────────────────────────────
@@ -149,9 +193,9 @@ fn sony_slog3_linearize(x: f32) -> f32 {
 
 // S-Gamut3 → ACES AP1 matrix (from ACES IDT for Sony cameras)
 const SONY_SGAMUT3_TO_ACES: [[f32; 3]; 3] = [
-    [ 0.752279,  0.143432,  0.104289],
-    [-0.000156,  1.082357, -0.082201],
-    [-0.000038, -0.067961,  1.067999],
+    [0.752279, 0.143432, 0.104289],
+    [-0.000156, 1.082357, -0.082201],
+    [-0.000038, -0.067961, 1.067999],
 ];
 
 // ─── RED Log3G10 / REDWideGamutRGB ──────────────────────────────────────────
@@ -172,9 +216,9 @@ fn red_log3g10_linearize(x: f32) -> f32 {
 
 // REDWideGamutRGB → ACES AP1 matrix (from ACES IDT for RED cameras)
 const RED_WIDE_GAMUT_TO_ACES: [[f32; 3]; 3] = [
-    [ 0.785043,  0.083844,  0.131118],
-    [ 0.023172,  1.087892, -0.111055],
-    [-0.073769, -0.314639,  1.388408],
+    [0.785043, 0.083844, 0.131118],
+    [0.023172, 1.087892, -0.111055],
+    [-0.073769, -0.314639, 1.388408],
 ];
 
 // ─── Blackmagic Film Gen5 ───────────────────────────────────────────────────
@@ -194,9 +238,9 @@ fn bmd_film_gen5_linearize(x: f32) -> f32 {
 
 // Blackmagic Wide Gamut → ACES AP1 matrix (approximate)
 const BMD_WIDE_GAMUT_TO_ACES: [[f32; 3]; 3] = [
-    [ 0.638008,  0.214704,  0.147288],
-    [ 0.058137,  0.967925, -0.026062],
-    [-0.002070, -0.062309,  1.064379],
+    [0.638008, 0.214704, 0.147288],
+    [0.058137, 0.967925, -0.026062],
+    [-0.002070, -0.062309, 1.064379],
 ];
 
 #[cfg(test)]
@@ -236,7 +280,11 @@ mod tests {
         let mut pixels = vec![0.391, 0.391, 0.391, 1.0];
         transform.apply(&mut pixels);
         // Should be in ACES AP1 linear space, near 0.18
-        assert!(pixels[0] > 0.05 && pixels[0] < 0.5, "ARRI mid-gray in ACEScg: {}", pixels[0]);
+        assert!(
+            pixels[0] > 0.05 && pixels[0] < 0.5,
+            "ARRI mid-gray in ACEScg: {}",
+            pixels[0]
+        );
     }
 
     #[test]

@@ -12,8 +12,10 @@ use super::super::helpers::{gpu_params_wh, gpu_push_f32, sample_bilinear};
 #[derive(Clone, rasmcore_macros::V2Filter)]
 #[filter(name = "ca_remove", category = "tool")]
 pub struct CaRemove {
-    #[param(min = -5.0, max = 5.0, step = 0.1, default = 0.0)] pub red_shift: f32,
-    #[param(min = -5.0, max = 5.0, step = 0.1, default = 0.0)] pub blue_shift: f32,
+    #[param(min = -5.0, max = 5.0, step = 0.1, default = 0.0)]
+    pub red_shift: f32,
+    #[param(min = -5.0, max = 5.0, step = 0.1, default = 0.0)]
+    pub blue_shift: f32,
 }
 
 const CA_REMOVE_WGSL: &str = r#"
@@ -51,26 +53,34 @@ impl Filter for CaRemove {
         let mut out = input.to_vec();
         let cx = width as f32 * 0.5;
         let cy = height as f32 * 0.5;
-        let max_dist = (cx*cx + cy*cy).sqrt();
+        let max_dist = (cx * cx + cy * cy).sqrt();
         for y in 0..height {
             for x in 0..width {
                 let dx = x as f32 - cx;
                 let dy = y as f32 - cy;
-                let dist = (dx*dx + dy*dy).sqrt();
+                let dist = (dx * dx + dy * dy).sqrt();
                 let t = dist / max_dist;
                 let i = ((y * width + x) * 4) as usize;
                 // Red channel shift
                 let r_off = t * self.red_shift;
-                let r_src = sample_bilinear(input, width, height,
+                let r_src = sample_bilinear(
+                    input,
+                    width,
+                    height,
                     x as f32 + dx / dist.max(0.001) * r_off,
-                    y as f32 + dy / dist.max(0.001) * r_off);
+                    y as f32 + dy / dist.max(0.001) * r_off,
+                );
                 out[i] = r_src[0];
                 // Blue channel shift
                 let b_off = t * self.blue_shift;
-                let b_src = sample_bilinear(input, width, height,
+                let b_src = sample_bilinear(
+                    input,
+                    width,
+                    height,
                     x as f32 + dx / dist.max(0.001) * b_off,
-                    y as f32 + dy / dist.max(0.001) * b_off);
-                out[i+2] = b_src[2];
+                    y as f32 + dy / dist.max(0.001) * b_off,
+                );
+                out[i + 2] = b_src[2];
             }
         }
         Ok(out)
@@ -80,6 +90,11 @@ impl Filter for CaRemove {
         let mut p = gpu_params_wh(_w, _h);
         gpu_push_f32(&mut p, self.red_shift);
         gpu_push_f32(&mut p, self.blue_shift);
-        Some(vec![GpuShader::new(CA_REMOVE_WGSL.to_string(), "main", [256, 1, 1], p)])
+        Some(vec![GpuShader::new(
+            CA_REMOVE_WGSL.to_string(),
+            "main",
+            [256, 1, 1],
+            p,
+        )])
     }
 }

@@ -718,16 +718,18 @@ pub fn eval_point_op_f32(op: &PointOp, x: f32) -> f32 {
         PointOp::Gamma(gamma) => x.powf(1.0 / gamma),
         PointOp::Invert => 1.0 - x,
         PointOp::Threshold(level) => {
-            if x >= *level as f32 / 255.0 { 1.0 } else { 0.0 }
+            if x >= *level as f32 / 255.0 {
+                1.0
+            } else {
+                0.0
+            }
         }
         PointOp::Posterize(levels) => {
             let n = (*levels).max(2) as f32;
             let quantized = (x * (n - 1.0) + 0.5) as u32;
             quantized as f32 / (n - 1.0)
         }
-        PointOp::Clamp(min, max) => {
-            x.clamp(*min as f32 / 255.0, *max as f32 / 255.0)
-        }
+        PointOp::Clamp(min, max) => x.clamp(*min as f32 / 255.0, *max as f32 / 255.0),
         PointOp::Brightness(amount) => (x + amount).clamp(0.0, 1.0),
         PointOp::Contrast(amount) => {
             let factor = if *amount >= 0.0 {
@@ -741,12 +743,20 @@ pub fn eval_point_op_f32(op: &PointOp, x: f32) -> f32 {
             let t = *threshold as f32 / 255.0;
             if x >= t { 1.0 - x } else { x }
         }
-        PointOp::Levels { black, white, gamma } => {
+        PointOp::Levels {
+            black,
+            white,
+            gamma,
+        } => {
             let range = (white - black).max(1e-6);
             let normalized = ((x - black) / range).clamp(0.0, 1.0);
             normalized.powf(1.0 / gamma)
         }
-        PointOp::SigmoidalContrast { strength, midpoint, sharpen } => {
+        PointOp::SigmoidalContrast {
+            strength,
+            midpoint,
+            sharpen,
+        } => {
             if *strength < 1e-6 {
                 x
             } else {
@@ -763,17 +773,33 @@ pub fn eval_point_op_f32(op: &PointOp, x: f32) -> f32 {
                 }
             }
         }
-        PointOp::Exposure { ev, offset, gamma_correction } => {
+        PointOp::Exposure {
+            ev,
+            offset,
+            gamma_correction,
+        } => {
             let scale = 2.0f32.powf(*ev);
-            let inv_gamma = if *gamma_correction > 0.0 { 1.0 / gamma_correction } else { 1.0 };
+            let inv_gamma = if *gamma_correction > 0.0 {
+                1.0 / gamma_correction
+            } else {
+                1.0
+            };
             let scaled = ((x + offset) * scale).clamp(0.0, 1.0);
-            if (inv_gamma - 1.0).abs() < 1e-6 { scaled } else { scaled.powf(inv_gamma) }
+            if (inv_gamma - 1.0).abs() < 1e-6 {
+                scaled
+            } else {
+                scaled.powf(inv_gamma)
+            }
         }
         PointOp::EvalAdd(v) => (x + *v as f32 / 255.0).clamp(0.0, 1.0),
         PointOp::EvalSubtract(v) => (x - *v as f32 / 255.0).clamp(0.0, 1.0),
         PointOp::EvalMultiply(f) => (x * f).clamp(0.0, 1.0),
         PointOp::EvalDivide(f) => {
-            if f.abs() > 1e-6 { (x / f).clamp(0.0, 1.0) } else { 0.0 }
+            if f.abs() > 1e-6 {
+                (x / f).clamp(0.0, 1.0)
+            } else {
+                0.0
+            }
         }
         PointOp::EvalMin(v) => x.max(*v as f32 / 255.0),
         PointOp::EvalMax(v) => x.min(*v as f32 / 255.0),
@@ -794,7 +820,11 @@ pub fn eval_point_op_f32(op: &PointOp, x: f32) -> f32 {
 ///
 /// Pixels are stored as little-endian f32 values in [0.0, 1.0].
 /// For Rgba32f, alpha is preserved unchanged.
-pub fn apply_point_op_f32(pixels: &[u8], info: &ImageInfo, op: &PointOp) -> Result<Vec<u8>, ImageError> {
+pub fn apply_point_op_f32(
+    pixels: &[u8],
+    info: &ImageInfo,
+    op: &PointOp,
+) -> Result<Vec<u8>, ImageError> {
     let samples: Vec<f32> = pixels
         .chunks_exact(4)
         .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
@@ -804,9 +834,11 @@ pub fn apply_point_op_f32(pixels: &[u8], info: &ImageInfo, op: &PointOp) -> Resu
         PixelFormat::Rgb32f => 3,
         PixelFormat::Rgba32f => 4,
         PixelFormat::Gray32f => 1,
-        other => return Err(ImageError::UnsupportedFormat(format!(
-            "f32 point op on {other:?} not supported"
-        ))),
+        other => {
+            return Err(ImageError::UnsupportedFormat(format!(
+                "f32 point op on {other:?} not supported"
+            )));
+        }
     };
 
     let mut result = samples;
@@ -1666,7 +1698,11 @@ mod tests {
 
     #[test]
     fn f32_eval_matches_lut_exposure() {
-        let op = PointOp::Exposure { ev: 1.0, offset: 0.0, gamma_correction: 1.0 };
+        let op = PointOp::Exposure {
+            ev: 1.0,
+            offset: 0.0,
+            gamma_correction: 1.0,
+        };
         let lut = build_lut(&op);
         for i in 0..=255u8 {
             let x = i as f32 / 255.0;

@@ -15,7 +15,9 @@ impl Filter for EvaluateDivide {
         let mut out = input.to_vec();
         let v = self.value;
         for pixel in out.chunks_exact_mut(4) {
-            pixel[0] /= v; pixel[1] /= v; pixel[2] /= v;
+            pixel[0] /= v;
+            pixel[1] /= v;
+            pixel[2] /= v;
         }
         Ok(out)
     }

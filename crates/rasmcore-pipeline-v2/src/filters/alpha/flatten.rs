@@ -49,10 +49,18 @@ impl Filter for Flatten {
 
     fn gpu_shader_passes(&self, _width: u32, _height: u32) -> Option<Vec<GpuShader>> {
         let mut p = gpu_params_wh(_width, _height);
-        gpu_push_f32(&mut p, self.bg_r); gpu_push_f32(&mut p, self.bg_g);
-        gpu_push_f32(&mut p, self.bg_b); gpu_push_u32(&mut p, 0);
-        gpu_push_u32(&mut p, 0); gpu_push_u32(&mut p, 0);
-        Some(vec![GpuShader::new(FLATTEN_WGSL.to_string(), "main", [256, 1, 1], p)])
+        gpu_push_f32(&mut p, self.bg_r);
+        gpu_push_f32(&mut p, self.bg_g);
+        gpu_push_f32(&mut p, self.bg_b);
+        gpu_push_u32(&mut p, 0);
+        gpu_push_u32(&mut p, 0);
+        gpu_push_u32(&mut p, 0);
+        Some(vec![GpuShader::new(
+            FLATTEN_WGSL.to_string(),
+            "main",
+            [256, 1, 1],
+            p,
+        )])
     }
 }
 
@@ -63,7 +71,11 @@ mod tests {
     #[test]
     fn flatten_composites_over_white() {
         let input = vec![1.0, 0.0, 0.0, 0.5]; // red at 50% alpha
-        let f = Flatten { bg_r: 1.0, bg_g: 1.0, bg_b: 1.0 };
+        let f = Flatten {
+            bg_r: 1.0,
+            bg_g: 1.0,
+            bg_b: 1.0,
+        };
         let out = f.compute(&input, 1, 1).unwrap();
         // mix(white, red, 0.5) = (1.0, 0.5, 0.5)
         assert!((out[0] - 1.0).abs() < 0.01);

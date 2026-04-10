@@ -168,9 +168,7 @@ mod tests {
             format: PixelFormat::Rgb8,
             color_space: ColorSpace::Srgb,
         };
-        let rgb = vec![
-            255, 0, 0, 0, 255, 0, 0, 0, 255, 128, 128, 128,
-        ];
+        let rgb = vec![255, 0, 0, 0, 255, 0, 0, 0, 255, 128, 128, 128];
 
         let (cmyk, cmyk_info) = rgb_to_cmyk(&rgb, &info).unwrap();
         assert_eq!(cmyk_info.format, PixelFormat::Cmyk8);
@@ -251,7 +249,10 @@ mod tests {
             .sum::<f64>()
             / n as f64;
 
-        assert!(mae < 1.5, "CMYK rgb_to_cmyk vs ImageMagick MAE = {mae:.3} (must be < 1.5)");
+        assert!(
+            mae < 1.5,
+            "CMYK rgb_to_cmyk vs ImageMagick MAE = {mae:.3} (must be < 1.5)"
+        );
         eprintln!("CMYK rgb_to_cmyk vs ImageMagick: MAE = {mae:.3}");
 
         let cmyk_info = ImageInfo {
@@ -264,9 +265,12 @@ mod tests {
         let result = std::process::Command::new("magick")
             .args([
                 png_path.to_str().unwrap(),
-                "-colorspace", "CMYK",
-                "-colorspace", "sRGB",
-                "-depth", "8",
+                "-colorspace",
+                "CMYK",
+                "-colorspace",
+                "sRGB",
+                "-depth",
+                "8",
                 &format!("rgb:{}", im_rt_raw.to_str().unwrap()),
             ])
             .output()
@@ -281,7 +285,10 @@ mod tests {
             .sum::<f64>()
             / our_rt.len() as f64;
 
-        assert!(rt_mae < 1.5, "CMYK round-trip vs ImageMagick MAE = {rt_mae:.3} (must be < 1.5)");
+        assert!(
+            rt_mae < 1.5,
+            "CMYK round-trip vs ImageMagick MAE = {rt_mae:.3} (must be < 1.5)"
+        );
         eprintln!("CMYK round-trip vs ImageMagick: MAE = {rt_mae:.3}");
 
         let _ = std::fs::remove_file(&png_path);

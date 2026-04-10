@@ -100,7 +100,7 @@ where
 #[test]
 fn f32_brightness_parity() {
     let (max_diff, mean_diff) = compare_u8_f32(64, 64, |px, info| {
-        use rasmcore_image::domain::point_ops::{apply_op, PointOp};
+        use rasmcore_image::domain::point_ops::{PointOp, apply_op};
         apply_op(px, info, &PointOp::Brightness(0.2)).unwrap()
     });
     assert!(max_diff <= 1, "brightness max_diff={max_diff}");
@@ -110,7 +110,7 @@ fn f32_brightness_parity() {
 #[test]
 fn f32_contrast_parity() {
     let (max_diff, mean_diff) = compare_u8_f32(64, 64, |px, info| {
-        use rasmcore_image::domain::point_ops::{apply_op, PointOp};
+        use rasmcore_image::domain::point_ops::{PointOp, apply_op};
         apply_op(px, info, &PointOp::Contrast(0.5)).unwrap()
     });
     assert!(max_diff <= 1, "contrast max_diff={max_diff}");
@@ -121,7 +121,7 @@ fn f32_contrast_parity() {
 #[test]
 fn f32_gamma_parity() {
     let (max_diff, mean_diff) = compare_u8_f32(64, 64, |px, info| {
-        use rasmcore_image::domain::point_ops::{apply_op, PointOp};
+        use rasmcore_image::domain::point_ops::{PointOp, apply_op};
         apply_op(px, info, &PointOp::Gamma(2.2)).unwrap()
     });
     assert!(max_diff <= 1, "gamma max_diff={max_diff}");
@@ -131,7 +131,7 @@ fn f32_gamma_parity() {
 #[test]
 fn f32_exposure_parity() {
     let (max_diff, mean_diff) = compare_u8_f32(64, 64, |px, info| {
-        use rasmcore_image::domain::point_ops::{apply_op, PointOp};
+        use rasmcore_image::domain::point_ops::{PointOp, apply_op};
         apply_op(
             px,
             info,
@@ -150,7 +150,7 @@ fn f32_exposure_parity() {
 #[test]
 fn f32_invert_parity() {
     let (max_diff, _) = compare_u8_f32(64, 64, |px, info| {
-        use rasmcore_image::domain::point_ops::{apply_op, PointOp};
+        use rasmcore_image::domain::point_ops::{PointOp, apply_op};
         apply_op(px, info, &PointOp::Invert).unwrap()
     });
     assert!(max_diff <= 1, "invert max_diff={max_diff}");
@@ -159,7 +159,7 @@ fn f32_invert_parity() {
 #[test]
 fn f32_levels_parity() {
     let (max_diff, mean_diff) = compare_u8_f32(64, 64, |px, info| {
-        use rasmcore_image::domain::point_ops::{apply_op, PointOp};
+        use rasmcore_image::domain::point_ops::{PointOp, apply_op};
         apply_op(
             px,
             info,
@@ -178,7 +178,7 @@ fn f32_levels_parity() {
 #[test]
 fn f32_posterize_parity() {
     let (max_diff, _) = compare_u8_f32(64, 64, |px, info| {
-        use rasmcore_image::domain::point_ops::{apply_op, PointOp};
+        use rasmcore_image::domain::point_ops::{PointOp, apply_op};
         apply_op(px, info, &PointOp::Posterize(4)).unwrap()
     });
     // Posterize with few levels can have larger diffs at quantization boundaries
@@ -188,7 +188,7 @@ fn f32_posterize_parity() {
 #[test]
 fn f32_solarize_parity() {
     let (max_diff, _) = compare_u8_f32(64, 64, |px, info| {
-        use rasmcore_image::domain::point_ops::{apply_op, PointOp};
+        use rasmcore_image::domain::point_ops::{PointOp, apply_op};
         apply_op(px, info, &PointOp::Solarize(128)).unwrap()
     });
     assert!(max_diff <= 1, "solarize max_diff={max_diff}");
@@ -199,7 +199,7 @@ fn f32_solarize_parity() {
 #[test]
 fn f32_eval_add_parity() {
     let (max_diff, _) = compare_u8_f32(64, 64, |px, info| {
-        use rasmcore_image::domain::point_ops::{apply_op, PointOp};
+        use rasmcore_image::domain::point_ops::{PointOp, apply_op};
         apply_op(px, info, &PointOp::EvalAdd(50)).unwrap()
     });
     assert!(max_diff <= 1, "eval_add max_diff={max_diff}");
@@ -208,7 +208,7 @@ fn f32_eval_add_parity() {
 #[test]
 fn f32_eval_multiply_parity() {
     let (max_diff, _) = compare_u8_f32(64, 64, |px, info| {
-        use rasmcore_image::domain::point_ops::{apply_op, PointOp};
+        use rasmcore_image::domain::point_ops::{PointOp, apply_op};
         apply_op(px, info, &PointOp::EvalMultiply(1.5)).unwrap()
     });
     assert!(max_diff <= 1, "eval_multiply max_diff={max_diff}");
@@ -217,7 +217,7 @@ fn f32_eval_multiply_parity() {
 #[test]
 fn f32_eval_pow_parity() {
     let (max_diff, _) = compare_u8_f32(64, 64, |px, info| {
-        use rasmcore_image::domain::point_ops::{apply_op, PointOp};
+        use rasmcore_image::domain::point_ops::{PointOp, apply_op};
         apply_op(px, info, &PointOp::EvalPow(0.5)).unwrap()
     });
     assert!(max_diff <= 1, "eval_pow max_diff={max_diff}");
@@ -283,12 +283,8 @@ fn f32_tonemap_reinhard_parity() {
 #[test]
 fn f32_tonemap_filmic_parity() {
     let (max_diff, mean_diff) = compare_u8_f32(64, 64, |px, info| {
-        rasmcore_image::domain::color_grading::tonemap_filmic(
-            px,
-            info,
-            &Default::default(),
-        )
-        .unwrap()
+        rasmcore_image::domain::color_grading::tonemap_filmic(px, info, &Default::default())
+            .unwrap()
     });
     assert!(max_diff <= 1, "tonemap_filmic max_diff={max_diff}");
     assert!(mean_diff < 0.5, "tonemap_filmic mean_diff={mean_diff}");
@@ -297,12 +293,7 @@ fn f32_tonemap_filmic_parity() {
 #[test]
 fn f32_tonemap_drago_parity() {
     let (max_diff, mean_diff) = compare_u8_f32(64, 64, |px, info| {
-        rasmcore_image::domain::color_grading::tonemap_drago(
-            px,
-            info,
-            &Default::default(),
-        )
-        .unwrap()
+        rasmcore_image::domain::color_grading::tonemap_drago(px, info, &Default::default()).unwrap()
     });
     assert!(max_diff <= 1, "tonemap_drago max_diff={max_diff}");
     assert!(mean_diff < 0.5, "tonemap_drago mean_diff={mean_diff}");
@@ -349,7 +340,7 @@ fn f32_burn_parity() {
 
 #[test]
 fn f32_output_preserves_format() {
-    use rasmcore_image::domain::point_ops::{apply_op, PointOp};
+    use rasmcore_image::domain::point_ops::{PointOp, apply_op};
 
     let info = make_info(4, 4, PixelFormat::Rgb32f);
     let samples: Vec<f32> = (0..48).map(|i| i as f32 / 48.0).collect();
@@ -362,16 +353,13 @@ fn f32_output_preserves_format() {
     // All values should be valid f32 in [0, 1]
     let out = read_f32(&result);
     for (i, &v) in out.iter().enumerate() {
-        assert!(
-            v >= 0.0 && v <= 1.0,
-            "f32 sample {i} out of range: {v}"
-        );
+        assert!(v >= 0.0 && v <= 1.0, "f32 sample {i} out of range: {v}");
     }
 }
 
 #[test]
 fn f32_rgba32f_alpha_preserved() {
-    use rasmcore_image::domain::point_ops::{apply_op, PointOp};
+    use rasmcore_image::domain::point_ops::{PointOp, apply_op};
 
     let info = make_info(2, 1, PixelFormat::Rgba32f);
     // 2 pixels: [0.5, 0.3, 0.7, 0.9] [0.1, 0.8, 0.4, 0.6]

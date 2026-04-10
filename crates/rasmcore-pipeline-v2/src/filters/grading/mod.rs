@@ -14,14 +14,14 @@ pub mod split_toning;
 pub mod tonemap;
 
 pub use asc_cdl::AscCdl;
-pub use curves::{CurvesMaster, CurvesRed, CurvesGreen, CurvesBlue};
+pub use curves::{CurvesBlue, CurvesGreen, CurvesMaster, CurvesRed};
 pub use film_grain::FilmGrain;
-pub use hue_curves::{HueVsSat, HueVsLum, LumVsSat, SatVsSat};
+pub use hue_curves::{HueVsLum, HueVsSat, LumVsSat, SatVsSat};
 pub use lift_gamma_gain::LiftGammaGain;
 pub use lut_apply::{ApplyCubeLut, ApplyHaldLut};
 pub use parsers::{parse_cube_lut, parse_hald_lut};
 pub use split_toning::SplitToning;
-pub use tonemap::{TonemapReinhard, TonemapDrago, TonemapFilmic};
+pub use tonemap::{TonemapDrago, TonemapFilmic, TonemapReinhard};
 
 use crate::registry::{ParamDescriptor, ParamType};
 
@@ -104,15 +104,16 @@ fn eval_hermite(pts: &[(f32, f32)], tangents: &[f32], x: f32) -> f32 {
         return pts[n - 1].1;
     }
     // Find segment via binary search
-    let seg = match pts.binary_search_by(|p| p.0.partial_cmp(&x).unwrap_or(std::cmp::Ordering::Equal)) {
-        Ok(idx) => return pts[idx].1,
-        Err(idx) => {
-            if idx == 0 {
-                return pts[0].1;
+    let seg =
+        match pts.binary_search_by(|p| p.0.partial_cmp(&x).unwrap_or(std::cmp::Ordering::Equal)) {
+            Ok(idx) => return pts[idx].1,
+            Err(idx) => {
+                if idx == 0 {
+                    return pts[0].1;
+                }
+                idx - 1
             }
-            idx - 1
-        }
-    };
+        };
     let x0 = pts[seg].0;
     let x1 = pts[seg + 1].0;
     let y0 = pts[seg].1;
@@ -146,12 +147,14 @@ pub(crate) fn curve_from_params(shadows: f32, midtones: f32, highlights: f32) ->
 pub(crate) fn hue_curve_from_params(center: f32, amount: f32, width: f32) -> Vec<(f32, f32)> {
     // Default identity: all points at y=1 (no change)
     let n = 12;
-    (0..=n).map(|i| {
-        let hue = i as f32 / n as f32;
-        let dist = ((hue - center / 360.0).abs()).min(1.0 - (hue - center / 360.0).abs());
-        let influence = (-dist * dist / (2.0 * (width / 360.0).max(0.01).powi(2))).exp();
-        (hue, (1.0 + amount * influence).clamp(0.0, 2.0))
-    }).collect()
+    (0..=n)
+        .map(|i| {
+            let hue = i as f32 / n as f32;
+            let dist = ((hue - center / 360.0).abs()).min(1.0 - (hue - center / 360.0).abs());
+            let influence = (-dist * dist / (2.0 * (width / 360.0).max(0.01).powi(2))).exp();
+            (hue, (1.0 + amount * influence).clamp(0.0, 2.0))
+        })
+        .collect()
 }
 
 // ─── Param descriptor arrays ───────────────────────────────────────────────
@@ -159,9 +162,15 @@ pub(crate) fn hue_curve_from_params(center: f32, amount: f32, width: f32) -> Vec
 macro_rules! pd_f32 {
     ($name:expr, $min:expr, $max:expr, $step:expr, $default:expr) => {
         ParamDescriptor {
-            name: $name, value_type: ParamType::F32,
-            min: Some($min), max: Some($max), step: Some($step), default: Some($default),
-            hint: None, description: "", constraints: &[],
+            name: $name,
+            value_type: ParamType::F32,
+            min: Some($min),
+            max: Some($max),
+            step: Some($step),
+            default: Some($default),
+            hint: None,
+            description: "",
+            constraints: &[],
         }
     };
 }
@@ -185,9 +194,15 @@ pub(crate) static NORM_CURVE_PARAMS: [ParamDescriptor; 3] = [
 ];
 
 pub(crate) static ASC_CDL_PARAMS: [ParamDescriptor; 10] = [
-    pd_f32!("slope_r", 0.0, 4.0, 0.05, 1.0), pd_f32!("slope_g", 0.0, 4.0, 0.05, 1.0), pd_f32!("slope_b", 0.0, 4.0, 0.05, 1.0),
-    pd_f32!("offset_r", -1.0, 1.0, 0.02, 0.0), pd_f32!("offset_g", -1.0, 1.0, 0.02, 0.0), pd_f32!("offset_b", -1.0, 1.0, 0.02, 0.0),
-    pd_f32!("power_r", 0.1, 4.0, 0.05, 1.0), pd_f32!("power_g", 0.1, 4.0, 0.05, 1.0), pd_f32!("power_b", 0.1, 4.0, 0.05, 1.0),
+    pd_f32!("slope_r", 0.0, 4.0, 0.05, 1.0),
+    pd_f32!("slope_g", 0.0, 4.0, 0.05, 1.0),
+    pd_f32!("slope_b", 0.0, 4.0, 0.05, 1.0),
+    pd_f32!("offset_r", -1.0, 1.0, 0.02, 0.0),
+    pd_f32!("offset_g", -1.0, 1.0, 0.02, 0.0),
+    pd_f32!("offset_b", -1.0, 1.0, 0.02, 0.0),
+    pd_f32!("power_r", 0.1, 4.0, 0.05, 1.0),
+    pd_f32!("power_g", 0.1, 4.0, 0.05, 1.0),
+    pd_f32!("power_b", 0.1, 4.0, 0.05, 1.0),
     pd_f32!("saturation", 0.0, 4.0, 0.05, 1.0),
 ];
 
@@ -199,36 +214,57 @@ pub(crate) static SPLIT_TONING_PARAMS: [ParamDescriptor; 4] = [
 ];
 
 pub(crate) static LIFT_GAMMA_GAIN_PARAMS: [ParamDescriptor; 9] = [
-    pd_f32!("lift_r", -0.5, 0.5, 0.02, 0.0), pd_f32!("lift_g", -0.5, 0.5, 0.02, 0.0), pd_f32!("lift_b", -0.5, 0.5, 0.02, 0.0),
-    pd_f32!("gamma_r", 0.1, 4.0, 0.05, 1.0), pd_f32!("gamma_g", 0.1, 4.0, 0.05, 1.0), pd_f32!("gamma_b", 0.1, 4.0, 0.05, 1.0),
-    pd_f32!("gain_r", 0.0, 4.0, 0.05, 1.0), pd_f32!("gain_g", 0.0, 4.0, 0.05, 1.0), pd_f32!("gain_b", 0.0, 4.0, 0.05, 1.0),
+    pd_f32!("lift_r", -0.5, 0.5, 0.02, 0.0),
+    pd_f32!("lift_g", -0.5, 0.5, 0.02, 0.0),
+    pd_f32!("lift_b", -0.5, 0.5, 0.02, 0.0),
+    pd_f32!("gamma_r", 0.1, 4.0, 0.05, 1.0),
+    pd_f32!("gamma_g", 0.1, 4.0, 0.05, 1.0),
+    pd_f32!("gamma_b", 0.1, 4.0, 0.05, 1.0),
+    pd_f32!("gain_r", 0.0, 4.0, 0.05, 1.0),
+    pd_f32!("gain_g", 0.0, 4.0, 0.05, 1.0),
+    pd_f32!("gain_b", 0.0, 4.0, 0.05, 1.0),
 ];
 
 // ─── Helper: HSL for split toning ──────────────────────────────────────────
 
 pub(crate) fn hsl_to_rgb_simple(h: f32, s: f32, l: f32) -> [f32; 3] {
-    if s < 1e-6 { return [l, l, l]; }
-    let q = if l < 0.5 { l * (1.0 + s) } else { l + s - l * s };
+    if s < 1e-6 {
+        return [l, l, l];
+    }
+    let q = if l < 0.5 {
+        l * (1.0 + s)
+    } else {
+        l + s - l * s
+    };
     let p = 2.0 * l - q;
     let h = h / 360.0;
     let hue_to_rgb = |t: f32| -> f32 {
         let t = ((t % 1.0) + 1.0) % 1.0;
-        if t < 1.0 / 6.0 { p + (q - p) * 6.0 * t }
-        else if t < 0.5 { q }
-        else if t < 2.0 / 3.0 { p + (q - p) * (2.0 / 3.0 - t) * 6.0 }
-        else { p }
+        if t < 1.0 / 6.0 {
+            p + (q - p) * 6.0 * t
+        } else if t < 0.5 {
+            q
+        } else if t < 2.0 / 3.0 {
+            p + (q - p) * (2.0 / 3.0 - t) * 6.0
+        } else {
+            p
+        }
     };
-    [hue_to_rgb(h + 1.0 / 3.0), hue_to_rgb(h), hue_to_rgb(h - 1.0 / 3.0)]
+    [
+        hue_to_rgb(h + 1.0 / 3.0),
+        hue_to_rgb(h),
+        hue_to_rgb(h - 1.0 / 3.0),
+    ]
 }
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
+    use super::super::color::ClutOp;
     use super::*;
     use crate::fusion::Clut3D;
     use crate::ops::Filter;
-    use super::super::color::ClutOp;
 
     fn test_pixel(r: f32, g: f32, b: f32) -> Vec<f32> {
         vec![r, g, b, 1.0]
@@ -484,7 +520,10 @@ mod tests {
         let input = test_pixel(0.5, 0.5, 0.5);
         let out = f.compute(&input, 1, 1).unwrap();
         // Should produce values in (0, 1)
-        assert!(out[0] > 0.0 && out[0] < 1.0, "Filmic should produce reasonable values");
+        assert!(
+            out[0] > 0.0 && out[0] < 1.0,
+            "Filmic should produce reasonable values"
+        );
     }
 
     #[test]
@@ -495,7 +534,10 @@ mod tests {
         };
         let input = test_pixel(0.5, 0.5, 0.5);
         let out = f.compute(&input, 1, 1).unwrap();
-        assert!(out[0] > 0.0 && out[0] <= 1.0, "Drago should produce valid range");
+        assert!(
+            out[0] > 0.0 && out[0] <= 1.0,
+            "Drago should produce valid range"
+        );
     }
 
     // ── LUT Application ──
@@ -549,9 +591,15 @@ LUT_1D_SIZE 4
         assert!(clut.grid_size <= 65);
         // Identity-ish: corners should map to themselves
         let (r, g, b) = clut.sample(0.0, 0.0, 0.0);
-        assert!((r).abs() < 0.01 && (g).abs() < 0.01 && (b).abs() < 0.01, "black maps to black");
+        assert!(
+            (r).abs() < 0.01 && (g).abs() < 0.01 && (b).abs() < 0.01,
+            "black maps to black"
+        );
         let (r, g, b) = clut.sample(1.0, 1.0, 1.0);
-        assert!((r - 1.0).abs() < 0.01 && (g - 1.0).abs() < 0.01 && (b - 1.0).abs() < 0.01, "white maps to white");
+        assert!(
+            (r - 1.0).abs() < 0.01 && (g - 1.0).abs() < 0.01 && (b - 1.0).abs() < 0.01,
+            "white maps to white"
+        );
     }
 
     #[test]
@@ -568,7 +616,10 @@ DOMAIN_MAX 2.0 2.0 2.0
         let clut = parse_cube_lut(cube_text).unwrap();
         // After domain normalization: values should be 0.0, 0.5, 1.0
         let (r, _, _) = clut.sample(0.5, 0.0, 0.0);
-        assert!((r - 0.5).abs() < 0.05, "mid-domain should map to 0.5, got {r}");
+        assert!(
+            (r - 0.5).abs() < 0.05,
+            "mid-domain should map to 0.5, got {r}"
+        );
     }
 
     #[test]
@@ -588,8 +639,14 @@ LUT_1D_SIZE 3
         // B channel: lerp(0->0.25 then 0.25->1) at t=0.5 -> 0.25
         // But since it's 3D CLUT conversion, the independence comes from
         // the from_fn closure applying each 1D independently
-        assert!(r > g, "R should be brighter than G at midtone, r={r}, g={g}");
-        assert!(g > b, "G should be brighter than B at midtone, g={g}, b={b}");
+        assert!(
+            r > g,
+            "R should be brighter than G at midtone, r={r}, g={g}"
+        );
+        assert!(
+            g > b,
+            "G should be brighter than B at midtone, g={g}, b={b}"
+        );
     }
 
     // ── Hald CLUT ──
@@ -620,9 +677,15 @@ LUT_1D_SIZE 3
 
         // Identity: corners should pass through
         let (r, g, b) = clut.sample(0.0, 0.0, 0.0);
-        assert!((r).abs() < 0.01 && (g).abs() < 0.01 && (b).abs() < 0.01, "black");
+        assert!(
+            (r).abs() < 0.01 && (g).abs() < 0.01 && (b).abs() < 0.01,
+            "black"
+        );
         let (r, g, b) = clut.sample(1.0, 1.0, 1.0);
-        assert!((r - 1.0).abs() < 0.01 && (g - 1.0).abs() < 0.01 && (b - 1.0).abs() < 0.01, "white");
+        assert!(
+            (r - 1.0).abs() < 0.01 && (g - 1.0).abs() < 0.01 && (b - 1.0).abs() < 0.01,
+            "white"
+        );
     }
 
     #[test]
@@ -647,7 +710,10 @@ LUT_1D_SIZE 3
         let f = ApplyCubeLut { clut };
         let shaders = f.gpu_shaders(100, 100);
         assert!(!shaders.is_empty(), "ApplyCubeLut should have GPU shader");
-        assert!(!shaders[0].extra_buffers.is_empty(), "Should have CLUT extra buffer");
+        assert!(
+            !shaders[0].extra_buffers.is_empty(),
+            "Should have CLUT extra buffer"
+        );
     }
 
     #[test]
@@ -657,7 +723,10 @@ LUT_1D_SIZE 3
         let f = ApplyHaldLut { clut };
         let shaders = f.gpu_shaders(100, 100);
         assert!(!shaders.is_empty(), "ApplyHaldLut should have GPU shader");
-        assert!(!shaders[0].extra_buffers.is_empty(), "Should have CLUT extra buffer");
+        assert!(
+            !shaders[0].extra_buffers.is_empty(),
+            "Should have CLUT extra buffer"
+        );
     }
 
     #[test]
@@ -666,7 +735,11 @@ LUT_1D_SIZE 3
         let clut = Clut3D::identity(17);
         let f = ApplyCubeLut { clut };
         let params = f.params(200, 100);
-        assert_eq!(params.len(), 16, "GPU params: width, height, grid_size, _pad = 16 bytes");
+        assert_eq!(
+            params.len(),
+            16,
+            "GPU params: width, height, grid_size, _pad = 16 bytes"
+        );
         let width = u32::from_le_bytes(params[0..4].try_into().unwrap());
         let height = u32::from_le_bytes(params[4..8].try_into().unwrap());
         let grid = u32::from_le_bytes(params[8..12].try_into().unwrap());

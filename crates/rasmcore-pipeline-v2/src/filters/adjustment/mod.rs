@@ -77,6 +77,9 @@ mod tests {
         let composed = PointOpExpr::compose(&sol_exprs[0], &sc_exprs[0]);
         let wgsl = lower_to_wgsl(&composed);
         assert!(wgsl.contains("exp("), "Fused WGSL should contain exp()");
-        assert!(wgsl.contains("select("), "Fused WGSL should contain select()");
+        assert!(
+            wgsl.contains("select("),
+            "Fused WGSL should contain select()"
+        );
     }
 }

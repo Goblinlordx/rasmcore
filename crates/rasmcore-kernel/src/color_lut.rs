@@ -251,7 +251,10 @@ pub fn parse_cube_lut(text: &str) -> Result<ColorLut3D, String> {
             .strip_prefix("DOMAIN_MIN")
             .or_else(|| line.strip_prefix("domain_min"))
         {
-            let vals: Vec<f32> = rest.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+            let vals: Vec<f32> = rest
+                .split_whitespace()
+                .filter_map(|s| s.parse().ok())
+                .collect();
             if vals.len() == 3 {
                 domain_min = [vals[0], vals[1], vals[2]];
             }
@@ -262,7 +265,10 @@ pub fn parse_cube_lut(text: &str) -> Result<ColorLut3D, String> {
             .strip_prefix("DOMAIN_MAX")
             .or_else(|| line.strip_prefix("domain_max"))
         {
-            let vals: Vec<f32> = rest.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+            let vals: Vec<f32> = rest
+                .split_whitespace()
+                .filter_map(|s| s.parse().ok())
+                .collect();
             if vals.len() == 3 {
                 domain_max = [vals[0], vals[1], vals[2]];
             }
@@ -293,7 +299,10 @@ pub fn parse_cube_lut(text: &str) -> Result<ColorLut3D, String> {
         }
 
         // Try parsing as RGB triplet
-        let vals: Vec<f32> = line.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+        let vals: Vec<f32> = line
+            .split_whitespace()
+            .filter_map(|s| s.parse().ok())
+            .collect();
         if vals.len() >= 3 && grid_size.is_some() {
             // Normalize from domain range to [0, 1]
             let r = (vals[0] - domain_min[0]) / (domain_max[0] - domain_min[0]);
@@ -303,9 +312,7 @@ pub fn parse_cube_lut(text: &str) -> Result<ColorLut3D, String> {
         }
     }
 
-    let n = grid_size.ok_or_else(|| {
-        "missing LUT_3D_SIZE in .cube file".to_string()
-    })?;
+    let n = grid_size.ok_or_else(|| "missing LUT_3D_SIZE in .cube file".to_string())?;
 
     let expected = n * n * n;
     if data.len() != expected {
@@ -315,10 +322,7 @@ pub fn parse_cube_lut(text: &str) -> Result<ColorLut3D, String> {
         ));
     }
 
-    Ok(ColorLut3D {
-        grid_size: n,
-        data,
-    })
+    Ok(ColorLut3D { grid_size: n, data })
 }
 
 // ─── Color transform helpers (for building CLUTs from existing ops) ─────────

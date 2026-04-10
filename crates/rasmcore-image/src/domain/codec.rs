@@ -59,7 +59,11 @@ inventory::collect!(&'static CodecRegistration);
 
 /// Find a codec by format name or file extension.
 pub fn find_codec(format: &str) -> Option<&'static CodecRegistration> {
-    inventory::iter::<&'static CodecRegistration>.into_iter().copied().find(|&reg| reg.format == format || reg.extensions.contains(&format)).map(|v| v as _)
+    inventory::iter::<&'static CodecRegistration>
+        .into_iter()
+        .copied()
+        .find(|&reg| reg.format == format || reg.extensions.contains(&format))
+        .map(|v| v as _)
 }
 
 /// Detect format from data using registered detect_fn functions.
@@ -74,9 +78,10 @@ pub fn detect_format(data: &[u8]) -> Option<String> {
 
     for entry in entries {
         if let Some(detect) = entry.detect_fn
-            && detect(data) {
-                return Some(entry.format.to_string());
-            }
+            && detect(data)
+        {
+            return Some(entry.format.to_string());
+        }
     }
     None
 }
@@ -100,12 +105,13 @@ pub fn decode_with_hint(
     if let Some(hint) = format_hint {
         if let Some(reg) = find_codec(hint) {
             if let Some(detect) = reg.detect_fn
-                && !detect(data) {
-                    return Err(ImageError::InvalidInput(format!(
-                        "data does not match format '{}' (detection rejected)",
-                        reg.format
-                    )));
-                }
+                && !detect(data)
+            {
+                return Err(ImageError::InvalidInput(format!(
+                    "data does not match format '{}' (detection rejected)",
+                    reg.format
+                )));
+            }
             if let Some(decode) = reg.decode_fn {
                 return decode(data);
             }
@@ -129,9 +135,10 @@ pub fn decode_with_hint(
     for entry in &entries {
         if let Some(detect) = entry.detect_fn
             && detect(data)
-                && let Some(decode) = entry.decode_fn {
-                    return decode(data);
-                }
+            && let Some(decode) = entry.decode_fn
+        {
+            return decode(data);
+        }
     }
 
     let detected = detect_format(data).unwrap_or_else(|| "unknown".to_string());
@@ -171,10 +178,7 @@ pub fn is_lut_format(format: &str) -> bool {
 }
 
 /// Encode a ColorLut3D to a LUT format.
-pub fn encode_lut(
-    lut: &ColorLut3D,
-    format: &str,
-) -> Option<Result<Vec<u8>, ImageError>> {
+pub fn encode_lut(lut: &ColorLut3D, format: &str) -> Option<Result<Vec<u8>, ImageError>> {
     let reg = find_codec(format)?;
     let encode = reg.encode_lut_fn?;
     Some(encode(lut))
@@ -193,12 +197,13 @@ pub fn decode_lut_with_hint(
     if let Some(hint) = format_hint {
         if let Some(reg) = find_codec(hint) {
             if let Some(detect) = reg.detect_fn
-                && !detect(data) {
-                    return Err(ImageError::InvalidInput(format!(
-                        "data does not match LUT format '{}' (detection rejected)",
-                        reg.format
-                    )));
-                }
+                && !detect(data)
+            {
+                return Err(ImageError::InvalidInput(format!(
+                    "data does not match LUT format '{}' (detection rejected)",
+                    reg.format
+                )));
+            }
             if let Some(decode_lut) = reg.decode_lut_fn {
                 return decode_lut(data);
             }
@@ -222,9 +227,10 @@ pub fn decode_lut_with_hint(
     for entry in &entries {
         if let Some(detect) = entry.detect_fn
             && detect(data)
-                && let Some(decode_lut) = entry.decode_lut_fn {
-                    return decode_lut(data);
-                }
+            && let Some(decode_lut) = entry.decode_lut_fn
+        {
+            return decode_lut(data);
+        }
     }
 
     Err(ImageError::InvalidInput(
@@ -373,8 +379,16 @@ mod tests {
     fn supported_formats_populated() {
         let decode = supported_decode_formats();
         let encode = supported_encode_formats();
-        assert!(decode.len() >= 15, "expected >=15 decode formats, got {}", decode.len());
-        assert!(encode.len() >= 10, "expected >=10 encode formats, got {}", encode.len());
+        assert!(
+            decode.len() >= 15,
+            "expected >=15 decode formats, got {}",
+            decode.len()
+        );
+        assert!(
+            encode.len() >= 10,
+            "expected >=10 encode formats, got {}",
+            encode.len()
+        );
     }
 
     #[test]

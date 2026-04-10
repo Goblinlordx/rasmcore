@@ -56,7 +56,11 @@ impl Filter for Bilateral {
                     }
                 }
 
-                let inv_w = if weight_sum > 1e-10 { 1.0 / weight_sum } else { 0.0 };
+                let inv_w = if weight_sum > 1e-10 {
+                    1.0 / weight_sum
+                } else {
+                    0.0
+                };
                 out[center_idx] = sum[0] * inv_w;
                 out[center_idx + 1] = sum[1] * inv_w;
                 out[center_idx + 2] = sum[2] * inv_w;

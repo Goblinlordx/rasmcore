@@ -167,7 +167,9 @@ pub fn convert_samples<S: PixelSample, D: PixelSample>(src_bytes: &[u8]) -> Vec<
 
 /// Determine the corresponding 8-bit format for a given HP format (f16 or f32).
 /// Returns `None` if the format is not high-precision.
-pub fn hp_to_standard_format(format: super::types::PixelFormat) -> Option<super::types::PixelFormat> {
+pub fn hp_to_standard_format(
+    format: super::types::PixelFormat,
+) -> Option<super::types::PixelFormat> {
     use super::types::PixelFormat;
     match format {
         PixelFormat::Rgba32f | PixelFormat::Rgba16f => Some(PixelFormat::Rgba8),
@@ -179,7 +181,9 @@ pub fn hp_to_standard_format(format: super::types::PixelFormat) -> Option<super:
 
 /// Determine the corresponding f32 format for a given 8-bit format.
 /// Returns `None` if the format is not 8-bit RGB/RGBA/Gray.
-pub fn standard_to_f32_format(format: super::types::PixelFormat) -> Option<super::types::PixelFormat> {
+pub fn standard_to_f32_format(
+    format: super::types::PixelFormat,
+) -> Option<super::types::PixelFormat> {
     use super::types::PixelFormat;
     match format {
         PixelFormat::Rgba8 => Some(PixelFormat::Rgba32f),
@@ -191,7 +195,9 @@ pub fn standard_to_f32_format(format: super::types::PixelFormat) -> Option<super
 
 /// Determine the corresponding f16 format for a given 8-bit format.
 /// Returns `None` if the format is not 8-bit RGB/RGBA/Gray.
-pub fn standard_to_f16_format(format: super::types::PixelFormat) -> Option<super::types::PixelFormat> {
+pub fn standard_to_f16_format(
+    format: super::types::PixelFormat,
+) -> Option<super::types::PixelFormat> {
     use super::types::PixelFormat;
     match format {
         PixelFormat::Rgba8 => Some(PixelFormat::Rgba16f),
@@ -202,7 +208,9 @@ pub fn standard_to_f16_format(format: super::types::PixelFormat) -> Option<super
 }
 
 /// Backward-compatible alias.
-pub fn f32_to_standard_format(format: super::types::PixelFormat) -> Option<super::types::PixelFormat> {
+pub fn f32_to_standard_format(
+    format: super::types::PixelFormat,
+) -> Option<super::types::PixelFormat> {
     hp_to_standard_format(format)
 }
 
@@ -329,7 +337,12 @@ mod tests {
 
     #[test]
     fn f16_from_bytes_round_trip() {
-        let values = [f16::from_f32(0.0), f16::from_f32(0.25), f16::from_f32(0.5), f16::from_f32(1.0)];
+        let values = [
+            f16::from_f32(0.0),
+            f16::from_f32(0.25),
+            f16::from_f32(0.5),
+            f16::from_f32(1.0),
+        ];
         let bytes = f16::to_bytes(&values);
         assert_eq!(bytes.len(), 8); // 4 samples * 2 bytes
         let back = f16::from_bytes(&bytes);

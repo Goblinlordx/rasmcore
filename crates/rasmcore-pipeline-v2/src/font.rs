@@ -51,10 +51,14 @@ impl Font {
     pub fn info(&self) -> FontInfo {
         FontInfo {
             units_per_em: self.inner.units_per_em() as u16,
-            ascender: self.inner.horizontal_line_metrics(1.0)
+            ascender: self
+                .inner
+                .horizontal_line_metrics(1.0)
                 .map(|m| m.ascent as i16)
                 .unwrap_or(0),
-            descender: self.inner.horizontal_line_metrics(1.0)
+            descender: self
+                .inner
+                .horizontal_line_metrics(1.0)
                 .map(|m| m.descent as i16)
                 .unwrap_or(0),
             num_glyphs: 0,
@@ -121,19 +125,25 @@ impl Font {
             // Blit glyph alpha onto pixel buffer
             for gy_off in 0..glyph.height as i32 {
                 let py = gy + gy_off;
-                if py < 0 || py >= img_h as i32 { continue; }
+                if py < 0 || py >= img_h as i32 {
+                    continue;
+                }
                 for gx_off in 0..glyph.width as i32 {
                     let px = gx + gx_off;
-                    if px < 0 || px >= img_w as i32 { continue; }
+                    if px < 0 || px >= img_w as i32 {
+                        continue;
+                    }
 
                     let alpha_idx = (gy_off as u32 * glyph.width + gx_off as u32) as usize;
                     let coverage = glyph.alpha[alpha_idx] * color[3];
-                    if coverage < 1e-6 { continue; }
+                    if coverage < 1e-6 {
+                        continue;
+                    }
 
                     let pi = ((py as u32 * img_w + px as u32) * 4) as usize;
                     // Pre-multiplied alpha blend
                     let inv = 1.0 - coverage;
-                    pixels[pi]     = pixels[pi]     * inv + color[0] * coverage;
+                    pixels[pi] = pixels[pi] * inv + color[0] * coverage;
                     pixels[pi + 1] = pixels[pi + 1] * inv + color[1] * coverage;
                     pixels[pi + 2] = pixels[pi + 2] * inv + color[2] * coverage;
                     pixels[pi + 3] = pixels[pi + 3] * inv + coverage;

@@ -15,20 +15,28 @@ pub struct ConnectedComponents {
 
 impl Filter for ConnectedComponents {
     fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
-        let w = width as usize; let h = height as usize;
+        let w = width as usize;
+        let h = height as usize;
         let mut labels = vec![0u32; w * h];
         let mut next_label = 1u32;
         // Simple two-pass labeling
         for y in 0..h {
             for x in 0..w {
                 let i = (y * w + x) * 4;
-                let luma = input[i] * 0.2126 + input[i+1] * 0.7152 + input[i+2] * 0.0722;
-                if luma <= self.threshold { continue; }
+                let luma = input[i] * 0.2126 + input[i + 1] * 0.7152 + input[i + 2] * 0.0722;
+                if luma <= self.threshold {
+                    continue;
+                }
                 let left = if x > 0 { labels[y * w + x - 1] } else { 0 };
-                let above = if y > 0 { labels[(y-1) * w + x] } else { 0 };
-                if left > 0 { labels[y * w + x] = left; }
-                else if above > 0 { labels[y * w + x] = above; }
-                else { labels[y * w + x] = next_label; next_label += 1; }
+                let above = if y > 0 { labels[(y - 1) * w + x] } else { 0 };
+                if left > 0 {
+                    labels[y * w + x] = left;
+                } else if above > 0 {
+                    labels[y * w + x] = above;
+                } else {
+                    labels[y * w + x] = next_label;
+                    next_label += 1;
+                }
             }
         }
         // Colorize labels
@@ -40,9 +48,11 @@ impl Filter for ConnectedComponents {
                 if label > 0 {
                     let hue = (label as f32 * 137.508) % 360.0; // golden angle spacing
                     let (r, g, b) = hsl_to_rgb(hue, 0.8, 0.5);
-                    out[i] = r; out[i+1] = g; out[i+2] = b;
+                    out[i] = r;
+                    out[i + 1] = g;
+                    out[i + 2] = b;
                 }
-                out[i+3] = input[i+3];
+                out[i + 3] = input[i + 3];
             }
         }
         Ok(out)
@@ -79,7 +89,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
         let mut init_p = gpu_params_wh(_w, _h);
-        gpu_push_f32(&mut init_p, self.threshold); gpu_push_u32(&mut init_p, 0);
+        gpu_push_f32(&mut init_p, self.threshold);
+        gpu_push_u32(&mut init_p, 0);
 
         // Propagate: adopt minimum non-zero label from neighbors
         let prop_wgsl = r#"
@@ -124,25 +135,46 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
         let mut prop_p = gpu_params_wh(_w, _h);
-        gpu_push_u32(&mut prop_p, 0); gpu_push_u32(&mut prop_p, 0);
+        gpu_push_u32(&mut prop_p, 0);
+        gpu_push_u32(&mut prop_p, 0);
 
         let max_iters = (_w.max(_h) / 2).max(50);
-        let mut passes = vec![
-            GpuShader {
-                body: init_wgsl.to_string(), entry_point: "main", workgroup_size: [256, 1, 1],
-                params: init_p, extra_buffers: vec![], convergence_check: None,
-            loop_dispatch: None, setup: None,
-                reduction_buffers: vec![ReductionBuffer { id: label_buf_id, initial_data: vec![0u8; label_size], read_write: true }],
-            },
-        ];
+        let mut passes = vec![GpuShader {
+            body: init_wgsl.to_string(),
+            entry_point: "main",
+            workgroup_size: [256, 1, 1],
+            params: init_p,
+            extra_buffers: vec![],
+            convergence_check: None,
+            loop_dispatch: None,
+            setup: None,
+            reduction_buffers: vec![ReductionBuffer {
+                id: label_buf_id,
+                initial_data: vec![0u8; label_size],
+                read_write: true,
+            }],
+        }];
         for _ in 0..max_iters {
             passes.push(GpuShader {
-                body: prop_wgsl.to_string(), entry_point: "main", workgroup_size: [256, 1, 1],
-                params: prop_p.clone(), extra_buffers: vec![], convergence_check: Some(change_buf_id),
-                loop_dispatch: None, setup: None,
+                body: prop_wgsl.to_string(),
+                entry_point: "main",
+                workgroup_size: [256, 1, 1],
+                params: prop_p.clone(),
+                extra_buffers: vec![],
+                convergence_check: Some(change_buf_id),
+                loop_dispatch: None,
+                setup: None,
                 reduction_buffers: vec![
-                    ReductionBuffer { id: label_buf_id, initial_data: vec![], read_write: true },
-                    ReductionBuffer { id: change_buf_id, initial_data: vec![0u8; change_size], read_write: true },
+                    ReductionBuffer {
+                        id: label_buf_id,
+                        initial_data: vec![],
+                        read_write: true,
+                    },
+                    ReductionBuffer {
+                        id: change_buf_id,
+                        initial_data: vec![0u8; change_size],
+                        read_write: true,
+                    },
                 ],
             });
         }

@@ -9,11 +9,11 @@ use super::super::color::ClutOp;
 use crate::filter_node::FilterNode;
 #[allow(unused_imports)]
 use crate::registry::{
-    FilterFactoryRegistration, OperationRegistration, OperationKind,
-    OperationCapabilities, ParamDescriptor, ParamMap, ParamType,
+    FilterFactoryRegistration, OperationCapabilities, OperationKind, OperationRegistration,
+    ParamDescriptor, ParamMap, ParamType,
 };
 
-use super::{build_curve_lut_f32, curve_from_params, CURVE_PARAMS};
+use super::{CURVE_PARAMS, build_curve_lut_f32, curve_from_params};
 
 // ─── Curves Master ────────────────────────────────────────────────────────
 

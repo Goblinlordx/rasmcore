@@ -1,4 +1,4 @@
-use super::{apply_rgb_transform, ImageError, ImageInfo, PixelFormat};
+use super::{ImageError, ImageInfo, PixelFormat, apply_rgb_transform};
 
 /// Reinhard global tone mapping operator.
 #[inline]

@@ -62,9 +62,15 @@ fn j_to_achromatic(j: f32, inv_cz: f32) -> f32 {
 /// Matches OCIO's init_JMhParams exactly.
 pub fn init_jmh_params(prims: &[(f32, f32); 4]) -> JMhParams {
     let base_cone_to_aab: M33 = [
-        2.0, 1.0, 1.0 / 20.0,
-        1.0, -12.0 / 11.0, 1.0 / 11.0,
-        1.0 / 9.0, 1.0 / 9.0, -2.0 / 9.0,
+        2.0,
+        1.0,
+        1.0 / 20.0,
+        1.0,
+        -12.0 / 11.0,
+        1.0 / 11.0,
+        1.0 / 9.0,
+        1.0 / 9.0,
+        -2.0 / 9.0,
     ];
 
     let matrix_16 = xyz_to_rgb_f33(&CAM16_PRIMS);
@@ -87,7 +93,11 @@ pub fn init_jmh_params(prims: &[(f32, f32); 4]) -> JMhParams {
         f_l_n * y_w / rgb_w[2],
     ];
 
-    let rgb_wc = [d_rgb[0] * rgb_w[0], d_rgb[1] * rgb_w[1], d_rgb[2] * rgb_w[2]];
+    let rgb_wc = [
+        d_rgb[0] * rgb_w[0],
+        d_rgb[1] * rgb_w[1],
+        d_rgb[2] * rgb_w[2],
+    ];
     let rgb_aw = [
         post_adaptation_cone_response_fwd(rgb_wc[0]),
         post_adaptation_cone_response_fwd(rgb_wc[1]),
@@ -110,16 +120,19 @@ pub fn init_jmh_params(prims: &[(f32, f32); 4]) -> JMhParams {
         &rgb_to_rgb_f33(prims, &CAM16_PRIMS),
         &scale_f33(&IDENTITY_M33, &[REFERENCE_LUMINANCE; 3]),
     );
-    let matrix_rgb_to_cam16_c = mult_f33_f33(
-        &scale_f33(&IDENTITY_M33, &d_rgb),
-        &rgb_to_cam16,
-    );
+    let matrix_rgb_to_cam16_c = mult_f33_f33(&scale_f33(&IDENTITY_M33, &d_rgb), &rgb_to_cam16);
     let matrix_cam16_c_to_rgb = invert_f33(&matrix_rgb_to_cam16_c);
 
     let matrix_cone_response_to_aab: M33 = [
-        cone_to_aab[0] / a_w, cone_to_aab[1] / a_w, cone_to_aab[2] / a_w,
-        cone_to_aab[3] * 43.0 * SURROUND[2], cone_to_aab[4] * 43.0 * SURROUND[2], cone_to_aab[5] * 43.0 * SURROUND[2],
-        cone_to_aab[6] * 43.0 * SURROUND[2], cone_to_aab[7] * 43.0 * SURROUND[2], cone_to_aab[8] * 43.0 * SURROUND[2],
+        cone_to_aab[0] / a_w,
+        cone_to_aab[1] / a_w,
+        cone_to_aab[2] / a_w,
+        cone_to_aab[3] * 43.0 * SURROUND[2],
+        cone_to_aab[4] * 43.0 * SURROUND[2],
+        cone_to_aab[5] * 43.0 * SURROUND[2],
+        cone_to_aab[6] * 43.0 * SURROUND[2],
+        cone_to_aab[7] * 43.0 * SURROUND[2],
+        cone_to_aab[8] * 43.0 * SURROUND[2],
     ];
     let matrix_aab_to_cone_response = invert_f33(&matrix_cone_response_to_aab);
 
@@ -221,8 +234,12 @@ mod tests {
         let jmh = rgb_to_jmh(&rgb, &p);
         let back = jmh_to_rgb(&jmh, &p);
         for i in 0..3 {
-            assert!((back[i] - rgb[i]).abs() < 0.001,
-                "AP0 roundtrip ch{i}: {} vs {}", back[i], rgb[i]);
+            assert!(
+                (back[i] - rgb[i]).abs() < 0.001,
+                "AP0 roundtrip ch{i}: {} vs {}",
+                back[i],
+                rgb[i]
+            );
         }
     }
 
@@ -233,8 +250,12 @@ mod tests {
         let jmh = rgb_to_jmh(&rgb, &p);
         let back = jmh_to_rgb(&jmh, &p);
         for i in 0..3 {
-            assert!((back[i] - rgb[i]).abs() < 0.001,
-                "AP1 roundtrip ch{i}: {} vs {}", back[i], rgb[i]);
+            assert!(
+                (back[i] - rgb[i]).abs() < 0.001,
+                "AP1 roundtrip ch{i}: {} vs {}",
+                back[i],
+                rgb[i]
+            );
         }
     }
 
@@ -242,7 +263,11 @@ mod tests {
     fn grey_has_zero_chroma() {
         let p = init_jmh_params(&AP0_PRIMS);
         let jmh = rgb_to_jmh(&[0.18, 0.18, 0.18], &p);
-        assert!(jmh[1] < 0.01, "18% grey should have near-zero chroma: M={}", jmh[1]);
+        assert!(
+            jmh[1] < 0.01,
+            "18% grey should have near-zero chroma: M={}",
+            jmh[1]
+        );
     }
 
     #[test]
@@ -259,7 +284,12 @@ mod tests {
         let y = 0.18;
         let j = y_to_j(y, &p);
         let y_back = j_to_y(j, &p);
-        assert!((y_back - y).abs() < 0.001, "Y roundtrip: {} vs {}", y_back, y);
+        assert!(
+            (y_back - y).abs() < 0.001,
+            "Y roundtrip: {} vs {}",
+            y_back,
+            y
+        );
     }
 
     #[test]
@@ -268,7 +298,9 @@ mod tests {
         let ref_dir = match reference_dir() {
             Some(d) => d,
             None => {
-                eprintln!("SKIP: reference vectors not found. Run ./tests/aces2-vectors/generate.sh");
+                eprintln!(
+                    "SKIP: reference vectors not found. Run ./tests/aces2-vectors/generate.sh"
+                );
                 return;
             }
         };
@@ -301,9 +333,10 @@ mod tests {
 
             if vec_err > tolerance {
                 if fail < 10 {
-                    eprintln!("  FAIL vec[{i}]: in=[{:.4},{:.4},{:.4}] J_err:{:.6} M_err:{:.6} h_err:{:.3}",
-                        v.input[0], v.input[1], v.input[2],
-                        j_err, m_err, h_err);
+                    eprintln!(
+                        "  FAIL vec[{i}]: in=[{:.4},{:.4},{:.4}] J_err:{:.6} M_err:{:.6} h_err:{:.3}",
+                        v.input[0], v.input[1], v.input[2], j_err, m_err, h_err
+                    );
                 }
                 fail += 1;
             } else {
@@ -316,8 +349,10 @@ mod tests {
         eprintln!("CAM16 fwd: {pass} pass, {fail} fail, max_err={max_err:.8}");
 
         if fail > 0 {
-            panic!("CAM16 forward: {fail}/{} vectors exceed tolerance (max_err={max_err:.8})",
-                   pass + fail);
+            panic!(
+                "CAM16 forward: {fail}/{} vectors exceed tolerance (max_err={max_err:.8})",
+                pass + fail
+            );
         }
         assert!(pass > 0, "No reference vectors loaded");
     }

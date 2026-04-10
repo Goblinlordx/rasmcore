@@ -77,7 +77,10 @@ mod tests {
         let f = Sepia { intensity: 1.0 };
         let out = f.compute(&input, 1, 1).unwrap();
         // Sepia: R > G > B
-        assert!(out[0] > out[1] && out[1] > out[2], "Sepia should be warm-toned");
+        assert!(
+            out[0] > out[1] && out[1] > out[2],
+            "Sepia should be warm-toned"
+        );
     }
 
     #[test]

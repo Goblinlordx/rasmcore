@@ -37,9 +37,13 @@ impl Filter for Sobel {
         Ok(out)
     }
 
-    fn tile_overlap(&self) -> u32 { 1 }
+    fn tile_overlap(&self) -> u32 {
+        1
+    }
 
-    fn gpu_shader_body(&self) -> Option<&'static str> { Some(SOBEL_WGSL) }
+    fn gpu_shader_body(&self) -> Option<&'static str> {
+        Some(SOBEL_WGSL)
+    }
 
     fn gpu_params(&self, width: u32, height: u32) -> Option<Vec<u8>> {
         let mut buf = Vec::with_capacity(12);

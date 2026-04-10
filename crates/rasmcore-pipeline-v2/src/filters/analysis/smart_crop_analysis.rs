@@ -1,7 +1,12 @@
 //! SmartCropAnalysis filter.
 
 /// Extract the crop analysis logic from SmartCrop for reuse.
-pub fn smart_crop_find_rect(input: &[f32], width: u32, height: u32, ratio: f32) -> crate::rect::Rect {
+pub fn smart_crop_find_rect(
+    input: &[f32],
+    width: u32,
+    height: u32,
+    ratio: f32,
+) -> crate::rect::Rect {
     let w = width as usize;
     let h = height as usize;
     let cw = ((w as f32 * ratio) as usize).max(1).min(w);
@@ -50,7 +55,11 @@ pub struct SmartCropAnalysis {
 
 impl SmartCropAnalysis {
     pub fn new(upstream: u32, info: crate::node::NodeInfo, ratio: f32) -> Self {
-        Self { upstream, info, ratio }
+        Self {
+            upstream,
+            info,
+            ratio,
+        }
     }
 }
 

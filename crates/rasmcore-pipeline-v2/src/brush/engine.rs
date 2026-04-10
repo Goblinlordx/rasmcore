@@ -60,9 +60,14 @@ mod tests {
 
     fn make_point(x: f32, y: f32, pressure: f32) -> StrokePoint {
         StrokePoint {
-            x, y, pressure,
-            tilt_x: 0.0, tilt_y: 0.0, rotation: 0.0,
-            velocity: 0.5, timestamp: 0.0,
+            x,
+            y,
+            pressure,
+            tilt_x: 0.0,
+            tilt_y: 0.0,
+            rotation: 0.0,
+            velocity: 0.5,
+            timestamp: 0.0,
         }
     }
 
@@ -72,10 +77,7 @@ mod tests {
         let h = 64u32;
         let mut layer = vec![0.0f32; (w * h * 4) as usize];
 
-        let points = vec![
-            make_point(10.0, 32.0, 1.0),
-            make_point(54.0, 32.0, 1.0),
-        ];
+        let points = vec![make_point(10.0, 32.0, 1.0), make_point(54.0, 32.0, 1.0)];
         let params = BrushParams {
             diameter: 8.0,
             spacing: 0.25,
@@ -89,8 +91,16 @@ mod tests {
 
         // Should have red pixels along y=32
         let mid_idx = (32 * w + 30) as usize * 4;
-        assert!(layer[mid_idx] > 0.5, "red channel at midpoint: {}", layer[mid_idx]);
-        assert!(layer[mid_idx + 3] > 0.5, "alpha at midpoint: {}", layer[mid_idx + 3]);
+        assert!(
+            layer[mid_idx] > 0.5,
+            "red channel at midpoint: {}",
+            layer[mid_idx]
+        );
+        assert!(
+            layer[mid_idx + 3] > 0.5,
+            "alpha at midpoint: {}",
+            layer[mid_idx + 3]
+        );
 
         // Corners should be untouched
         assert!(layer[0] < 0.01, "corner should be blank");
@@ -103,10 +113,7 @@ mod tests {
         let mut layer = vec![0.0f32; (w * h * 4) as usize];
 
         // Straight line of 100px with 10px spacing = ~10 dabs
-        let points = vec![
-            make_point(10.0, 64.0, 1.0),
-            make_point(110.0, 64.0, 1.0),
-        ];
+        let points = vec![make_point(10.0, 64.0, 1.0), make_point(110.0, 64.0, 1.0)];
         let params = BrushParams {
             diameter: 10.0,
             spacing: 1.0, // spacing = 1.0 × diameter = 10px
@@ -127,7 +134,10 @@ mod tests {
                 marked_pixels += 1;
             }
         }
-        assert!(marked_pixels > 30, "should mark substantial portion of stroke path, got {marked_pixels}");
+        assert!(
+            marked_pixels > 30,
+            "should mark substantial portion of stroke path, got {marked_pixels}"
+        );
     }
 
     #[test]
@@ -137,10 +147,7 @@ mod tests {
         let mut layer = vec![0.0f32; (w * h * 4) as usize];
 
         // Stroke with varying pressure
-        let points = vec![
-            make_point(20.0, 64.0, 0.1),
-            make_point(108.0, 64.0, 1.0),
-        ];
+        let points = vec![make_point(20.0, 64.0, 0.1), make_point(108.0, 64.0, 1.0)];
         let params = BrushParams {
             diameter: 20.0,
             spacing: 0.25,
@@ -164,7 +171,9 @@ mod tests {
             for y in 50..80 {
                 for x in x_start..x_end {
                     let idx = (y * w + x) as usize * 4;
-                    if layer[idx + 3] > 0.3 { count += 1; }
+                    if layer[idx + 3] > 0.3 {
+                        count += 1;
+                    }
                 }
             }
             count

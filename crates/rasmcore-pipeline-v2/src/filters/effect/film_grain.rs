@@ -64,7 +64,9 @@ impl GpuFilter for FilmGrain {
     fn shader_body(&self) -> &str {
         EFFECT_FILM_GRAIN_WGSL
     }
-    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn workgroup_size(&self) -> [u32; 3] {
+        [16, 16, 1]
+    }
     fn params(&self, width: u32, height: u32) -> Vec<u8> {
         let inv_size = 1.0 / self.size.max(1.0);
         let seed = self.seed ^ noise::SEED_FILM_GRAIN;
@@ -86,7 +88,8 @@ impl GpuFilter for FilmGrain {
             extra_buffers: vec![],
             reduction_buffers: vec![],
             convergence_check: None,
-            loop_dispatch: None, setup: None,
+            loop_dispatch: None,
+            setup: None,
         }
     }
 }

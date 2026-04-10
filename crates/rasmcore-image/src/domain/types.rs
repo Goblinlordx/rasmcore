@@ -44,7 +44,10 @@ impl PixelFormat {
             PixelFormat::Rgba16 => 8,
             PixelFormat::Cmyk8 => 4,
             PixelFormat::Cmyka8 => 5,
-            PixelFormat::Yuv420p | PixelFormat::Yuv422p | PixelFormat::Yuv444p | PixelFormat::Nv12 => 4,
+            PixelFormat::Yuv420p
+            | PixelFormat::Yuv422p
+            | PixelFormat::Yuv444p
+            | PixelFormat::Nv12 => 4,
             PixelFormat::Rgb16f => 6,
             PixelFormat::Rgba16f => 8,
             PixelFormat::Gray16f => 2,

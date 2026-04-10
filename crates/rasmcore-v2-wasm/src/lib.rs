@@ -30,13 +30,12 @@ use bindings::rasmcore::core::errors::RasmcoreError;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use rasmcore_pipeline_v2::{
-    self as v2, Graph, LayerCache, NodeInfo, ParamMap, PipelineError,
-    create_filter_node,
-    hash::{content_hash, source_hash, source_hash_pixels},
-};
 use rasmcore_pipeline_v2::ColorSpace;
 use rasmcore_pipeline_v2::gpu_shaders::pixel_source::{self, HostPixelFormat};
+use rasmcore_pipeline_v2::{
+    self as v2, Graph, LayerCache, NodeInfo, ParamMap, PipelineError, create_filter_node,
+    hash::{content_hash, source_hash, source_hash_pixels},
+};
 
 // ─── Output Color Space ──────────────────────────────────────────────────────
 
@@ -72,25 +71,36 @@ thread_local! {
 }
 
 fn instance_register_font(data: &[u8]) -> Result<u32, PipelineError> {
-    let font = v2::font::Font::from_bytes(data)
-        .map_err(|e| PipelineError::ComputeError(e))?;
-    let id = NEXT_RESOURCE_ID.with(|c| { let id = c.get(); c.set(id + 1); id });
+    let font = v2::font::Font::from_bytes(data).map_err(|e| PipelineError::ComputeError(e))?;
+    let id = NEXT_RESOURCE_ID.with(|c| {
+        let id = c.get();
+        c.set(id + 1);
+        id
+    });
     RESOURCE_FONTS.with(|m| m.borrow_mut().insert(id, std::rc::Rc::new(font)));
     Ok(id)
 }
 
 fn instance_register_lut(data: &[u8]) -> Result<u32, PipelineError> {
-    let text = std::str::from_utf8(data).map_err(|_|
-        PipelineError::InvalidParams("LUT data is not valid UTF-8".into())
-    )?;
+    let text = std::str::from_utf8(data)
+        .map_err(|_| PipelineError::InvalidParams("LUT data is not valid UTF-8".into()))?;
     let lmt = if text.contains("LUT_3D_SIZE") || text.contains("LUT_1D_SIZE") {
         v2::parse_cube(text)?
-    } else if text.trim_start().starts_with("<?xml") || text.contains("<ProcessList") || text.contains("<CLF") {
+    } else if text.trim_start().starts_with("<?xml")
+        || text.contains("<ProcessList")
+        || text.contains("<CLF")
+    {
         v2::lmt::parse_clf(text)?
     } else {
-        return Err(PipelineError::InvalidParams("unsupported LUT format".into()));
+        return Err(PipelineError::InvalidParams(
+            "unsupported LUT format".into(),
+        ));
     };
-    let id = NEXT_RESOURCE_ID.with(|c| { let id = c.get(); c.set(id + 1); id });
+    let id = NEXT_RESOURCE_ID.with(|c| {
+        let id = c.get();
+        c.set(id + 1);
+        id
+    });
     RESOURCE_LUTS.with(|m| m.borrow_mut().insert(id, lmt));
     Ok(id)
 }
@@ -105,16 +115,27 @@ fn instance_get_lut(id: u32) -> Option<v2::lmt::Lmt> {
     RESOURCE_LUTS.with(|m| m.borrow().get(&id).cloned())
 }
 
-fn instance_register_transform(data: &[u8], format_hint: Option<&str>) -> Result<u32, PipelineError> {
+fn instance_register_transform(
+    data: &[u8],
+    format_hint: Option<&str>,
+) -> Result<u32, PipelineError> {
     let transform = v2::color_transform::parse_transform(data, format_hint)?;
-    let id = NEXT_RESOURCE_ID.with(|c| { let id = c.get(); c.set(id + 1); id });
+    let id = NEXT_RESOURCE_ID.with(|c| {
+        let id = c.get();
+        c.set(id + 1);
+        id
+    });
     RESOURCE_TRANSFORMS.with(|m| m.borrow_mut().insert(id, transform));
     Ok(id)
 }
 
 fn instance_register_transform_preset(name: &str) -> Result<u32, PipelineError> {
     let transform = v2::color_transform::load_preset(name)?;
-    let id = NEXT_RESOURCE_ID.with(|c| { let id = c.get(); c.set(id + 1); id });
+    let id = NEXT_RESOURCE_ID.with(|c| {
+        let id = c.get();
+        c.set(id + 1);
+        id
+    });
     RESOURCE_TRANSFORMS.with(|m| m.borrow_mut().insert(id, transform));
     Ok(id)
 }
@@ -135,11 +156,9 @@ fn to_wit_error(e: PipelineError) -> RasmcoreError {
         PipelineError::ComputeError(msg) => RasmcoreError::CodecError(msg),
         PipelineError::InvalidParams(msg) => RasmcoreError::InvalidInput(msg),
         PipelineError::GpuError(msg) => RasmcoreError::CodecError(format!("GPU: {msg}")),
-        PipelineError::BufferMismatch { expected, actual } => {
-            RasmcoreError::InvalidInput(format!(
-                "buffer size mismatch: expected {expected}, got {actual}"
-            ))
-        }
+        PipelineError::BufferMismatch { expected, actual } => RasmcoreError::InvalidInput(format!(
+            "buffer size mismatch: expected {expected}, got {actual}"
+        )),
     }
 }
 
@@ -204,9 +223,7 @@ impl v2::Node for SourceNodePixels {
         _upstream: &mut dyn v2::Upstream,
     ) -> Result<Vec<f32>, PipelineError> {
         match self.format {
-            HostPixelFormat::Rgba8 => {
-                Ok(v2::color_math::srgb_rgba8_to_f32_linear(&self.raw_bytes))
-            }
+            HostPixelFormat::Rgba8 => Ok(v2::color_math::srgb_rgba8_to_f32_linear(&self.raw_bytes)),
             HostPixelFormat::Rgba16 => {
                 let pixel_count = (self.info.width * self.info.height) as usize;
                 let mut out = Vec::with_capacity(pixel_count * 4);
@@ -308,9 +325,7 @@ impl SourceResource {
         // Eagerly convert to f32 for the read_source() path.
         // The read_pixels() path uses SourceNodePixels directly for GPU conversion.
         let pixels = match format {
-            HostPixelFormat::Rgba8 => {
-                v2::color_math::srgb_rgba8_to_f32_linear(&data)
-            }
+            HostPixelFormat::Rgba8 => v2::color_math::srgb_rgba8_to_f32_linear(&data),
             HostPixelFormat::Rgba16 => {
                 let mut out = Vec::with_capacity((width * height * 4) as usize);
                 for chunk in data.chunks_exact(8) {
@@ -333,7 +348,11 @@ impl SourceResource {
 
         Self {
             pixels,
-            info: NodeInfo { width, height, color_space },
+            info: NodeInfo {
+                width,
+                height,
+                color_space,
+            },
             buffer_pool: Rc::new(RefCell::new(v2::BufferPool::new())),
             raw_pixels: Some((data, format)),
             src_hash,
@@ -388,15 +407,19 @@ impl PipelineResource {
     }
 
     pub fn register_lut(&self, data: &[u8]) -> Result<u32, PipelineError> {
-        let text = std::str::from_utf8(data).map_err(|_|
-            PipelineError::InvalidParams("LUT data is not valid UTF-8".into())
-        )?;
+        let text = std::str::from_utf8(data)
+            .map_err(|_| PipelineError::InvalidParams("LUT data is not valid UTF-8".into()))?;
         let lmt = if text.contains("LUT_3D_SIZE") || text.contains("LUT_1D_SIZE") {
             v2::parse_cube(text)?
-        } else if text.trim_start().starts_with("<?xml") || text.contains("<ProcessList") || text.contains("<CLF") {
+        } else if text.trim_start().starts_with("<?xml")
+            || text.contains("<ProcessList")
+            || text.contains("<CLF")
+        {
             v2::lmt::parse_clf(text)?
         } else {
-            return Err(PipelineError::InvalidParams("unsupported LUT format".into()));
+            return Err(PipelineError::InvalidParams(
+                "unsupported LUT format".into(),
+            ));
         };
         let id = self.next_resource_id.get();
         self.next_resource_id.set(id + 1);
@@ -454,7 +477,10 @@ impl PipelineResource {
             },
         };
 
-        let id = self.graph.borrow_mut().add_node_with_hash(Box::new(source), src_hash);
+        let id = self
+            .graph
+            .borrow_mut()
+            .add_node_with_hash(Box::new(source), src_hash);
         Ok(id)
     }
 
@@ -462,7 +488,13 @@ impl PipelineResource {
     ///
     /// For u8/u16 formats, creates a SourceNodePixels that produces a GPU conversion
     /// shader as the first node in the chain. For f32, creates a regular SourceNode.
-    pub fn read_pixels(&self, data: Vec<u8>, width: u32, height: u32, format: HostPixelFormat) -> u32 {
+    pub fn read_pixels(
+        &self,
+        data: Vec<u8>,
+        width: u32,
+        height: u32,
+        format: HostPixelFormat,
+    ) -> u32 {
         let format_tag = match format {
             HostPixelFormat::Rgba8 => "source-rgba8",
             HostPixelFormat::Rgba16 => "source-rgba16",
@@ -479,9 +511,15 @@ impl PipelineResource {
                 }
                 let node = SourceNode {
                     pixels,
-                    info: NodeInfo { width, height, color_space: ColorSpace::Linear },
+                    info: NodeInfo {
+                        width,
+                        height,
+                        color_space: ColorSpace::Linear,
+                    },
                 };
-                self.graph.borrow_mut().add_node_with_hash(Box::new(node), src_hash)
+                self.graph
+                    .borrow_mut()
+                    .add_node_with_hash(Box::new(node), src_hash)
             }
             _ => {
                 // u8/u16: create SourceNodePixels that carries raw bytes + GPU shader
@@ -492,9 +530,15 @@ impl PipelineResource {
                 let node = SourceNodePixels {
                     raw_bytes: data,
                     format,
-                    info: NodeInfo { width, height, color_space },
+                    info: NodeInfo {
+                        width,
+                        height,
+                        color_space,
+                    },
                 };
-                self.graph.borrow_mut().add_node_with_hash(Box::new(node), src_hash)
+                self.graph
+                    .borrow_mut()
+                    .add_node_with_hash(Box::new(node), src_hash)
             }
         }
     }
@@ -512,7 +556,9 @@ impl PipelineResource {
         };
 
         // Inject the source's buffer pool into the graph for intermediate node reuse
-        self.graph.borrow_mut().set_buffer_pool(source.buffer_pool.clone());
+        self.graph
+            .borrow_mut()
+            .set_buffer_pool(source.buffer_pool.clone());
         self.graph.borrow_mut().add_node(Box::new(node))
     }
 
@@ -561,9 +607,8 @@ impl PipelineResource {
         }
 
         // Create the filter node
-        let node = create_filter_node(name, source, info.clone(), &scaled_params).ok_or_else(|| {
-            PipelineError::InvalidParams(format!("unknown filter: {name}"))
-        })?;
+        let node = create_filter_node(name, source, info.clone(), &scaled_params)
+            .ok_or_else(|| PipelineError::InvalidParams(format!("unknown filter: {name}")))?;
 
         // If the filter declares a preferred color space different from its
         // upstream, wrap it with CSC nodes: upstream_cs → preferred → filter → preferred → upstream_cs.
@@ -572,30 +617,41 @@ impl PipelineResource {
         let upstream_cs = info.color_space;
         if let Some(preferred) = node.preferred_color_space() {
             if preferred != upstream_cs && upstream_cs != ColorSpace::Unknown {
-                let csc_to = v2::ColorConvertNode::new(source, info.clone(), upstream_cs, preferred);
+                let csc_to =
+                    v2::ColorConvertNode::new(source, info.clone(), upstream_cs, preferred);
                 let csc_to_id = self.graph.borrow_mut().add_node(Box::new(csc_to));
 
-                let converted_info = NodeInfo { color_space: preferred, ..info };
-                let filter_node = create_filter_node(name, csc_to_id, converted_info.clone(), &scaled_params)
-                    .expect("filter creation already validated");
-                let filter_id = self.graph.borrow_mut().add_node_with_hash(filter_node, filter_hash);
+                let converted_info = NodeInfo {
+                    color_space: preferred,
+                    ..info
+                };
+                let filter_node =
+                    create_filter_node(name, csc_to_id, converted_info.clone(), &scaled_params)
+                        .expect("filter creation already validated");
+                let filter_id = self
+                    .graph
+                    .borrow_mut()
+                    .add_node_with_hash(filter_node, filter_hash);
 
                 let filter_out_info = self.graph.borrow().node_info(filter_id)?;
-                let csc_back = v2::ColorConvertNode::new(filter_id, filter_out_info, preferred, upstream_cs);
+                let csc_back =
+                    v2::ColorConvertNode::new(filter_id, filter_out_info, preferred, upstream_cs);
                 let csc_back_id = self.graph.borrow_mut().add_node(Box::new(csc_back));
 
                 return Ok(csc_back_id);
             }
         }
 
-        let id = self.graph.borrow_mut().add_node_with_hash(node, filter_hash);
+        let id = self
+            .graph
+            .borrow_mut()
+            .add_node_with_hash(node, filter_hash);
         Ok(id)
     }
 
     pub fn use_lmt(&self, source: u32, data: &[u8]) -> Result<u32, PipelineError> {
-        let text = std::str::from_utf8(data).map_err(|_| {
-            PipelineError::InvalidParams("LMT data is not valid UTF-8".into())
-        })?;
+        let text = std::str::from_utf8(data)
+            .map_err(|_| PipelineError::InvalidParams("LMT data is not valid UTF-8".into()))?;
 
         // Auto-detect format from content
         let lmt = if text.contains("LUT_3D_SIZE") || text.contains("LUT_1D_SIZE") {
@@ -621,11 +677,18 @@ impl PipelineResource {
     }
 
     /// Apply a registered color transform (IDT, LMT, or Output Transform).
-    pub fn apply_color_transform(&self, source: u32, transform_id: u32) -> Result<u32, PipelineError> {
+    pub fn apply_color_transform(
+        &self,
+        source: u32,
+        transform_id: u32,
+    ) -> Result<u32, PipelineError> {
         let info = self.graph.borrow().node_info(source)?;
-        let transform = instance_get_transform(transform_id)
-            .ok_or_else(|| PipelineError::InvalidParams(format!("transform ID {transform_id} not found")))?;
-        let node = Box::new(v2::color_transform::ColorTransformNode::new(source, info, transform));
+        let transform = instance_get_transform(transform_id).ok_or_else(|| {
+            PipelineError::InvalidParams(format!("transform ID {transform_id} not found"))
+        })?;
+        let node = Box::new(v2::color_transform::ColorTransformNode::new(
+            source, info, transform,
+        ));
         let id = self.graph.borrow_mut().add_node(node);
         Ok(id)
     }
@@ -651,9 +714,19 @@ impl PipelineResource {
         let filter_hash = content_hash(&upstream_hash, "draw_text", &params.to_hash_bytes());
 
         let node = v2::filters::draw::DrawTextNode::new(
-            source, info, font, text, x, y, size, [cr, cg, cb, ca],
+            source,
+            info,
+            font,
+            text,
+            x,
+            y,
+            size,
+            [cr, cg, cb, ca],
         );
-        let id = self.graph.borrow_mut().add_node_with_hash(Box::new(node), filter_hash);
+        let id = self
+            .graph
+            .borrow_mut()
+            .add_node_with_hash(Box::new(node), filter_hash);
         Ok(id)
     }
 
@@ -670,9 +743,7 @@ impl PipelineResource {
         let upstream_hash = self.graph.borrow().content_hash(source);
         // Hash stroke point data as bytes for content-addressed caching
         let pts = stroke.points.borrow();
-        let point_bytes: Vec<u8> = pts.iter()
-            .flat_map(|f| f.to_le_bytes())
-            .collect();
+        let point_bytes: Vec<u8> = pts.iter().flat_map(|f| f.to_le_bytes()).collect();
         let stroke_hash = content_hash(&upstream_hash, "apply_stroke", &point_bytes);
 
         let n_points = pts.len() / STROKE_POINT_STRIDE;
@@ -684,7 +755,10 @@ impl PipelineResource {
             point_count: n_points,
             color,
         });
-        let id = self.graph.borrow_mut().add_node_with_hash(node, stroke_hash);
+        let id = self
+            .graph
+            .borrow_mut()
+            .add_node_with_hash(node, stroke_hash);
         Ok(id)
     }
 
@@ -706,7 +780,9 @@ impl PipelineResource {
         if let Some(q) = quality {
             params.ints.insert("quality".into(), q as i64);
         }
-        if let Some(result) = v2::encode_via_registry(format, &pixels, info.width, info.height, &params) {
+        if let Some(result) =
+            v2::encode_via_registry(format, &pixels, info.width, info.height, &params)
+        {
             result
         } else {
             rasmcore_codecs_v2::encode(&pixels, info.width, info.height, format, quality)
@@ -737,7 +813,10 @@ impl PipelineResource {
 
     /// Get layer cache statistics (if a cache is set).
     pub fn layer_cache_stats(&self) -> Option<v2::CacheStats> {
-        self.layer_cache.borrow().as_ref().map(|lc| lc.borrow().stats())
+        self.layer_cache
+            .borrow()
+            .as_ref()
+            .map(|lc| lc.borrow().stats())
     }
 
     /// Finalize layer cache — reset references and clean up unreferenced entries.
@@ -782,9 +861,6 @@ impl LayerCacheResource {
 }
 
 /// WASM-exported font resource.
-
-
-
 
 /// Placeholder stroke node — passes through source unchanged.
 ///
@@ -871,7 +947,10 @@ impl wit::Guest for Component {
         instance_register_lut(&data).map_err(to_wit_error)
     }
 
-    fn register_transform(data: Vec<u8>, format_hint: Option<String>) -> Result<u32, RasmcoreError> {
+    fn register_transform(
+        data: Vec<u8>,
+        format_hint: Option<String>,
+    ) -> Result<u32, RasmcoreError> {
         instance_register_transform(&data, format_hint.as_deref()).map_err(to_wit_error)
     }
 
@@ -880,15 +959,18 @@ impl wit::Guest for Component {
     }
 
     fn list_transform_presets() -> Vec<wit::TransformPresetInfo> {
-        v2::color_transform::preset_list().into_iter().map(|p| wit::TransformPresetInfo {
-            name: p.name.to_string(),
-            display_name: p.display_name.to_string(),
-            kind: format!("{:?}", p.kind).to_lowercase(),
-            source_space: p.source_space.to_string(),
-            target_space: p.target_space.to_string(),
-            vendor: p.vendor.to_string(),
-            description: p.description.to_string(),
-        }).collect()
+        v2::color_transform::preset_list()
+            .into_iter()
+            .map(|p| wit::TransformPresetInfo {
+                name: p.name.to_string(),
+                display_name: p.display_name.to_string(),
+                kind: format!("{:?}", p.kind).to_lowercase(),
+                source_space: p.source_space.to_string(),
+                target_space: p.target_space.to_string(),
+                vendor: p.vendor.to_string(),
+                description: p.description.to_string(),
+            })
+            .collect()
     }
 }
 
@@ -896,26 +978,47 @@ impl wit::Guest for Component {
 impl wit::GuestUndoStack for UndoStackResource {
     fn new(memory_budget_mb: u32) -> Self {
         let budget = memory_budget_mb as usize * 1024 * 1024;
-        Self { inner: RefCell::new(v2::undo::UndoStack::new(budget)) }
+        Self {
+            inner: RefCell::new(v2::undo::UndoStack::new(budget)),
+        }
     }
 
-    fn push_stroke(&self, pixels: Vec<f32>, width: u32, height: u32, x: u32, y: u32, w: u32, h: u32) {
+    fn push_stroke(
+        &self,
+        pixels: Vec<f32>,
+        width: u32,
+        height: u32,
+        x: u32,
+        y: u32,
+        w: u32,
+        h: u32,
+    ) {
         let bounds = v2::Rect::new(x, y, w, h);
-        self.inner.borrow_mut().push_stroke(&pixels, width, height, bounds);
+        self.inner
+            .borrow_mut()
+            .push_stroke(&pixels, width, height, bounds);
     }
 
     fn record_post(&self, pixels: Vec<f32>, width: u32, height: u32) {
-        self.inner.borrow_mut().record_post_state(&pixels, width, height);
+        self.inner
+            .borrow_mut()
+            .record_post_state(&pixels, width, height);
     }
 
     fn undo(&self, pixels: Vec<f32>, width: u32, height: u32) -> Option<Vec<f32>> {
         let mut px = pixels;
-        self.inner.borrow_mut().undo(&mut px, width, height).map(|_| px)
+        self.inner
+            .borrow_mut()
+            .undo(&mut px, width, height)
+            .map(|_| px)
     }
 
     fn redo(&self, pixels: Vec<f32>, width: u32, height: u32) -> Option<Vec<f32>> {
         let mut px = pixels;
-        self.inner.borrow_mut().redo(&mut px, width, height).map(|_| px)
+        self.inner
+            .borrow_mut()
+            .redo(&mut px, width, height)
+            .map(|_| px)
     }
 
     fn clear(&self) {
@@ -923,7 +1026,9 @@ impl wit::GuestUndoStack for UndoStackResource {
     }
 
     fn set_memory_budget(&self, mb: u32) {
-        self.inner.borrow_mut().set_memory_budget(mb as usize * 1024 * 1024);
+        self.inner
+            .borrow_mut()
+            .set_memory_budget(mb as usize * 1024 * 1024);
     }
 
     fn undo_count(&self) -> u32 {
@@ -938,26 +1043,30 @@ impl wit::GuestUndoStack for UndoStackResource {
 #[cfg(target_arch = "wasm32")]
 impl wit::GuestSource for SourceResource {
     fn new(data: Vec<u8>, format_hint: Option<String>) -> Self {
-        SourceResource::new(&data, format_hint.as_deref())
-            .unwrap_or_else(|e| {
-                // Return a 1x1 transparent pixel on decode failure
-                // (WIT constructors cannot return Result)
-                eprintln!("Source decode failed: {e}");
-                SourceResource {
-                    pixels: vec![0.0, 0.0, 0.0, 0.0],
-                    info: NodeInfo {
-                        width: 1,
-                        height: 1,
-                        color_space: ColorSpace::Srgb,
-                    },
-                    buffer_pool: Rc::new(RefCell::new(v2::BufferPool::new())),
-                    raw_pixels: None,
-                    src_hash: v2::hash::ZERO_HASH,
-                }
-            })
+        SourceResource::new(&data, format_hint.as_deref()).unwrap_or_else(|e| {
+            // Return a 1x1 transparent pixel on decode failure
+            // (WIT constructors cannot return Result)
+            eprintln!("Source decode failed: {e}");
+            SourceResource {
+                pixels: vec![0.0, 0.0, 0.0, 0.0],
+                info: NodeInfo {
+                    width: 1,
+                    height: 1,
+                    color_space: ColorSpace::Srgb,
+                },
+                buffer_pool: Rc::new(RefCell::new(v2::BufferPool::new())),
+                raw_pixels: None,
+                src_hash: v2::hash::ZERO_HASH,
+            }
+        })
     }
 
-    fn from_pixels(data: Vec<u8>, width: u32, height: u32, format: wit::HostPixelFormat) -> wit::Source {
+    fn from_pixels(
+        data: Vec<u8>,
+        width: u32,
+        height: u32,
+        format: wit::HostPixelFormat,
+    ) -> wit::Source {
         let fmt = match format {
             wit::HostPixelFormat::Rgba8 => HostPixelFormat::Rgba8,
             wit::HostPixelFormat::Rgba16 => HostPixelFormat::Rgba16,
@@ -992,7 +1101,6 @@ impl wit::GuestSource for SourceResource {
         vec![]
     }
 }
-
 
 #[cfg(target_arch = "wasm32")]
 impl wit::GuestStrokeInput for StrokeInputResource {
@@ -1103,7 +1211,9 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
                             v2::ParamType::Bool => wit::ParamType::BoolVal,
                             v2::ParamType::String => wit::ParamType::StringVal,
                             v2::ParamType::Rect => wit::ParamType::RectVal,
-                            v2::ParamType::NodeRef | v2::ParamType::FontRef | v2::ParamType::LutRef => wit::ParamType::U32Val,
+                            v2::ParamType::NodeRef
+                            | v2::ParamType::FontRef
+                            | v2::ParamType::LutRef => wit::ParamType::U32Val,
                         },
                         min: p.min,
                         max: p.max,
@@ -1118,7 +1228,9 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
 
     fn find_operation(&self, name: String) -> Option<wit::OperationInfo> {
         // Reuse list_operations and filter — simple enough for POC
-        self.list_operations().into_iter().find(|op| op.name == name)
+        self.list_operations()
+            .into_iter()
+            .find(|op| op.name == name)
     }
 
     fn read(&self, data: Vec<u8>, config: Option<wit::ReadConfig>) -> Result<u32, RasmcoreError> {
@@ -1143,7 +1255,9 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
             wit::HostPixelFormat::Rgba16 => HostPixelFormat::Rgba16,
             wit::HostPixelFormat::RgbaF32 => HostPixelFormat::RgbaF32,
         };
-        Ok(PipelineResource::read_pixels(self, data, width, height, fmt))
+        Ok(PipelineResource::read_pixels(
+            self, data, width, height, fmt,
+        ))
     }
 
     fn node_info(&self, node: u32) -> Result<wit::NodeInfo, RasmcoreError> {
@@ -1217,24 +1331,30 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
     // ─── Color Transforms (IDT / LMT / Output Transform) ──────────────
 
     fn apply_idt(&self, source: u32, transform_id: u32) -> Result<u32, RasmcoreError> {
-        self.apply_color_transform(source, transform_id).map_err(to_wit_error)
+        self.apply_color_transform(source, transform_id)
+            .map_err(to_wit_error)
     }
 
     fn apply_lmt(&self, source: u32, transform_id: u32) -> Result<u32, RasmcoreError> {
-        self.apply_color_transform(source, transform_id).map_err(to_wit_error)
+        self.apply_color_transform(source, transform_id)
+            .map_err(to_wit_error)
     }
 
     fn apply_output_transform(&self, source: u32, transform_id: u32) -> Result<u32, RasmcoreError> {
-        self.apply_color_transform(source, transform_id).map_err(to_wit_error)
+        self.apply_color_transform(source, transform_id)
+            .map_err(to_wit_error)
     }
 
     fn list_brush_presets(&self) -> Vec<wit::BrushPresetInfo> {
-        v2::brush::registered_presets().into_iter().map(|p| wit::BrushPresetInfo {
-            name: p.name.to_string(),
-            display_name: p.display_name.to_string(),
-            category: p.category.to_string(),
-            description: p.description.to_string(),
-        }).collect()
+        v2::brush::registered_presets()
+            .into_iter()
+            .map(|p| wit::BrushPresetInfo {
+                name: p.name.to_string(),
+                display_name: p.display_name.to_string(),
+                category: p.category.to_string(),
+                description: p.description.to_string(),
+            })
+            .collect()
     }
 
     fn get_brush_preset(&self, name: String) -> Option<wit::BrushParams> {
@@ -1438,7 +1558,11 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
     ) -> Result<u32, RasmcoreError> {
         use rasmcore_pipeline_v2::ml_node::*;
 
-        let info = self.graph.borrow().node_info(source).map_err(to_wit_error)?;
+        let info = self
+            .graph
+            .borrow()
+            .node_info(source)
+            .map_err(to_wit_error)?;
 
         // TODO: Query host ml-capabilities to get model info for tiling/output.
         // For now, create a basic MlNode with defaults.
@@ -1536,21 +1660,30 @@ fn deserialize_params(buf: &[u8]) -> ParamMap {
                 map.bools.insert(name, buf[i] != 0);
                 i += 1;
             }
-            3 => { // NodeRef
-                if i + 4 > buf.len() { break; }
-                let v = u32::from_le_bytes([buf[i], buf[i+1], buf[i+2], buf[i+3]]);
+            3 => {
+                // NodeRef
+                if i + 4 > buf.len() {
+                    break;
+                }
+                let v = u32::from_le_bytes([buf[i], buf[i + 1], buf[i + 2], buf[i + 3]]);
                 map.refs.insert(name, v2::TypedRef::Node(v));
                 i += 4;
             }
-            4 => { // FontRef
-                if i + 4 > buf.len() { break; }
-                let v = u32::from_le_bytes([buf[i], buf[i+1], buf[i+2], buf[i+3]]);
+            4 => {
+                // FontRef
+                if i + 4 > buf.len() {
+                    break;
+                }
+                let v = u32::from_le_bytes([buf[i], buf[i + 1], buf[i + 2], buf[i + 3]]);
                 map.refs.insert(name, v2::TypedRef::Font(v));
                 i += 4;
             }
-            5 => { // LutRef
-                if i + 4 > buf.len() { break; }
-                let v = u32::from_le_bytes([buf[i], buf[i+1], buf[i+2], buf[i+3]]);
+            5 => {
+                // LutRef
+                if i + 4 > buf.len() {
+                    break;
+                }
+                let v = u32::from_le_bytes([buf[i], buf[i + 1], buf[i + 2], buf[i + 3]]);
                 map.refs.insert(name, v2::TypedRef::Lut(v));
                 i += 4;
             }
@@ -1592,8 +1725,9 @@ mod tests {
 
         // Create a solid white 2x2 source manually
         let source = SourceNode {
-            pixels: vec![0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0,
-                         0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0],
+            pixels: vec![
+                0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0,
+            ],
             info: NodeInfo {
                 width: 2,
                 height: 2,
@@ -1610,7 +1744,9 @@ mod tests {
         // Apply brightness -0.25 (should cancel out)
         let mut params2 = ParamMap::new();
         params2.floats.insert("amount".into(), -0.25);
-        let back_id = pipe.apply_filter(bright_id, "brightness", &params2).unwrap();
+        let back_id = pipe
+            .apply_filter(bright_id, "brightness", &params2)
+            .unwrap();
 
         // Render — should be back to 0.5 (fusion composes +0.25 and -0.25 = +0.0)
         let output = pipe.render(back_id).unwrap();
@@ -1670,11 +1806,18 @@ mod tests {
         pipe1.set_layer_cache(lc.clone());
         let source1 = SourceNode {
             pixels: vec![0.5, 0.3, 0.1, 1.0],
-            info: NodeInfo { width: 1, height: 1, color_space: ColorSpace::Linear },
+            info: NodeInfo {
+                width: 1,
+                height: 1,
+                color_space: ColorSpace::Linear,
+            },
         };
         // Use add_node_with_hash to simulate read() with known hash
         let src_hash = v2::source_hash(b"test_image");
-        let src_id1 = pipe1.graph.borrow_mut().add_node_with_hash(Box::new(source1), src_hash);
+        let src_id1 = pipe1
+            .graph
+            .borrow_mut()
+            .add_node_with_hash(Box::new(source1), src_hash);
 
         let mut params = ParamMap::new();
         params.floats.insert("amount".into(), 0.25);
@@ -1683,16 +1826,26 @@ mod tests {
 
         // Check stats: all misses, entries stored
         let stats1 = lc.borrow().stats();
-        assert!(stats1.entries > 0, "layer cache should have entries after first run");
+        assert!(
+            stats1.entries > 0,
+            "layer cache should have entries after first run"
+        );
 
         // Pipeline 2: same source + same filter → should get cache hits
         let pipe2 = PipelineResource::new();
         pipe2.set_layer_cache(lc.clone());
         let source2 = SourceNode {
             pixels: vec![0.5, 0.3, 0.1, 1.0],
-            info: NodeInfo { width: 1, height: 1, color_space: ColorSpace::Linear },
+            info: NodeInfo {
+                width: 1,
+                height: 1,
+                color_space: ColorSpace::Linear,
+            },
         };
-        let src_id2 = pipe2.graph.borrow_mut().add_node_with_hash(Box::new(source2), src_hash);
+        let src_id2 = pipe2
+            .graph
+            .borrow_mut()
+            .add_node_with_hash(Box::new(source2), src_hash);
 
         let mut params2 = ParamMap::new();
         params2.floats.insert("amount".into(), 0.25);
@@ -1700,11 +1853,17 @@ mod tests {
         let output2 = pipe2.render(bright_id2).unwrap();
 
         // Same output
-        assert_eq!(output1, output2, "cached result should match computed result");
+        assert_eq!(
+            output1, output2,
+            "cached result should match computed result"
+        );
 
         // Should have hits
         let stats2 = lc.borrow().stats();
-        assert!(stats2.hits > 0, "layer cache should have hits on second run");
+        assert!(
+            stats2.hits > 0,
+            "layer cache should have hits on second run"
+        );
     }
 
     #[test]
@@ -1716,10 +1875,17 @@ mod tests {
         pipe1.set_layer_cache(lc.clone());
         let source1 = SourceNode {
             pixels: vec![0.5, 0.3, 0.1, 1.0],
-            info: NodeInfo { width: 1, height: 1, color_space: ColorSpace::Linear },
+            info: NodeInfo {
+                width: 1,
+                height: 1,
+                color_space: ColorSpace::Linear,
+            },
         };
         let src_hash = v2::source_hash(b"test_image_2");
-        let src_id = pipe1.graph.borrow_mut().add_node_with_hash(Box::new(source1), src_hash);
+        let src_id = pipe1
+            .graph
+            .borrow_mut()
+            .add_node_with_hash(Box::new(source1), src_hash);
 
         let mut p1 = ParamMap::new();
         p1.floats.insert("amount".into(), 0.25);
@@ -1738,9 +1904,16 @@ mod tests {
         pipe2.set_layer_cache(lc.clone());
         let source2 = SourceNode {
             pixels: vec![0.5, 0.3, 0.1, 1.0],
-            info: NodeInfo { width: 1, height: 1, color_space: ColorSpace::Linear },
+            info: NodeInfo {
+                width: 1,
+                height: 1,
+                color_space: ColorSpace::Linear,
+            },
         };
-        let src_id2 = pipe2.graph.borrow_mut().add_node_with_hash(Box::new(source2), src_hash);
+        let src_id2 = pipe2
+            .graph
+            .borrow_mut()
+            .add_node_with_hash(Box::new(source2), src_hash);
 
         let mut p1b = ParamMap::new();
         p1b.floats.insert("amount".into(), 0.25);
@@ -1797,19 +1970,24 @@ mod tests {
         assert_eq!(data.len(), 24); // 3 points * 8 floats
         assert_eq!(data[0], 100.0); // first point x
         assert_eq!(data[8], 110.0); // second point x
-        assert_eq!(data[18], 0.3);  // third point pressure
+        assert_eq!(data[18], 0.3); // third point pressure
 
         // Verify apply_stroke with passthrough
         let pipe = PipelineResource::new();
         let source = SourceNode {
             pixels: vec![0.5, 0.3, 0.1, 1.0],
-            info: NodeInfo { width: 1, height: 1, color_space: ColorSpace::Linear },
+            info: NodeInfo {
+                width: 1,
+                height: 1,
+                color_space: ColorSpace::Linear,
+            },
         };
         let src_id = pipe.graph.borrow_mut().add_node(Box::new(source));
-        let result_id = pipe.apply_stroke(src_id, &stroke, [1.0, 0.0, 0.0], "normal").unwrap();
+        let result_id = pipe
+            .apply_stroke(src_id, &stroke, [1.0, 0.0, 0.0], "normal")
+            .unwrap();
         let output = pipe.render(result_id).unwrap();
         // Passthrough: output should match source
         assert_eq!(output, vec![0.5, 0.3, 0.1, 1.0]);
     }
-
 }

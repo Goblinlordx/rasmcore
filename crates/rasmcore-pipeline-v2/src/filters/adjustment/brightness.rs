@@ -11,7 +11,12 @@ use crate::ops::{Filter, PointOpExpr};
 ///
 /// For physically-accurate exposure control in linear light, use `Exposure`.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "brightness", category = "adjustment", cost = "O(n)", doc = "docs/operations/filters/adjustment/brightness.adoc")]
+#[filter(
+    name = "brightness",
+    category = "adjustment",
+    cost = "O(n)",
+    doc = "docs/operations/filters/adjustment/brightness.adoc"
+)]
 pub struct Brightness {
     /// Additive offset applied to each RGB channel (in ACEScct log space).
     #[param(min = -1.0, max = 1.0, step = 0.02, default = 0.0)]

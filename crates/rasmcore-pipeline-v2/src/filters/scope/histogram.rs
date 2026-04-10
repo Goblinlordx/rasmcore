@@ -1,6 +1,6 @@
 //! Histogram scope implementation.
 
-use super::{new_scope_buf, clamp_buf, plot_dot, fill_bar};
+use super::{clamp_buf, fill_bar, new_scope_buf, plot_dot};
 
 // ─── Scope implementations ─────────────────────────────────────────────────
 
@@ -24,8 +24,14 @@ pub fn compute_histogram(input: &[f32], _w: u32, _h: u32, size: u32, log_scale: 
     }
 
     // Find max for normalization
-    let max_count = bins_r.iter().chain(bins_g.iter()).chain(bins_b.iter())
-        .copied().max().unwrap_or(1).max(1);
+    let max_count = bins_r
+        .iter()
+        .chain(bins_g.iter())
+        .chain(bins_b.iter())
+        .copied()
+        .max()
+        .unwrap_or(1)
+        .max(1);
 
     let mut buf = new_scope_buf(size);
 
@@ -42,9 +48,36 @@ pub fn compute_histogram(input: &[f32], _w: u32, _h: u32, size: u32, log_scale: 
         };
 
         // Draw channels with partial transparency for overlap visibility
-        fill_bar(&mut buf, size, x, normalize(bins_r[i as usize]), 0.9, 0.1, 0.1, 0.5);
-        fill_bar(&mut buf, size, x, normalize(bins_g[i as usize]), 0.1, 0.9, 0.1, 0.5);
-        fill_bar(&mut buf, size, x, normalize(bins_b[i as usize]), 0.1, 0.1, 0.9, 0.5);
+        fill_bar(
+            &mut buf,
+            size,
+            x,
+            normalize(bins_r[i as usize]),
+            0.9,
+            0.1,
+            0.1,
+            0.5,
+        );
+        fill_bar(
+            &mut buf,
+            size,
+            x,
+            normalize(bins_g[i as usize]),
+            0.1,
+            0.9,
+            0.1,
+            0.5,
+        );
+        fill_bar(
+            &mut buf,
+            size,
+            x,
+            normalize(bins_b[i as usize]),
+            0.1,
+            0.1,
+            0.9,
+            0.5,
+        );
         // Luma outline (draw on top, thin)
         let lh = normalize(bins_l[i as usize]);
         if lh > 0 {

@@ -9,9 +9,9 @@ use std::path::Path;
 use butteraugli::{ButteraugliParams, butteraugli};
 use dssim_core::Dssim;
 use imgref::Img;
+use rasmcore_image::domain::filter_traits::CpuFilter;
 use rasmcore_image::domain::types::*;
 use rasmcore_image::domain::types::{DecodedImage, DisposalMethod, FrameInfo, FrameSequence};
-use rasmcore_image::domain::filter_traits::CpuFilter;
 use rasmcore_image::domain::{concat, decoder, encoder, filters, transform};
 use rasmcore_pipeline::Rect;
 use rgb::RGB8;
@@ -38,7 +38,10 @@ macro_rules! require_fixture {
         match try_load_fixture($name) {
             Some(d) => d,
             None => {
-                eprintln!("SKIP: fixture {:?} not found (run tests/fixtures/generate.sh)", $name);
+                eprintln!(
+                    "SKIP: fixture {:?} not found (run tests/fixtures/generate.sh)",
+                    $name
+                );
                 return;
             }
         }
@@ -51,14 +54,15 @@ macro_rules! require_reference {
         match try_load_reference($name) {
             Some(d) => d,
             None => {
-                eprintln!("SKIP: reference {:?} not found (run tests/fixtures/generate.sh)", $name);
+                eprintln!(
+                    "SKIP: reference {:?} not found (run tests/fixtures/generate.sh)",
+                    $name
+                );
                 return;
             }
         }
     };
 }
-
-
 
 /// Decode image data and convert to Rgb8, handling 16-bit sources by truncating.
 fn decode_to_rgb8(data: &[u8]) -> DecodedImage {
@@ -179,7 +183,6 @@ fn parity_decode_png_dimensions() {
 
 #[test]
 fn parity_decode_all_formats() {
-
     for (name, expected_format) in [
         ("gradient_64x64.png", Some("png")),
         ("gradient_64x64.jpeg", Some("jpeg")),
@@ -472,7 +475,6 @@ fn parity_png_encode_all_compressions_pixel_exact() {
 
 #[test]
 fn parity_png_encode_all_filters_pixel_exact() {
-
     use encoder::png::PngFilterType;
     let data = require_fixture!("photo_256x256.png");
     let decoded = decoder::decode(&data).unwrap();
@@ -502,7 +504,6 @@ fn parity_png_encode_all_filters_pixel_exact() {
 
 #[test]
 fn parity_png_encode_vs_imagemagick_pixel_exact() {
-
     // Both rasmcore and ImageMagick produce lossless PNG —
     // decoded pixels MUST be identical regardless of compression settings.
     let data = require_fixture!("photo_256x256.png");
@@ -590,7 +591,6 @@ fn dssim_score(a: &[u8], b: &[u8], width: usize, height: usize) -> f64 {
 
 #[test]
 fn parity_jpeg_determinism() {
-
     // Encode the same input twice — output must be byte-identical.
     let data = require_fixture!("photo_256x256.png");
     let decoded = decode_to_rgb8(&data);
@@ -620,7 +620,6 @@ fn parity_jpeg_determinism_progressive() {
 
 #[test]
 fn parity_jpeg_quality_per_byte_butteraugli() {
-
     // Quality-per-byte comparison: zenjpeg (jpegli quality scale) vs ImageMagick
     // (libjpeg-turbo). Since quality scales differ between encoders, we compare
     // the Butteraugli-distance-per-kilobyte ratio. zenjpeg should achieve equal
@@ -673,7 +672,6 @@ fn parity_jpeg_quality_per_byte_butteraugli() {
 
 #[test]
 fn parity_jpeg_quality_per_byte_dssim() {
-
     let source_data = require_fixture!("photo_256x256.png");
     let source = decode_to_rgb8(&source_data);
     let (w, h) = (source.info.width as usize, source.info.height as usize);
@@ -720,7 +718,6 @@ fn parity_jpeg_quality_per_byte_dssim() {
 
 #[test]
 fn parity_jpeg_quality_curve_filesize() {
-
     // Verify that at higher quality levels (where trellis quantization shines),
     // zenjpeg produces competitive file sizes.
     let source_data = require_fixture!("photo_256x256.png");
@@ -748,7 +745,6 @@ fn parity_jpeg_quality_curve_filesize() {
 
 #[test]
 fn parity_jpeg_quality_monotonic() {
-
     // Higher quality must produce larger files.
     let source_data = require_fixture!("photo_256x256.png");
     let source = decode_to_rgb8(&source_data);
@@ -782,7 +778,6 @@ fn parity_jpeg_quality_monotonic() {
 
 #[test]
 fn parity_jpeg_progressive_structure() {
-
     // Progressive JPEG must contain SOS markers (multiple scans).
     let source_data = require_fixture!("photo_256x256.png");
     let source = decode_to_rgb8(&source_data);
@@ -1159,7 +1154,10 @@ macro_rules! require_fixture_rgb {
         match try_decode_fixture_rgb($name) {
             Some(d) => d,
             None => {
-                eprintln!("SKIP: fixture {:?} not found (run tests/fixtures/generate.sh)", $name);
+                eprintln!(
+                    "SKIP: fixture {:?} not found (run tests/fixtures/generate.sh)",
+                    $name
+                );
                 return;
             }
         }
@@ -1171,7 +1169,10 @@ macro_rules! require_reference_rgb {
         match try_decode_reference_rgb($name) {
             Some(d) => d,
             None => {
-                eprintln!("SKIP: reference {:?} not found (run tests/fixtures/generate.sh)", $name);
+                eprintln!(
+                    "SKIP: reference {:?} not found (run tests/fixtures/generate.sh)",
+                    $name
+                );
                 return;
             }
         }
@@ -1180,7 +1181,6 @@ macro_rules! require_reference_rgb {
 
 #[test]
 fn parity_concat_horizontal_same_size() {
-
     let (red_px, red_info) = require_fixture_rgb!("solid_red_32x32.png");
     let (blue_px, blue_info) = require_fixture_rgb!("solid_blue_32x32.png");
 
@@ -1216,7 +1216,6 @@ fn parity_concat_horizontal_same_size() {
 
 #[test]
 fn parity_concat_vertical_same_size() {
-
     let (red_px, red_info) = require_fixture_rgb!("solid_red_32x32.png");
     let (blue_px, blue_info) = require_fixture_rgb!("solid_blue_32x32.png");
 
@@ -1244,7 +1243,6 @@ fn parity_concat_vertical_same_size() {
 
 #[test]
 fn parity_concat_horizontal_different_heights() {
-
     let (red_px, red_info) = require_fixture_rgb!("solid_red_32x32.png");
     let (green_px, green_info) = require_fixture_rgb!("solid_green_48x24.png");
 
@@ -1282,7 +1280,6 @@ fn parity_concat_horizontal_different_heights() {
 
 #[test]
 fn parity_concat_vertical_different_widths() {
-
     let (red_px, red_info) = require_fixture_rgb!("solid_red_32x32.png");
     let (green_px, green_info) = require_fixture_rgb!("solid_green_48x24.png");
 
@@ -1742,7 +1739,11 @@ fn pixels_to_8bit(pixels: &[u8], format: PixelFormat) -> Vec<u8> {
 /// Returns the output pixels converted to 8-bit for comparison.
 fn apply_distortion_filter<F>(decoded: &DecodedImage, apply: F) -> Vec<u8>
 where
-    F: FnOnce(Rect, &mut dyn FnMut(Rect) -> Result<Vec<u8>, rasmcore_image::domain::error::ImageError>, &ImageInfo) -> Result<Vec<u8>, rasmcore_image::domain::error::ImageError>,
+    F: FnOnce(
+        Rect,
+        &mut dyn FnMut(Rect) -> Result<Vec<u8>, rasmcore_image::domain::error::ImageError>,
+        &ImageInfo,
+    ) -> Result<Vec<u8>, rasmcore_image::domain::error::ImageError>,
 {
     let info = &decoded.info;
     let pixels = &decoded.pixels;
@@ -1754,7 +1755,6 @@ where
 
 #[test]
 fn parity_distort_barrel() {
-
     // Barrel distortion k1=0.3, k2=0.0 vs ImageMagick -distort Barrel "0.3 0 0 1"
     let data = require_fixture!("gradient_64x64_8bit.png");
     let decoded = decoder::decode(&data).unwrap();
@@ -1778,7 +1778,6 @@ fn parity_distort_barrel() {
 
 #[test]
 fn parity_distort_spherize() {
-
     // Spherize amount=0.5 vs Python numpy powf-based reference
     let data = require_fixture!("gradient_64x64_8bit.png");
     let decoded = decoder::decode(&data).unwrap();
@@ -1799,12 +1798,14 @@ fn parity_distort_spherize() {
 
 #[test]
 fn parity_distort_swirl() {
-
     // Swirl 90 degrees vs ImageMagick -swirl 90
     let data = require_fixture!("gradient_64x64_8bit.png");
     let decoded = decoder::decode(&data).unwrap();
 
-    let config = filters::SwirlParams { angle: 90.0, radius: 0.0 };
+    let config = filters::SwirlParams {
+        angle: 90.0,
+        radius: 0.0,
+    };
     let result = apply_distortion_filter(&decoded, |rect, upstream, info| {
         config.compute(rect, upstream, info)
     });
@@ -1820,7 +1821,6 @@ fn parity_distort_swirl() {
 
 #[test]
 fn parity_distort_ripple() {
-
     // Ripple amplitude=8, wavelength=40 vs Python numpy reference
     let data = require_fixture!("gradient_64x64_8bit.png");
     let decoded = decoder::decode(&data).unwrap();
@@ -1846,7 +1846,6 @@ fn parity_distort_ripple() {
 
 #[test]
 fn parity_distort_wave() {
-
     // Wave amplitude=10, wavelength=50, horizontal vs Python numpy reference
     let data = require_fixture!("gradient_64x64_8bit.png");
     let decoded = decoder::decode(&data).unwrap();
@@ -1871,7 +1870,6 @@ fn parity_distort_wave() {
 
 #[test]
 fn parity_distort_polar_depolar_roundtrip() {
-
     // Apply polar then depolar — should recover original within tolerance.
     // Both now use IM pixel-center convention. Two EWA interpolation passes
     // accumulate some error, but center region should be well within MAE < 3.0.
@@ -1883,11 +1881,15 @@ fn parity_distort_polar_depolar_roundtrip() {
 
     // polar: Cartesian -> polar
     let mut upstream_polar = |_: Rect| Ok(pixels.to_vec());
-    let polar_pixels = filters::PolarParams{}.compute(full, &mut upstream_polar, info).unwrap();
+    let polar_pixels = filters::PolarParams {}
+        .compute(full, &mut upstream_polar, info)
+        .unwrap();
 
     // depolar: polar -> Cartesian (inverse)
     let mut upstream_depolar = |_: Rect| Ok(polar_pixels.to_vec());
-    let roundtrip_pixels = filters::DepolarParams{}.compute(full, &mut upstream_depolar, info).unwrap();
+    let roundtrip_pixels = filters::DepolarParams {}
+        .compute(full, &mut upstream_depolar, info)
+        .unwrap();
 
     // Compare center region only (avoid edge artifacts from polar mapping)
     let ch = info.format.bytes_per_pixel() as usize;
@@ -1907,8 +1909,5 @@ fn parity_distort_polar_depolar_roundtrip() {
     }
     let mae = sum_diff / count as f64;
     eprintln!("polar/depolar roundtrip center-region MAE: {mae:.3}");
-    assert!(
-        mae < 3.0,
-        "polar/depolar roundtrip MAE too high: {mae:.3}"
-    );
+    assert!(mae < 3.0, "polar/depolar roundtrip MAE too high: {mae:.3}");
 }

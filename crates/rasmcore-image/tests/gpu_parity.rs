@@ -5,8 +5,8 @@
 //! on machines without a GPU.
 
 use rasmcore_image::domain::color_lut::ColorLut3D;
-use rasmcore_image::domain::filters;
 use rasmcore_image::domain::filter_traits::CpuFilter;
+use rasmcore_image::domain::filters;
 use rasmcore_image::domain::types::*;
 use rasmcore_pipeline::Rect;
 use rasmcore_pipeline::gpu::{GpuCapable, GpuError, GpuExecutor, GpuOp};
@@ -134,89 +134,202 @@ impl GpuExecutor for TestGpuExecutor {
             match op {
                 GpuOp::Snapshot { binding } => {
                     let snap = self.device.create_buffer(&wgpu::BufferDescriptor {
-                        label: Some("snap"), size: buf_size,
+                        label: Some("snap"),
+                        size: buf_size,
                         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
                         mapped_at_creation: false,
                     });
-                    let mut enc = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+                    let mut enc = self
+                        .device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
                     enc.copy_buffer_to_buffer(read_buf, 0, &snap, 0, buf_size);
                     self.queue.submit(std::iter::once(enc.finish()));
                     snapshots.insert(*binding, snap);
                 }
-                GpuOp::Compute { shader, entry_point, workgroup_size, params, extra_buffers, .. } => {
+                GpuOp::Compute {
+                    shader,
+                    entry_point,
+                    workgroup_size,
+                    params,
+                    extra_buffers,
+                    ..
+                } => {
                     let shader_module = self.get_shader(shader);
                     let uniform_buf = if !params.is_empty() {
                         let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
-                            label: None, size: params.len() as u64,
+                            label: None,
+                            size: params.len() as u64,
                             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                             mapped_at_creation: false,
                         });
                         self.queue.write_buffer(&buf, 0, params);
                         Some(buf)
-                    } else { None };
-                    let extra_bufs: Vec<wgpu::Buffer> = extra_buffers.iter().map(|data| {
-                        let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
-                            label: None, size: data.len() as u64,
-                            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-                            mapped_at_creation: false,
-                        });
-                        self.queue.write_buffer(&buf, 0, data);
-                        buf
-                    }).collect();
+                    } else {
+                        None
+                    };
+                    let extra_bufs: Vec<wgpu::Buffer> = extra_buffers
+                        .iter()
+                        .map(|data| {
+                            let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+                                label: None,
+                                size: data.len() as u64,
+                                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                                mapped_at_creation: false,
+                            });
+                            self.queue.write_buffer(&buf, 0, data);
+                            buf
+                        })
+                        .collect();
 
                     let mut next_binding = 2u32;
-                    if uniform_buf.is_some() { next_binding += 1; }
+                    if uniform_buf.is_some() {
+                        next_binding += 1;
+                    }
                     let extra_start = next_binding;
                     next_binding += extra_bufs.len() as u32;
 
                     let mut layout_entries = vec![
-                        wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }, count: None },
-                        wgpu::BindGroupLayoutEntry { binding: 1, visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: false }, has_dynamic_offset: false, min_binding_size: None }, count: None },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: false },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
                     ];
                     if uniform_buf.is_some() {
-                        layout_entries.push(wgpu::BindGroupLayoutEntry { binding: 2, visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }, count: None });
+                        layout_entries.push(wgpu::BindGroupLayoutEntry {
+                            binding: 2,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        });
                     }
                     for idx in 0..extra_bufs.len() as u32 {
-                        layout_entries.push(wgpu::BindGroupLayoutEntry { binding: extra_start + idx, visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }, count: None });
+                        layout_entries.push(wgpu::BindGroupLayoutEntry {
+                            binding: extra_start + idx,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        });
                     }
-                    let mut sorted_snaps: Vec<u32> = snapshots.keys().copied().filter(|b| *b >= next_binding).collect();
+                    let mut sorted_snaps: Vec<u32> = snapshots
+                        .keys()
+                        .copied()
+                        .filter(|b| *b >= next_binding)
+                        .collect();
                     sorted_snaps.sort();
                     for &sb in &sorted_snaps {
-                        layout_entries.push(wgpu::BindGroupLayoutEntry { binding: sb, visibility: wgpu::ShaderStages::COMPUTE,
-                            ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None }, count: None });
+                        layout_entries.push(wgpu::BindGroupLayoutEntry {
+                            binding: sb,
+                            visibility: wgpu::ShaderStages::COMPUTE,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        });
                     }
 
-                    let bgl = self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: None, entries: &layout_entries });
+                    let bgl =
+                        self.device
+                            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                                label: None,
+                                entries: &layout_entries,
+                            });
                     let mut bg_entries = vec![
-                        wgpu::BindGroupEntry { binding: 0, resource: read_buf.as_entire_binding() },
-                        wgpu::BindGroupEntry { binding: 1, resource: write_buf.as_entire_binding() },
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: read_buf.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: write_buf.as_entire_binding(),
+                        },
                     ];
                     if let Some(ref ub) = uniform_buf {
-                        bg_entries.push(wgpu::BindGroupEntry { binding: 2, resource: ub.as_entire_binding() });
+                        bg_entries.push(wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: ub.as_entire_binding(),
+                        });
                     }
                     for (idx, eb) in extra_bufs.iter().enumerate() {
-                        bg_entries.push(wgpu::BindGroupEntry { binding: extra_start + idx as u32, resource: eb.as_entire_binding() });
+                        bg_entries.push(wgpu::BindGroupEntry {
+                            binding: extra_start + idx as u32,
+                            resource: eb.as_entire_binding(),
+                        });
                     }
                     for &sb in &sorted_snaps {
-                        bg_entries.push(wgpu::BindGroupEntry { binding: sb, resource: snapshots[&sb].as_entire_binding() });
+                        bg_entries.push(wgpu::BindGroupEntry {
+                            binding: sb,
+                            resource: snapshots[&sb].as_entire_binding(),
+                        });
                     }
-                    let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor { label: None, layout: &bgl, entries: &bg_entries });
-                    let pl = self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: None, bind_group_layouts: &[&bgl], push_constant_ranges: &[] });
-                    let pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                        label: None, layout: Some(&pl), module: &shader_module, entry_point: Some(entry_point),
-                        compilation_options: Default::default(), cache: None,
+                    let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: None,
+                        layout: &bgl,
+                        entries: &bg_entries,
                     });
+                    let pl = self
+                        .device
+                        .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                            label: None,
+                            bind_group_layouts: &[&bgl],
+                            push_constant_ranges: &[],
+                        });
+                    let pipeline =
+                        self.device
+                            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                                label: None,
+                                layout: Some(&pl),
+                                module: &shader_module,
+                                entry_point: Some(entry_point),
+                                compilation_options: Default::default(),
+                                cache: None,
+                            });
                     let [wg_x, wg_y, _] = *workgroup_size;
-                    let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-                    { let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: None, timestamp_writes: None });
-                      pass.set_pipeline(&pipeline); pass.set_bind_group(0, &bg, &[]);
-                      pass.dispatch_workgroups((width + wg_x - 1) / wg_x, (height + wg_y - 1) / wg_y, 1); }
+                    let mut encoder = self
+                        .device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+                    {
+                        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                            label: None,
+                            timestamp_writes: None,
+                        });
+                        pass.set_pipeline(&pipeline);
+                        pass.set_bind_group(0, &bg, &[]);
+                        pass.dispatch_workgroups(
+                            (width + wg_x - 1) / wg_x,
+                            (height + wg_y - 1) / wg_y,
+                            1,
+                        );
+                    }
                     self.queue.submit(std::iter::once(encoder.finish()));
-                    if i < ops.len() - 1 { std::mem::swap(&mut read_buf, &mut write_buf); }
+                    if i < ops.len() - 1 {
+                        std::mem::swap(&mut read_buf, &mut write_buf);
+                    }
                 }
             }
         }
@@ -364,19 +477,24 @@ fn gpu_cpu_parity_gaussian_blur() {
     let rect = Rect::new(0, 0, w, h);
 
     // CPU path
-    let cpu_output = filters::BlurParams { radius: 3.0 }.compute(
-        rect,
-        &mut |_| Ok(pixels.clone()),
-        &info,
-    )
-    .unwrap();
+    let cpu_output = filters::BlurParams { radius: 3.0 }
+        .compute(rect, &mut |_| Ok(pixels.clone()), &info)
+        .unwrap();
 
     // GPU path
     let node = BlurNode::new(0, info.clone(), filters::BlurParams { radius: 3.0 });
     let ops = node
         .gpu_ops(w, h)
         .expect("blur should support GPU for RGBA8");
-    let gpu_output = gpu.execute_with_format(&ops, &pixels, w, h, rasmcore_pipeline::gpu::BufferFormat::U32Packed).unwrap();
+    let gpu_output = gpu
+        .execute_with_format(
+            &ops,
+            &pixels,
+            w,
+            h,
+            rasmcore_pipeline::gpu::BufferFormat::U32Packed,
+        )
+        .unwrap();
 
     // Tolerance accounts for edge-handling differences: CPU expands+crops
     // with border reflection, GPU clamps coordinates at image bounds.
@@ -419,15 +537,24 @@ fn gpu_cpu_parity_bilateral() {
     };
 
     // CPU path (RGB8)
-    let cpu_rgb =
-        config.compute(rect, &mut |_| Ok(rgb_pixels.clone()), &info_rgb).unwrap();
+    let cpu_rgb = config
+        .compute(rect, &mut |_| Ok(rgb_pixels.clone()), &info_rgb)
+        .unwrap();
 
     // GPU path (RGBA8)
     let node = BilateralNode::new(0, info_rgba.clone(), config.clone());
     let ops = node
         .gpu_ops(w, h)
         .expect("bilateral should support GPU for RGBA8");
-    let gpu_rgba = gpu.execute_with_format(&ops, &rgba_pixels, w, h, rasmcore_pipeline::gpu::BufferFormat::U32Packed).unwrap();
+    let gpu_rgba = gpu
+        .execute_with_format(
+            &ops,
+            &rgba_pixels,
+            w,
+            h,
+            rasmcore_pipeline::gpu::BufferFormat::U32Packed,
+        )
+        .unwrap();
 
     // Compare RGB channels only (GPU adds alpha passthrough)
     let gpu_rgb = rgba8_to_rgb8(&gpu_rgba);
@@ -458,14 +585,24 @@ fn gpu_cpu_parity_spherize() {
     let config = filters::SpherizeParams { amount: 0.15 };
 
     // CPU path
-    let cpu_output = config.compute(rect, &mut |_| Ok(pixels.clone()), &info).unwrap();
+    let cpu_output = config
+        .compute(rect, &mut |_| Ok(pixels.clone()), &info)
+        .unwrap();
 
     // GPU path
     let node = SpherizeNode::new(0, info.clone(), config.clone());
     let ops = node
         .gpu_ops(w, h)
         .expect("spherize should support GPU for RGBA8");
-    let gpu_output = gpu.execute_with_format(&ops, &pixels, w, h, rasmcore_pipeline::gpu::BufferFormat::U32Packed).unwrap();
+    let gpu_output = gpu
+        .execute_with_format(
+            &ops,
+            &pixels,
+            w,
+            h,
+            rasmcore_pipeline::gpu::BufferFormat::U32Packed,
+        )
+        .unwrap();
 
     // Wider tolerance: different distortion formulas (powf vs asin) and
     // different sampling (EWA vs bilinear) produce visually similar but
@@ -520,9 +657,9 @@ fn gpu_cpu_parity_lut3d() {
         lut_buf.extend_from_slice(&0.0f32.to_le_bytes());
     }
 
-    let lut3d_shader = rasmcore_gpu_shaders::with_pixel_ops(
-        include_str!("../src/domain/pipeline/shaders/lut3d.wgsl"),
-    );
+    let lut3d_shader = rasmcore_gpu_shaders::with_pixel_ops(include_str!(
+        "../src/domain/pipeline/shaders/lut3d.wgsl"
+    ));
     let ops = vec![GpuOp::Compute {
         shader: lut3d_shader,
         entry_point: "main",
@@ -532,7 +669,15 @@ fn gpu_cpu_parity_lut3d() {
         buffer_format: Default::default(),
     }];
 
-    let gpu_output = gpu.execute_with_format(&ops, &pixels, w, h, rasmcore_pipeline::gpu::BufferFormat::U32Packed).unwrap();
+    let gpu_output = gpu
+        .execute_with_format(
+            &ops,
+            &pixels,
+            w,
+            h,
+            rasmcore_pipeline::gpu::BufferFormat::U32Packed,
+        )
+        .unwrap();
 
     assert_gpu_parity("lut3d warm_grade grid=17", &cpu_output, &gpu_output, 1.0);
 }
@@ -560,8 +705,8 @@ fn f32_bytes_to_rgba8(f32_bytes: &[u8]) -> Vec<u8> {
 
 #[test]
 fn gpu_f32_parity_gaussian_blur() {
-    use rasmcore_pipeline::gpu::BufferFormat;
     use rasmcore_image::domain::filter_traits::GpuFilter;
+    use rasmcore_pipeline::gpu::BufferFormat;
 
     let gpu = match try_gpu() {
         Some(g) => g,
@@ -577,17 +722,25 @@ fn gpu_f32_parity_gaussian_blur() {
     let config = filters::BlurParams { radius: 3.0 };
 
     // CPU reference (u8 domain)
-    let cpu_output_u8 = config.compute(rect, &mut |_| Ok(pixels_u8.clone()), &info).unwrap();
+    let cpu_output_u8 = config
+        .compute(rect, &mut |_| Ok(pixels_u8.clone()), &info)
+        .unwrap();
 
     // GPU u32-packed (baseline)
-    let ops_u32 = config.gpu_ops_with_format(w, h, BufferFormat::U32Packed)
+    let ops_u32 = config
+        .gpu_ops_with_format(w, h, BufferFormat::U32Packed)
         .expect("blur should support u32 GPU");
-    let gpu_u32 = gpu.execute_with_format(&ops_u32, &pixels_u8, w, h, BufferFormat::U32Packed).unwrap();
+    let gpu_u32 = gpu
+        .execute_with_format(&ops_u32, &pixels_u8, w, h, BufferFormat::U32Packed)
+        .unwrap();
 
     // GPU f32 vec4
-    let ops_f32 = config.gpu_ops_with_format(w, h, BufferFormat::F32Vec4)
+    let ops_f32 = config
+        .gpu_ops_with_format(w, h, BufferFormat::F32Vec4)
         .expect("blur should support f32 GPU");
-    let gpu_f32_bytes = gpu.execute_with_format(&ops_f32, &pixels_f32, w, h, BufferFormat::F32Vec4).unwrap();
+    let gpu_f32_bytes = gpu
+        .execute_with_format(&ops_f32, &pixels_f32, w, h, BufferFormat::F32Vec4)
+        .unwrap();
 
     // Convert f32 GPU output back to u8 for comparison
     let gpu_f32_as_u8 = f32_bytes_to_rgba8(&gpu_f32_bytes);
@@ -618,7 +771,8 @@ fn gpu_f32_parity_affine_resample() {
     let pixels_f32 = rgba8_to_f32_bytes(&pixels_u8);
     let info_u8 = info_rgba8(w, h);
     let info_f32 = ImageInfo {
-        width: w, height: h,
+        width: w,
+        height: h,
         format: PixelFormat::Rgba32f,
         color_space: ColorSpace::Srgb,
     };
@@ -633,7 +787,8 @@ fn gpu_f32_parity_affine_resample() {
     let node_u32 = rasmcore_image::domain::pipeline::nodes::transform::ComposedAffineNode::new(
         0, info_u8, matrix, out_w, out_h,
     );
-    let ops_u32 = node_u32.gpu_ops_with_format(out_w, out_h, BufferFormat::U32Packed)
+    let ops_u32 = node_u32
+        .gpu_ops_with_format(out_w, out_h, BufferFormat::U32Packed)
         .expect("affine should support u32 GPU");
     // Pad input to output-sized buffer (executor expects width*height*bpp input)
     let mut input_u32_padded = vec![0u8; (out_w * out_h * 4) as usize];
@@ -642,31 +797,58 @@ fn gpu_f32_parity_affine_resample() {
         let src_off = (y * w * 4) as usize;
         let dst_off = (y * out_w * 4) as usize;
         let row_bytes = (out_w.min(w) * 4) as usize;
-        input_u32_padded[dst_off..dst_off + row_bytes].copy_from_slice(&pixels_u8[src_off..src_off + row_bytes]);
+        input_u32_padded[dst_off..dst_off + row_bytes]
+            .copy_from_slice(&pixels_u8[src_off..src_off + row_bytes]);
     }
-    let gpu_u32 = gpu.execute_with_format(&ops_u32, &input_u32_padded, out_w, out_h, BufferFormat::U32Packed).unwrap();
+    let gpu_u32 = gpu
+        .execute_with_format(
+            &ops_u32,
+            &input_u32_padded,
+            out_w,
+            out_h,
+            BufferFormat::U32Packed,
+        )
+        .unwrap();
 
     // GPU f32
     let node_f32 = rasmcore_image::domain::pipeline::nodes::transform::ComposedAffineNode::new(
         0, info_f32, matrix, out_w, out_h,
     );
-    let ops_f32 = node_f32.gpu_ops_with_format(out_w, out_h, BufferFormat::F32Vec4)
+    let ops_f32 = node_f32
+        .gpu_ops_with_format(out_w, out_h, BufferFormat::F32Vec4)
         .expect("affine should support f32 GPU");
     let mut input_f32_padded = vec![0u8; (out_w * out_h * 16) as usize];
     for y in 0..out_h.min(h) {
         let src_off = (y * w * 16) as usize;
         let dst_off = (y * out_w * 16) as usize;
         let row_bytes = (out_w.min(w) * 16) as usize;
-        input_f32_padded[dst_off..dst_off + row_bytes].copy_from_slice(&pixels_f32[src_off..src_off + row_bytes]);
+        input_f32_padded[dst_off..dst_off + row_bytes]
+            .copy_from_slice(&pixels_f32[src_off..src_off + row_bytes]);
     }
-    let gpu_f32_bytes = gpu.execute_with_format(&ops_f32, &input_f32_padded, out_w, out_h, BufferFormat::F32Vec4).unwrap();
+    let gpu_f32_bytes = gpu
+        .execute_with_format(
+            &ops_f32,
+            &input_f32_padded,
+            out_w,
+            out_h,
+            BufferFormat::F32Vec4,
+        )
+        .unwrap();
 
     // Convert f32 output to u8
     let gpu_f32_as_u8 = f32_bytes_to_rgba8(&gpu_f32_bytes);
 
     // Verify output sizes
-    assert_eq!(gpu_f32_bytes.len(), (out_w * out_h * 16) as usize, "f32 output size");
-    assert_eq!(gpu_u32.len(), (out_w * out_h * 4) as usize, "u32 output size");
+    assert_eq!(
+        gpu_f32_bytes.len(),
+        (out_w * out_h * 16) as usize,
+        "f32 output size"
+    );
+    assert_eq!(
+        gpu_u32.len(),
+        (out_w * out_h * 4) as usize,
+        "u32 output size"
+    );
 
     // Both should produce similar results
     assert_gpu_parity("affine_f32 vs u32", &gpu_u32, &gpu_f32_as_u8, 1.0);
@@ -678,9 +860,9 @@ fn gpu_f32_parity_affine_resample() {
 
 #[test]
 fn gpu_f32_gaussian_noise_deterministic() {
-    use rasmcore_pipeline::gpu::BufferFormat;
     use rasmcore_image::domain::filter_traits::GpuFilter;
     use rasmcore_image::domain::filters::GaussianNoiseParams;
+    use rasmcore_pipeline::gpu::BufferFormat;
 
     let gpu = match try_gpu() {
         Some(g) => g,
@@ -689,18 +871,29 @@ fn gpu_f32_gaussian_noise_deterministic() {
 
     let (w, h) = (64, 64);
     let pixels_u8 = make_gradient_rgba(w, h);
-    let pixels_f32_norm: Vec<u8> = pixels_u8.iter()
+    let pixels_f32_norm: Vec<u8> = pixels_u8
+        .iter()
         .flat_map(|&b| (b as f32 / 255.0).to_le_bytes())
         .collect();
 
-    let config = GaussianNoiseParams { amount: 50.0, mean: 0.0, sigma: 25.0, seed: 12345 };
+    let config = GaussianNoiseParams {
+        amount: 50.0,
+        mean: 0.0,
+        sigma: 25.0,
+        seed: 12345,
+    };
 
-    let ops = config.gpu_ops_with_format(w, h, BufferFormat::F32Vec4)
+    let ops = config
+        .gpu_ops_with_format(w, h, BufferFormat::F32Vec4)
         .expect("gaussian_noise should support f32 GPU");
 
     // Run twice — same seed should produce identical output
-    let out1 = gpu.execute_with_format(&ops, &pixels_f32_norm, w, h, BufferFormat::F32Vec4).unwrap();
-    let out2 = gpu.execute_with_format(&ops, &pixels_f32_norm, w, h, BufferFormat::F32Vec4).unwrap();
+    let out1 = gpu
+        .execute_with_format(&ops, &pixels_f32_norm, w, h, BufferFormat::F32Vec4)
+        .unwrap();
+    let out2 = gpu
+        .execute_with_format(&ops, &pixels_f32_norm, w, h, BufferFormat::F32Vec4)
+        .unwrap();
     assert_eq!(out1, out2, "same seed must produce identical output");
 
     // Output should differ from input (noise was applied)
@@ -717,9 +910,9 @@ fn gpu_f32_gaussian_noise_deterministic() {
 
 #[test]
 fn gpu_f32_uniform_noise_deterministic() {
-    use rasmcore_pipeline::gpu::BufferFormat;
     use rasmcore_image::domain::filter_traits::GpuFilter;
     use rasmcore_image::domain::filters::UniformNoiseParams;
+    use rasmcore_pipeline::gpu::BufferFormat;
 
     let gpu = match try_gpu() {
         Some(g) => g,
@@ -728,17 +921,26 @@ fn gpu_f32_uniform_noise_deterministic() {
 
     let (w, h) = (64, 64);
     let pixels_u8 = make_gradient_rgba(w, h);
-    let pixels_f32_norm: Vec<u8> = pixels_u8.iter()
+    let pixels_f32_norm: Vec<u8> = pixels_u8
+        .iter()
         .flat_map(|&b| (b as f32 / 255.0).to_le_bytes())
         .collect();
 
-    let config = UniformNoiseParams { range: 40.0, seed: 99999 };
+    let config = UniformNoiseParams {
+        range: 40.0,
+        seed: 99999,
+    };
 
-    let ops = config.gpu_ops_with_format(w, h, BufferFormat::F32Vec4)
+    let ops = config
+        .gpu_ops_with_format(w, h, BufferFormat::F32Vec4)
         .expect("uniform_noise should support f32 GPU");
 
-    let out1 = gpu.execute_with_format(&ops, &pixels_f32_norm, w, h, BufferFormat::F32Vec4).unwrap();
-    let out2 = gpu.execute_with_format(&ops, &pixels_f32_norm, w, h, BufferFormat::F32Vec4).unwrap();
+    let out1 = gpu
+        .execute_with_format(&ops, &pixels_f32_norm, w, h, BufferFormat::F32Vec4)
+        .unwrap();
+    let out2 = gpu
+        .execute_with_format(&ops, &pixels_f32_norm, w, h, BufferFormat::F32Vec4)
+        .unwrap();
     assert_eq!(out1, out2, "same seed must produce identical output");
     assert_ne!(out1, pixels_f32_norm, "noise should change the image");
 
@@ -752,9 +954,9 @@ fn gpu_f32_uniform_noise_deterministic() {
 
 #[test]
 fn gpu_f32_film_grain_deterministic() {
-    use rasmcore_pipeline::gpu::BufferFormat;
     use rasmcore_image::domain::filter_traits::GpuFilter;
     use rasmcore_image::domain::filters::FilmGrainParams;
+    use rasmcore_pipeline::gpu::BufferFormat;
 
     let gpu = match try_gpu() {
         Some(g) => g,
@@ -763,17 +965,27 @@ fn gpu_f32_film_grain_deterministic() {
 
     let (w, h) = (64, 64);
     let pixels_u8 = make_gradient_rgba(w, h);
-    let pixels_f32_norm: Vec<u8> = pixels_u8.iter()
+    let pixels_f32_norm: Vec<u8> = pixels_u8
+        .iter()
         .flat_map(|&b| (b as f32 / 255.0).to_le_bytes())
         .collect();
 
-    let config = FilmGrainParams { amount: 0.5, size: 2.0, seed: 42 };
+    let config = FilmGrainParams {
+        amount: 0.5,
+        size: 2.0,
+        seed: 42,
+    };
 
-    let ops = config.gpu_ops_with_format(w, h, BufferFormat::F32Vec4)
+    let ops = config
+        .gpu_ops_with_format(w, h, BufferFormat::F32Vec4)
         .expect("film_grain should support f32 GPU");
 
-    let out1 = gpu.execute_with_format(&ops, &pixels_f32_norm, w, h, BufferFormat::F32Vec4).unwrap();
-    let out2 = gpu.execute_with_format(&ops, &pixels_f32_norm, w, h, BufferFormat::F32Vec4).unwrap();
+    let out1 = gpu
+        .execute_with_format(&ops, &pixels_f32_norm, w, h, BufferFormat::F32Vec4)
+        .unwrap();
+    let out2 = gpu
+        .execute_with_format(&ops, &pixels_f32_norm, w, h, BufferFormat::F32Vec4)
+        .unwrap();
     assert_eq!(out1, out2, "same seed must produce identical output");
     assert_ne!(out1, pixels_f32_norm, "film grain should change the image");
 
@@ -801,13 +1013,16 @@ fn gpu_f32_fused_lut_brightness() {
         .flat_map(|i| {
             let r = (i % w as usize) as f32 / w as f32;
             let g = (i / w as usize) as f32 / h as f32;
-            [r, g, 0.5f32, 1.0f32].iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<_>>()
+            [r, g, 0.5f32, 1.0f32]
+                .iter()
+                .flat_map(|v| v.to_le_bytes())
+                .collect::<Vec<_>>()
         })
         .collect();
 
     // Build LUT for brightness +0.2
     let lut = rasmcore_image::domain::point_ops::build_lut(
-        &rasmcore_image::domain::point_ops::PointOp::Brightness(0.2)
+        &rasmcore_image::domain::point_ops::PointOp::Brightness(0.2),
     );
 
     // Pack LUT as u32 array (same as FusedLutNode does)
@@ -832,27 +1047,37 @@ fn gpu_f32_fused_lut_brightness() {
         buffer_format: BufferFormat::F32Vec4,
     }];
 
-    let gpu_output = gpu.execute_with_format(&ops, &pixels_f32, w, h, BufferFormat::F32Vec4).unwrap();
+    let gpu_output = gpu
+        .execute_with_format(&ops, &pixels_f32, w, h, BufferFormat::F32Vec4)
+        .unwrap();
 
     // CPU f32 reference — interpolated LUT lookup
-    let cpu_output: Vec<u8> = pixels_f32.chunks_exact(16).flat_map(|px| {
-        let r = f32::from_le_bytes([px[0], px[1], px[2], px[3]]);
-        let g = f32::from_le_bytes([px[4], px[5], px[6], px[7]]);
-        let b = f32::from_le_bytes([px[8], px[9], px[10], px[11]]);
-        let a = f32::from_le_bytes([px[12], px[13], px[14], px[15]]);
+    let cpu_output: Vec<u8> = pixels_f32
+        .chunks_exact(16)
+        .flat_map(|px| {
+            let r = f32::from_le_bytes([px[0], px[1], px[2], px[3]]);
+            let g = f32::from_le_bytes([px[4], px[5], px[6], px[7]]);
+            let b = f32::from_le_bytes([px[8], px[9], px[10], px[11]]);
+            let a = f32::from_le_bytes([px[12], px[13], px[14], px[15]]);
 
-        let apply = |v: f32| -> f32 {
-            let s = (v * 255.0).clamp(0.0, 255.0);
-            let lo = s.floor() as usize;
-            let hi = (lo + 1).min(255);
-            let frac = s - lo as f32;
-            (lut[lo] as f32 * (1.0 - frac) + lut[hi] as f32 * frac) / 255.0
-        };
-        [apply(r), apply(g), apply(b), a].iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<_>>()
-    }).collect();
+            let apply = |v: f32| -> f32 {
+                let s = (v * 255.0).clamp(0.0, 255.0);
+                let lo = s.floor() as usize;
+                let hi = (lo + 1).min(255);
+                let frac = s - lo as f32;
+                (lut[lo] as f32 * (1.0 - frac) + lut[hi] as f32 * frac) / 255.0
+            };
+            [apply(r), apply(g), apply(b), a]
+                .iter()
+                .flat_map(|v| v.to_le_bytes())
+                .collect::<Vec<_>>()
+        })
+        .collect();
 
     // Compare f32 outputs
-    let max_diff: f32 = cpu_output.chunks_exact(4).zip(gpu_output.chunks_exact(4))
+    let max_diff: f32 = cpu_output
+        .chunks_exact(4)
+        .zip(gpu_output.chunks_exact(4))
         .map(|(a, b)| {
             let va = f32::from_le_bytes([a[0], a[1], a[2], a[3]]);
             let vb = f32::from_le_bytes([b[0], b[1], b[2], b[3]]);
@@ -860,6 +1085,9 @@ fn gpu_f32_fused_lut_brightness() {
         })
         .fold(0.0f32, f32::max);
 
-    assert!(max_diff < 0.005, "FusedLut f32: max_diff={max_diff} (threshold 0.005)");
+    assert!(
+        max_diff < 0.005,
+        "FusedLut f32: max_diff={max_diff} (threshold 0.005)"
+    );
     eprintln!("  fused_lut_1d f32 GPU: max_diff={max_diff:.6} — PASS");
 }

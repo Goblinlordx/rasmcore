@@ -130,8 +130,12 @@ impl Filter for Clahe {
 use crate::gpu_shaders::enhancement as enh_shaders;
 
 impl GpuFilter for Clahe {
-    fn shader_body(&self) -> &str { enh_shaders::CLAHE_APPLY }
-    fn workgroup_size(&self) -> [u32; 3] { [256, 1, 1] }
+    fn shader_body(&self) -> &str {
+        enh_shaders::CLAHE_APPLY
+    }
+    fn workgroup_size(&self) -> [u32; 3] {
+        [256, 1, 1]
+    }
     fn params(&self, w: u32, h: u32) -> Vec<u8> {
         let grid = self.tile_grid;
         let tile_w = w / grid.max(1);

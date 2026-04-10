@@ -62,9 +62,9 @@ pub(crate) fn validate_pixel_buffer(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::metadata::ExifOrientation;
     use super::super::types::ColorSpace;
+    use super::*;
 
     fn make_image(w: u32, h: u32) -> (Vec<u8>, ImageInfo) {
         let pixels: Vec<u8> = (0..(w * h * 3)).map(|i| (i % 256) as u8).collect();
@@ -80,7 +80,14 @@ mod tests {
     #[test]
     fn resize_changes_dimensions() {
         let (px, info) = make_image(64, 64);
-        let result = resize(&px, &info, 32, 16, super::super::types::ResizeFilter::Bilinear).unwrap();
+        let result = resize(
+            &px,
+            &info,
+            32,
+            16,
+            super::super::types::ResizeFilter::Bilinear,
+        )
+        .unwrap();
         assert_eq!(result.info.width, 32);
         assert_eq!(result.info.height, 16);
     }
@@ -95,7 +102,14 @@ mod tests {
     #[test]
     fn resize_pixel_data_length_correct() {
         let (px, info) = make_image(16, 16);
-        let result = resize(&px, &info, 32, 24, super::super::types::ResizeFilter::Lanczos3).unwrap();
+        let result = resize(
+            &px,
+            &info,
+            32,
+            24,
+            super::super::types::ResizeFilter::Lanczos3,
+        )
+        .unwrap();
         assert_eq!(result.pixels.len(), 32 * 24 * 3);
     }
 
@@ -559,9 +573,9 @@ mod tests {
 
     #[test]
     fn e2e_16bit_chain_gamma_brightness_resize_equalize() {
+        use super::super::types::ResizeFilter;
         use crate::domain::histogram;
         use crate::domain::point_ops;
-        use super::super::types::ResizeFilter;
 
         // 1. Create a 16-bit Rgb16 gradient (32x32)
         let (w, h) = (32u32, 32u32);

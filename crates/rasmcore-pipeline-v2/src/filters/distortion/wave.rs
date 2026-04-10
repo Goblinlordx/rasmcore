@@ -1,11 +1,11 @@
 //! Wave distortion filter.
 
-use crate::node::{PipelineError};
+use crate::node::PipelineError;
 use crate::ops::Filter;
 
-use std::f32::consts::PI;
 use super::super::helpers::{gpu_params_wh, sample_bilinear};
 use super::{SAMPLE_BILINEAR_WGSL, gpu_params_push_f32, gpu_params_push_u32};
+use std::f32::consts::PI;
 
 // Wave
 // ═══════════════════════════════════════════════════════════════════════════
@@ -48,9 +48,15 @@ impl Filter for Wave {
         for y in 0..height {
             for x in 0..width {
                 let (sx, sy) = if self.vertical {
-                    (x as f32 + self.amplitude * (2.0 * PI * y as f32 / self.wavelength).sin(), y as f32)
+                    (
+                        x as f32 + self.amplitude * (2.0 * PI * y as f32 / self.wavelength).sin(),
+                        y as f32,
+                    )
                 } else {
-                    (x as f32, y as f32 + self.amplitude * (2.0 * PI * x as f32 / self.wavelength).sin())
+                    (
+                        x as f32,
+                        y as f32 + self.amplitude * (2.0 * PI * x as f32 / self.wavelength).sin(),
+                    )
                 };
                 let px = sample_bilinear(input, width, height, sx, sy);
                 let i = ((y * width + x) * 4) as usize;
@@ -69,8 +75,15 @@ impl Filter for Wave {
         gpu_params_push_u32(&mut params, 0); // pad
         gpu_params_push_u32(&mut params, 0); // pad
         gpu_params_push_u32(&mut params, 0); // pad
-        Some(vec![crate::node::GpuShader::new(shader, "main", [16, 16, 1], params)])
+        Some(vec![crate::node::GpuShader::new(
+            shader,
+            "main",
+            [16, 16, 1],
+            params,
+        )])
     }
 
-    fn tile_overlap(&self) -> u32 { 0 }
+    fn tile_overlap(&self) -> u32 {
+        0
+    }
 }

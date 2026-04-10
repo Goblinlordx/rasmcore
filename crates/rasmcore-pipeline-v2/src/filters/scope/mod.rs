@@ -13,8 +13,8 @@ use crate::color_space::ColorSpace;
 use crate::node::{Node, NodeInfo, PipelineError, Upstream};
 use crate::rect::Rect;
 use crate::registry::{
-    FilterFactoryRegistration, OperationCapabilities, OperationRegistration,
-    OperationKind, ParamDescriptor, ParamMap, ParamType,
+    FilterFactoryRegistration, OperationCapabilities, OperationKind, OperationRegistration,
+    ParamDescriptor, ParamMap, ParamType,
 };
 
 // ─── ScopeNode wrapper ─────────────────────────────────────────────────────
@@ -63,7 +63,12 @@ impl Node for ScopeNode {
         vec![self.upstream]
     }
 
-    fn input_rect(&self, _output: Rect, _bounds_w: u32, _bounds_h: u32) -> crate::node::InputRectEstimate {
+    fn input_rect(
+        &self,
+        _output: Rect,
+        _bounds_w: u32,
+        _bounds_h: u32,
+    ) -> crate::node::InputRectEstimate {
         // Scopes need the full input image
         crate::node::InputRectEstimate::FullImage
     }
@@ -73,7 +78,16 @@ impl Node for ScopeNode {
 
 /// Set a pixel in the scope buffer (additive blend for dot accumulation).
 #[inline]
-pub(super) fn plot_dot(buf: &mut [f32], size: u32, x: i32, y: i32, r: f32, g: f32, b: f32, intensity: f32) {
+pub(super) fn plot_dot(
+    buf: &mut [f32],
+    size: u32,
+    x: i32,
+    y: i32,
+    r: f32,
+    g: f32,
+    b: f32,
+    intensity: f32,
+) {
     if x < 0 || y < 0 || x >= size as i32 || y >= size as i32 {
         return;
     }
@@ -85,7 +99,16 @@ pub(super) fn plot_dot(buf: &mut [f32], size: u32, x: i32, y: i32, r: f32, g: f3
 }
 
 /// Draw a vertical bar from bottom (y=size-1) to given height.
-pub(super) fn fill_bar(buf: &mut [f32], size: u32, x: u32, height: u32, r: f32, g: f32, b: f32, alpha: f32) {
+pub(super) fn fill_bar(
+    buf: &mut [f32],
+    size: u32,
+    x: u32,
+    height: u32,
+    r: f32,
+    g: f32,
+    b: f32,
+    alpha: f32,
+) {
     let h = height.min(size);
     for dy in 0..h {
         let y = size - 1 - dy;
@@ -98,7 +121,18 @@ pub(super) fn fill_bar(buf: &mut [f32], size: u32, x: u32, height: u32, r: f32, 
 }
 
 /// Draw a line between two points (Bresenham).
-pub(super) fn draw_line(buf: &mut [f32], size: u32, x0: i32, y0: i32, x1: i32, y1: i32, r: f32, g: f32, b: f32, alpha: f32) {
+pub(super) fn draw_line(
+    buf: &mut [f32],
+    size: u32,
+    x0: i32,
+    y0: i32,
+    x1: i32,
+    y1: i32,
+    r: f32,
+    g: f32,
+    b: f32,
+    alpha: f32,
+) {
     let mut x0 = x0;
     let mut y0 = y0;
     let dx = (x1 - x0).abs();
@@ -109,10 +143,18 @@ pub(super) fn draw_line(buf: &mut [f32], size: u32, x0: i32, y0: i32, x1: i32, y
 
     loop {
         plot_dot(buf, size, x0, y0, r, g, b, alpha);
-        if x0 == x1 && y0 == y1 { break; }
+        if x0 == x1 && y0 == y1 {
+            break;
+        }
         let e2 = 2 * err;
-        if e2 >= dy { err += dy; x0 += sx; }
-        if e2 <= dx { err += dx; y0 += sy; }
+        if e2 >= dy {
+            err += dy;
+            x0 += sx;
+        }
+        if e2 <= dx {
+            err += dx;
+            y0 += sy;
+        }
     }
 }
 
@@ -135,14 +177,14 @@ pub(super) fn clamp_buf(buf: &mut [f32]) {
 }
 
 mod histogram;
-mod waveform;
 mod parade;
 mod vectorscope;
+mod waveform;
 
 pub(crate) use histogram::compute_histogram;
-pub(crate) use waveform::compute_waveform;
 pub(crate) use parade::compute_parade;
 pub(crate) use vectorscope::compute_vectorscope;
+pub(crate) use waveform::compute_waveform;
 
 // ─── Registration ──────────────────────────────────────────────────────────
 
@@ -153,9 +195,19 @@ fn make_scope_node(
     compute_fn: fn(&[f32], u32, u32, u32, bool) -> Vec<f32>,
 ) -> Box<dyn Node> {
     let scope_size = params.get_u32("scope_size");
-    let scope_size = if scope_size == 0 { 512 } else { scope_size.clamp(64, 2048) };
+    let scope_size = if scope_size == 0 {
+        512
+    } else {
+        scope_size.clamp(64, 2048)
+    };
     let log_scale = params.get_bool("log_scale");
-    Box::new(ScopeNode { upstream, input_info: info, scope_size, compute_fn, log_scale })
+    Box::new(ScopeNode {
+        upstream,
+        input_info: info,
+        scope_size,
+        compute_fn,
+        log_scale,
+    })
 }
 
 // ─── Param descriptors ─────────────────────────────────────────────────────
@@ -185,7 +237,6 @@ static SCOPE_PARAMS: [ParamDescriptor; 2] = [
     },
 ];
 
-
 // Histogram
 static REG_HISTOGRAM: FilterFactoryRegistration = FilterFactoryRegistration {
     name: "scope_histogram",
@@ -198,9 +249,18 @@ static REG_HISTOGRAM: FilterFactoryRegistration = FilterFactoryRegistration {
 };
 inventory::submit!(&REG_HISTOGRAM);
 static OPREG_HISTOGRAM: OperationRegistration = OperationRegistration {
-    name: "scope_histogram", display_name: "Histogram", category: "analysis",
-    kind: OperationKind::Filter, params: &SCOPE_PARAMS, doc_path: "",
-    capabilities: OperationCapabilities { gpu: false, analytic: false, affine: false, clut: false },
+    name: "scope_histogram",
+    display_name: "Histogram",
+    category: "analysis",
+    kind: OperationKind::Filter,
+    params: &SCOPE_PARAMS,
+    doc_path: "",
+    capabilities: OperationCapabilities {
+        gpu: false,
+        analytic: false,
+        affine: false,
+        clut: false,
+    },
     cost: "O(n + s^2)",
 };
 inventory::submit!(&OPREG_HISTOGRAM);
@@ -217,9 +277,18 @@ static REG_WAVEFORM: FilterFactoryRegistration = FilterFactoryRegistration {
 };
 inventory::submit!(&REG_WAVEFORM);
 static OPREG_WAVEFORM: OperationRegistration = OperationRegistration {
-    name: "scope_waveform", display_name: "Waveform", category: "analysis",
-    kind: OperationKind::Filter, params: &SCOPE_PARAMS, doc_path: "",
-    capabilities: OperationCapabilities { gpu: false, analytic: false, affine: false, clut: false },
+    name: "scope_waveform",
+    display_name: "Waveform",
+    category: "analysis",
+    kind: OperationKind::Filter,
+    params: &SCOPE_PARAMS,
+    doc_path: "",
+    capabilities: OperationCapabilities {
+        gpu: false,
+        analytic: false,
+        affine: false,
+        clut: false,
+    },
     cost: "O(n + s^2)",
 };
 inventory::submit!(&OPREG_WAVEFORM);
@@ -236,9 +305,18 @@ static REG_PARADE: FilterFactoryRegistration = FilterFactoryRegistration {
 };
 inventory::submit!(&REG_PARADE);
 static OPREG_PARADE: OperationRegistration = OperationRegistration {
-    name: "scope_parade", display_name: "Parade", category: "analysis",
-    kind: OperationKind::Filter, params: &SCOPE_PARAMS, doc_path: "",
-    capabilities: OperationCapabilities { gpu: false, analytic: false, affine: false, clut: false },
+    name: "scope_parade",
+    display_name: "Parade",
+    category: "analysis",
+    kind: OperationKind::Filter,
+    params: &SCOPE_PARAMS,
+    doc_path: "",
+    capabilities: OperationCapabilities {
+        gpu: false,
+        analytic: false,
+        affine: false,
+        clut: false,
+    },
     cost: "O(n + s^2)",
 };
 inventory::submit!(&OPREG_PARADE);
@@ -255,9 +333,18 @@ static REG_VECTORSCOPE: FilterFactoryRegistration = FilterFactoryRegistration {
 };
 inventory::submit!(&REG_VECTORSCOPE);
 static OPREG_VECTORSCOPE: OperationRegistration = OperationRegistration {
-    name: "scope_vectorscope", display_name: "Vectorscope", category: "analysis",
-    kind: OperationKind::Filter, params: &SCOPE_PARAMS, doc_path: "",
-    capabilities: OperationCapabilities { gpu: false, analytic: false, affine: false, clut: false },
+    name: "scope_vectorscope",
+    display_name: "Vectorscope",
+    category: "analysis",
+    kind: OperationKind::Filter,
+    params: &SCOPE_PARAMS,
+    doc_path: "",
+    capabilities: OperationCapabilities {
+        gpu: false,
+        analytic: false,
+        affine: false,
+        clut: false,
+    },
     cost: "O(n + s^2)",
 };
 inventory::submit!(&OPREG_VECTORSCOPE);
@@ -288,7 +375,12 @@ mod tests {
     use super::*;
 
     fn solid_pixels(r: f32, g: f32, b: f32, count: usize) -> Vec<f32> {
-        [r, g, b, 1.0].iter().copied().cycle().take(count * 4).collect()
+        [r, g, b, 1.0]
+            .iter()
+            .copied()
+            .cycle()
+            .take(count * 4)
+            .collect()
     }
 
     /// Solid red image → histogram should have all weight in red bin 255.
@@ -299,7 +391,8 @@ mod tests {
         assert_eq!(scope.len(), 256 * 256 * 4);
         // Red channel bar at x=255 should be max height, green/blue at x=255 should be zero
         // Just verify the output isn't all black
-        let non_black: usize = scope.chunks_exact(4)
+        let non_black: usize = scope
+            .chunks_exact(4)
             .filter(|p| p[0] > 0.01 || p[1] > 0.01 || p[2] > 0.01)
             .count();
         assert!(non_black > 0, "histogram should have visible content");
@@ -311,7 +404,8 @@ mod tests {
         let pixels = solid_pixels(0.5, 0.5, 0.5, 100);
         let scope = compute_waveform(&pixels, 10, 10, 256, false);
         assert_eq!(scope.len(), 256 * 256 * 4);
-        let non_black: usize = scope.chunks_exact(4)
+        let non_black: usize = scope
+            .chunks_exact(4)
             .filter(|p| p[0] > 0.01 || p[1] > 0.01 || p[2] > 0.01)
             .count();
         assert!(non_black > 0, "waveform should have visible content");
@@ -323,7 +417,8 @@ mod tests {
         let pixels = solid_pixels(0.0, 1.0, 0.0, 100);
         let scope = compute_parade(&pixels, 10, 10, 256, false);
         assert_eq!(scope.len(), 256 * 256 * 4);
-        let non_black: usize = scope.chunks_exact(4)
+        let non_black: usize = scope
+            .chunks_exact(4)
             .filter(|p| p[1] > 0.1) // green content
             .count();
         assert!(non_black > 0, "parade should have green content");
@@ -333,17 +428,29 @@ mod tests {
     #[test]
     fn vectorscope_saturated() {
         let mut pixels = Vec::with_capacity(400);
-        for _ in 0..25 { pixels.extend_from_slice(&[1.0, 0.0, 0.0, 1.0]); } // red
-        for _ in 0..25 { pixels.extend_from_slice(&[0.0, 1.0, 0.0, 1.0]); } // green
-        for _ in 0..25 { pixels.extend_from_slice(&[0.0, 0.0, 1.0, 1.0]); } // blue
-        for _ in 0..25 { pixels.extend_from_slice(&[0.5, 0.5, 0.5, 1.0]); } // gray (no chroma)
+        for _ in 0..25 {
+            pixels.extend_from_slice(&[1.0, 0.0, 0.0, 1.0]);
+        } // red
+        for _ in 0..25 {
+            pixels.extend_from_slice(&[0.0, 1.0, 0.0, 1.0]);
+        } // green
+        for _ in 0..25 {
+            pixels.extend_from_slice(&[0.0, 0.0, 1.0, 1.0]);
+        } // blue
+        for _ in 0..25 {
+            pixels.extend_from_slice(&[0.5, 0.5, 0.5, 1.0]);
+        } // gray (no chroma)
         let scope = compute_vectorscope(&pixels, 10, 10, 256, false);
         assert_eq!(scope.len(), 256 * 256 * 4);
         // Should have dots away from center (saturated colors) plus graticule
-        let non_black: usize = scope.chunks_exact(4)
+        let non_black: usize = scope
+            .chunks_exact(4)
             .filter(|p| p[0] > 0.01 || p[1] > 0.01 || p[2] > 0.01)
             .count();
-        assert!(non_black > 50, "vectorscope should have visible dots and graticule");
+        assert!(
+            non_black > 50,
+            "vectorscope should have visible dots and graticule"
+        );
     }
 
     /// Scope size parameter produces correct output dimensions.
@@ -379,21 +486,37 @@ mod tests {
             .filter(|op| op.category == "analysis")
             .map(|op| op.name)
             .collect();
-        assert!(names.contains(&"scope_histogram"), "histogram not registered");
+        assert!(
+            names.contains(&"scope_histogram"),
+            "histogram not registered"
+        );
         assert!(names.contains(&"scope_waveform"), "waveform not registered");
         assert!(names.contains(&"scope_parade"), "parade not registered");
-        assert!(names.contains(&"scope_vectorscope"), "vectorscope not registered");
+        assert!(
+            names.contains(&"scope_vectorscope"),
+            "vectorscope not registered"
+        );
     }
 
     /// Factory creates ScopeNode with correct output dimensions.
     #[test]
     fn factory_creates_scope_node() {
-        let info = NodeInfo { width: 100, height: 100, color_space: ColorSpace::Linear };
+        let info = NodeInfo {
+            width: 100,
+            height: 100,
+            color_space: ColorSpace::Linear,
+        };
         let mut params = ParamMap::new();
         params.ints.insert("scope_size".into(), 256);
         let node = crate::create_filter_node("scope_histogram", 0, info, &params).unwrap();
         let node_info = node.info();
-        assert_eq!(node_info.width, 256, "scope node should report scope_size as width");
-        assert_eq!(node_info.height, 256, "scope node should report scope_size as height");
+        assert_eq!(
+            node_info.width, 256,
+            "scope node should report scope_size as width"
+        );
+        assert_eq!(
+            node_info.height, 256,
+            "scope node should report scope_size as height"
+        );
     }
 }

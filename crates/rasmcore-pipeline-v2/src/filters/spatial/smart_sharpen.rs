@@ -10,7 +10,11 @@ use crate::gpu_shaders::spatial;
 /// preserving edges while sharpening. Formula:
 /// `output = input + amount * (input - bilateral_blur(input))`
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "smart_sharpen", category = "spatial", cost = "O(n * radius^2) via bilateral")]
+#[filter(
+    name = "smart_sharpen",
+    category = "spatial",
+    cost = "O(n * radius^2) via bilateral"
+)]
 pub struct SmartSharpen {
     /// Sharpening strength.
     #[param(min = 0.0, max = 5.0, default = 1.0)]
@@ -58,9 +62,15 @@ impl Filter for SmartSharpen {
 // Uses bilateral shader for blur, then sharpen_apply for unsharp mask.
 
 impl GpuFilter for SmartSharpen {
-    fn shader_body(&self) -> &str { "" } // multi-pass only
-    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
-    fn params(&self, _w: u32, _h: u32) -> Vec<u8> { Vec::new() }
+    fn shader_body(&self) -> &str {
+        ""
+    } // multi-pass only
+    fn workgroup_size(&self) -> [u32; 3] {
+        [16, 16, 1]
+    }
+    fn params(&self, _w: u32, _h: u32) -> Vec<u8> {
+        Vec::new()
+    }
 
     fn gpu_shaders(&self, w: u32, h: u32) -> Vec<GpuShader> {
         if self.amount.abs() < 1e-6 {
@@ -102,7 +112,9 @@ impl GpuFilter for SmartSharpen {
                 params: bilateral_params,
                 extra_buffers: vec![],
                 reduction_buffers: vec![],
-                convergence_check: None, loop_dispatch: None, setup: None,
+                convergence_check: None,
+                loop_dispatch: None,
+                setup: None,
             },
             GpuShader {
                 body: spatial::SHARPEN_APPLY.to_string(),
@@ -111,7 +123,9 @@ impl GpuFilter for SmartSharpen {
                 params: sharpen_params,
                 extra_buffers: vec![vec![0u8; (n * 16) as usize]], // placeholder for original
                 reduction_buffers: vec![],
-                convergence_check: None, loop_dispatch: None, setup: None,
+                convergence_check: None,
+                loop_dispatch: None,
+                setup: None,
             },
         ]
     }

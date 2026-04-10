@@ -54,10 +54,16 @@ fn rgb_to_hsl(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
         return (0.0, 0.0, l);
     }
     let d = max - min;
-    let s = if l > 0.5 { d / (2.0 - max - min) } else { d / (max + min) };
+    let s = if l > 0.5 {
+        d / (2.0 - max - min)
+    } else {
+        d / (max + min)
+    };
     let h = if (max - r).abs() < 1e-10 {
         let mut h = (g - b) / d;
-        if g < b { h += 6.0; }
+        if g < b {
+            h += 6.0;
+        }
         h
     } else if (max - g).abs() < 1e-10 {
         (b - r) / d + 2.0
@@ -71,14 +77,23 @@ fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (f32, f32, f32) {
     if s.abs() < 1e-10 {
         return (l, l, l);
     }
-    let q = if l < 0.5 { l * (1.0 + s) } else { l + s - l * s };
+    let q = if l < 0.5 {
+        l * (1.0 + s)
+    } else {
+        l + s - l * s
+    };
     let p = 2.0 * l - q;
     let hue2rgb = |t: f32| -> f32 {
         let t = ((t % 1.0) + 1.0) % 1.0;
-        if t < 1.0 / 6.0 { p + (q - p) * 6.0 * t }
-        else if t < 0.5 { q }
-        else if t < 2.0 / 3.0 { p + (q - p) * (2.0 / 3.0 - t) * 6.0 }
-        else { p }
+        if t < 1.0 / 6.0 {
+            p + (q - p) * 6.0 * t
+        } else if t < 0.5 {
+            q
+        } else if t < 2.0 / 3.0 {
+            p + (q - p) * (2.0 / 3.0 - t) * 6.0
+        } else {
+            p
+        }
     };
     (hue2rgb(h + 1.0 / 3.0), hue2rgb(h), hue2rgb(h - 1.0 / 3.0))
 }
@@ -181,7 +196,9 @@ fn cie_d_illuminant_xy(temp_k: f32) -> (f64, f64) {
 
 /// Tint shift perpendicular to Planckian locus (in CIE 1960 uv space).
 fn tint_shift_xy(xy: (f64, f64), tint: f32) -> (f64, f64) {
-    if tint.abs() < 1e-6 { return xy; }
+    if tint.abs() < 1e-6 {
+        return xy;
+    }
     let (x, y) = xy;
     let denom = -2.0 * x + 12.0 * y + 3.0;
     let u = 4.0 * x / denom;
@@ -194,45 +211,63 @@ fn tint_shift_xy(xy: (f64, f64), tint: f32) -> (f64, f64) {
 /// CAT16 adaptation matrix (Li et al. 2017).
 fn cat16_adaptation_matrix(temperature_k: f32, tint: f32) -> [f32; 9] {
     const CAT16: [[f64; 3]; 3] = [
-        [ 0.401288,  0.650173, -0.051461],
-        [-0.250268,  1.204414,  0.045854],
-        [-0.002079,  0.048952,  0.953127],
+        [0.401288, 0.650173, -0.051461],
+        [-0.250268, 1.204414, 0.045854],
+        [-0.002079, 0.048952, 0.953127],
     ];
     const CAT16_INV: [[f64; 3]; 3] = [
-        [ 1.862067855087232715, -1.011254630531684295,  0.149186775444451747],
-        [ 0.387526543236137111,  0.621447441931475275, -0.008973985167612520],
-        [-0.015841498849333856, -0.034122938028515563,  1.049964436877849350],
+        [
+            1.862067855087232715,
+            -1.011254630531684295,
+            0.149186775444451747,
+        ],
+        [
+            0.387526543236137111,
+            0.621447441931475275,
+            -0.008973985167612520,
+        ],
+        [
+            -0.015841498849333856,
+            -0.034122938028515563,
+            1.049964436877849350,
+        ],
     ];
 
     let src_xy = tint_shift_xy(cie_d_illuminant_xy(temperature_k), tint);
     let tgt_xy = cie_d_illuminant_xy(6500.0);
 
     let xy_to_xyz = |x: f64, y: f64| -> [f64; 3] {
-        if y.abs() < 1e-10 { return [0.0, 1.0, 0.0]; }
+        if y.abs() < 1e-10 {
+            return [0.0, 1.0, 0.0];
+        }
         [x / y, 1.0, (1.0 - x - y) / y]
     };
     let mv = |m: &[[f64; 3]; 3], v: &[f64; 3]| -> [f64; 3] {
-        [m[0][0]*v[0]+m[0][1]*v[1]+m[0][2]*v[2],
-         m[1][0]*v[0]+m[1][1]*v[1]+m[1][2]*v[2],
-         m[2][0]*v[0]+m[2][1]*v[1]+m[2][2]*v[2]]
+        [
+            m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
+            m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
+            m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2],
+        ]
     };
 
     let src_xyz = xy_to_xyz(src_xy.0, src_xy.1);
     let tgt_xyz = xy_to_xyz(tgt_xy.0, tgt_xy.1);
     let sc = mv(&CAT16, &src_xyz);
     let tc = mv(&CAT16, &tgt_xyz);
-    let d = [tc[0]/sc[0], tc[1]/sc[1], tc[2]/sc[2]];
+    let d = [tc[0] / sc[0], tc[1] / sc[1], tc[2] / sc[2]];
 
     let d_cat = [
-        [d[0]*CAT16[0][0], d[0]*CAT16[0][1], d[0]*CAT16[0][2]],
-        [d[1]*CAT16[1][0], d[1]*CAT16[1][1], d[1]*CAT16[1][2]],
-        [d[2]*CAT16[2][0], d[2]*CAT16[2][1], d[2]*CAT16[2][2]],
+        [d[0] * CAT16[0][0], d[0] * CAT16[0][1], d[0] * CAT16[0][2]],
+        [d[1] * CAT16[1][0], d[1] * CAT16[1][1], d[1] * CAT16[1][2]],
+        [d[2] * CAT16[2][0], d[2] * CAT16[2][1], d[2] * CAT16[2][2]],
     ];
 
     let mut out = [0.0f32; 9];
     for i in 0..3 {
         for j in 0..3 {
-            out[i*3+j] = (CAT16_INV[i][0]*d_cat[0][j] + CAT16_INV[i][1]*d_cat[1][j] + CAT16_INV[i][2]*d_cat[2][j]) as f32;
+            out[i * 3 + j] = (CAT16_INV[i][0] * d_cat[0][j]
+                + CAT16_INV[i][1] * d_cat[1][j]
+                + CAT16_INV[i][2] * d_cat[2][j]) as f32;
         }
     }
     out
@@ -262,8 +297,10 @@ mod tests {
         let input = crate::gradient(4, 4);
         let output = saturate(&input, 4, 4, 0.0);
         for px in output.chunks(4) {
-            assert!((px[0] - px[1]).abs() < 1e-6 && (px[1] - px[2]).abs() < 1e-6,
-                "should be grayscale");
+            assert!(
+                (px[0] - px[1]).abs() < 1e-6 && (px[1] - px[2]).abs() < 1e-6,
+                "should be grayscale"
+            );
         }
     }
 
@@ -323,9 +360,9 @@ pub fn saturate_oklch(input: &[f32], _w: u32, _h: u32, factor: f32) -> Vec<f32> 
         let s_ = s.max(0.0).cbrt();
 
         // LMS' -> OKLab
-        let ok_l =  0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_;
-        let ok_a =  1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_;
-        let ok_b =  0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_;
+        let ok_l = 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_;
+        let ok_a = 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_;
+        let ok_b = 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_;
 
         // OKLab -> OKLCH: scale chroma
         let c = (ok_a * ok_a + ok_b * ok_b).sqrt();
@@ -345,7 +382,7 @@ pub fn saturate_oklch(input: &[f32], _w: u32, _h: u32, factor: f32) -> Vec<f32> 
         let s2 = s2_ * s2_ * s2_;
 
         // LMS -> linear sRGB (M1 inverse)
-        px[0] =  4.0767416621 * l2 - 3.3077115913 * m2 + 0.2309699292 * s2;
+        px[0] = 4.0767416621 * l2 - 3.3077115913 * m2 + 0.2309699292 * s2;
         px[1] = -1.2684380046 * l2 + 2.6097574011 * m2 - 0.3413193965 * s2;
         px[2] = -0.0041960863 * l2 - 0.7034186147 * m2 + 1.7076147010 * s2;
     }
@@ -370,7 +407,9 @@ mod saturate_tests {
         assert!(
             (output[0] - output[1]).abs() < 0.02 && (output[1] - output[2]).abs() < 0.02,
             "factor=0 should produce grayscale, got ({:.3}, {:.3}, {:.3})",
-            output[0], output[1], output[2]
+            output[0],
+            output[1],
+            output[2]
         );
     }
 }

@@ -3,10 +3,10 @@
 //! Tests run WGSL shaders on real GPU hardware and compare against CPU reference.
 //! Skip gracefully on machines without GPU (CI without GPU sees "skipping").
 
-use std::rc::Rc;
 use rasmcore_pipeline_v2::gpu::GpuExecutor;
 use rasmcore_pipeline_v2::node::GpuShader;
 use rasmcore_pipeline_v2::ops::Filter;
+use std::rc::Rc;
 
 // ─── GPU availability helper ─────────────────────────────────────────────────
 
@@ -105,12 +105,10 @@ fn test_filter_parity<F: Filter>(
         extra_buffers: extra,
         reduction_buffers: vec![],
         convergence_check: None,
-            loop_dispatch: None,
+        loop_dispatch: None,
     }];
 
-    let gpu_out = gpu
-        .execute(&ops, &input, w, h)
-        .expect("GPU execute failed");
+    let gpu_out = gpu.execute(&ops, &input, w, h).expect("GPU execute failed");
 
     assert_pixels_close(&gpu_out, &cpu_out, tolerance, name);
     eprintln!("  {name}: PASS (max error within {tolerance})");
@@ -134,8 +132,15 @@ fn adjustment_filters_gpu_parity() {
     test_filter_parity(&gpu, &Invert, w, h, tol, "invert");
     test_filter_parity(
         &gpu,
-        &Levels { black: 0.1, white: 0.9, gamma: 1.5 },
-        w, h, tol, "levels",
+        &Levels {
+            black: 0.1,
+            white: 0.9,
+            gamma: 1.5,
+        },
+        w,
+        h,
+        tol,
+        "levels",
     );
 }
 
@@ -153,8 +158,16 @@ fn color_filters_gpu_parity() {
     test_filter_parity(&gpu, &Vibrance { amount: 0.5 }, w, h, tol, "vibrance");
     test_filter_parity(
         &gpu,
-        &Colorize { target_r: 0.2, target_g: 0.4, target_b: 0.8, amount: 0.5 },
-        w, h, tol, "colorize",
+        &Colorize {
+            target_r: 0.2,
+            target_g: 0.4,
+            target_b: 0.8,
+            amount: 0.5,
+        },
+        w,
+        h,
+        tol,
+        "colorize",
     );
 }
 
@@ -178,15 +191,20 @@ fn grading_filters_gpu_parity() {
     let (w, h) = (32, 32);
     let tol = 1e-3;
 
+    test_filter_parity(&gpu, &TonemapReinhard, w, h, tol, "tonemap_reinhard");
     test_filter_parity(
         &gpu,
-        &TonemapReinhard,
-        w, h, tol, "tonemap_reinhard",
-    );
-    test_filter_parity(
-        &gpu,
-        &TonemapFilmic { a: 2.51, b: 0.03, c: 2.43, d: 0.59, e: 0.14 },
-        w, h, tol, "tonemap_filmic",
+        &TonemapFilmic {
+            a: 2.51,
+            b: 0.03,
+            c: 2.43,
+            d: 0.59,
+            e: 0.14,
+        },
+        w,
+        h,
+        tol,
+        "tonemap_filmic",
     );
 }
 
@@ -197,11 +215,11 @@ fn grading_filters_gpu_parity() {
 #[test]
 fn fused_brightness_contrast_gpu_parity() {
     let gpu = require_gpu!();
+    use rasmcore_pipeline_v2::color_space::ColorSpace;
     use rasmcore_pipeline_v2::filters::adjustment::*;
     use rasmcore_pipeline_v2::graph::Graph;
-    use rasmcore_pipeline_v2::rect::Rect;
     use rasmcore_pipeline_v2::node::{Node, NodeInfo};
-    use rasmcore_pipeline_v2::color_space::ColorSpace;
+    use rasmcore_pipeline_v2::rect::Rect;
 
     let (w, h) = (32, 32);
     let input = gradient_image(w, h);
@@ -213,38 +231,53 @@ fn fused_brightness_contrast_gpu_parity() {
     let cpu_out = contrast.compute(&step1, w, h).unwrap();
 
     // GPU path: via graph with executor
-    struct TestSource { pixels: Vec<f32>, w: u32, h: u32 }
+    struct TestSource {
+        pixels: Vec<f32>,
+        w: u32,
+        h: u32,
+    }
     impl Node for TestSource {
         fn info(&self) -> NodeInfo {
-            NodeInfo { width: self.w, height: self.h, color_space: ColorSpace::Linear }
+            NodeInfo {
+                width: self.w,
+                height: self.h,
+                color_space: ColorSpace::Linear,
+            }
         }
-        fn compute(&self, _req: Rect, _up: &mut dyn rasmcore_pipeline_v2::node::Upstream) -> Result<Vec<f32>, rasmcore_pipeline_v2::node::PipelineError> {
+        fn compute(
+            &self,
+            _req: Rect,
+            _up: &mut dyn rasmcore_pipeline_v2::node::Upstream,
+        ) -> Result<Vec<f32>, rasmcore_pipeline_v2::node::PipelineError> {
             Ok(self.pixels.clone())
         }
-        fn upstream_ids(&self) -> Vec<u32> { vec![] }
+        fn upstream_ids(&self) -> Vec<u32> {
+            vec![]
+        }
     }
 
     let mut graph = Graph::new(16 * 1024 * 1024);
     graph.set_gpu_executor(gpu);
-    let src = graph.add_node(Box::new(TestSource { pixels: input, w, h }));
+    let src = graph.add_node(Box::new(TestSource {
+        pixels: input,
+        w,
+        h,
+    }));
     let info = graph.node_info(src).unwrap();
-    let b_node = rasmcore_pipeline_v2::registry::create_filter_node(
-        "brightness", src, info.clone(),
-        &{
+    let b_node =
+        rasmcore_pipeline_v2::registry::create_filter_node("brightness", src, info.clone(), &{
             let mut m = rasmcore_pipeline_v2::registry::ParamMap::new();
             m.floats.insert("amount".into(), 0.1);
             m
-        },
-    ).unwrap();
+        })
+        .unwrap();
     let b_id = graph.add_node(b_node);
-    let c_node = rasmcore_pipeline_v2::registry::create_filter_node(
-        "contrast", b_id, info,
-        &{
-            let mut m = rasmcore_pipeline_v2::registry::ParamMap::new();
-            m.floats.insert("amount".into(), 0.5);
-            m
-        },
-    ).unwrap();
+    let c_node = rasmcore_pipeline_v2::registry::create_filter_node("contrast", b_id, info, &{
+        let mut m = rasmcore_pipeline_v2::registry::ParamMap::new();
+        m.floats.insert("amount".into(), 0.5);
+        m
+    })
+    .unwrap();
     let c_id = graph.add_node(c_node);
 
     let gpu_out = graph.request_full(c_id).unwrap();
@@ -262,5 +295,8 @@ fn passthrough_no_shaders_returns_input() {
 
     let input = gradient_image(8, 8);
     let result = gpu.execute(&[], &input, 8, 8).unwrap();
-    assert_eq!(result, input, "empty shader list should return input unchanged");
+    assert_eq!(
+        result, input,
+        "empty shader list should return input unchanged"
+    );
 }

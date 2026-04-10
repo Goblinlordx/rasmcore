@@ -33,11 +33,7 @@ pub enum PointOp {
     /// Levels: remap [black, white] input range to [0, 255] with gamma correction.
     /// `LUT[i] = clamp(((i/255 - black) / (white - black)) ^ (1/gamma) * 255)`
     /// Matches ImageMagick `-level black%,white%,gamma`.
-    Levels {
-        black: f32,
-        white: f32,
-        gamma: f32,
-    },
+    Levels { black: f32, white: f32, gamma: f32 },
     /// Sigmoidal contrast: S-curve contrast adjustment.
     /// `sigmoid(x) = 1 / (1 + exp(-strength * (x - midpoint)))`
     /// `LUT[i] = (sigmoid(i/255) - sigmoid(0)) / (sigmoid(1) - sigmoid(0)) * 255`
@@ -406,7 +402,10 @@ mod tests {
     fn lut_u16_gamma_identity() {
         let lut = build_lut_u16(&PointOp::Gamma(1.0));
         for i in 0..=65535u16 {
-            assert_eq!(lut[i as usize], i, "16-bit gamma 1.0 should be identity at {i}");
+            assert_eq!(
+                lut[i as usize], i,
+                "16-bit gamma 1.0 should be identity at {i}"
+            );
         }
     }
 

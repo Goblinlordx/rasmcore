@@ -104,9 +104,15 @@ macro_rules! gpu_filter_passes_only {
         passes($self_:ident, $w:ident, $h:ident) => $passes_body:expr
     ) => {
         impl $crate::ops::GpuFilter for $filter_type {
-            fn shader_body(&self) -> &str { "" }
-            fn workgroup_size(&self) -> [u32; 3] { [256, 1, 1] }
-            fn params(&self, _w: u32, _h: u32) -> Vec<u8> { vec![] }
+            fn shader_body(&self) -> &str {
+                ""
+            }
+            fn workgroup_size(&self) -> [u32; 3] {
+                [256, 1, 1]
+            }
+            fn params(&self, _w: u32, _h: u32) -> Vec<u8> {
+                vec![]
+            }
             fn gpu_shaders(&self, $w: u32, $h: u32) -> Vec<$crate::node::GpuShader> {
                 let $self_ = self;
                 $passes_body

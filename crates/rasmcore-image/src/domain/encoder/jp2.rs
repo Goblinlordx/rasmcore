@@ -176,7 +176,6 @@ pub fn encode(
         .map_err(|e| ImageError::ProcessingFailed(format!("JP2 encode: {e}")))
 }
 
-
 // ─── Encoder Registration ──────────────────────────────────────────────────
 
 inventory::submit! {

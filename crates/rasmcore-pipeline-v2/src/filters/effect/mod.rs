@@ -9,37 +9,37 @@
 //!
 //! Solarize is in adjustment.rs (point op with AnalyticOp support).
 
-pub mod gaussian_noise;
-pub mod uniform_noise;
-pub mod salt_pepper_noise;
-pub mod poisson_noise;
-pub mod film_grain;
-pub mod pixelate;
-pub mod halftone;
-pub mod oil_paint;
-pub mod emboss;
 pub mod charcoal;
-pub mod chromatic_split;
 pub mod chromatic_aberration;
+pub mod chromatic_split;
+pub mod emboss;
+pub mod film_grain;
+pub mod gaussian_noise;
 pub mod glitch;
+pub mod halftone;
 pub mod light_leak;
 pub mod mirror_kaleidoscope;
+pub mod oil_paint;
+pub mod pixelate;
+pub mod poisson_noise;
+pub mod salt_pepper_noise;
+pub mod uniform_noise;
 
-pub use gaussian_noise::GaussianNoise;
-pub use uniform_noise::UniformNoise;
-pub use salt_pepper_noise::SaltPepperNoise;
-pub use poisson_noise::PoissonNoise;
-pub use film_grain::FilmGrain;
-pub use pixelate::Pixelate;
-pub use halftone::Halftone;
-pub use oil_paint::OilPaint;
-pub use emboss::Emboss;
 pub use charcoal::Charcoal;
-pub use chromatic_split::ChromaticSplit;
 pub use chromatic_aberration::ChromaticAberration;
+pub use chromatic_split::ChromaticSplit;
+pub use emboss::Emboss;
+pub use film_grain::FilmGrain;
+pub use gaussian_noise::GaussianNoise;
 pub use glitch::Glitch;
+pub use halftone::Halftone;
 pub use light_leak::LightLeak;
 pub use mirror_kaleidoscope::MirrorKaleidoscope;
+pub use oil_paint::OilPaint;
+pub use pixelate::Pixelate;
+pub use poisson_noise::PoissonNoise;
+pub use salt_pepper_noise::SaltPepperNoise;
+pub use uniform_noise::UniformNoise;
 
 use super::helpers::luminance;
 
@@ -100,7 +100,12 @@ mod tests {
     #[test]
     fn gaussian_noise_deterministic() {
         let input = solid_rgba(8, 8, [0.5, 0.5, 0.5, 1.0]);
-        let n = GaussianNoise { amount: 50.0, mean: 0.0, sigma: 25.0, seed: 42 };
+        let n = GaussianNoise {
+            amount: 50.0,
+            mean: 0.0,
+            sigma: 25.0,
+            seed: 42,
+        };
         let a = n.compute(&input, 8, 8).unwrap();
         let b = n.compute(&input, 8, 8).unwrap();
         assert_eq!(a, b); // same seed → same output
@@ -109,14 +114,22 @@ mod tests {
     #[test]
     fn gaussian_noise_zero_amount_identity() {
         let input = gradient_rgba(8, 8);
-        let n = GaussianNoise { amount: 0.0, mean: 0.0, sigma: 25.0, seed: 42 };
+        let n = GaussianNoise {
+            amount: 0.0,
+            mean: 0.0,
+            sigma: 25.0,
+            seed: 42,
+        };
         assert_eq!(n.compute(&input, 8, 8).unwrap(), input);
     }
 
     #[test]
     fn uniform_noise_preserves_alpha() {
         let input = solid_rgba(8, 8, [0.5, 0.5, 0.5, 0.7]);
-        let n = UniformNoise { range: 50.0, seed: 42 };
+        let n = UniformNoise {
+            range: 50.0,
+            seed: 42,
+        };
         let out = n.compute(&input, 8, 8).unwrap();
         assert!((out[3] - 0.7).abs() < 1e-6);
     }
@@ -124,9 +137,14 @@ mod tests {
     #[test]
     fn salt_pepper_modifies_some_pixels() {
         let input = solid_rgba(16, 16, [0.5, 0.5, 0.5, 1.0]);
-        let n = SaltPepperNoise { density: 0.5, seed: 42 };
+        let n = SaltPepperNoise {
+            density: 0.5,
+            seed: 42,
+        };
         let out = n.compute(&input, 16, 16).unwrap();
-        let changed = out.chunks_exact(4).zip(input.chunks_exact(4))
+        let changed = out
+            .chunks_exact(4)
+            .zip(input.chunks_exact(4))
             .filter(|(a, b)| (a[0] - b[0]).abs() > 0.01)
             .count();
         assert!(changed > 0); // some pixels changed
@@ -136,7 +154,10 @@ mod tests {
     #[test]
     fn poisson_noise_preserves_alpha() {
         let input = solid_rgba(8, 8, [0.5, 0.5, 0.5, 0.3]);
-        let n = PoissonNoise { scale: 50.0, seed: 42 };
+        let n = PoissonNoise {
+            scale: 50.0,
+            seed: 42,
+        };
         let out = n.compute(&input, 8, 8).unwrap();
         assert!((out[3] - 0.3).abs() < 1e-6);
     }
@@ -144,7 +165,11 @@ mod tests {
     #[test]
     fn film_grain_preserves_alpha() {
         let input = solid_rgba(16, 16, [0.5, 0.5, 0.5, 0.7]);
-        let fg = FilmGrain { amount: 0.3, size: 2.0, seed: 42 };
+        let fg = FilmGrain {
+            amount: 0.3,
+            size: 2.0,
+            seed: 42,
+        };
         let out = fg.compute(&input, 16, 16).unwrap();
         assert!((out[3] - 0.7).abs() < 1e-6);
     }
@@ -175,7 +200,10 @@ mod tests {
     #[test]
     fn halftone_runs() {
         let input = gradient_rgba(32, 32);
-        let ht = Halftone { dot_size: 4.0, angle_offset: 0.0 };
+        let ht = Halftone {
+            dot_size: 4.0,
+            angle_offset: 0.0,
+        };
         let out = ht.compute(&input, 32, 32).unwrap();
         assert_eq!(out.len(), input.len());
     }
@@ -216,7 +244,10 @@ mod tests {
     #[test]
     fn charcoal_solid_white() {
         let input = solid_rgba(16, 16, [0.5, 0.5, 0.5, 1.0]);
-        let c = Charcoal { radius: 1.0, sigma: 1.0 };
+        let c = Charcoal {
+            radius: 1.0,
+            sigma: 1.0,
+        };
         let out = c.compute(&input, 16, 16).unwrap();
         // Solid → no edges → inverted = white
         let center = (8 * 16 + 8) * 4;
@@ -229,9 +260,12 @@ mod tests {
     fn chromatic_split_zero_offset_identity() {
         let input = gradient_rgba(8, 8);
         let cs = ChromaticSplit {
-            red_dx: 0.0, red_dy: 0.0,
-            green_dx: 0.0, green_dy: 0.0,
-            blue_dx: 0.0, blue_dy: 0.0,
+            red_dx: 0.0,
+            red_dy: 0.0,
+            green_dx: 0.0,
+            green_dy: 0.0,
+            blue_dx: 0.0,
+            blue_dy: 0.0,
         };
         let out = cs.compute(&input, 8, 8).unwrap();
         for (a, b) in input.iter().zip(out.iter()) {
@@ -253,7 +287,13 @@ mod tests {
     #[test]
     fn glitch_deterministic() {
         let input = gradient_rgba(16, 16);
-        let g = Glitch { shift_amount: 10.0, channel_offset: 3.0, intensity: 0.5, band_height: 4, seed: 42 };
+        let g = Glitch {
+            shift_amount: 10.0,
+            channel_offset: 3.0,
+            intensity: 0.5,
+            band_height: 4,
+            seed: 42,
+        };
         let a = g.compute(&input, 16, 16).unwrap();
         let b = g.compute(&input, 16, 16).unwrap();
         assert_eq!(a, b);
@@ -265,8 +305,11 @@ mod tests {
     fn light_leak_brightens_center() {
         let input = solid_rgba(16, 16, [0.3, 0.3, 0.3, 1.0]);
         let ll = LightLeak {
-            intensity: 0.8, position_x: 0.5, position_y: 0.5,
-            radius: 0.5, warmth: 0.8,
+            intensity: 0.8,
+            position_x: 0.5,
+            position_y: 0.5,
+            radius: 0.5,
+            warmth: 0.8,
         };
         let out = ll.compute(&input, 16, 16).unwrap();
         let center = (8 * 16 + 8) * 4;
@@ -278,7 +321,11 @@ mod tests {
     #[test]
     fn mirror_horizontal_symmetry() {
         let input = gradient_rgba(16, 16);
-        let mk = MirrorKaleidoscope { segments: 2, angle: 0.0, mode: 0 };
+        let mk = MirrorKaleidoscope {
+            segments: 2,
+            angle: 0.0,
+            mode: 0,
+        };
         let out = mk.compute(&input, 16, 16).unwrap();
         assert_eq!(out.len(), input.len());
     }
@@ -290,29 +337,120 @@ mod tests {
         let input = gradient_rgba(16, 16);
         let n = 16 * 16 * 4;
 
-        assert_eq!(GaussianNoise { amount: 10.0, mean: 0.0, sigma: 25.0, seed: 42 }
-            .compute(&input, 16, 16).unwrap().len(), n);
-        assert_eq!(UniformNoise { range: 50.0, seed: 42 }
-            .compute(&input, 16, 16).unwrap().len(), n);
-        assert_eq!(SaltPepperNoise { density: 0.1, seed: 42 }
-            .compute(&input, 16, 16).unwrap().len(), n);
-        assert_eq!(PoissonNoise { scale: 50.0, seed: 42 }
-            .compute(&input, 16, 16).unwrap().len(), n);
-        assert_eq!(FilmGrain { amount: 0.3, size: 2.0, seed: 42 }
-            .compute(&input, 16, 16).unwrap().len(), n);
-        assert_eq!(Pixelate { block_size: 4 }
-            .compute(&input, 16, 16).unwrap().len(), n);
-        assert_eq!(Halftone { dot_size: 4.0, angle_offset: 0.0 }
-            .compute(&input, 16, 16).unwrap().len(), n);
-        assert_eq!(OilPaint { radius: 2 }
-            .compute(&input, 16, 16).unwrap().len(), n);
+        assert_eq!(
+            GaussianNoise {
+                amount: 10.0,
+                mean: 0.0,
+                sigma: 25.0,
+                seed: 42
+            }
+            .compute(&input, 16, 16)
+            .unwrap()
+            .len(),
+            n
+        );
+        assert_eq!(
+            UniformNoise {
+                range: 50.0,
+                seed: 42
+            }
+            .compute(&input, 16, 16)
+            .unwrap()
+            .len(),
+            n
+        );
+        assert_eq!(
+            SaltPepperNoise {
+                density: 0.1,
+                seed: 42
+            }
+            .compute(&input, 16, 16)
+            .unwrap()
+            .len(),
+            n
+        );
+        assert_eq!(
+            PoissonNoise {
+                scale: 50.0,
+                seed: 42
+            }
+            .compute(&input, 16, 16)
+            .unwrap()
+            .len(),
+            n
+        );
+        assert_eq!(
+            FilmGrain {
+                amount: 0.3,
+                size: 2.0,
+                seed: 42
+            }
+            .compute(&input, 16, 16)
+            .unwrap()
+            .len(),
+            n
+        );
+        assert_eq!(
+            Pixelate { block_size: 4 }
+                .compute(&input, 16, 16)
+                .unwrap()
+                .len(),
+            n
+        );
+        assert_eq!(
+            Halftone {
+                dot_size: 4.0,
+                angle_offset: 0.0
+            }
+            .compute(&input, 16, 16)
+            .unwrap()
+            .len(),
+            n
+        );
+        assert_eq!(
+            OilPaint { radius: 2 }
+                .compute(&input, 16, 16)
+                .unwrap()
+                .len(),
+            n
+        );
         assert_eq!(Emboss.compute(&input, 16, 16).unwrap().len(), n);
-        assert_eq!(Charcoal { radius: 1.0, sigma: 1.0 }
-            .compute(&input, 16, 16).unwrap().len(), n);
-        assert_eq!(Glitch { shift_amount: 10.0, channel_offset: 3.0, intensity: 0.5, band_height: 4, seed: 42 }
-            .compute(&input, 16, 16).unwrap().len(), n);
-        assert_eq!(LightLeak { intensity: 0.5, position_x: 0.5, position_y: 0.5, radius: 0.5, warmth: 0.5 }
-            .compute(&input, 16, 16).unwrap().len(), n);
+        assert_eq!(
+            Charcoal {
+                radius: 1.0,
+                sigma: 1.0
+            }
+            .compute(&input, 16, 16)
+            .unwrap()
+            .len(),
+            n
+        );
+        assert_eq!(
+            Glitch {
+                shift_amount: 10.0,
+                channel_offset: 3.0,
+                intensity: 0.5,
+                band_height: 4,
+                seed: 42
+            }
+            .compute(&input, 16, 16)
+            .unwrap()
+            .len(),
+            n
+        );
+        assert_eq!(
+            LightLeak {
+                intensity: 0.5,
+                position_x: 0.5,
+                position_y: 0.5,
+                radius: 0.5,
+                warmth: 0.5
+            }
+            .compute(&input, 16, 16)
+            .unwrap()
+            .len(),
+            n
+        );
     }
 
     // ─── HDR values ─────────────────────────────────────────────────────
@@ -320,7 +458,12 @@ mod tests {
     #[test]
     fn hdr_values_not_clamped() {
         let input = solid_rgba(4, 4, [5.0, -0.5, 100.0, 1.0]);
-        let n = GaussianNoise { amount: 10.0, mean: 0.0, sigma: 25.0, seed: 42 };
+        let n = GaussianNoise {
+            amount: 10.0,
+            mean: 0.0,
+            sigma: 25.0,
+            seed: 42,
+        };
         let out = n.compute(&input, 4, 4).unwrap();
         // HDR values should survive (not clamped to [0,1])
         assert!(out.chunks_exact(4).any(|p| p[0] > 1.0));
@@ -337,8 +480,14 @@ mod tests {
             ("LightLeak", light_leak::LIGHT_LEAK_WGSL),
             ("Glitch", glitch::GLITCH_WGSL),
             ("ChromaticSplit", chromatic_split::CHROMATIC_SPLIT_WGSL),
-            ("ChromaticAberration", chromatic_aberration::CHROMATIC_ABERRATION_WGSL),
-            ("MirrorKaleidoscope", mirror_kaleidoscope::MIRROR_KALEIDOSCOPE_WGSL),
+            (
+                "ChromaticAberration",
+                chromatic_aberration::CHROMATIC_ABERRATION_WGSL,
+            ),
+            (
+                "MirrorKaleidoscope",
+                mirror_kaleidoscope::MIRROR_KALEIDOSCOPE_WGSL,
+            ),
             ("Emboss", include_str!("../../shaders/emboss.wgsl")),
             ("Charcoal", charcoal::CHARCOAL_WGSL),
             ("FilmGrain", film_grain::EFFECT_FILM_GRAIN_WGSL),
@@ -349,7 +498,10 @@ mod tests {
         for (name, body) in shaders {
             assert!(body.contains("@compute"), "{name} missing @compute");
             assert!(body.contains("fn main("), "{name} missing fn main");
-            assert!(body.contains("struct Params"), "{name} missing Params struct");
+            assert!(
+                body.contains("struct Params"),
+                "{name} missing Params struct"
+            );
             assert!(
                 body.contains("load_pixel") || body.contains("store_pixel"),
                 "{name} missing pixel I/O"
@@ -359,26 +511,90 @@ mod tests {
 
     #[test]
     fn gpu_noise_params_sizes_correct() {
-        let g = GaussianNoise { amount: 50.0, mean: 0.0, sigma: 25.0, seed: 42 };
-        assert_eq!(g.params(100, 100).len() % 4, 0, "GaussianNoise params not 4-byte aligned");
-        let u = UniformNoise { range: 50.0, seed: 42 };
-        assert_eq!(u.params(100, 100).len() % 4, 0, "UniformNoise params not 4-byte aligned");
-        let sp = SaltPepperNoise { density: 0.05, seed: 42 };
-        assert_eq!(sp.params(100, 100).len() % 4, 0, "SaltPepper params not 4-byte aligned");
-        let p = PoissonNoise { scale: 100.0, seed: 42 };
-        assert_eq!(p.params(100, 100).len() % 4, 0, "Poisson params not 4-byte aligned");
+        let g = GaussianNoise {
+            amount: 50.0,
+            mean: 0.0,
+            sigma: 25.0,
+            seed: 42,
+        };
+        assert_eq!(
+            g.params(100, 100).len() % 4,
+            0,
+            "GaussianNoise params not 4-byte aligned"
+        );
+        let u = UniformNoise {
+            range: 50.0,
+            seed: 42,
+        };
+        assert_eq!(
+            u.params(100, 100).len() % 4,
+            0,
+            "UniformNoise params not 4-byte aligned"
+        );
+        let sp = SaltPepperNoise {
+            density: 0.05,
+            seed: 42,
+        };
+        assert_eq!(
+            sp.params(100, 100).len() % 4,
+            0,
+            "SaltPepper params not 4-byte aligned"
+        );
+        let p = PoissonNoise {
+            scale: 100.0,
+            seed: 42,
+        };
+        assert_eq!(
+            p.params(100, 100).len() % 4,
+            0,
+            "Poisson params not 4-byte aligned"
+        );
         // New GPU filters
         let e = Emboss;
-        assert_eq!(e.params(100, 100).len() % 4, 0, "Emboss params not 4-byte aligned");
-        let ch = Charcoal { radius: 1.0, sigma: 1.0 };
-        assert_eq!(ch.params(100, 100).len() % 4, 0, "Charcoal params not 4-byte aligned");
-        let fg = FilmGrain { amount: 0.3, size: 2.0, seed: 42 };
-        assert_eq!(fg.params(100, 100).len() % 4, 0, "FilmGrain params not 4-byte aligned");
+        assert_eq!(
+            e.params(100, 100).len() % 4,
+            0,
+            "Emboss params not 4-byte aligned"
+        );
+        let ch = Charcoal {
+            radius: 1.0,
+            sigma: 1.0,
+        };
+        assert_eq!(
+            ch.params(100, 100).len() % 4,
+            0,
+            "Charcoal params not 4-byte aligned"
+        );
+        let fg = FilmGrain {
+            amount: 0.3,
+            size: 2.0,
+            seed: 42,
+        };
+        assert_eq!(
+            fg.params(100, 100).len() % 4,
+            0,
+            "FilmGrain params not 4-byte aligned"
+        );
         let px = Pixelate { block_size: 4 };
-        assert_eq!(px.params(100, 100).len() % 4, 0, "Pixelate params not 4-byte aligned");
-        let ht = Halftone { dot_size: 4.0, angle_offset: 0.0 };
-        assert_eq!(ht.params(100, 100).len() % 4, 0, "Halftone params not 4-byte aligned");
+        assert_eq!(
+            px.params(100, 100).len() % 4,
+            0,
+            "Pixelate params not 4-byte aligned"
+        );
+        let ht = Halftone {
+            dot_size: 4.0,
+            angle_offset: 0.0,
+        };
+        assert_eq!(
+            ht.params(100, 100).len() % 4,
+            0,
+            "Halftone params not 4-byte aligned"
+        );
         let op = OilPaint { radius: 3 };
-        assert_eq!(op.params(100, 100).len() % 4, 0, "OilPaint params not 4-byte aligned");
+        assert_eq!(
+            op.params(100, 100).len() % 4,
+            0,
+            "OilPaint params not 4-byte aligned"
+        );
     }
 }

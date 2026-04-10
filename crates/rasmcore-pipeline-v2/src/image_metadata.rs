@@ -184,7 +184,8 @@ fn icc_to_color_space(icc_profile: &[u8]) -> Option<ColorSpace> {
                         .map(|c| u16::from_be_bytes([c[0], c[1]]))
                         .collect();
                     if let Ok(desc) = String::from_utf16(&utf16) {
-                        if let Some(cs) = match_icc_description(desc.trim_end_matches('\0').trim()) {
+                        if let Some(cs) = match_icc_description(desc.trim_end_matches('\0').trim())
+                        {
                             return Some(cs);
                         }
                     }
@@ -204,9 +205,17 @@ fn match_icc_description(desc: &str) -> Option<ColorSpace> {
         Some(ColorSpace::Srgb)
     } else if lower.contains("display p3") {
         Some(ColorSpace::DisplayP3)
-    } else if lower.contains("bt.2020") || lower.contains("bt2020") || lower.contains("rec.2020") || lower.contains("rec. 2020") {
+    } else if lower.contains("bt.2020")
+        || lower.contains("bt2020")
+        || lower.contains("rec.2020")
+        || lower.contains("rec. 2020")
+    {
         Some(ColorSpace::Rec2020)
-    } else if lower.contains("bt.709") || lower.contains("bt709") || lower.contains("rec.709") || lower.contains("rec. 709") {
+    } else if lower.contains("bt.709")
+        || lower.contains("bt709")
+        || lower.contains("rec.709")
+        || lower.contains("rec. 709")
+    {
         Some(ColorSpace::Rec709)
     } else {
         None
@@ -226,7 +235,9 @@ fn exif_color_space(exif_data: &[u8]) -> Option<ColorSpace> {
     };
 
     let read_u16 = |data: &[u8], offset: usize| -> Option<u16> {
-        if offset + 2 > data.len() { return None; }
+        if offset + 2 > data.len() {
+            return None;
+        }
         Some(if big_endian {
             u16::from_be_bytes([data[offset], data[offset + 1]])
         } else {
@@ -235,7 +246,9 @@ fn exif_color_space(exif_data: &[u8]) -> Option<ColorSpace> {
     };
 
     let read_u32 = |data: &[u8], offset: usize| -> Option<u32> {
-        if offset + 4 > data.len() { return None; }
+        if offset + 4 > data.len() {
+            return None;
+        }
         Some(if big_endian {
             u32::from_be_bytes(data[offset..offset + 4].try_into().ok()?)
         } else {
@@ -253,7 +266,9 @@ fn exif_color_space(exif_data: &[u8]) -> Option<ColorSpace> {
         let count = read_u16(exif_data, ifd_offset)? as usize;
         for i in 0..count.min(200) {
             let entry = ifd_offset + 2 + i * 12;
-            if entry + 12 > exif_data.len() { break; }
+            if entry + 12 > exif_data.len() {
+                break;
+            }
             if read_u16(exif_data, entry)? == 0xA001 {
                 return read_u16(exif_data, entry + 8);
             }
@@ -273,7 +288,9 @@ fn exif_color_space(exif_data: &[u8]) -> Option<ColorSpace> {
     let count = read_u16(exif_data, ifd0_offset)? as usize;
     for i in 0..count.min(200) {
         let entry = ifd0_offset + 2 + i * 12;
-        if entry + 12 > exif_data.len() { break; }
+        if entry + 12 > exif_data.len() {
+            break;
+        }
         if read_u16(exif_data, entry)? == 0x8769 {
             let exif_ifd_offset = read_u32(exif_data, entry + 8)? as usize;
             if let Some(cs_val) = search_ifd(exif_ifd_offset) {
@@ -331,8 +348,14 @@ mod tests {
             entries: vec![MetadataEntry {
                 key: "exif".into(),
                 value: MetadataValue::Map(vec![
-                    MetadataEntry { key: "orientation".into(), value: MetadataValue::Integer(6) },
-                    MetadataEntry { key: "camera".into(), value: MetadataValue::Text("Canon EOS R5".into()) },
+                    MetadataEntry {
+                        key: "orientation".into(),
+                        value: MetadataValue::Integer(6),
+                    },
+                    MetadataEntry {
+                        key: "camera".into(),
+                        value: MetadataValue::Text("Canon EOS R5".into()),
+                    },
                 ]),
             }],
         };
@@ -347,9 +370,18 @@ mod tests {
 
     #[test]
     fn icc_description_matching() {
-        assert_eq!(match_icc_description("sRGB IEC61966-2.1"), Some(ColorSpace::Srgb));
-        assert_eq!(match_icc_description("Display P3"), Some(ColorSpace::DisplayP3));
-        assert_eq!(match_icc_description("ITU-R BT.2020"), Some(ColorSpace::Rec2020));
+        assert_eq!(
+            match_icc_description("sRGB IEC61966-2.1"),
+            Some(ColorSpace::Srgb)
+        );
+        assert_eq!(
+            match_icc_description("Display P3"),
+            Some(ColorSpace::DisplayP3)
+        );
+        assert_eq!(
+            match_icc_description("ITU-R BT.2020"),
+            Some(ColorSpace::Rec2020)
+        );
         assert_eq!(match_icc_description("Rec. 709"), Some(ColorSpace::Rec709));
         assert_eq!(match_icc_description("Adobe RGB (1998)"), None);
         assert_eq!(match_icc_description("ProPhoto RGB"), None);

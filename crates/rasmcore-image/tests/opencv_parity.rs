@@ -12,8 +12,8 @@
 //! Reference: OpenCV 4.13.0 via opencv-contrib-python-headless in venv.
 //! Fixtures stored as raw grayscale bytes in tests/fixtures/opencv/.
 
-use rasmcore_image::domain::filters;
 use rasmcore_image::domain::filter_traits::CpuFilter;
+use rasmcore_image::domain::filters;
 use rasmcore_image::domain::types::{ColorSpace, ImageInfo, PixelFormat};
 use rasmcore_pipeline::Rect;
 
@@ -110,7 +110,16 @@ fn clahe_all_images_match_opencv() {
     for name in TEST_IMAGES {
         let input = load_fixture(&format!("{name}_gray.raw"));
         let reference = load_fixture(&format!("{name}_clahe.raw"));
-        let ours = filters::clahe(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(input.to_vec()), &info, &filters::ClaheParams { clip_limit: 2.0, tile_grid: 8 }).unwrap();
+        let ours = filters::clahe(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(input.to_vec()),
+            &info,
+            &filters::ClaheParams {
+                clip_limit: 2.0,
+                tile_grid: 8,
+            },
+        )
+        .unwrap();
 
         let e = mae(&ours, &reference);
         let m = max_error(&ours, &reference);
@@ -144,7 +153,17 @@ fn bilateral_all_images_match_opencv() {
     for name in TEST_IMAGES {
         let input = load_fixture(&format!("{name}_gray.raw"));
         let reference = load_fixture(&format!("{name}_bilateral.raw"));
-        let ours = filters::BilateralParams { diameter: 9, sigma_color: 75.0, sigma_space: 75.0 }.compute(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(input.to_vec()), &info).unwrap();
+        let ours = filters::BilateralParams {
+            diameter: 9,
+            sigma_color: 75.0,
+            sigma_space: 75.0,
+        }
+        .compute(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(input.to_vec()),
+            &info,
+        )
+        .unwrap();
 
         let e = mae(&ours, &reference);
         let m = max_error(&ours, &reference);
@@ -178,7 +197,16 @@ fn guided_all_images_match_opencv() {
     for name in TEST_IMAGES {
         let input = load_fixture(&format!("{name}_gray.raw"));
         let reference = load_fixture(&format!("{name}_guided.raw"));
-        let ours = filters::GuidedFilterParams { radius: 4, epsilon: 0.01 }.compute(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(input.to_vec()), &info).unwrap();
+        let ours = filters::GuidedFilterParams {
+            radius: 4,
+            epsilon: 0.01,
+        }
+        .compute(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(input.to_vec()),
+            &info,
+        )
+        .unwrap();
 
         let e = mae(&ours, &reference);
         let m = max_error(&ours, &reference);
@@ -1098,13 +1126,10 @@ fn bokeh_disc_r3_all_images_match_opencv() {
         let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
         let mut u = |_: rasmcore_pipeline::Rect| Ok(input.clone());
         let ours = filters::BokehBlurParams {
-                radius: 3,
-                shape: 0,
-            }.compute(
-            r,
-            &mut u,
-            &info,
-        )
+            radius: 3,
+            shape: 0,
+        }
+        .compute(r, &mut u, &info)
         .unwrap();
 
         let e = mae(&ours, &reference);
@@ -1125,13 +1150,10 @@ fn bokeh_disc_r7_all_images_match_opencv() {
         let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
         let mut u = |_: rasmcore_pipeline::Rect| Ok(input.clone());
         let ours = filters::BokehBlurParams {
-                radius: 7,
-                shape: 0,
-            }.compute(
-            r,
-            &mut u,
-            &info,
-        )
+            radius: 7,
+            shape: 0,
+        }
+        .compute(r, &mut u, &info)
         .unwrap();
 
         let e = mae(&ours, &reference);
@@ -1152,13 +1174,10 @@ fn bokeh_hex_r3_all_images_match_opencv() {
         let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
         let mut u = |_: rasmcore_pipeline::Rect| Ok(input.clone());
         let ours = filters::BokehBlurParams {
-                radius: 3,
-                shape: 1,
-            }.compute(
-            r,
-            &mut u,
-            &info,
-        )
+            radius: 3,
+            shape: 1,
+        }
+        .compute(r, &mut u, &info)
         .unwrap();
 
         let e = mae(&ours, &reference);
@@ -1179,13 +1198,10 @@ fn bokeh_hex_r7_all_images_match_opencv() {
         let r = rasmcore_pipeline::Rect::new(0, 0, info.width, info.height);
         let mut u = |_: rasmcore_pipeline::Rect| Ok(input.clone());
         let ours = filters::BokehBlurParams {
-                radius: 7,
-                shape: 1,
-            }.compute(
-            r,
-            &mut u,
-            &info,
-        )
+            radius: 7,
+            shape: 1,
+        }
+        .compute(r, &mut u, &info)
         .unwrap();
 
         let e = mae(&ours, &reference);
@@ -1217,8 +1233,21 @@ fn vignette_gaussian_all_images_match_imagemagick() {
     for name in TEST_IMAGES {
         let input = load_fixture(&format!("{name}_gray.raw"));
         let reference = load_fixture(&format!("{name}_vignette.raw"));
-        let ours =
-            filters::vignette(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(input.to_vec()), &info, &filters::VignetteParams { sigma, x_inset, y_inset, full_width: 128, full_height: 128, tile_offset_x: 0, tile_offset_y: 0 }).unwrap();
+        let ours = filters::vignette(
+            Rect::new(0, 0, info.width, info.height),
+            &mut |_| Ok(input.to_vec()),
+            &info,
+            &filters::VignetteParams {
+                sigma,
+                x_inset,
+                y_inset,
+                full_width: 128,
+                full_height: 128,
+                tile_offset_x: 0,
+                tile_offset_y: 0,
+            },
+        )
+        .unwrap();
 
         let e = mae(&ours, &reference);
         let m = max_error(&ours, &reference);
@@ -1255,7 +1284,17 @@ fn perspective_warp_identity_is_exact() {
     };
 
     let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
-    let result = filters::perspective_warp(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(input.to_vec()), &info, &identity, &filters::PerspectiveWarpParams { out_width: 128, out_height: 128 }).unwrap();
+    let result = filters::perspective_warp(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(input.to_vec()),
+        &info,
+        &identity,
+        &filters::PerspectiveWarpParams {
+            out_width: 128,
+            out_height: 128,
+        },
+    )
+    .unwrap();
 
     let e = mae(&result, &input);
     let m = max_error(&result, &input);
@@ -1281,7 +1320,17 @@ fn perspective_warp_translation_is_exact() {
 
     // Shift right by 5, down by 3: output pixel (x,y) reads input (x+5, y+3)
     let mat = [1.0, 0.0, 5.0, 0.0, 1.0, 3.0, 0.0, 0.0, 1.0];
-    let result = filters::perspective_warp(Rect::new(0, 0, info.width, info.height), &mut |_| Ok(input.to_vec()), &info, &mat, &filters::PerspectiveWarpParams { out_width: 128, out_height: 128 }).unwrap();
+    let result = filters::perspective_warp(
+        Rect::new(0, 0, info.width, info.height),
+        &mut |_| Ok(input.to_vec()),
+        &info,
+        &mat,
+        &filters::PerspectiveWarpParams {
+            out_width: 128,
+            out_height: 128,
+        },
+    )
+    .unwrap();
 
     // Verify shifted region matches exactly
     let mut mismatches = 0;
@@ -1465,7 +1514,15 @@ fn canny_all_images_match_opencv() {
     for name in TEST_IMAGES {
         let input = load_fixture(&format!("{name}_gray.raw"));
         let reference = load_fixture(&format!("{name}_canny_50_150.raw"));
-        let ours = filters::canny(&input, &info, &filters::CannyParams { low_threshold: 50.0, high_threshold: 150.0 }).unwrap();
+        let ours = filters::canny(
+            &input,
+            &info,
+            &filters::CannyParams {
+                low_threshold: 50.0,
+                high_threshold: 150.0,
+            },
+        )
+        .unwrap();
 
         let e = mae(&ours, &reference);
         let m = max_error(&ours, &reference);
@@ -1532,15 +1589,16 @@ fn harris_corners_vs_opencv() {
     }
 
     let info = ImageInfo {
-        width: w, height: h,
+        width: w,
+        height: h,
         format: PixelFormat::Gray8,
         color_space: ColorSpace::Srgb,
     };
 
     // Our Harris corners
-    let our_corners = rasmcore_image::domain::filters::harris_corners(
-        &pixels, &info, 0.04, 1000.0, 3, 3,
-    ).unwrap();
+    let our_corners =
+        rasmcore_image::domain::filters::harris_corners(&pixels, &info, 0.04, 1000.0, 3, 3)
+            .unwrap();
 
     // OpenCV Harris corners via Python
     let pixel_hex: String = pixels.iter().map(|b| format!("{b:02x}")).collect();
@@ -1583,8 +1641,11 @@ for (y, x) in corners:
         })
         .collect();
 
-    eprintln!("  harris_vs_opencv: ours={} corners, opencv={} corners",
-        our_corners.len(), cv_corners.len());
+    eprintln!(
+        "  harris_vs_opencv: ours={} corners, opencv={} corners",
+        our_corners.len(),
+        cv_corners.len()
+    );
 
     // Verify that each of our corners is near an OpenCV corner (within 5px)
     for c in &our_corners {

@@ -10,11 +10,11 @@ use super::super::helpers::luminance;
 use crate::filter_node::FilterNode;
 #[allow(unused_imports)]
 use crate::registry::{
-    FilterFactoryRegistration, OperationRegistration, OperationKind,
-    OperationCapabilities, ParamDescriptor, ParamMap, ParamType,
+    FilterFactoryRegistration, OperationCapabilities, OperationKind, OperationRegistration,
+    ParamDescriptor, ParamMap, ParamType,
 };
 
-use super::{hsl_to_rgb_simple, SPLIT_TONING_PARAMS};
+use super::{SPLIT_TONING_PARAMS, hsl_to_rgb_simple};
 
 /// Split toning — tint shadows and highlights with different colors.
 #[derive(Clone)]
@@ -52,7 +52,8 @@ fn split_toning_pixel(r: f32, g: f32, b: f32, st: &SplitToning) -> (f32, f32, f3
     let luma = luminance(r, g, b);
     let midpoint = 0.5 + st.balance * 0.5;
     let shadow_w = (1.0 - luma / midpoint.max(0.001)).clamp(0.0, 1.0) * st.strength;
-    let highlight_w = ((luma - midpoint) / (1.0 - midpoint).max(0.001)).clamp(0.0, 1.0) * st.strength;
+    let highlight_w =
+        ((luma - midpoint) / (1.0 - midpoint).max(0.001)).clamp(0.0, 1.0) * st.strength;
     let or = r + (st.shadow_color[0] - r) * shadow_w + (st.highlight_color[0] - r) * highlight_w;
     let og = g + (st.shadow_color[1] - g) * shadow_w + (st.highlight_color[1] - g) * highlight_w;
     let ob = b + (st.shadow_color[2] - b) * shadow_w + (st.highlight_color[2] - b) * highlight_w;

@@ -1,8 +1,8 @@
 use crate::node::PipelineError;
 use crate::ops::{Filter, GpuFilter};
 
-use crate::filters::helpers::luminance;
 use super::build_gradient_lut;
+use crate::filters::helpers::luminance;
 
 /// Gradient map — map luminance to a color gradient.
 #[derive(Clone)]
@@ -53,8 +53,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 "#;
 
 impl GpuFilter for GradientMap {
-    fn shader_body(&self) -> &str { GRADIENT_MAP_WGSL }
-    fn workgroup_size(&self) -> [u32; 3] { [256, 1, 1] }
+    fn shader_body(&self) -> &str {
+        GRADIENT_MAP_WGSL
+    }
+    fn workgroup_size(&self) -> [u32; 3] {
+        [256, 1, 1]
+    }
     fn params(&self, width: u32, height: u32) -> Vec<u8> {
         let mut buf = Vec::with_capacity(16);
         buf.extend_from_slice(&width.to_le_bytes());

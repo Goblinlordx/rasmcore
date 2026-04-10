@@ -35,7 +35,6 @@ pub fn encode(
     ))
 }
 
-
 // ─── Encoder Registration ──────────────────────────────────────────────────
 
 inventory::submit! {

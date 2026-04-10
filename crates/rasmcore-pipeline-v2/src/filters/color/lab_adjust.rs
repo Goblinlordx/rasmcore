@@ -2,7 +2,7 @@ use crate::fusion::Clut3D;
 use crate::node::PipelineError;
 use crate::ops::Filter;
 
-use super::{ClutOp, rgb_to_lab, lab_to_rgb};
+use super::{ClutOp, lab_to_rgb, rgb_to_lab};
 
 /// Lab adjust — shift a* and b* channels in CIE Lab space.
 #[derive(Clone, rasmcore_macros::V2Filter)]

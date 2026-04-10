@@ -12,7 +12,12 @@ use crate::ops::{Filter, PointOpExpr};
 /// ev=0 is exact identity. The expression `Mul(Input, Constant)` is
 /// trivially fusable with any other point op in the pipeline.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "exposure", category = "adjustment", cost = "O(n)", doc = "docs/operations/filters/adjustment/exposure.adoc")]
+#[filter(
+    name = "exposure",
+    category = "adjustment",
+    cost = "O(n)",
+    doc = "docs/operations/filters/adjustment/exposure.adoc"
+)]
 pub struct Exposure {
     /// Exposure value in stops. 0 = unchanged, +1 = 2x brighter, -1 = half.
     #[param(min = -10.0, max = 10.0, step = 0.1, default = 0.0)]
@@ -57,10 +62,10 @@ mod tests {
         let input = vec![0.25, 0.5, 0.125, 1.0];
         let exp = Exposure { ev: 1.0 };
         let out = exp.compute(&input, 1, 1).unwrap();
-        assert!((out[0] - 0.5).abs() < 1e-6);   // 0.25 * 2
-        assert!((out[1] - 1.0).abs() < 1e-6);   // 0.5 * 2
-        assert!((out[2] - 0.25).abs() < 1e-6);  // 0.125 * 2
-        assert_eq!(out[3], 1.0);                  // alpha unchanged
+        assert!((out[0] - 0.5).abs() < 1e-6); // 0.25 * 2
+        assert!((out[1] - 1.0).abs() < 1e-6); // 0.5 * 2
+        assert!((out[2] - 0.25).abs() < 1e-6); // 0.125 * 2
+        assert_eq!(out[3], 1.0); // alpha unchanged
     }
 
     #[test]
@@ -68,8 +73,8 @@ mod tests {
         let input = vec![0.5, 1.0, 0.25, 1.0];
         let exp = Exposure { ev: -1.0 };
         let out = exp.compute(&input, 1, 1).unwrap();
-        assert!((out[0] - 0.25).abs() < 1e-6);  // 0.5 / 2
-        assert!((out[1] - 0.5).abs() < 1e-6);   // 1.0 / 2
+        assert!((out[0] - 0.25).abs() < 1e-6); // 0.5 / 2
+        assert!((out[1] - 0.5).abs() < 1e-6); // 1.0 / 2
         assert!((out[2] - 0.125).abs() < 1e-6); // 0.25 / 2
     }
 

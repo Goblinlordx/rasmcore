@@ -242,7 +242,12 @@ impl DisplayManager {
     ///
     /// The consumer provides a surface (from their window) and its configuration.
     /// The manager creates the viewport uniform buffer.
-    pub fn add_target(&mut self, name: &str, surface: wgpu::Surface<'static>, config: &wgpu::SurfaceConfiguration) {
+    pub fn add_target(
+        &mut self,
+        name: &str,
+        surface: wgpu::Surface<'static>,
+        config: &wgpu::SurfaceConfiguration,
+    ) {
         let device = Self::dev(self.device);
         let queue = Self::q(self.queue);
 
@@ -263,12 +268,15 @@ impl DisplayManager {
 
         queue.write_buffer(&viewport_buf, 0, bytemuck::bytes_of(&viewport));
 
-        self.targets.insert(name.to_string(), DisplayTarget {
-            surface,
-            config: config.clone(),
-            viewport_buf,
-            viewport,
-        });
+        self.targets.insert(
+            name.to_string(),
+            DisplayTarget {
+                surface,
+                config: config.clone(),
+                viewport_buf,
+                viewport,
+            },
+        );
     }
 
     /// Remove a display target.
@@ -283,7 +291,11 @@ impl DisplayManager {
             target.viewport.pan_x = pan_x;
             target.viewport.pan_y = pan_y;
             target.viewport.zoom = zoom;
-            queue.write_buffer(&target.viewport_buf, 0, bytemuck::bytes_of(&target.viewport));
+            queue.write_buffer(
+                &target.viewport_buf,
+                0,
+                bytemuck::bytes_of(&target.viewport),
+            );
         }
     }
 
@@ -291,7 +303,13 @@ impl DisplayManager {
     ///
     /// `pixel_buf` is a storage buffer containing the compute result (array<vec4<f32>>).
     /// Zero CPU readback — the buffer stays on GPU.
-    pub fn blit(&mut self, name: &str, pixel_buf: &wgpu::Buffer, image_width: u32, image_height: u32) {
+    pub fn blit(
+        &mut self,
+        name: &str,
+        pixel_buf: &wgpu::Buffer,
+        image_width: u32,
+        image_height: u32,
+    ) {
         let (pipeline, layout) = match (&self.blit_pipeline, &self.blit_bind_group_layout) {
             (Some(p), Some(l)) => (p, l),
             _ => return,
@@ -308,7 +326,11 @@ impl DisplayManager {
         // Update image dimensions in viewport
         target.viewport.image_width = image_width as f32;
         target.viewport.image_height = image_height as f32;
-        queue.write_buffer(&target.viewport_buf, 0, bytemuck::bytes_of(&target.viewport));
+        queue.write_buffer(
+            &target.viewport_buf,
+            0,
+            bytemuck::bytes_of(&target.viewport),
+        );
 
         // Get surface texture
         let frame = match target.surface.get_current_texture() {

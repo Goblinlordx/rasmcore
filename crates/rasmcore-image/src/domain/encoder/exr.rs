@@ -61,8 +61,12 @@ pub fn encode_pixels(
             for chunk in pixels.chunks_exact(16) {
                 r.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
                 g.push(f32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]));
-                b.push(f32::from_le_bytes([chunk[8], chunk[9], chunk[10], chunk[11]]));
-                a.push(f32::from_le_bytes([chunk[12], chunk[13], chunk[14], chunk[15]]));
+                b.push(f32::from_le_bytes([
+                    chunk[8], chunk[9], chunk[10], chunk[11],
+                ]));
+                a.push(f32::from_le_bytes([
+                    chunk[12], chunk[13], chunk[14], chunk[15],
+                ]));
             }
             (r, g, b, a)
         }
@@ -75,7 +79,9 @@ pub fn encode_pixels(
             for chunk in pixels.chunks_exact(12) {
                 r.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
                 g.push(f32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]));
-                b.push(f32::from_le_bytes([chunk[8], chunk[9], chunk[10], chunk[11]]));
+                b.push(f32::from_le_bytes([
+                    chunk[8], chunk[9], chunk[10], chunk[11],
+                ]));
             }
             (r, g, b, a)
         }
@@ -103,7 +109,6 @@ pub fn encode_pixels(
 
     Ok(buf)
 }
-
 
 // ─── Encoder Registration ──────────────────────────────────────────────────
 
@@ -181,10 +186,10 @@ mod tests {
         let mut orig_pixels = Vec::with_capacity((w * h * 16) as usize);
         for i in 0..(w * h) {
             let v = i as f32 / (w * h - 1) as f32;
-            orig_pixels.extend_from_slice(&v.to_le_bytes());       // R
+            orig_pixels.extend_from_slice(&v.to_le_bytes()); // R
             orig_pixels.extend_from_slice(&(1.0 - v).to_le_bytes()); // G
             orig_pixels.extend_from_slice(&(v * 0.5).to_le_bytes()); // B
-            orig_pixels.extend_from_slice(&1.0f32.to_le_bytes());    // A
+            orig_pixels.extend_from_slice(&1.0f32.to_le_bytes()); // A
         }
 
         let info = ImageInfo {

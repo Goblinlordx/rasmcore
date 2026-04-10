@@ -4,7 +4,7 @@
 
 use rasmcore_gpu_native::WgpuExecutorV2;
 use rasmcore_pipeline_v2::node::{GpuShader, ReductionBuffer};
-use rasmcore_pipeline_v2::rect::{tiles, extract_tile, place_tile};
+use rasmcore_pipeline_v2::rect::{extract_tile, place_tile, tiles};
 
 /// Try to create a GPU executor. Skip test if no GPU.
 fn try_gpu() -> Option<WgpuExecutorV2> {
@@ -107,7 +107,8 @@ fn main(
         accum[wg_flat * 4u + 3u] = local_sum[3];
     }
 }
-"#.to_string()
+"#
+    .to_string()
 }
 
 /// Calculate number of workgroups for a given image size with the sum shader.
@@ -138,17 +139,15 @@ fn gpu_reduction_buffer_single_dispatch() {
     let params = [w, h, 0u32, 0u32];
     let params_bytes: Vec<u8> = params.iter().flat_map(|v| v.to_le_bytes()).collect();
 
-    let ops = vec![GpuShader::new(
-        sum_shader_body(),
-        "main",
-        SUM_WG,
-        params_bytes,
-    )
-    .with_reduction_buffers(vec![ReductionBuffer {
-        id: 0,
-        initial_data: vec![0u8; buf_size],
-        read_write: true,
-    }])];
+    let ops = vec![
+        GpuShader::new(sum_shader_body(), "main", SUM_WG, params_bytes).with_reduction_buffers(
+            vec![ReductionBuffer {
+                id: 0,
+                initial_data: vec![0u8; buf_size],
+                read_write: true,
+            }],
+        ),
+    ];
 
     let (output, reduction_data) = gpu
         .execute_with_reduction_readback(&ops, &pixels, w, h)
@@ -164,11 +163,19 @@ fn gpu_reduction_buffer_single_dispatch() {
     let reduction_floats: &[f32] = bytemuck::cast_slice(buf_bytes);
 
     // Debug: show first few workgroup sums
-    eprintln!("reduction buffer: {} floats ({} bytes)", reduction_floats.len(), buf_bytes.len());
+    eprintln!(
+        "reduction buffer: {} floats ({} bytes)",
+        reduction_floats.len(),
+        buf_bytes.len()
+    );
     for wg in 0..4.min(num_wg as usize) {
-        eprintln!("  wg {wg}: r={:.4} g={:.4} b={:.4} a={:.4}",
-            reduction_floats[wg * 4], reduction_floats[wg * 4 + 1],
-            reduction_floats[wg * 4 + 2], reduction_floats[wg * 4 + 3]);
+        eprintln!(
+            "  wg {wg}: r={:.4} g={:.4} b={:.4} a={:.4}",
+            reduction_floats[wg * 4],
+            reduction_floats[wg * 4 + 1],
+            reduction_floats[wg * 4 + 2],
+            reduction_floats[wg * 4 + 3]
+        );
     }
 
     let mut gpu_sum = [0.0f64; 4];
@@ -261,17 +268,15 @@ fn tiled_reduction_accumulates_correctly() {
         let params = [tile.width, tile.height, 0u32, 0u32];
         let params_bytes: Vec<u8> = params.iter().flat_map(|v| v.to_le_bytes()).collect();
 
-        let ops = vec![GpuShader::new(
-            sum_shader_body(),
-            "main",
-            SUM_WG,
-            params_bytes,
-        )
-        .with_reduction_buffers(vec![ReductionBuffer {
-            id: 0,
-            initial_data: vec![0u8; buf_size],
-            read_write: true,
-        }])];
+        let ops = vec![
+            GpuShader::new(sum_shader_body(), "main", SUM_WG, params_bytes).with_reduction_buffers(
+                vec![ReductionBuffer {
+                    id: 0,
+                    initial_data: vec![0u8; buf_size],
+                    read_write: true,
+                }],
+            ),
+        ];
 
         let (_, reduction_data) = gpu
             .execute_with_reduction_readback(&ops, &tile_pixels, tile.width, tile.height)

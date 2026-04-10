@@ -57,13 +57,19 @@ pub trait Filter {
     /// WGSL shader body (without io_f32 bindings).
     /// Collected once at graph setup, pre-compiled, cached.
     /// Override with `Some(include_str!("../shaders/my_filter.wgsl"))`.
-    fn gpu_shader_body(&self) -> Option<&'static str> { None }
+    fn gpu_shader_body(&self) -> Option<&'static str> {
+        None
+    }
 
     /// GPU workgroup dispatch size.
-    fn gpu_workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn gpu_workgroup_size(&self) -> [u32; 3] {
+        [16, 16, 1]
+    }
 
     /// GPU entry point name.
-    fn gpu_entry_point(&self) -> &'static str { "main" }
+    fn gpu_entry_point(&self) -> &'static str {
+        "main"
+    }
 
     /// Serialize instance params to GPU uniform buffer (little-endian, 4-byte aligned).
     /// Called at dispatch time — depends on instance config (width, height, filter params).
@@ -98,7 +104,8 @@ pub trait Filter {
             extra_buffers: self.gpu_extra_buffers(),
             reduction_buffers: vec![],
             convergence_check: None,
-            loop_dispatch: None, setup: None,
+            loop_dispatch: None,
+            setup: None,
         }])
     }
 
@@ -168,10 +175,16 @@ pub trait Filter {
 /// Existing filters may still use this trait during migration.
 pub trait GpuFilter {
     fn shader_body(&self) -> &str;
-    fn entry_point(&self) -> &'static str { "main" }
-    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn entry_point(&self) -> &'static str {
+        "main"
+    }
+    fn workgroup_size(&self) -> [u32; 3] {
+        [16, 16, 1]
+    }
     fn params(&self, width: u32, height: u32) -> Vec<u8>;
-    fn extra_buffers(&self) -> Vec<Vec<u8>> { vec![] }
+    fn extra_buffers(&self) -> Vec<Vec<u8>> {
+        vec![]
+    }
     fn gpu_shader(&self, width: u32, height: u32) -> GpuShader {
         GpuShader {
             body: self.shader_body().to_string(),
@@ -181,7 +194,8 @@ pub trait GpuFilter {
             extra_buffers: self.extra_buffers(),
             reduction_buffers: vec![],
             convergence_check: None,
-            loop_dispatch: None, setup: None,
+            loop_dispatch: None,
+            setup: None,
         }
     }
     fn gpu_shaders(&self, width: u32, height: u32) -> Vec<GpuShader> {
@@ -408,7 +422,11 @@ impl PointOpExpr {
             PointOpExpr::Mul(a, b) => a.evaluate(v) * b.evaluate(v),
             PointOpExpr::Div(a, b) => {
                 let d = b.evaluate(v);
-                if d.abs() < 1e-30 { 0.0 } else { a.evaluate(v) / d }
+                if d.abs() < 1e-30 {
+                    0.0
+                } else {
+                    a.evaluate(v) / d
+                }
             }
             PointOpExpr::Pow(a, b) => a.evaluate(v).powf(b.evaluate(v)),
             PointOpExpr::Clamp(x, min, max) => x.evaluate(v).clamp(*min as f64, *max as f64),

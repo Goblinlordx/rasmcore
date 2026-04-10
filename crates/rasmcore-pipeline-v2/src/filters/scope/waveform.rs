@@ -1,6 +1,6 @@
 //! Waveform scope implementation.
 
-use super::{new_scope_buf, clamp_buf, plot_dot};
+use super::{clamp_buf, new_scope_buf, plot_dot};
 
 /// Waveform scope — per-column brightness distribution.
 pub fn compute_waveform(input: &[f32], w: u32, h: u32, size: u32, _log_scale: bool) -> Vec<f32> {

@@ -3,17 +3,17 @@ pub mod bmp;
 pub mod cube;
 pub mod dds;
 // LUT encoder modules (registered via StaticLutEncoderRegistration, not pixel encoders)
-pub mod hald;
-pub mod lut3dl;
-pub mod lutcsp;
 pub mod exr;
 pub mod fits;
 pub mod gif;
+pub mod hald;
 pub mod hdr;
 pub mod heic;
 pub mod ico;
 pub mod jp2;
 pub mod jpeg;
+pub mod lut3dl;
+pub mod lutcsp;
 pub mod native_trivial;
 pub mod png;
 pub mod pnm;
@@ -87,7 +87,6 @@ pub fn output_color_space_for_format(format: &str) -> EncoderColorSpace {
     EncoderColorSpace::Srgb // fallback for unknown formats
 }
 
-
 // ─── LUT Encoder Registry ───────────────────────────────────────────────────
 
 /// Static LUT encoder registration — for formats that encode a ColorLut3D
@@ -145,7 +144,9 @@ pub fn encode(
             }
         }
     }
-    Err(ImageError::UnsupportedFormat(format!("no encoder for '{format}'")))
+    Err(ImageError::UnsupportedFormat(format!(
+        "no encoder for '{format}'"
+    )))
 }
 
 /// Embed an ICC color profile into encoded image data.
@@ -205,7 +206,10 @@ pub fn encode_sequence(
 
 /// List supported encode formats (derived from encoder registry).
 pub fn supported_formats() -> Vec<String> {
-    registered_encoders().iter().map(|r| r.format.to_string()).collect()
+    registered_encoders()
+        .iter()
+        .map(|r| r.format.to_string())
+        .collect()
 }
 
 /// Format metadata: name, MIME type, and file extensions.
@@ -218,22 +222,32 @@ pub struct FormatInfo {
 
 /// Get format metadata for a specific format (from encoder registry).
 pub fn format_info(format: &str) -> Option<FormatInfo> {
-    registered_encoders().iter()
+    registered_encoders()
+        .iter()
         .find(|r| r.format == format || r.extensions.contains(&format))
         .map(|r| FormatInfo {
             name: r.format.to_string(),
             mime_type: r.mime.to_string(),
-            extensions: r.extensions.iter().map(std::string::ToString::to_string).collect(),
+            extensions: r
+                .extensions
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
         })
 }
 
 /// Get format metadata for all supported encode formats (from encoder registry).
 pub fn all_format_info() -> Vec<FormatInfo> {
-    registered_encoders().iter()
+    registered_encoders()
+        .iter()
         .map(|r| FormatInfo {
             name: r.format.to_string(),
             mime_type: r.mime.to_string(),
-            extensions: r.extensions.iter().map(std::string::ToString::to_string).collect(),
+            extensions: r
+                .extensions
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
         })
         .collect()
 }

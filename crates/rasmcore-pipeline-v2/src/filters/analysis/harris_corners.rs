@@ -58,32 +58,51 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 impl Filter for HarrisCorners {
     fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
         let mut out = vec![0.0f32; input.len()];
-        let w = width as i32; let h = height as i32; let r = self.radius as i32;
+        let w = width as i32;
+        let h = height as i32;
+        let r = self.radius as i32;
         for y in 0..h {
             for x in 0..w {
-                let mut ixx = 0.0f32; let mut iyy = 0.0f32; let mut ixy = 0.0f32;
-                for dy in -r..=r { for dx in -r..=r {
-                    let sx = (x+dx).max(0).min(w-1) as usize;
-                    let sy = (y+dy).max(0).min(h-1) as usize;
-                    let sxp = (x+dx+1).max(0).min(w-1) as usize;
-                    let sxm = (x+dx-1).max(0).min(w-1) as usize;
-                    let syp = (y+dy+1).max(0).min(h-1) as usize;
-                    let sym = (y+dy-1).max(0).min(h-1) as usize;
-                    let wi = width as usize;
-                    let lx1 = input[(sy*wi+sxp)*4]*0.2126 + input[(sy*wi+sxp)*4+1]*0.7152 + input[(sy*wi+sxp)*4+2]*0.0722;
-                    let lx0 = input[(sy*wi+sxm)*4]*0.2126 + input[(sy*wi+sxm)*4+1]*0.7152 + input[(sy*wi+sxm)*4+2]*0.0722;
-                    let ly1 = input[(syp*wi+sx)*4]*0.2126 + input[(syp*wi+sx)*4+1]*0.7152 + input[(syp*wi+sx)*4+2]*0.0722;
-                    let ly0 = input[(sym*wi+sx)*4]*0.2126 + input[(sym*wi+sx)*4+1]*0.7152 + input[(sym*wi+sx)*4+2]*0.0722;
-                    let gx = lx1 - lx0; let gy = ly1 - ly0;
-                    ixx += gx*gx; iyy += gy*gy; ixy += gx*gy;
-                }}
+                let mut ixx = 0.0f32;
+                let mut iyy = 0.0f32;
+                let mut ixy = 0.0f32;
+                for dy in -r..=r {
+                    for dx in -r..=r {
+                        let sx = (x + dx).max(0).min(w - 1) as usize;
+                        let sy = (y + dy).max(0).min(h - 1) as usize;
+                        let sxp = (x + dx + 1).max(0).min(w - 1) as usize;
+                        let sxm = (x + dx - 1).max(0).min(w - 1) as usize;
+                        let syp = (y + dy + 1).max(0).min(h - 1) as usize;
+                        let sym = (y + dy - 1).max(0).min(h - 1) as usize;
+                        let wi = width as usize;
+                        let lx1 = input[(sy * wi + sxp) * 4] * 0.2126
+                            + input[(sy * wi + sxp) * 4 + 1] * 0.7152
+                            + input[(sy * wi + sxp) * 4 + 2] * 0.0722;
+                        let lx0 = input[(sy * wi + sxm) * 4] * 0.2126
+                            + input[(sy * wi + sxm) * 4 + 1] * 0.7152
+                            + input[(sy * wi + sxm) * 4 + 2] * 0.0722;
+                        let ly1 = input[(syp * wi + sx) * 4] * 0.2126
+                            + input[(syp * wi + sx) * 4 + 1] * 0.7152
+                            + input[(syp * wi + sx) * 4 + 2] * 0.0722;
+                        let ly0 = input[(sym * wi + sx) * 4] * 0.2126
+                            + input[(sym * wi + sx) * 4 + 1] * 0.7152
+                            + input[(sym * wi + sx) * 4 + 2] * 0.0722;
+                        let gx = lx1 - lx0;
+                        let gy = ly1 - ly0;
+                        ixx += gx * gx;
+                        iyy += gy * gy;
+                        ixy += gx * gy;
+                    }
+                }
                 let det = ixx * iyy - ixy * ixy;
                 let trace = ixx + iyy;
                 let response = det - self.k * trace * trace;
                 let v = (response * 1000.0).max(0.0).min(1.0);
                 let i = ((y * w + x) * 4) as usize;
-                out[i] = v; out[i+1] = v; out[i+2] = v;
-                out[i+3] = input[i+3];
+                out[i] = v;
+                out[i + 1] = v;
+                out[i + 2] = v;
+                out[i + 3] = input[i + 3];
             }
         }
         Ok(out)
@@ -91,9 +110,17 @@ impl Filter for HarrisCorners {
 
     fn gpu_shader_passes(&self, _w: u32, _h: u32) -> Option<Vec<GpuShader>> {
         let mut p = gpu_params_wh(_w, _h);
-        gpu_push_f32(&mut p, self.k); gpu_push_u32(&mut p, self.radius);
-        Some(vec![GpuShader::new(HARRIS_WGSL.to_string(), "main", [16, 16, 1], p)])
+        gpu_push_f32(&mut p, self.k);
+        gpu_push_u32(&mut p, self.radius);
+        Some(vec![GpuShader::new(
+            HARRIS_WGSL.to_string(),
+            "main",
+            [16, 16, 1],
+            p,
+        )])
     }
 
-    fn tile_overlap(&self) -> u32 { self.radius + 1 }
+    fn tile_overlap(&self) -> u32 {
+        self.radius + 1
+    }
 }

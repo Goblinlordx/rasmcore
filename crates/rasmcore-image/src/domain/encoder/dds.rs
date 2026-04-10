@@ -11,7 +11,11 @@ use crate::domain::types::{ImageInfo, PixelFormat};
 pub struct DdsEncodeConfig;
 
 /// Encode pixels to DDS format.
-pub fn encode_pixels(pixels: &[u8], info: &ImageInfo, _config: &DdsEncodeConfig) -> Result<Vec<u8>, ImageError> {
+pub fn encode_pixels(
+    pixels: &[u8],
+    info: &ImageInfo,
+    _config: &DdsEncodeConfig,
+) -> Result<Vec<u8>, ImageError> {
     encode_dds(pixels, info)
 }
 
@@ -117,7 +121,6 @@ pub fn encode_dds(pixels: &[u8], info: &ImageInfo) -> Result<Vec<u8>, ImageError
 
     Ok(out)
 }
-
 
 // ─── Encoder Registration ──────────────────────────────────────────────────
 

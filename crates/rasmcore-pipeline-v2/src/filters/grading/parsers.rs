@@ -133,7 +133,11 @@ fn lut_1d_to_clut3d(data: &[f32], n: u32) -> Clut3D {
     // Build 3D CLUT — grid size capped at 65 for memory
     let grid = (n as u32).min(65);
     Clut3D::from_fn(grid, |r, g, b| {
-        (sample_1d(&lut_r, r), sample_1d(&lut_g, g), sample_1d(&lut_b, b))
+        (
+            sample_1d(&lut_r, r),
+            sample_1d(&lut_g, g),
+            sample_1d(&lut_b, b),
+        )
     })
 }
 
@@ -193,7 +197,7 @@ pub fn parse_hald_lut(pixels: &[f32], width: u32, height: u32) -> Result<Clut3D,
     let mut data = Vec::with_capacity(total * 3);
     for i in 0..total {
         let base = i * 4;
-        data.push(pixels[base]);     // R
+        data.push(pixels[base]); // R
         data.push(pixels[base + 1]); // G
         data.push(pixels[base + 2]); // B
     }

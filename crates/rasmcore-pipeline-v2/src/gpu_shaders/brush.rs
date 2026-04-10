@@ -278,7 +278,8 @@ pub fn brush_gpu_shaders(
         extra_buffers: vec![dab_bytes, tip_bytes],
         reduction_buffers: vec![],
         convergence_check: None,
-        loop_dispatch: None, setup: None,
+        loop_dispatch: None,
+        setup: None,
     };
 
     let composite = crate::node::GpuShader {
@@ -289,7 +290,8 @@ pub fn brush_gpu_shaders(
         extra_buffers: vec![layer_bytes],
         reduction_buffers: vec![],
         convergence_check: None,
-        loop_dispatch: None, setup: None,
+        loop_dispatch: None,
+        setup: None,
     };
 
     vec![stamp, composite]
@@ -302,10 +304,16 @@ mod tests {
     #[test]
     fn brush_gpu_params_serialization() {
         let params = BrushGpuParams {
-            width: 64, height: 64,
-            dab_count: 5, first_new_dab: 0,
-            color_r: 1.0, color_g: 0.0, color_b: 0.0, color_a: 1.0,
-            stroke_opacity: 1.0, tip_size: 0,
+            width: 64,
+            height: 64,
+            dab_count: 5,
+            first_new_dab: 0,
+            color_r: 1.0,
+            color_g: 0.0,
+            color_b: 0.0,
+            color_a: 1.0,
+            stroke_opacity: 1.0,
+            tip_size: 0,
         };
         let bytes = params.to_bytes();
         assert_eq!(bytes.len(), 48); // 12 × 4 bytes (16-byte aligned)
@@ -322,12 +330,22 @@ mod tests {
     fn serialize_dab_instances_roundtrip() {
         let dabs = vec![
             crate::brush::types::DabInstance {
-                x: 10.0, y: 20.0, size: 15.0, opacity: 0.8,
-                angle: 0.5, roundness: 1.0, hardness: 0.7,
+                x: 10.0,
+                y: 20.0,
+                size: 15.0,
+                opacity: 0.8,
+                angle: 0.5,
+                roundness: 1.0,
+                hardness: 0.7,
             },
             crate::brush::types::DabInstance {
-                x: 30.0, y: 40.0, size: 25.0, opacity: 1.0,
-                angle: 0.0, roundness: 0.5, hardness: 1.0,
+                x: 30.0,
+                y: 40.0,
+                size: 25.0,
+                opacity: 1.0,
+                angle: 0.0,
+                roundness: 0.5,
+                hardness: 1.0,
             },
         ];
         let bytes = serialize_dab_instances(&dabs);
@@ -344,17 +362,19 @@ mod tests {
     #[test]
     fn brush_gpu_shaders_produces_two_passes() {
         let params = BrushGpuParams {
-            width: 64, height: 64,
-            dab_count: 5, first_new_dab: 0,
-            color_r: 1.0, color_g: 0.0, color_b: 0.0, color_a: 1.0,
-            stroke_opacity: 1.0, tip_size: 0,
+            width: 64,
+            height: 64,
+            dab_count: 5,
+            first_new_dab: 0,
+            color_r: 1.0,
+            color_g: 0.0,
+            color_b: 0.0,
+            color_a: 1.0,
+            stroke_opacity: 1.0,
+            tip_size: 0,
         };
-        let shaders = brush_gpu_shaders(
-            &params,
-            vec![0u8; 28 * 5],
-            vec![0u8; 64 * 64 * 16],
-            vec![],
-        );
+        let shaders =
+            brush_gpu_shaders(&params, vec![0u8; 28 * 5], vec![0u8; 64 * 64 * 16], vec![]);
         assert_eq!(shaders.len(), 2);
         assert_eq!(shaders[0].entry_point, "stamp_main");
         assert_eq!(shaders[1].entry_point, "composite_main");
@@ -365,10 +385,16 @@ mod tests {
     #[test]
     fn incremental_rendering_params() {
         let params = BrushGpuParams {
-            width: 32, height: 32,
-            dab_count: 10, first_new_dab: 5,
-            color_r: 0.0, color_g: 0.0, color_b: 1.0, color_a: 1.0,
-            stroke_opacity: 0.8, tip_size: 0,
+            width: 32,
+            height: 32,
+            dab_count: 10,
+            first_new_dab: 5,
+            color_r: 0.0,
+            color_g: 0.0,
+            color_b: 1.0,
+            color_a: 1.0,
+            stroke_opacity: 0.8,
+            tip_size: 0,
         };
         assert_eq!(params.first_new_dab, 5);
         assert_eq!(params.dab_count, 10);

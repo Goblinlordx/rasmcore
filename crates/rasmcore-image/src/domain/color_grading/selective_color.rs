@@ -1,4 +1,4 @@
-use super::{apply_rgb_transform, ImageError, ImageInfo};
+use super::{ImageError, ImageInfo, apply_rgb_transform};
 
 // ─── Color Balance (Photoshop-style) ─────────────────────────────────────
 

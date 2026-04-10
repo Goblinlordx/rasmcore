@@ -13,12 +13,18 @@ use super::{SAMPLE_BILINEAR_WGSL, smoothstep_f32};
 #[derive(Clone, rasmcore_macros::V2Filter)]
 #[filter(name = "clone_stamp", category = "tool")]
 pub struct CloneStamp {
-    #[param(min = 0.0, max = 1.0, step = 0.001, default = 0.5)] pub center_x: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.001, default = 0.5)] pub center_y: f32,
-    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.1)] pub offset_x: f32,
-    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0)] pub offset_y: f32,
-    #[param(min = 1.0, max = 500.0, step = 1.0, default = 50.0, hint = "rc.pixels")] pub radius: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)] pub opacity: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.001, default = 0.5)]
+    pub center_x: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.001, default = 0.5)]
+    pub center_y: f32,
+    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.1)]
+    pub offset_x: f32,
+    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0)]
+    pub offset_y: f32,
+    #[param(min = 1.0, max = 500.0, step = 1.0, default = 50.0, hint = "rc.pixels")]
+    pub radius: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)]
+    pub opacity: f32,
 }
 
 const CLONE_STAMP_WGSL: &str = r#"
@@ -54,15 +60,17 @@ impl Filter for CloneStamp {
             for x in 0..width {
                 let dx = x as f32 - cx;
                 let dy = y as f32 - cy;
-                let dist = (dx*dx + dy*dy).sqrt();
-                if dist >= self.radius { continue; }
+                let dist = (dx * dx + dy * dy).sqrt();
+                if dist >= self.radius {
+                    continue;
+                }
                 let falloff = 1.0 - smoothstep_f32(self.radius * 0.7, self.radius, dist);
                 let src = sample_bilinear(input, width, height, x as f32 + ox, y as f32 + oy);
                 let i = ((y * width + x) * 4) as usize;
                 let a = falloff * self.opacity;
                 out[i] = out[i] * (1.0 - a) + src[0] * a;
-                out[i+1] = out[i+1] * (1.0 - a) + src[1] * a;
-                out[i+2] = out[i+2] * (1.0 - a) + src[2] * a;
+                out[i + 1] = out[i + 1] * (1.0 - a) + src[1] * a;
+                out[i + 2] = out[i + 2] * (1.0 - a) + src[2] * a;
             }
         }
         Ok(out)

@@ -10,7 +10,11 @@ use crate::gpu_shaders::spatial;
 /// Simulates miniature/tilt-shift photography by blurring areas outside
 /// a focus band and blending with the original via a smooth gradient mask.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "tilt_shift", category = "spatial", cost = "O(n * radius) via gaussian_blur")]
+#[filter(
+    name = "tilt_shift",
+    category = "spatial",
+    cost = "O(n * radius) via gaussian_blur"
+)]
 pub struct TiltShift {
     /// Focus band center position (0.0 = top, 1.0 = bottom).
     #[param(min = 0.0, max = 1.0, default = 0.5)]
@@ -35,7 +39,9 @@ impl Filter for TiltShift {
         let h = height as usize;
 
         // Generate fully blurred version
-        let blur = GaussianBlur { radius: self.blur_radius };
+        let blur = GaussianBlur {
+            radius: self.blur_radius,
+        };
         let blurred = blur.compute(input, width, height)?;
 
         // Blend original and blurred based on distance from focus band
@@ -74,9 +80,15 @@ impl Filter for TiltShift {
 // ── TiltShift GPU (blur pass + blend pass) ──────────────────────────────────
 
 impl GpuFilter for TiltShift {
-    fn shader_body(&self) -> &str { "" } // multi-pass only
-    fn workgroup_size(&self) -> [u32; 3] { [256, 1, 1] }
-    fn params(&self, _w: u32, _h: u32) -> Vec<u8> { Vec::new() }
+    fn shader_body(&self) -> &str {
+        ""
+    } // multi-pass only
+    fn workgroup_size(&self) -> [u32; 3] {
+        [256, 1, 1]
+    }
+    fn params(&self, _w: u32, _h: u32) -> Vec<u8> {
+        Vec::new()
+    }
 
     fn gpu_shaders(&self, w: u32, h: u32) -> Vec<GpuShader> {
         if self.blur_radius <= 0.0 || self.band_size >= 1.0 {
@@ -125,7 +137,9 @@ impl GpuFilter for TiltShift {
                 params: h_params,
                 extra_buffers: vec![kernel_bytes.clone()],
                 reduction_buffers: vec![],
-                convergence_check: None, loop_dispatch: None, setup: None,
+                convergence_check: None,
+                loop_dispatch: None,
+                setup: None,
             },
             GpuShader {
                 body: spatial::GAUSSIAN_BLUR_V.to_string(),
@@ -134,7 +148,9 @@ impl GpuFilter for TiltShift {
                 params: v_params,
                 extra_buffers: vec![kernel_bytes],
                 reduction_buffers: vec![],
-                convergence_check: None, loop_dispatch: None, setup: None,
+                convergence_check: None,
+                loop_dispatch: None,
+                setup: None,
             },
             GpuShader {
                 body: spatial::TILT_SHIFT_BLEND.to_string(),
@@ -143,7 +159,9 @@ impl GpuFilter for TiltShift {
                 params: blend_params,
                 extra_buffers: vec![vec![0u8; (n * 16) as usize]], // placeholder for original (snapshot)
                 reduction_buffers: vec![],
-                convergence_check: None, loop_dispatch: None, setup: None,
+                convergence_check: None,
+                loop_dispatch: None,
+                setup: None,
             },
         ]
     }

@@ -27,7 +27,11 @@ impl Filter for AcesIdt {
             _ => crate::color_space::ColorSpace::Srgb,
         };
         let mut out = input.to_vec();
-        crate::color_math::convert_color_space(&mut out, from, crate::color_space::ColorSpace::AcesCct);
+        crate::color_math::convert_color_space(
+            &mut out,
+            from,
+            crate::color_space::ColorSpace::AcesCct,
+        );
         Ok(out)
     }
 }
@@ -52,7 +56,11 @@ impl Filter for AcesOdt {
             _ => crate::color_space::ColorSpace::Srgb,
         };
         let mut out = input.to_vec();
-        crate::color_math::convert_color_space(&mut out, crate::color_space::ColorSpace::AcesCct, to);
+        crate::color_math::convert_color_space(
+            &mut out,
+            crate::color_space::ColorSpace::AcesCct,
+            to,
+        );
         Ok(out)
     }
 }
@@ -112,7 +120,10 @@ mod tests {
 
         for (i, (&orig, &rt)) in input.iter().zip(roundtrip.iter()).enumerate() {
             let diff = (orig - rt).abs();
-            assert!(diff < 0.001, "pixel[{i}] roundtrip error: {orig} → {rt} (diff {diff})");
+            assert!(
+                diff < 0.001,
+                "pixel[{i}] roundtrip error: {orig} → {rt} (diff {diff})"
+            );
         }
     }
 
@@ -130,7 +141,10 @@ mod tests {
 
         for (i, (&orig, &rt)) in acescct.iter().zip(back.iter()).enumerate() {
             let diff = (orig - rt).abs();
-            assert!(diff < 0.0001, "cct↔cg roundtrip[{i}] error: {orig} → {rt} (diff {diff})");
+            assert!(
+                diff < 0.0001,
+                "cct↔cg roundtrip[{i}] error: {orig} → {rt} (diff {diff})"
+            );
         }
     }
 }

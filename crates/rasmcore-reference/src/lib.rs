@@ -19,12 +19,8 @@
 //! // Compare against your optimized implementation
 //! ```
 
-pub mod point_ops;
 pub mod color_ops;
-pub mod spatial_ops;
-pub mod enhancement_ops;
-pub mod grading_ops;
-pub mod edge_ops;
+pub mod point_ops;
 
 // ─── Procedural Test Input Generators ───────────────────────────────────────
 
@@ -84,7 +80,10 @@ fn hash_f32(mut x: u32) -> f32 {
 /// Compare two pixel buffers and return max absolute difference.
 pub fn max_diff(a: &[f32], b: &[f32]) -> f32 {
     assert_eq!(a.len(), b.len(), "buffer length mismatch");
-    a.iter().zip(b.iter()).map(|(x, y)| (x - y).abs()).fold(0.0f32, f32::max)
+    a.iter()
+        .zip(b.iter())
+        .map(|(x, y)| (x - y).abs())
+        .fold(0.0f32, f32::max)
 }
 
 /// Assert pixel buffers match within tolerance.

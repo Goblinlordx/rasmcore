@@ -4,7 +4,7 @@ use crate::node::{GpuShader, PipelineError};
 use crate::ops::Filter;
 
 use super::super::helpers::{gpu_params_wh, gpu_push_f32, gpu_push_u32, sample_bilinear};
-use super::{smoothstep_f32};
+use super::smoothstep_f32;
 
 // Healing Brush — blend source region with local statistics
 // ═══════════════════════════════════════════════════════════════════════════
@@ -14,11 +14,16 @@ use super::{smoothstep_f32};
 #[derive(Clone, rasmcore_macros::V2Filter)]
 #[filter(name = "healing_brush", category = "tool")]
 pub struct HealingBrush {
-    #[param(min = 0.0, max = 1.0, step = 0.001, default = 0.5)] pub center_x: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.001, default = 0.5)] pub center_y: f32,
-    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.1)] pub offset_x: f32,
-    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0)] pub offset_y: f32,
-    #[param(min = 1.0, max = 500.0, step = 1.0, default = 50.0, hint = "rc.pixels")] pub radius: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.001, default = 0.5)]
+    pub center_x: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.001, default = 0.5)]
+    pub center_y: f32,
+    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.1)]
+    pub offset_x: f32,
+    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0)]
+    pub offset_y: f32,
+    #[param(min = 1.0, max = 500.0, step = 1.0, default = 50.0, hint = "rc.pixels")]
+    pub radius: f32,
 }
 
 const HEALING_BRUSH_WGSL: &str = r#"
@@ -61,17 +66,19 @@ impl Filter for HealingBrush {
             for x in 0..width {
                 let dx = x as f32 - cx;
                 let dy = y as f32 - cy;
-                let dist = (dx*dx + dy*dy).sqrt();
-                if dist >= self.radius { continue; }
+                let dist = (dx * dx + dy * dy).sqrt();
+                if dist >= self.radius {
+                    continue;
+                }
                 let falloff = 1.0 - smoothstep_f32(self.radius * 0.5, self.radius, dist);
                 let src = sample_bilinear(input, width, height, x as f32 + ox, y as f32 + oy);
                 let i = ((y * width + x) * 4) as usize;
                 let src_luma = src[0] * 0.2126 + src[1] * 0.7152 + src[2] * 0.0722;
-                let dst_luma = out[i] * 0.2126 + out[i+1] * 0.7152 + out[i+2] * 0.0722;
+                let dst_luma = out[i] * 0.2126 + out[i + 1] * 0.7152 + out[i + 2] * 0.0722;
                 let ratio = dst_luma / src_luma.max(0.001);
                 for c in 0..3 {
                     let healed = src[c] * ratio;
-                    out[i+c] = out[i+c] * (1.0 - falloff) + healed * falloff;
+                    out[i + c] = out[i + c] * (1.0 - falloff) + healed * falloff;
                 }
             }
         }
@@ -86,6 +93,11 @@ impl Filter for HealingBrush {
         gpu_push_f32(&mut p, self.offset_y * _h as f32);
         gpu_push_f32(&mut p, self.radius);
         gpu_push_u32(&mut p, 0);
-        Some(vec![GpuShader::new(HEALING_BRUSH_WGSL.to_string(), "main", [256, 1, 1], p)])
+        Some(vec![GpuShader::new(
+            HEALING_BRUSH_WGSL.to_string(),
+            "main",
+            [256, 1, 1],
+            p,
+        )])
     }
 }

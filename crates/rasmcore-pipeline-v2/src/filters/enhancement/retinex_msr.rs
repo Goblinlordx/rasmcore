@@ -6,7 +6,11 @@ use crate::ops::Filter;
 ///
 /// Averages SSR at three scales for better overall contrast.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "retinex_msr", category = "enhancement", cost = "O(3 * n * sigma) via gaussian_blur")]
+#[filter(
+    name = "retinex_msr",
+    category = "enhancement",
+    cost = "O(3 * n * sigma) via gaussian_blur"
+)]
 pub struct RetinexMsr {
     #[param(min = 0.0, max = 200.0, default = 15.0)]
     pub sigma_small: f32,
@@ -62,9 +66,9 @@ impl Filter for RetinexMsr {
 
 // ── RetinexMsr GPU (3 blur scales + accumulate + normalize) ─────────────
 
+use crate::filters::spatial::{blur_params, gaussian_kernel_bytes};
 use crate::gpu_shaders::{enhancement as enh_shaders, spatial};
 use crate::node::{GpuShader, ReductionBuffer};
-use crate::filters::spatial::{gaussian_kernel_bytes, blur_params};
 
 gpu_filter_passes_only!(RetinexMsr,
     passes(self_, w, h) => {

@@ -2,8 +2,8 @@ use crate::fusion::Clut3D;
 use crate::node::PipelineError;
 use crate::ops::Filter;
 
-use crate::filters::helpers::{rgb_to_hsl, hsl_to_rgb};
 use super::ClutOp;
+use crate::filters::helpers::{hsl_to_rgb, rgb_to_hsl};
 
 /// Modulate — combined brightness/saturation/hue in HSL space.
 #[derive(Clone, rasmcore_macros::V2Filter)]

@@ -27,7 +27,10 @@ use super::types::{ImageInfo, PixelFormat};
 
 /// Ensure input is RGBA8; convert RGB8 → RGBA8 if needed.
 /// Returns (pixels, info) where info.format is always Rgba8.
-pub(crate) fn ensure_rgba8(pixels: &[u8], info: &ImageInfo) -> Result<(Vec<u8>, ImageInfo), ImageError> {
+pub(crate) fn ensure_rgba8(
+    pixels: &[u8],
+    info: &ImageInfo,
+) -> Result<(Vec<u8>, ImageInfo), ImageError> {
     match info.format {
         PixelFormat::Rgba8 => Ok((pixels.to_vec(), info.clone())),
         PixelFormat::Rgb8 => {

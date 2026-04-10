@@ -154,7 +154,14 @@ fn fm_solve_pair(a11: f32, f1_inside: bool, a22: f32, f2_inside: bool) -> f32 {
     }
 }
 
-pub(crate) fn solve_eikonal(dist: &[f32], flags: &[u8], w: usize, h: usize, x: usize, y: usize) -> f32 {
+pub(crate) fn solve_eikonal(
+    dist: &[f32],
+    flags: &[u8],
+    w: usize,
+    h: usize,
+    x: usize,
+    y: usize,
+) -> f32 {
     let up = if y > 0 {
         (dist[(y - 1) * w + x], flags[(y - 1) * w + x] == INSIDE)
     } else {
@@ -426,7 +433,12 @@ mod opencv_parity {
             }
         }
 
-        let info = ImageInfo { width: w, height: h, format: PixelFormat::Gray8, color_space: ColorSpace::Srgb };
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
         let ours = inpaint(&img, &info, &mask, 3.0, InpaintMethod::Telea).unwrap();
 
         let script = format!(
@@ -441,7 +453,10 @@ mod opencv_parity {
         let m = mae(&ours, &reference);
         let mx = max_err(&ours, &reference);
         eprintln!("  Telea inpaint vs OpenCV: MAE={m:.4}, max_err={mx}");
-        assert!(m == 0.0 && mx == 0, "Telea MAE={m:.4}, max_err={mx} vs OpenCV — must be exact");
+        assert!(
+            m == 0.0 && mx == 0,
+            "Telea MAE={m:.4}, max_err={mx} vs OpenCV — must be exact"
+        );
     }
 
     #[test]
@@ -457,7 +472,12 @@ mod opencv_parity {
             }
         }
 
-        let info = ImageInfo { width: w, height: h, format: PixelFormat::Gray8, color_space: ColorSpace::Srgb };
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
         let ours = inpaint(&img, &info, &mask, 3.0, InpaintMethod::NavierStokes).unwrap();
 
         let script = format!(
@@ -472,7 +492,10 @@ mod opencv_parity {
         let m = mae(&ours, &reference);
         let mx = max_err(&ours, &reference);
         eprintln!("  NS inpaint vs OpenCV: MAE={m:.4}, max_err={mx}");
-        assert!(m == 0.0 && mx == 0, "NS MAE={m:.4}, max_err={mx} vs OpenCV — must be exact");
+        assert!(
+            m == 0.0 && mx == 0,
+            "NS MAE={m:.4}, max_err={mx} vs OpenCV — must be exact"
+        );
     }
 
     #[test]
@@ -493,7 +516,12 @@ mod opencv_parity {
             }
         }
 
-        let info = ImageInfo { width: w, height: h, format: PixelFormat::Gray8, color_space: ColorSpace::Srgb };
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
         let ours = inpaint(&img, &info, &mask, 5.0, InpaintMethod::Telea).unwrap();
 
         let script = format!(
@@ -508,7 +536,10 @@ mod opencv_parity {
         let m = mae(&ours, &reference);
         let mx = max_err(&ours, &reference);
         eprintln!("  Telea gradient vs OpenCV: MAE={m:.4}, max_err={mx}");
-        assert!(mx <= 6, "Telea gradient max_err={mx} vs OpenCV — should be <= 6");
+        assert!(
+            mx <= 6,
+            "Telea gradient max_err={mx} vs OpenCV — should be <= 6"
+        );
     }
 
     #[test]
@@ -529,7 +560,12 @@ mod opencv_parity {
             }
         }
 
-        let info = ImageInfo { width: w, height: h, format: PixelFormat::Gray8, color_space: ColorSpace::Srgb };
+        let info = ImageInfo {
+            width: w,
+            height: h,
+            format: PixelFormat::Gray8,
+            color_space: ColorSpace::Srgb,
+        };
         let ours = inpaint(&img, &info, &mask, 5.0, InpaintMethod::NavierStokes).unwrap();
 
         let script = format!(
@@ -544,6 +580,9 @@ mod opencv_parity {
         let m = mae(&ours, &reference);
         let mx = max_err(&ours, &reference);
         eprintln!("  NS gradient vs OpenCV: MAE={m:.4}, max_err={mx}");
-        assert!(m == 0.0 && mx == 0, "NS gradient MAE={m:.4}, max_err={mx} vs OpenCV — must be exact");
+        assert!(
+            m == 0.0 && mx == 0,
+            "NS gradient MAE={m:.4}, max_err={mx} vs OpenCV — must be exact"
+        );
     }
 }

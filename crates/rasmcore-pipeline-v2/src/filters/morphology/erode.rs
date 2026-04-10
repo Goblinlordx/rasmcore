@@ -25,5 +25,7 @@ impl Filter for Erode {
         Some(vec![make_erode_shader(width, height, self.radius)])
     }
 
-    fn tile_overlap(&self) -> u32 { self.radius }
+    fn tile_overlap(&self) -> u32 {
+        self.radius
+    }
 }

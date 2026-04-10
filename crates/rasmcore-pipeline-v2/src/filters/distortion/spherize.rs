@@ -1,6 +1,6 @@
 //! Spherize distortion filter.
 
-use crate::node::{PipelineError};
+use crate::node::PipelineError;
 use crate::ops::Filter;
 
 use super::super::helpers::{gpu_params_wh, sample_bilinear};
@@ -69,8 +69,15 @@ impl Filter for Spherize {
         let mut params = gpu_params_wh(width, height);
         gpu_params_push_f32(&mut params, self.amount);
         gpu_params_push_u32(&mut params, 0); // pad
-        Some(vec![crate::node::GpuShader::new(shader, "main", [16, 16, 1], params)])
+        Some(vec![crate::node::GpuShader::new(
+            shader,
+            "main",
+            [16, 16, 1],
+            params,
+        )])
     }
 
-    fn tile_overlap(&self) -> u32 { 0 }
+    fn tile_overlap(&self) -> u32 {
+        0
+    }
 }

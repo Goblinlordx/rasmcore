@@ -8,11 +8,9 @@
 //! The pipeline's promote/linearize node handles sRGB→Linear conversion.
 
 use crate::convert;
-use rasmcore_pipeline_v2::ops::{DecodedImage, Decoder};
-use rasmcore_pipeline_v2::registry::{
-    OperationCapabilities, OperationKind, OperationRegistration,
-};
 use rasmcore_pipeline_v2::PipelineError;
+use rasmcore_pipeline_v2::ops::{DecodedImage, Decoder};
+use rasmcore_pipeline_v2::registry::{OperationCapabilities, OperationKind, OperationRegistration};
 
 // ─── Macro for sRGB decoders (u8 native, converted to f32) ──────────────────
 
@@ -273,24 +271,52 @@ fn decode_via<D: Decoder>(decoder: &D, data: &[u8]) -> Result<DecodedImage, Pipe
 /// then structured headers, then text heuristics).
 pub fn decode(data: &[u8]) -> Result<DecodedImage, PipelineError> {
     // Priority 10 — binary magic (fast, unambiguous)
-    if PngDecoder.can_decode(data) { return decode_via(&PngDecoder, data); }
-    if JpegDecoder.can_decode(data) { return decode_via(&JpegDecoder, data); }
-    if GifDecoder.can_decode(data) { return decode_via(&GifDecoder, data); }
-    if WebpDecoder.can_decode(data) { return decode_via(&WebpDecoder, data); }
-    if BmpDecoder.can_decode(data) { return decode_via(&BmpDecoder, data); }
-    if QoiDecoder.can_decode(data) { return decode_via(&QoiDecoder, data); }
-    if DdsDecoder.can_decode(data) { return decode_via(&DdsDecoder, data); }
-    if ExrDecoder.can_decode(data) { return decode_via(&ExrDecoder, data); }
-    if HdrDecoder.can_decode(data) { return decode_via(&HdrDecoder, data); }
+    if PngDecoder.can_decode(data) {
+        return decode_via(&PngDecoder, data);
+    }
+    if JpegDecoder.can_decode(data) {
+        return decode_via(&JpegDecoder, data);
+    }
+    if GifDecoder.can_decode(data) {
+        return decode_via(&GifDecoder, data);
+    }
+    if WebpDecoder.can_decode(data) {
+        return decode_via(&WebpDecoder, data);
+    }
+    if BmpDecoder.can_decode(data) {
+        return decode_via(&BmpDecoder, data);
+    }
+    if QoiDecoder.can_decode(data) {
+        return decode_via(&QoiDecoder, data);
+    }
+    if DdsDecoder.can_decode(data) {
+        return decode_via(&DdsDecoder, data);
+    }
+    if ExrDecoder.can_decode(data) {
+        return decode_via(&ExrDecoder, data);
+    }
+    if HdrDecoder.can_decode(data) {
+        return decode_via(&HdrDecoder, data);
+    }
     // Priority 20
-    if IcoDecoder.can_decode(data) { return decode_via(&IcoDecoder, data); }
+    if IcoDecoder.can_decode(data) {
+        return decode_via(&IcoDecoder, data);
+    }
     // Priority 60 — structured
-    if FitsDecoder.can_decode(data) { return decode_via(&FitsDecoder, data); }
+    if FitsDecoder.can_decode(data) {
+        return decode_via(&FitsDecoder, data);
+    }
     // Priority 120 — TIFF-based
-    if TiffDecoder.can_decode(data) { return decode_via(&TiffDecoder, data); }
+    if TiffDecoder.can_decode(data) {
+        return decode_via(&TiffDecoder, data);
+    }
     // Priority 200+ — text/heuristic
-    if PnmDecoder.can_decode(data) { return decode_via(&PnmDecoder, data); }
-    if TgaDecoder.can_decode(data) { return decode_via(&TgaDecoder, data); }
+    if PnmDecoder.can_decode(data) {
+        return decode_via(&PnmDecoder, data);
+    }
+    if TgaDecoder.can_decode(data) {
+        return decode_via(&TgaDecoder, data);
+    }
 
     Err(PipelineError::ComputeError(
         "no V2 decoder matched the input data".into(),
@@ -322,20 +348,48 @@ pub fn decode_with_hint(data: &[u8], format: &str) -> Result<DecodedImage, Pipel
 
 /// Detect image format from raw bytes. Returns format name or None.
 pub fn detect_format(data: &[u8]) -> Option<&'static str> {
-    if PngDecoder.can_decode(data) { return Some("png"); }
-    if JpegDecoder.can_decode(data) { return Some("jpg"); }
-    if GifDecoder.can_decode(data) { return Some("gif"); }
-    if WebpDecoder.can_decode(data) { return Some("webp"); }
-    if BmpDecoder.can_decode(data) { return Some("bmp"); }
-    if QoiDecoder.can_decode(data) { return Some("qoi"); }
-    if DdsDecoder.can_decode(data) { return Some("dds"); }
-    if ExrDecoder.can_decode(data) { return Some("exr"); }
-    if HdrDecoder.can_decode(data) { return Some("hdr"); }
-    if IcoDecoder.can_decode(data) { return Some("ico"); }
-    if FitsDecoder.can_decode(data) { return Some("fits"); }
-    if TiffDecoder.can_decode(data) { return Some("tiff"); }
-    if PnmDecoder.can_decode(data) { return Some("pnm"); }
-    if TgaDecoder.can_decode(data) { return Some("tga"); }
+    if PngDecoder.can_decode(data) {
+        return Some("png");
+    }
+    if JpegDecoder.can_decode(data) {
+        return Some("jpg");
+    }
+    if GifDecoder.can_decode(data) {
+        return Some("gif");
+    }
+    if WebpDecoder.can_decode(data) {
+        return Some("webp");
+    }
+    if BmpDecoder.can_decode(data) {
+        return Some("bmp");
+    }
+    if QoiDecoder.can_decode(data) {
+        return Some("qoi");
+    }
+    if DdsDecoder.can_decode(data) {
+        return Some("dds");
+    }
+    if ExrDecoder.can_decode(data) {
+        return Some("exr");
+    }
+    if HdrDecoder.can_decode(data) {
+        return Some("hdr");
+    }
+    if IcoDecoder.can_decode(data) {
+        return Some("ico");
+    }
+    if FitsDecoder.can_decode(data) {
+        return Some("fits");
+    }
+    if TiffDecoder.can_decode(data) {
+        return Some("tiff");
+    }
+    if PnmDecoder.can_decode(data) {
+        return Some("pnm");
+    }
+    if TgaDecoder.can_decode(data) {
+        return Some("tga");
+    }
     None
 }
 
@@ -367,7 +421,9 @@ pub fn probe_metadata(data: &[u8]) -> Result<DecodedImageMetadata, PipelineError
         });
     }
 
-    Err(PipelineError::ComputeError("no decoder matched for metadata probe".into()))
+    Err(PipelineError::ComputeError(
+        "no decoder matched for metadata probe".into(),
+    ))
 }
 
 // ─── Fast metadata-only parsers ───────────────────────────────────────────
@@ -388,7 +444,9 @@ fn probe_jpeg_metadata(data: &[u8]) -> Result<DecodedImageMetadata, PipelineErro
             continue;
         }
         let marker = data[pos + 1];
-        if marker == 0xD9 || marker == 0xDA { break; } // EOI or SOS — stop before pixel data
+        if marker == 0xD9 || marker == 0xDA {
+            break;
+        } // EOI or SOS — stop before pixel data
         if marker == 0x00 || marker == 0xFF {
             pos += 1;
             continue;
@@ -409,24 +467,43 @@ fn probe_jpeg_metadata(data: &[u8]) -> Result<DecodedImageMetadata, PipelineErro
             // APP1 — EXIF or XMP
             0xE1 => {
                 if seg_end > seg_start + 6 && &data[seg_start..seg_start + 6] == b"Exif\0\0" {
-                    metadata.set("exif", MetadataValue::Bytes(data[seg_start + 6..seg_end].to_vec()));
-                } else if seg_end > seg_start + 29 && data[seg_start..].starts_with(b"http://ns.adobe.com/xap/1.0/") {
-                    let xmp_start = data[seg_start..seg_end].iter().position(|&b| b == 0).unwrap_or(28) + 1;
-                    metadata.set("xmp", MetadataValue::Bytes(data[seg_start + xmp_start..seg_end].to_vec()));
+                    metadata.set(
+                        "exif",
+                        MetadataValue::Bytes(data[seg_start + 6..seg_end].to_vec()),
+                    );
+                } else if seg_end > seg_start + 29
+                    && data[seg_start..].starts_with(b"http://ns.adobe.com/xap/1.0/")
+                {
+                    let xmp_start = data[seg_start..seg_end]
+                        .iter()
+                        .position(|&b| b == 0)
+                        .unwrap_or(28)
+                        + 1;
+                    metadata.set(
+                        "xmp",
+                        MetadataValue::Bytes(data[seg_start + xmp_start..seg_end].to_vec()),
+                    );
                 }
             }
             // APP2 — ICC profile
             0xE2 => {
-                if seg_end > seg_start + 14 && &data[seg_start..seg_start + 12] == b"ICC_PROFILE\0" {
+                if seg_end > seg_start + 14 && &data[seg_start..seg_start + 12] == b"ICC_PROFILE\0"
+                {
                     // Simplified: take first chunk (multi-chunk ICC not handled here)
                     if metadata.get("icc").is_none() {
-                        metadata.set("icc", MetadataValue::Bytes(data[seg_start + 14..seg_end].to_vec()));
+                        metadata.set(
+                            "icc",
+                            MetadataValue::Bytes(data[seg_start + 14..seg_end].to_vec()),
+                        );
                     }
                 }
             }
             // APP13 — IPTC
             0xED => {
-                metadata.set("iptc", MetadataValue::Bytes(data[seg_start..seg_end].to_vec()));
+                metadata.set(
+                    "iptc",
+                    MetadataValue::Bytes(data[seg_start..seg_end].to_vec()),
+                );
             }
             _ => {}
         }
@@ -435,7 +512,9 @@ fn probe_jpeg_metadata(data: &[u8]) -> Result<DecodedImageMetadata, PipelineErro
     }
 
     if width == 0 || height == 0 {
-        return Err(PipelineError::ComputeError("JPEG: no SOF frame found".into()));
+        return Err(PipelineError::ComputeError(
+            "JPEG: no SOF frame found".into(),
+        ));
     }
 
     Ok(DecodedImageMetadata {
@@ -452,11 +531,14 @@ fn probe_png_metadata(data: &[u8]) -> Result<DecodedImageMetadata, PipelineError
     let mut width = 0u32;
     let mut height = 0u32;
 
-    if data.len() < 8 { return Err(PipelineError::ComputeError("PNG too short".into())); }
+    if data.len() < 8 {
+        return Err(PipelineError::ComputeError("PNG too short".into()));
+    }
     let mut pos = 8; // skip PNG signature
 
     while pos + 12 <= data.len() {
-        let chunk_len = u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
+        let chunk_len =
+            u32::from_be_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
         let chunk_type = &data[pos + 4..pos + 8];
         let chunk_data_start = pos + 8;
         let chunk_data_end = (chunk_data_start + chunk_len).min(data.len());
@@ -464,23 +546,40 @@ fn probe_png_metadata(data: &[u8]) -> Result<DecodedImageMetadata, PipelineError
         match chunk_type {
             b"IHDR" => {
                 if chunk_len >= 8 {
-                    width = u32::from_be_bytes([data[chunk_data_start], data[chunk_data_start + 1],
-                                                data[chunk_data_start + 2], data[chunk_data_start + 3]]);
-                    height = u32::from_be_bytes([data[chunk_data_start + 4], data[chunk_data_start + 5],
-                                                 data[chunk_data_start + 6], data[chunk_data_start + 7]]);
+                    width = u32::from_be_bytes([
+                        data[chunk_data_start],
+                        data[chunk_data_start + 1],
+                        data[chunk_data_start + 2],
+                        data[chunk_data_start + 3],
+                    ]);
+                    height = u32::from_be_bytes([
+                        data[chunk_data_start + 4],
+                        data[chunk_data_start + 5],
+                        data[chunk_data_start + 6],
+                        data[chunk_data_start + 7],
+                    ]);
                 }
             }
             b"iCCP" => {
                 // ICC profile (compressed) — extract raw for now
-                if let Some(null_pos) = data[chunk_data_start..chunk_data_end].iter().position(|&b| b == 0) {
+                if let Some(null_pos) = data[chunk_data_start..chunk_data_end]
+                    .iter()
+                    .position(|&b| b == 0)
+                {
                     let profile_start = chunk_data_start + null_pos + 2; // skip name + compression method
                     if profile_start < chunk_data_end {
-                        metadata.set("icc", MetadataValue::Bytes(data[profile_start..chunk_data_end].to_vec()));
+                        metadata.set(
+                            "icc",
+                            MetadataValue::Bytes(data[profile_start..chunk_data_end].to_vec()),
+                        );
                     }
                 }
             }
             b"eXIf" => {
-                metadata.set("exif", MetadataValue::Bytes(data[chunk_data_start..chunk_data_end].to_vec()));
+                metadata.set(
+                    "exif",
+                    MetadataValue::Bytes(data[chunk_data_start..chunk_data_end].to_vec()),
+                );
             }
             b"tEXt" | b"iTXt" => {
                 if let Ok(text) = std::str::from_utf8(&data[chunk_data_start..chunk_data_end]) {
@@ -512,12 +611,16 @@ fn probe_webp_metadata(data: &[u8]) -> Result<DecodedImageMetadata, PipelineErro
     let mut width = 0u32;
     let mut height = 0u32;
 
-    if data.len() < 12 { return Err(PipelineError::ComputeError("WebP too short".into())); }
+    if data.len() < 12 {
+        return Err(PipelineError::ComputeError("WebP too short".into()));
+    }
     let mut pos = 12; // skip RIFF + size + WEBP
 
     while pos + 8 <= data.len() {
         let fourcc = &data[pos..pos + 4];
-        let chunk_size = u32::from_le_bytes([data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7]]) as usize;
+        let chunk_size =
+            u32::from_le_bytes([data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7]])
+                as usize;
         let chunk_start = pos + 8;
         let chunk_end = (chunk_start + chunk_size).min(data.len());
 
@@ -555,13 +658,22 @@ fn probe_webp_metadata(data: &[u8]) -> Result<DecodedImageMetadata, PipelineErro
                 }
             }
             b"ICCP" => {
-                metadata.set("icc", MetadataValue::Bytes(data[chunk_start..chunk_end].to_vec()));
+                metadata.set(
+                    "icc",
+                    MetadataValue::Bytes(data[chunk_start..chunk_end].to_vec()),
+                );
             }
             b"EXIF" => {
-                metadata.set("exif", MetadataValue::Bytes(data[chunk_start..chunk_end].to_vec()));
+                metadata.set(
+                    "exif",
+                    MetadataValue::Bytes(data[chunk_start..chunk_end].to_vec()),
+                );
             }
             b"XMP " => {
-                metadata.set("xmp", MetadataValue::Bytes(data[chunk_start..chunk_end].to_vec()));
+                metadata.set(
+                    "xmp",
+                    MetadataValue::Bytes(data[chunk_start..chunk_end].to_vec()),
+                );
             }
             _ => {}
         }
@@ -571,7 +683,9 @@ fn probe_webp_metadata(data: &[u8]) -> Result<DecodedImageMetadata, PipelineErro
     }
 
     if width == 0 || height == 0 {
-        return Err(PipelineError::ComputeError("WebP: no dimensions found".into()));
+        return Err(PipelineError::ComputeError(
+            "WebP: no dimensions found".into(),
+        ));
     }
 
     Ok(DecodedImageMetadata {
@@ -585,8 +699,8 @@ fn probe_webp_metadata(data: &[u8]) -> Result<DecodedImageMetadata, PipelineErro
 /// List all supported V2 decode formats.
 pub fn supported_formats() -> Vec<&'static str> {
     vec![
-        "png", "jpg", "gif", "webp", "bmp", "qoi", "dds", "exr",
-        "hdr", "ico", "fits", "tiff", "pnm", "tga",
+        "png", "jpg", "gif", "webp", "bmp", "qoi", "dds", "exr", "hdr", "ico", "fits", "tiff",
+        "pnm", "tga",
     ]
 }
 

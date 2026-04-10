@@ -22,7 +22,9 @@ pub struct Saturate {
 
 impl Filter for Saturate {
     fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
-        use crate::color_math::{linear_srgb_to_oklab, oklab_to_linear_srgb, oklab_to_oklch, oklch_to_oklab};
+        use crate::color_math::{
+            linear_srgb_to_oklab, oklab_to_linear_srgb, oklab_to_oklch, oklch_to_oklab,
+        };
         let factor = self.factor;
         let mut out = input.to_vec();
         for pixel in out.chunks_exact_mut(4) {
@@ -44,7 +46,9 @@ impl Filter for Saturate {
 
 impl ClutOp for Saturate {
     fn build_clut(&self) -> Clut3D {
-        use crate::color_math::{linear_srgb_to_oklab, oklab_to_linear_srgb, oklab_to_oklch, oklch_to_oklab};
+        use crate::color_math::{
+            linear_srgb_to_oklab, oklab_to_linear_srgb, oklab_to_oklch, oklch_to_oklab,
+        };
         let factor = self.factor;
         Clut3D::from_fn(33, move |r, g, b| {
             let (l, a, ob) = linear_srgb_to_oklab(r, g, b);

@@ -3,9 +3,12 @@
 use crate::node::{GpuShader, PipelineError};
 use crate::ops::Filter;
 
-use super::{dilate_cpu, erode_cpu, make_dilate_shader, make_snapshot_shader, make_sub_shader, make_erode_from_snap_shader, SUB_SNAP_MINUS_CURRENT_WGSL, SNAPSHOT_WGSL};
 use super::super::helpers::gpu_params_wh;
 use super::gpu_params_push_u32;
+use super::{
+    SNAPSHOT_WGSL, SUB_SNAP_MINUS_CURRENT_WGSL, dilate_cpu, erode_cpu, make_dilate_shader,
+    make_erode_from_snap_shader, make_snapshot_shader, make_sub_shader,
+};
 use crate::node::ReductionBuffer;
 
 // Morph Gradient (dilate − erode)
@@ -65,8 +68,9 @@ impl Filter for MorphGradient {
                         initial_data: vec![0u8; buf_size],
                         read_write: true,
                     }],
-            convergence_check: None,
-            loop_dispatch: None, setup: None,
+                    convergence_check: None,
+                    loop_dispatch: None,
+                    setup: None,
                 }
             },
             // Pass 3: erode from original (buf 0)
@@ -77,5 +81,7 @@ impl Filter for MorphGradient {
         ])
     }
 
-    fn tile_overlap(&self) -> u32 { self.radius }
+    fn tile_overlap(&self) -> u32 {
+        self.radius
+    }
 }

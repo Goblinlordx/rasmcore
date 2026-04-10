@@ -9,8 +9,6 @@
 //! - Bradford chromatic adaptation
 //! - Perspective warp (4-point homography)
 
-
-
 // ─── sRGB ↔ Linear ───────────────────────────────────────────────────────
 
 #[inline]
@@ -326,7 +324,6 @@ pub fn oklab_to_rgb_direct(ok_l: f64, ok_a: f64, ok_b: f64) -> (f64, f64, f64) {
 
     (linear_to_srgb(rl), linear_to_srgb(gl), linear_to_srgb(bl))
 }
-
 
 // ─── Delta E (Color Difference Metrics) ──────────────────────────────────
 

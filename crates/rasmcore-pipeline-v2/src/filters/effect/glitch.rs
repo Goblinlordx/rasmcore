@@ -97,8 +97,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 "#;
 
 impl GpuFilter for Glitch {
-    fn shader_body(&self) -> &str { GLITCH_WGSL }
-    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn shader_body(&self) -> &str {
+        GLITCH_WGSL
+    }
+    fn workgroup_size(&self) -> [u32; 3] {
+        [16, 16, 1]
+    }
     fn params(&self, width: u32, height: u32) -> Vec<u8> {
         let seed = self.seed as u64 ^ noise::SEED_GLITCH;
         let mut buf = gpu_params_wh(width, height);
@@ -119,7 +123,8 @@ impl GpuFilter for Glitch {
             extra_buffers: vec![],
             reduction_buffers: vec![],
             convergence_check: None,
-            loop_dispatch: None, setup: None,
+            loop_dispatch: None,
+            setup: None,
         }
     }
 }

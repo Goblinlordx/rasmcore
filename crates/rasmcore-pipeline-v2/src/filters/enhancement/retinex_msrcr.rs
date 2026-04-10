@@ -6,7 +6,11 @@ use crate::ops::Filter;
 ///
 /// MSR + chromaticity-based gain for color preservation.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "retinex_msrcr", category = "enhancement", cost = "O(3 * n * sigma) via gaussian_blur")]
+#[filter(
+    name = "retinex_msrcr",
+    category = "enhancement",
+    cost = "O(3 * n * sigma) via gaussian_blur"
+)]
 pub struct RetinexMsrcr {
     #[param(min = 0.0, max = 200.0, default = 15.0)]
     pub sigma_small: f32,
@@ -45,10 +49,8 @@ impl Filter for RetinexMsrcr {
 
         // Color restoration
         let mut out = vec![0.0f32; n];
-        for (pixel_idx, (in_pixel, msr_pixel)) in input
-            .chunks_exact(4)
-            .zip(msr.chunks_exact(4))
-            .enumerate()
+        for (pixel_idx, (in_pixel, msr_pixel)) in
+            input.chunks_exact(4).zip(msr.chunks_exact(4)).enumerate()
         {
             let sum = in_pixel[0] + in_pixel[1] + in_pixel[2];
             let idx = pixel_idx * 4;
@@ -88,9 +90,9 @@ impl Filter for RetinexMsrcr {
 
 // ── RetinexMsrcr GPU (3 blur scales + accumulate + color restoration) ───
 
+use crate::filters::spatial::{blur_params, gaussian_kernel_bytes};
 use crate::gpu_shaders::{enhancement as enh_shaders, spatial};
 use crate::node::{GpuShader, ReductionBuffer};
-use crate::filters::spatial::{gaussian_kernel_bytes, blur_params};
 
 gpu_filter_passes_only!(RetinexMsrcr,
     passes(self_, w, h) => {

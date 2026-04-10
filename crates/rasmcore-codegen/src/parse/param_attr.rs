@@ -200,7 +200,10 @@ mod tests {
         let opts = super::parse_options_string("w3c:PS/W3C standard|lab:CIELAB perceptual");
         assert_eq!(opts.len(), 2);
         assert_eq!(opts[0], ("w3c".to_string(), "PS/W3C standard".to_string()));
-        assert_eq!(opts[1], ("lab".to_string(), "CIELAB perceptual".to_string()));
+        assert_eq!(
+            opts[1],
+            ("lab".to_string(), "CIELAB perceptual".to_string())
+        );
     }
 
     #[test]

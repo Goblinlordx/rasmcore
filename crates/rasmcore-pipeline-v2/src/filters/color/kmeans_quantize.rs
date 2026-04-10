@@ -5,7 +5,11 @@ use super::{kmeans_palette, nearest_color};
 
 /// K-means color quantization.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "kmeans_quantize", category = "color", cost = "O(n * k * iterations)")]
+#[filter(
+    name = "kmeans_quantize",
+    category = "color",
+    cost = "O(n * k * iterations)"
+)]
 pub struct KmeansQuantize {
     /// Number of clusters (2-256).
     #[param(min = 2, max = 256, default = 16)]
@@ -36,7 +40,9 @@ impl GpuFilter for KmeansQuantize {
     fn shader_body(&self) -> &str {
         include_str!("../../shaders/kmeans_quantize.wgsl")
     }
-    fn workgroup_size(&self) -> [u32; 3] { [256, 1, 1] }
+    fn workgroup_size(&self) -> [u32; 3] {
+        [256, 1, 1]
+    }
     fn params(&self, width: u32, height: u32) -> Vec<u8> {
         let mut buf = Vec::with_capacity(16);
         buf.extend_from_slice(&width.to_le_bytes());

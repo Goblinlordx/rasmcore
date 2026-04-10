@@ -41,9 +41,7 @@ impl Filter for WhiteBalanceTemperature {
 /// Setting 8000K means "scene was under blue sky" → warm up to D65.
 /// Setting 3200K means "scene was under tungsten" → cool down to D65.
 fn wb_adaptation_matrix(temperature: f32, tint: f32) -> [f32; 9] {
-    use crate::color_math::{
-        cat16_adaptation_matrix, cie_d_illuminant_xy, tint_shift_xy,
-    };
+    use crate::color_math::{cat16_adaptation_matrix, cie_d_illuminant_xy, tint_shift_xy};
     let source = cie_d_illuminant_xy(temperature);
     let source = tint_shift_xy(source, tint);
     let d65 = cie_d_illuminant_xy(6500.0);
@@ -88,8 +86,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 "#;
 
 impl GpuFilter for WhiteBalanceTemperature {
-    fn shader_body(&self) -> &str { WB_CAT16_WGSL }
-    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn shader_body(&self) -> &str {
+        WB_CAT16_WGSL
+    }
+    fn workgroup_size(&self) -> [u32; 3] {
+        [16, 16, 1]
+    }
     fn params(&self, width: u32, height: u32) -> Vec<u8> {
         let m = wb_adaptation_matrix(self.temperature, self.tint);
         let mut buf = Vec::with_capacity(48);

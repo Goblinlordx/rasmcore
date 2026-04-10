@@ -20,8 +20,8 @@
 //! - `Q16`: Quantize to u16 on store, promote to f32 on read (8 bytes/pixel)
 //! - `Q8`: Quantize to u8 on store, promote to f32 on read (4 bytes/pixel)
 
-use std::collections::HashMap;
 use crate::hash::ContentHash;
+use std::collections::HashMap;
 
 /// Cache storage quality — controls memory/precision tradeoff.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -132,13 +132,7 @@ impl LayerCache {
     /// Store f32 pixel data in the cache.
     ///
     /// Quantizes according to the current quality setting.
-    pub fn store(
-        &mut self,
-        hash: ContentHash,
-        pixels: &[f32],
-        width: u32,
-        height: u32,
-    ) {
+    pub fn store(&mut self, hash: ContentHash, pixels: &[f32], width: u32, height: u32) {
         let (stored_data, stored_quality) = match self.quality {
             CacheQuality::Full => (f32_to_bytes(pixels), CacheQuality::Full),
             CacheQuality::Q16 => (quantize_f32_to_u16(pixels), CacheQuality::Q16),

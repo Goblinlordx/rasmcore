@@ -143,7 +143,11 @@ mod tests {
             // Desaturate 50%: blend toward gray
             let gray = r * 0.299 + g * 0.587 + b * 0.114;
             let f = 0.5;
-            (r * f + gray * (1.0 - f), g * f + gray * (1.0 - f), b * f + gray * (1.0 - f))
+            (
+                r * f + gray * (1.0 - f),
+                g * f + gray * (1.0 - f),
+                b * f + gray * (1.0 - f),
+            )
         });
 
         let composed = compose_cluts(&hue_lut, &saturate_lut);

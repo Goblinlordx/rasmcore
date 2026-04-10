@@ -3,8 +3,8 @@
 //! Captures only tiles overlapping a stroke's bounding box before rendering.
 //! Undo restores pre-stroke tiles. Memory-bounded with oldest-first eviction.
 
-use std::collections::HashMap;
 use crate::rect::Rect;
+use std::collections::HashMap;
 
 /// Tile size in pixels (64x64).
 pub const TILE_SIZE: u32 = 64;
@@ -61,7 +61,11 @@ impl TileSet {
             }
         }
 
-        TileSet { tiles, source_width: width, source_height: height }
+        TileSet {
+            tiles,
+            source_width: width,
+            source_height: height,
+        }
     }
 
     /// Restore captured tiles back into a pixel buffer.
@@ -270,7 +274,10 @@ mod tests {
 
         // Check a pixel inside the captured area
         let idx = ((20 * w + 20) * 4) as usize;
-        assert!((modified[idx] - 0.5).abs() < 1e-6, "restored pixel should be 0.5");
+        assert!(
+            (modified[idx] - 0.5).abs() < 1e-6,
+            "restored pixel should be 0.5"
+        );
     }
 
     #[test]
@@ -319,7 +326,9 @@ mod tests {
         for y in 0..64u32 {
             for x in 0..64u32 {
                 let i = ((y * w + x) * 4) as usize;
-                canvas[i] = 1.0; canvas[i + 1] = 1.0; canvas[i + 2] = 1.0;
+                canvas[i] = 1.0;
+                canvas[i + 1] = 1.0;
+                canvas[i + 2] = 1.0;
             }
         }
         stack.record_post_state(&canvas, w, h);
@@ -386,6 +395,9 @@ mod tests {
         stack.undo(&mut canvas, w, h);
 
         // Canvas should match original
-        assert_eq!(canvas, original, "canvas should match original after undoing all strokes");
+        assert_eq!(
+            canvas, original,
+            "canvas should match original after undoing all strokes"
+        );
     }
 }

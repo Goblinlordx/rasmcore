@@ -10,7 +10,11 @@ use crate::filters::helpers::luminance;
 /// `w(l) = 4 * l * (1 - l)` where l is normalized luminance.
 /// `output = input + amount * (input - blur) * w(luminance)`
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "clarity", category = "enhancement", cost = "O(n * radius) via gaussian_blur")]
+#[filter(
+    name = "clarity",
+    category = "enhancement",
+    cost = "O(n * radius) via gaussian_blur"
+)]
 pub struct Clarity {
     #[param(min = -1.0, max = 1.0, default = 0.0)]
     pub amount: f32,
@@ -20,7 +24,9 @@ pub struct Clarity {
 
 impl Filter for Clarity {
     fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
-        let blur = GaussianBlur { radius: self.radius };
+        let blur = GaussianBlur {
+            radius: self.radius,
+        };
         let blurred = blur.compute(input, width, height)?;
         let amount = self.amount;
         let mut out = input.to_vec();
@@ -39,9 +45,9 @@ impl Filter for Clarity {
 
 // ── Clarity GPU (blur + midtone-weighted blend) ─────────────────────────
 
+use crate::filters::spatial::{blur_params, gaussian_kernel_bytes};
 use crate::gpu_shaders::{enhancement as enh_shaders, spatial};
 use crate::node::GpuShader;
-use crate::filters::spatial::{gaussian_kernel_bytes, blur_params};
 
 gpu_filter_passes_only!(Clarity,
     passes(self_, w, h) => {

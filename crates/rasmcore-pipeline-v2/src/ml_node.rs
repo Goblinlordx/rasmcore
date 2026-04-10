@@ -59,8 +59,7 @@ pub fn pixels_to_tensor(
                     let src = (y * w + x) * 4;
                     let dst = y * w + x;
                     // R plane
-                    out[dst * 4..(dst + 1) * 4]
-                        .copy_from_slice(&pixels[src].to_le_bytes());
+                    out[dst * 4..(dst + 1) * 4].copy_from_slice(&pixels[src].to_le_bytes());
                     // G plane
                     out[(plane + dst) * 4..(plane + dst + 1) * 4]
                         .copy_from_slice(&pixels[src + 1].to_le_bytes());
@@ -100,7 +99,13 @@ pub fn pixels_to_tensor(
         }
         _ => {
             // Other combinations: fall back to NCHW f32
-            pixels_to_tensor(pixels, width, height, TensorLayout::Nchw, TensorDtype::Float32)
+            pixels_to_tensor(
+                pixels,
+                width,
+                height,
+                TensorLayout::Nchw,
+                TensorDtype::Float32,
+            )
         }
     }
 }
@@ -129,9 +134,18 @@ pub fn tensor_to_pixels(
                 for x in 0..w {
                     let src = y * w + x;
                     let dst = (y * w + x) * 4;
-                    pixels[dst] = f32::from_le_bytes(tensor[src * 4..(src + 1) * 4].try_into().unwrap());
-                    pixels[dst + 1] = f32::from_le_bytes(tensor[(plane + src) * 4..(plane + src + 1) * 4].try_into().unwrap());
-                    pixels[dst + 2] = f32::from_le_bytes(tensor[(2 * plane + src) * 4..(2 * plane + src + 1) * 4].try_into().unwrap());
+                    pixels[dst] =
+                        f32::from_le_bytes(tensor[src * 4..(src + 1) * 4].try_into().unwrap());
+                    pixels[dst + 1] = f32::from_le_bytes(
+                        tensor[(plane + src) * 4..(plane + src + 1) * 4]
+                            .try_into()
+                            .unwrap(),
+                    );
+                    pixels[dst + 2] = f32::from_le_bytes(
+                        tensor[(2 * plane + src) * 4..(2 * plane + src + 1) * 4]
+                            .try_into()
+                            .unwrap(),
+                    );
                     pixels[dst + 3] = 1.0; // alpha = 1
                 }
             }
@@ -167,7 +181,14 @@ pub fn tensor_to_pixels(
         _ => {
             // Fallback: try to interpret as NCHW f32 RGB
             if tensor.len() >= w * h * c * 4 {
-                return tensor_to_pixels(tensor, width, height, 3, TensorLayout::Nchw, TensorDtype::Float32);
+                return tensor_to_pixels(
+                    tensor,
+                    width,
+                    height,
+                    3,
+                    TensorLayout::Nchw,
+                    TensorDtype::Float32,
+                );
             }
         }
     }
@@ -318,7 +339,13 @@ impl MlNode {
         ml_execute: &dyn Fn(&[u8], &str, &str, &[u8]) -> Result<Vec<u8>, PipelineError>,
     ) -> Result<Vec<f32>, PipelineError> {
         // Convert pixels to model tensor format
-        let tensor_bytes = pixels_to_tensor(pixels, tile_w, tile_h, self.tensor_layout, self.tensor_dtype);
+        let tensor_bytes = pixels_to_tensor(
+            pixels,
+            tile_w,
+            tile_h,
+            self.tensor_layout,
+            self.tensor_dtype,
+        );
 
         // Call host ml-execute
         let output_bytes = ml_execute(
@@ -411,12 +438,7 @@ impl Node for MlNode {
         }
     }
 
-    fn input_rect(
-        &self,
-        _output: Rect,
-        _bounds_w: u32,
-        _bounds_h: u32,
-    ) -> InputRectEstimate {
+    fn input_rect(&self, _output: Rect, _bounds_w: u32, _bounds_h: u32) -> InputRectEstimate {
         // ML nodes always need the full upstream image (tiling is internal)
         InputRectEstimate::FullImage
     }
@@ -449,7 +471,7 @@ mod tests {
         let pixels = vec![0.0, 0.5, 1.0, 1.0]; // 1 pixel
         let tensor = pixels_to_tensor(&pixels, 1, 1, TensorLayout::Nchw, TensorDtype::Uint8);
         assert_eq!(tensor.len(), 3); // 3 channels × 1 pixel × 1 byte
-        assert_eq!(tensor[0], 0);   // R
+        assert_eq!(tensor[0], 0); // R
         assert_eq!(tensor[1], 128); // G (~0.5 * 255)
         assert_eq!(tensor[2], 255); // B
     }
@@ -490,9 +512,16 @@ mod tests {
             color_space: ColorSpace::Linear,
         };
         let node = MlNode::new(
-            0, upstream_info, "test".into(), "1.0".into(), vec![],
-            MlInputSpec::Dynamic, MlOutputKind::Image, 4,
-            TensorLayout::Nchw, TensorDtype::Float32,
+            0,
+            upstream_info,
+            "test".into(),
+            "1.0".into(),
+            vec![],
+            MlInputSpec::Dynamic,
+            MlOutputKind::Image,
+            4,
+            TensorLayout::Nchw,
+            TensorDtype::Float32,
         );
         assert_eq!(node.info().width, 400);
         assert_eq!(node.info().height, 800);
@@ -506,10 +535,19 @@ mod tests {
             color_space: ColorSpace::Linear,
         };
         let node = MlNode::new(
-            0, upstream_info, "rmbg".into(), "1.4".into(), vec![],
-            MlInputSpec::FullImage { target_width: 1024, target_height: 1024 },
-            MlOutputKind::Mask, 1,
-            TensorLayout::Nchw, TensorDtype::Float32,
+            0,
+            upstream_info,
+            "rmbg".into(),
+            "1.4".into(),
+            vec![],
+            MlInputSpec::FullImage {
+                target_width: 1024,
+                target_height: 1024,
+            },
+            MlOutputKind::Mask,
+            1,
+            TensorLayout::Nchw,
+            TensorDtype::Float32,
         );
         // Output dimensions = input × scale (1x for mask)
         assert_eq!(node.info().width, 256);
@@ -519,12 +557,21 @@ mod tests {
     #[test]
     fn ml_node_input_rect_is_full_image() {
         let upstream_info = NodeInfo {
-            width: 100, height: 100, color_space: ColorSpace::Linear,
+            width: 100,
+            height: 100,
+            color_space: ColorSpace::Linear,
         };
         let node = MlNode::new(
-            0, upstream_info, "test".into(), "1.0".into(), vec![],
-            MlInputSpec::Dynamic, MlOutputKind::Image, 1,
-            TensorLayout::Nchw, TensorDtype::Float32,
+            0,
+            upstream_info,
+            "test".into(),
+            "1.0".into(),
+            vec![],
+            MlInputSpec::Dynamic,
+            MlOutputKind::Image,
+            1,
+            TensorLayout::Nchw,
+            TensorDtype::Float32,
         );
         let estimate = node.input_rect(Rect::new(0, 0, 50, 50), 100, 100);
         assert!(matches!(estimate, InputRectEstimate::FullImage));

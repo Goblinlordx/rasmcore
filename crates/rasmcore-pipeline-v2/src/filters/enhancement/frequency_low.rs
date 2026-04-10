@@ -6,7 +6,11 @@ use crate::ops::Filter;
 ///
 /// Extracts large-scale color/tone structure.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "frequency_low", category = "enhancement", cost = "O(n * sigma) via gaussian_blur")]
+#[filter(
+    name = "frequency_low",
+    category = "enhancement",
+    cost = "O(n * sigma) via gaussian_blur"
+)]
 pub struct FrequencyLow {
     #[param(min = 0.0, max = 100.0, default = 3.0)]
     pub sigma: f32,
@@ -21,9 +25,9 @@ impl Filter for FrequencyLow {
 
 // ── FrequencyLow GPU (same as GaussianBlur) ─────────────────────────────
 
+use crate::filters::spatial::{blur_params, gaussian_kernel_bytes};
 use crate::gpu_shaders::spatial;
 use crate::node::GpuShader;
-use crate::filters::spatial::{gaussian_kernel_bytes, blur_params};
 
 gpu_filter_passes_only!(FrequencyLow,
     passes(self_, w, h) => {

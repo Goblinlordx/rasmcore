@@ -177,7 +177,9 @@ mod tests {
 
     #[test]
     fn sample_bilinear_f32_fragment_is_valid() {
-        assert!(SAMPLE_BILINEAR_F32.contains("fn sample_bilinear_f32(fx: f32, fy: f32) -> vec4<f32>"));
+        assert!(
+            SAMPLE_BILINEAR_F32.contains("fn sample_bilinear_f32(fx: f32, fy: f32) -> vec4<f32>")
+        );
     }
 
     #[test]

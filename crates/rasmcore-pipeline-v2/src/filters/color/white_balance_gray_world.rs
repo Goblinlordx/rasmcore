@@ -24,9 +24,21 @@ impl Filter for WhiteBalanceGrayWorld {
         let avg_g = sum_g / n;
         let avg_b = sum_b / n;
         let avg_all = (avg_r + avg_g + avg_b) / 3.0;
-        let sr = if avg_r > 1e-10 { (avg_all / avg_r) as f32 } else { 1.0 };
-        let sg = if avg_g > 1e-10 { (avg_all / avg_g) as f32 } else { 1.0 };
-        let sb = if avg_b > 1e-10 { (avg_all / avg_b) as f32 } else { 1.0 };
+        let sr = if avg_r > 1e-10 {
+            (avg_all / avg_r) as f32
+        } else {
+            1.0
+        };
+        let sg = if avg_g > 1e-10 {
+            (avg_all / avg_g) as f32
+        } else {
+            1.0
+        };
+        let sb = if avg_b > 1e-10 {
+            (avg_all / avg_b) as f32
+        } else {
+            1.0
+        };
         let mut out = input.to_vec();
         for pixel in out.chunks_exact_mut(4) {
             pixel[0] *= sr;
@@ -81,7 +93,9 @@ impl GpuFilter for WhiteBalanceGrayWorld {
     fn shader_body(&self) -> &str {
         WB_GRAY_WORLD_APPLY_WGSL
     }
-    fn workgroup_size(&self) -> [u32; 3] { [256, 1, 1] }
+    fn workgroup_size(&self) -> [u32; 3] {
+        [256, 1, 1]
+    }
     fn params(&self, width: u32, height: u32) -> Vec<u8> {
         let mut buf = Vec::with_capacity(16);
         buf.extend_from_slice(&width.to_le_bytes());
@@ -125,6 +139,9 @@ mod tests {
         let avg_g: f32 = (0..4).map(|i| out[i * 4 + 1]).sum::<f32>() / 4.0;
         let avg_b: f32 = (0..4).map(|i| out[i * 4 + 2]).sum::<f32>() / 4.0;
         let spread = (avg_r - avg_g).abs().max((avg_g - avg_b).abs());
-        assert!(spread < 0.01, "Gray world should equalize channels, spread={spread}");
+        assert!(
+            spread < 0.01,
+            "Gray world should equalize channels, spread={spread}"
+        );
     }
 }

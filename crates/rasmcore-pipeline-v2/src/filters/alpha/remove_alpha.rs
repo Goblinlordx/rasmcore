@@ -34,8 +34,14 @@ impl Filter for RemoveAlpha {
 
     fn gpu_shader_passes(&self, _width: u32, _height: u32) -> Option<Vec<GpuShader>> {
         let mut p = gpu_params_wh(_width, _height);
-        gpu_push_u32(&mut p, 0); gpu_push_u32(&mut p, 0);
-        Some(vec![GpuShader::new(REMOVE_ALPHA_WGSL.to_string(), "main", [256, 1, 1], p)])
+        gpu_push_u32(&mut p, 0);
+        gpu_push_u32(&mut p, 0);
+        Some(vec![GpuShader::new(
+            REMOVE_ALPHA_WGSL.to_string(),
+            "main",
+            [256, 1, 1],
+            p,
+        )])
     }
 }
 

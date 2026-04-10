@@ -11,11 +11,16 @@ pub fn extract_filters(file: &syn::File) -> Vec<FilterReg> {
     let mut filters = Vec::new();
 
     // Collect trait impls: map struct name -> set of trait names
-    let mut trait_impls: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    let mut trait_impls: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
     for item in &file.items {
         if let syn::Item::Impl(imp) = item {
             if let Some((_, path, _)) = &imp.trait_ {
-                let trait_name = path.segments.last().map(|s| s.ident.to_string()).unwrap_or_default();
+                let trait_name = path
+                    .segments
+                    .last()
+                    .map(|s| s.ident.to_string())
+                    .unwrap_or_default();
                 let self_ty = &imp.self_ty;
                 let self_type = quote::quote!(#self_ty).to_string().replace(' ', "");
                 trait_impls.entry(self_type).or_default().push(trait_name);
@@ -168,13 +173,13 @@ fn extract_derive_filter_reg(s: &syn::ItemStruct) -> Option<FilterReg> {
         group,
         variant,
         reference,
-        point_op: false,  // Detected by trait impl scanning, not attribute
+        point_op: false, // Detected by trait impl scanning, not attribute
         color_op: false,
         gpu: false,
         derive_style: true,
         rect_request: true,
-        fn_name: String::new(),  // No bare fn
-        params: Vec::new(),      // Params come from ConfigParams, not fn sig
+        fn_name: String::new(), // No bare fn
+        params: Vec::new(),     // Params come from ConfigParams, not fn sig
         config_struct: Some(struct_name),
         f32_native: false,
     })

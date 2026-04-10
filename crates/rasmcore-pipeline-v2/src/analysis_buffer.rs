@@ -38,9 +38,9 @@ impl AnalysisBufferKind {
     pub fn typical_size(self) -> usize {
         match self {
             AnalysisBufferKind::Histogram256 => 768 * 4, // 768 u32s
-            AnalysisBufferKind::ChannelMinMax => 32,      // 2 × vec4<f32>
-            AnalysisBufferKind::ChannelSum => 16,         // 1 × vec4<f32>
-            AnalysisBufferKind::Generic => 0,             // caller must specify
+            AnalysisBufferKind::ChannelMinMax => 32,     // 2 × vec4<f32>
+            AnalysisBufferKind::ChannelSum => 16,        // 1 × vec4<f32>
+            AnalysisBufferKind::Generic => 0,            // caller must specify
         }
     }
 }
@@ -72,7 +72,11 @@ impl AnalysisBufferDecl {
 
     /// Create with explicit size (for Generic or non-standard sizes).
     pub fn with_size(logical_id: u32, kind: AnalysisBufferKind, size_bytes: usize) -> Self {
-        Self { logical_id, kind, size_bytes }
+        Self {
+            logical_id,
+            kind,
+            size_bytes,
+        }
     }
 
     /// Effective size — explicit size if set, otherwise typical for the kind.
@@ -158,7 +162,8 @@ impl AnalysisBufferContext {
         for decl in decls {
             let resolved_id = self.next_id;
             self.next_id += 1;
-            self.resolved.insert((node_index, decl.logical_id), resolved_id);
+            self.resolved
+                .insert((node_index, decl.logical_id), resolved_id);
         }
     }
 
@@ -174,7 +179,8 @@ impl AnalysisBufferContext {
     ) {
         for r in refs {
             if let Some(&resolved_id) = self.resolved.get(&(producer_index, r.logical_id)) {
-                self.resolved.insert((consumer_index, r.logical_id), resolved_id);
+                self.resolved
+                    .insert((consumer_index, r.logical_id), resolved_id);
             }
         }
     }
@@ -294,9 +300,10 @@ mod tests {
     #[test]
     fn context_register_producer() {
         let mut ctx = AnalysisBufferContext::new();
-        ctx.register_producer(0, &[
-            AnalysisBufferDecl::new(0, AnalysisBufferKind::Histogram256),
-        ]);
+        ctx.register_producer(
+            0,
+            &[AnalysisBufferDecl::new(0, AnalysisBufferKind::Histogram256)],
+        );
 
         let mapping = ctx.node_mapping(0);
         assert_eq!(mapping.resolve(0), RESOLVED_ID_BASE);
@@ -307,9 +314,13 @@ mod tests {
     fn context_producer_consumer_link() {
         let mut ctx = AnalysisBufferContext::new();
         // Node 0 produces buffer logical_id=0
-        ctx.register_producer(0, &[
-            AnalysisBufferDecl::new(0, AnalysisBufferKind::ChannelMinMax),
-        ]);
+        ctx.register_producer(
+            0,
+            &[AnalysisBufferDecl::new(
+                0,
+                AnalysisBufferKind::ChannelMinMax,
+            )],
+        );
         // Node 2 consumes buffer logical_id=0
         ctx.register_consumer(2, &[AnalysisBufferRef::new(0)], 0);
 
@@ -327,9 +338,21 @@ mod tests {
         let inputs = [AnalysisBufferRef::new(0)];
 
         let chain = [
-            ChainNodeInfo { index: 0, outputs: &outputs, inputs: &[] },
-            ChainNodeInfo { index: 1, outputs: &[], inputs: &[] },  // passthrough
-            ChainNodeInfo { index: 2, outputs: &[], inputs: &inputs },
+            ChainNodeInfo {
+                index: 0,
+                outputs: &outputs,
+                inputs: &[],
+            },
+            ChainNodeInfo {
+                index: 1,
+                outputs: &[],
+                inputs: &[],
+            }, // passthrough
+            ChainNodeInfo {
+                index: 2,
+                outputs: &[],
+                inputs: &inputs,
+            },
         ];
 
         let ctx = negotiate_analysis_buffers(&chain).unwrap();
@@ -343,17 +366,36 @@ mod tests {
     #[test]
     fn negotiate_two_independent_producers() {
         let outputs_a = [AnalysisBufferDecl::new(0, AnalysisBufferKind::Histogram256)];
-        let outputs_b = [AnalysisBufferDecl::new(0, AnalysisBufferKind::ChannelMinMax)];
+        let outputs_b = [AnalysisBufferDecl::new(
+            0,
+            AnalysisBufferKind::ChannelMinMax,
+        )];
         let inputs_a = [AnalysisBufferRef::new(0)];
         let inputs_b = [AnalysisBufferRef::new(0)];
 
         // Chain: producer_A → consumer_A → producer_B → consumer_B
         // Both use logical_id=0 but should get different resolved IDs.
         let chain = [
-            ChainNodeInfo { index: 0, outputs: &outputs_a, inputs: &[] },
-            ChainNodeInfo { index: 1, outputs: &[], inputs: &inputs_a },
-            ChainNodeInfo { index: 2, outputs: &outputs_b, inputs: &[] },
-            ChainNodeInfo { index: 3, outputs: &[], inputs: &inputs_b },
+            ChainNodeInfo {
+                index: 0,
+                outputs: &outputs_a,
+                inputs: &[],
+            },
+            ChainNodeInfo {
+                index: 1,
+                outputs: &[],
+                inputs: &inputs_a,
+            },
+            ChainNodeInfo {
+                index: 2,
+                outputs: &outputs_b,
+                inputs: &[],
+            },
+            ChainNodeInfo {
+                index: 3,
+                outputs: &[],
+                inputs: &inputs_b,
+            },
         ];
 
         let ctx = negotiate_analysis_buffers(&chain).unwrap();
@@ -377,14 +419,25 @@ mod tests {
         let inputs = [AnalysisBufferRef::new(5)]; // no producer for id=5
 
         let chain = [
-            ChainNodeInfo { index: 0, outputs: &[], inputs: &[] },
-            ChainNodeInfo { index: 1, outputs: &[], inputs: &inputs },
+            ChainNodeInfo {
+                index: 0,
+                outputs: &[],
+                inputs: &[],
+            },
+            ChainNodeInfo {
+                index: 1,
+                outputs: &[],
+                inputs: &inputs,
+            },
         ];
 
         let result = negotiate_analysis_buffers(&chain);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("logical_id 5"), "error should mention the ID: {err}");
+        assert!(
+            err.contains("logical_id 5"),
+            "error should mention the ID: {err}"
+        );
     }
 
     #[test]
@@ -394,14 +447,33 @@ mod tests {
         // analysis2 produces minmax (id=0), render2 consumes it
         let hist_out = [AnalysisBufferDecl::new(0, AnalysisBufferKind::Histogram256)];
         let hist_in = [AnalysisBufferRef::new(0)];
-        let mm_out = [AnalysisBufferDecl::new(0, AnalysisBufferKind::ChannelMinMax)];
+        let mm_out = [AnalysisBufferDecl::new(
+            0,
+            AnalysisBufferKind::ChannelMinMax,
+        )];
         let mm_in = [AnalysisBufferRef::new(0)];
 
         let chain = [
-            ChainNodeInfo { index: 0, outputs: &hist_out, inputs: &[] },
-            ChainNodeInfo { index: 1, outputs: &[], inputs: &hist_in },
-            ChainNodeInfo { index: 2, outputs: &mm_out, inputs: &[] },
-            ChainNodeInfo { index: 3, outputs: &[], inputs: &mm_in },
+            ChainNodeInfo {
+                index: 0,
+                outputs: &hist_out,
+                inputs: &[],
+            },
+            ChainNodeInfo {
+                index: 1,
+                outputs: &[],
+                inputs: &hist_in,
+            },
+            ChainNodeInfo {
+                index: 2,
+                outputs: &mm_out,
+                inputs: &[],
+            },
+            ChainNodeInfo {
+                index: 3,
+                outputs: &[],
+                inputs: &mm_in,
+            },
         ];
 
         let ctx = negotiate_analysis_buffers(&chain).unwrap();
@@ -438,9 +510,21 @@ mod tests {
     fn negotiate_no_analysis_nodes() {
         // All nodes are plain render nodes — no analysis outputs or inputs
         let chain = [
-            ChainNodeInfo { index: 0, outputs: &[], inputs: &[] },
-            ChainNodeInfo { index: 1, outputs: &[], inputs: &[] },
-            ChainNodeInfo { index: 2, outputs: &[], inputs: &[] },
+            ChainNodeInfo {
+                index: 0,
+                outputs: &[],
+                inputs: &[],
+            },
+            ChainNodeInfo {
+                index: 1,
+                outputs: &[],
+                inputs: &[],
+            },
+            ChainNodeInfo {
+                index: 2,
+                outputs: &[],
+                inputs: &[],
+            },
         ];
 
         let ctx = negotiate_analysis_buffers(&chain).unwrap();

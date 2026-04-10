@@ -25,19 +25,19 @@
 
 // Force-link filter registrations (including scope filters)
 #[allow(unused_imports)]
-use rasmcore_pipeline_v2::filters as _v2_filters;
-#[allow(unused_imports)]
 use rasmcore_codecs_v2 as _v2_codecs;
+#[allow(unused_imports)]
+use rasmcore_pipeline_v2::filters as _v2_filters;
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use rasmcore_pipeline_v2 as v2;
-use v2::{Graph, NodeInfo, ColorSpace, ParamMap, PipelineError};
-use v2::node::{Node, Upstream};
-use v2::rect::Rect;
 use v2::gpu_shaders::pixel_source;
 use v2::hash::source_hash_pixels;
+use v2::node::{Node, Upstream};
+use v2::rect::Rect;
+use v2::{ColorSpace, Graph, NodeInfo, ParamMap, PipelineError};
 
 // ─── Source Node ────────────────────────────────────────────────────────────
 
@@ -47,11 +47,15 @@ struct SourceNode {
 }
 
 impl Node for SourceNode {
-    fn info(&self) -> NodeInfo { self.info.clone() }
+    fn info(&self) -> NodeInfo {
+        self.info.clone()
+    }
     fn compute(&self, _r: Rect, _u: &mut dyn Upstream) -> Result<Vec<f32>, PipelineError> {
         Ok(self.pixels.clone())
     }
-    fn upstream_ids(&self) -> Vec<u32> { vec![] }
+    fn upstream_ids(&self) -> Vec<u32> {
+        vec![]
+    }
 }
 
 // ─── Host-Decoded Pixel Source Node ────────────────────────────────────────
@@ -63,7 +67,9 @@ struct SourceNodePixels {
 }
 
 impl Node for SourceNodePixels {
-    fn info(&self) -> NodeInfo { self.info.clone() }
+    fn info(&self) -> NodeInfo {
+        self.info.clone()
+    }
     fn compute(&self, _r: Rect, _u: &mut dyn Upstream) -> Result<Vec<f32>, PipelineError> {
         match self.format {
             HostPixelFormat::Rgba8 => Ok(v2::color_math::srgb_rgba8_to_f32_linear(&self.raw_bytes)),
@@ -89,7 +95,9 @@ impl Node for SourceNodePixels {
     fn gpu_shader(&self, width: u32, height: u32) -> Option<v2::GpuShader> {
         pixel_source::conversion_shader(self.format, &self.raw_bytes, width, height)
     }
-    fn upstream_ids(&self) -> Vec<u32> { vec![] }
+    fn upstream_ids(&self) -> Vec<u32> {
+        vec![]
+    }
 }
 
 // Re-export HostPixelFormat for SDK consumers
@@ -118,7 +126,8 @@ impl Pipeline {
             rasmcore_codecs_v2::decode_with_hint(data, h)
         } else {
             rasmcore_codecs_v2::decode(data)
-        }.map_err(|e| PipelineError::ComputeError(format!("decode: {e}")))?;
+        }
+        .map_err(|e| PipelineError::ComputeError(format!("decode: {e}")))?;
 
         let mut graph = Graph::new(16 * 1024 * 1024);
 
@@ -142,7 +151,9 @@ impl Pipeline {
         // Auto-IDT: convert source color space to working space when color-managed
         let source_cs = decoded.info.color_space;
         if graph.borrow().is_color_managed() {
-            let working = graph.borrow().working_color_space()
+            let working = graph
+                .borrow()
+                .working_color_space()
                 .unwrap_or(ColorSpace::AcesCg);
             if source_cs != working && source_cs != ColorSpace::Unknown {
                 let idt_name = match source_cs {
@@ -158,9 +169,8 @@ impl Pipeline {
                         height: decoded.info.height,
                         color_space: working,
                     };
-                    let ct_node = v2::color_transform::ColorTransformNode::new(
-                        node, idt_info, transform,
-                    );
+                    let ct_node =
+                        v2::color_transform::ColorTransformNode::new(node, idt_info, transform);
                     node = graph.borrow_mut().add_node(Box::new(ct_node));
                 }
             }
@@ -199,13 +209,21 @@ impl Pipeline {
             }
             Box::new(SourceNode {
                 pixels,
-                info: NodeInfo { width, height, color_space },
+                info: NodeInfo {
+                    width,
+                    height,
+                    color_space,
+                },
             })
         } else {
             Box::new(SourceNodePixels {
                 raw_bytes: data,
                 format,
-                info: NodeInfo { width, height, color_space },
+                info: NodeInfo {
+                    width,
+                    height,
+                    color_space,
+                },
             })
         };
 
@@ -224,7 +242,11 @@ impl Pipeline {
 
         let source = SourceNode {
             pixels,
-            info: NodeInfo { width, height, color_space: ColorSpace::Linear },
+            info: NodeInfo {
+                width,
+                height,
+                color_space: ColorSpace::Linear,
+            },
         };
 
         let graph = Rc::new(RefCell::new(graph));
@@ -234,9 +256,14 @@ impl Pipeline {
 
     /// Get the current node's output dimensions and color space.
     pub fn info(&self) -> NodeInfo {
-        self.graph.borrow().node_info(self.node).unwrap_or(NodeInfo {
-            width: 0, height: 0, color_space: ColorSpace::Linear,
-        })
+        self.graph
+            .borrow()
+            .node_info(self.node)
+            .unwrap_or(NodeInfo {
+                width: 0,
+                height: 0,
+                color_space: ColorSpace::Linear,
+            })
     }
 
     /// Apply a named filter with the given parameters.
@@ -248,7 +275,10 @@ impl Pipeline {
         let node = v2::create_filter_node(name, self.node, info, params)
             .ok_or_else(|| PipelineError::InvalidParams(format!("unknown filter: {name}")))?;
         let id = self.graph.borrow_mut().add_node(node);
-        Ok(Pipeline { graph: self.graph.clone(), node: id })
+        Ok(Pipeline {
+            graph: self.graph.clone(),
+            node: id,
+        })
     }
 
     /// Render the pipeline and return working-space f32 RGBA pixels.
@@ -267,9 +297,7 @@ impl Pipeline {
         let ot_name = self.graph.borrow().display_transform().to_string();
         if let Ok(transform) = v2::color_transform::load_preset(&ot_name) {
             let info = self.info();
-            let ot_node = v2::color_transform::ColorTransformNode::new(
-                self.node, info, transform,
-            );
+            let ot_node = v2::color_transform::ColorTransformNode::new(self.node, info, transform);
             let ot_id = self.graph.borrow_mut().add_node(Box::new(ot_node));
             self.graph.borrow_mut().request_full(ot_id)
         } else {
@@ -293,7 +321,9 @@ impl Pipeline {
         if let Some(q) = quality {
             params.ints.insert("quality".into(), q as i64);
         }
-        if let Some(result) = v2::encode_via_registry(format, &pixels, info.width, info.height, &params) {
+        if let Some(result) =
+            v2::encode_via_registry(format, &pixels, info.width, info.height, &params)
+        {
             result
         } else {
             rasmcore_codecs_v2::encode(&pixels, info.width, info.height, format, quality)
@@ -309,13 +339,21 @@ impl Pipeline {
 
     /// Fork from a named ref — returns a new Pipeline at that node.
     pub fn branch(&self, name: &str) -> Result<Pipeline, PipelineError> {
-        let node = self.graph.borrow().get_ref(name)
+        let node = self
+            .graph
+            .borrow()
+            .get_ref(name)
             .ok_or_else(|| PipelineError::InvalidParams(format!("unknown ref: {name}")))?;
-        Ok(Pipeline { graph: self.graph.clone(), node })
+        Ok(Pipeline {
+            graph: self.graph.clone(),
+            node,
+        })
     }
 
     /// Get the underlying node ID (for advanced use).
-    pub fn node_id(&self) -> u32 { self.node }
+    pub fn node_id(&self) -> u32 {
+        self.node
+    }
 
     /// Set the display output transform preset for auto-OT insertion.
     /// Default: "ot-srgb". See docs/guides/color-management.md for presets.
@@ -344,22 +382,26 @@ impl Pipeline {
     // ── Adjustment ──
 
     pub fn brightness(&self, amount: f32) -> Result<Pipeline, PipelineError> {
-        let mut p = ParamMap::new(); p.floats.insert("amount".into(), amount);
+        let mut p = ParamMap::new();
+        p.floats.insert("amount".into(), amount);
         self.apply("brightness", &p)
     }
 
     pub fn contrast(&self, amount: f32) -> Result<Pipeline, PipelineError> {
-        let mut p = ParamMap::new(); p.floats.insert("amount".into(), amount);
+        let mut p = ParamMap::new();
+        p.floats.insert("amount".into(), amount);
         self.apply("contrast", &p)
     }
 
     pub fn gamma(&self, gamma: f32) -> Result<Pipeline, PipelineError> {
-        let mut p = ParamMap::new(); p.floats.insert("gamma".into(), gamma);
+        let mut p = ParamMap::new();
+        p.floats.insert("gamma".into(), gamma);
         self.apply("gamma", &p)
     }
 
     pub fn exposure(&self, ev: f32) -> Result<Pipeline, PipelineError> {
-        let mut p = ParamMap::new(); p.floats.insert("ev".into(), ev);
+        let mut p = ParamMap::new();
+        p.floats.insert("ev".into(), ev);
         self.apply("exposure", &p)
     }
 
@@ -370,41 +412,48 @@ impl Pipeline {
     // ── Spatial ──
 
     pub fn gaussian_blur(&self, radius: f32) -> Result<Pipeline, PipelineError> {
-        let mut p = ParamMap::new(); p.floats.insert("radius".into(), radius);
+        let mut p = ParamMap::new();
+        p.floats.insert("radius".into(), radius);
         self.apply("gaussian_blur", &p)
     }
 
     pub fn sharpen(&self, amount: f32) -> Result<Pipeline, PipelineError> {
-        let mut p = ParamMap::new(); p.floats.insert("amount".into(), amount);
+        let mut p = ParamMap::new();
+        p.floats.insert("amount".into(), amount);
         self.apply("sharpen", &p)
     }
 
     pub fn box_blur(&self, radius: u32) -> Result<Pipeline, PipelineError> {
-        let mut p = ParamMap::new(); p.ints.insert("radius".into(), radius as i64);
+        let mut p = ParamMap::new();
+        p.ints.insert("radius".into(), radius as i64);
         self.apply("box_blur", &p)
     }
 
     // ── Color ──
 
     pub fn hue_rotate(&self, degrees: f32) -> Result<Pipeline, PipelineError> {
-        let mut p = ParamMap::new(); p.floats.insert("degrees".into(), degrees);
+        let mut p = ParamMap::new();
+        p.floats.insert("degrees".into(), degrees);
         self.apply("hue_rotate", &p)
     }
 
     pub fn saturate(&self, amount: f32) -> Result<Pipeline, PipelineError> {
-        let mut p = ParamMap::new(); p.floats.insert("amount".into(), amount);
+        let mut p = ParamMap::new();
+        p.floats.insert("amount".into(), amount);
         self.apply("saturate", &p)
     }
 
     pub fn sepia(&self, amount: f32) -> Result<Pipeline, PipelineError> {
-        let mut p = ParamMap::new(); p.floats.insert("amount".into(), amount);
+        let mut p = ParamMap::new();
+        p.floats.insert("amount".into(), amount);
         self.apply("sepia", &p)
     }
 
     // ── Edge detection ──
 
     pub fn sobel(&self, scale: f32) -> Result<Pipeline, PipelineError> {
-        let mut p = ParamMap::new(); p.floats.insert("scale".into(), scale);
+        let mut p = ParamMap::new();
+        p.floats.insert("scale".into(), scale);
         self.apply("sobel", &p)
     }
 
@@ -460,8 +509,7 @@ mod tests {
     #[test]
     fn pipeline_brightness() {
         let px = test_pixels(4, 4);
-        let pipe = Pipeline::from_pixels(px, 4, 4)
-            .brightness(0.1).unwrap();
+        let pipe = Pipeline::from_pixels(px, 4, 4).brightness(0.1).unwrap();
         let out = pipe.render().unwrap();
         // First pixel should be brighter
         assert!(out[0] > 0.0, "brightness should increase value");
@@ -471,9 +519,12 @@ mod tests {
     fn pipeline_chain() {
         let px = test_pixels(4, 4);
         let pipe = Pipeline::from_pixels(px, 4, 4)
-            .brightness(0.1).unwrap()
-            .contrast(0.3).unwrap()
-            .invert().unwrap();
+            .brightness(0.1)
+            .unwrap()
+            .contrast(0.3)
+            .unwrap()
+            .invert()
+            .unwrap();
         let out = pipe.render().unwrap();
         assert_eq!(out.len(), 4 * 4 * 4);
     }
@@ -481,11 +532,9 @@ mod tests {
     #[test]
     fn pipeline_ref_and_branch() {
         let px = test_pixels(4, 4);
-        let pipe = Pipeline::from_pixels(px, 4, 4)
-            .brightness(0.1).unwrap();
+        let pipe = Pipeline::from_pixels(px, 4, 4).brightness(0.1).unwrap();
         pipe.set_ref("graded");
-        let scope = pipe.branch("graded").unwrap()
-            .scope_histogram().unwrap();
+        let scope = pipe.branch("graded").unwrap().scope_histogram().unwrap();
         let scope_info = scope.info();
         assert_eq!(scope_info.width, 512);
         assert_eq!(scope_info.height, 512);
@@ -522,9 +571,24 @@ mod tests {
         assert_eq!(rendered.len(), 2 * 1 * 4);
         // sRGB 128/255 = 0.502 -> linear ~0.2158
         let expected = v2::color_math::srgb_to_linear(128.0 / 255.0);
-        assert!((rendered[0] - expected).abs() < 1e-5, "r: {} vs {}", rendered[0], expected);
-        assert!((rendered[1] - expected).abs() < 1e-5, "g: {} vs {}", rendered[1], expected);
-        assert!((rendered[2] - expected).abs() < 1e-5, "b: {} vs {}", rendered[2], expected);
+        assert!(
+            (rendered[0] - expected).abs() < 1e-5,
+            "r: {} vs {}",
+            rendered[0],
+            expected
+        );
+        assert!(
+            (rendered[1] - expected).abs() < 1e-5,
+            "g: {} vs {}",
+            rendered[1],
+            expected
+        );
+        assert!(
+            (rendered[2] - expected).abs() < 1e-5,
+            "b: {} vs {}",
+            rendered[2],
+            expected
+        );
         assert!((rendered[3] - 1.0).abs() < 1e-5, "a should be 1.0");
         // Second pixel: sRGB 0 -> linear 0
         assert!((rendered[4]).abs() < 1e-5, "black r should be 0");
@@ -542,7 +606,12 @@ mod tests {
         let rendered = pipe.render().unwrap();
         assert_eq!(rendered.len(), 4);
         let expected = 32768.0 / 65535.0;
-        assert!((rendered[0] - expected).abs() < 1e-5, "r: {} vs {}", rendered[0], expected);
+        assert!(
+            (rendered[0] - expected).abs() < 1e-5,
+            "r: {} vs {}",
+            rendered[0],
+            expected
+        );
         assert!((rendered[3] - 1.0).abs() < 1e-5, "a should be 1.0");
     }
 

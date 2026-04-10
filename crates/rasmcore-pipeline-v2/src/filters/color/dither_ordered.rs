@@ -1,7 +1,7 @@
 use crate::node::PipelineError;
 use crate::ops::{Filter, GpuFilter};
 
-use super::{median_cut_palette, nearest_color, bayer_matrix};
+use super::{bayer_matrix, median_cut_palette, nearest_color};
 
 /// Ordered dithering with Bayer matrix.
 #[derive(Clone, rasmcore_macros::V2Filter)]
@@ -90,8 +90,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 "#;
 
 impl GpuFilter for DitherOrdered {
-    fn shader_body(&self) -> &str { DITHER_ORDERED_WGSL }
-    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn shader_body(&self) -> &str {
+        DITHER_ORDERED_WGSL
+    }
+    fn workgroup_size(&self) -> [u32; 3] {
+        [16, 16, 1]
+    }
     fn params(&self, width: u32, height: u32) -> Vec<u8> {
         let mut buf = Vec::with_capacity(32);
         buf.extend_from_slice(&width.to_le_bytes());

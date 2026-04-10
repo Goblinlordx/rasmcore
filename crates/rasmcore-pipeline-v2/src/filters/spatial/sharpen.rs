@@ -2,7 +2,7 @@ use crate::node::PipelineError;
 use crate::ops::Filter;
 
 use super::gaussian_blur::GaussianBlur;
-use super::{gaussian_kernel_bytes, blur_params};
+use super::{blur_params, gaussian_kernel_bytes};
 use crate::gpu_shaders::spatial;
 use crate::node::GpuShader;
 
@@ -10,7 +10,11 @@ use crate::node::GpuShader;
 ///
 /// `output = input + amount * (input - blur(input, radius))`
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "sharpen", category = "spatial", cost = "O(n * r) via gaussian_blur")]
+#[filter(
+    name = "sharpen",
+    category = "spatial",
+    cost = "O(n * r) via gaussian_blur"
+)]
 pub struct Sharpen {
     #[param(min = 0.0, max = 100.0, default = 1.0)]
     pub radius: f32,
@@ -20,7 +24,9 @@ pub struct Sharpen {
 
 impl Filter for Sharpen {
     fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
-        let blur = GaussianBlur { radius: self.radius };
+        let blur = GaussianBlur {
+            radius: self.radius,
+        };
         let blurred = blur.compute(input, width, height)?;
         let amount = self.amount;
         let mut out = Vec::with_capacity(input.len());

@@ -5,11 +5,11 @@
 //! directly without gamma encoding.
 
 use crate::convert;
+use rasmcore_pipeline_v2::PipelineError;
 use rasmcore_pipeline_v2::ops::Encoder;
 use rasmcore_pipeline_v2::registry::{
     OperationCapabilities, OperationKind, OperationRegistration, ParamDescriptor, ParamType,
 };
-use rasmcore_pipeline_v2::PipelineError;
 
 // ─── Macro for sRGB encoders (f32 → gamma → quantize → encode) ──────────────
 
@@ -351,8 +351,8 @@ pub fn encode(
 /// List all supported V2 encode formats.
 pub fn supported_formats() -> Vec<&'static str> {
     vec![
-        "png", "jpeg", "webp", "gif", "bmp", "qoi", "ico", "tga",
-        "tiff", "pnm", "exr", "hdr", "fits",
+        "png", "jpeg", "webp", "gif", "bmp", "qoi", "ico", "tga", "tiff", "pnm", "exr", "hdr",
+        "fits",
     ]
 }
 
@@ -360,9 +360,28 @@ pub fn supported_formats() -> Vec<&'static str> {
 pub fn is_supported(format: &str) -> bool {
     matches!(
         format,
-        "png" | "jpeg" | "jpg" | "jfif" | "webp" | "gif" | "bmp" | "dib"
-            | "qoi" | "ico" | "cur" | "tga" | "targa" | "tiff" | "tif"
-            | "pnm" | "ppm" | "exr" | "hdr" | "rgbe" | "fits" | "fit"
+        "png"
+            | "jpeg"
+            | "jpg"
+            | "jfif"
+            | "webp"
+            | "gif"
+            | "bmp"
+            | "dib"
+            | "qoi"
+            | "ico"
+            | "cur"
+            | "tga"
+            | "targa"
+            | "tiff"
+            | "tif"
+            | "pnm"
+            | "ppm"
+            | "exr"
+            | "hdr"
+            | "rgbe"
+            | "fits"
+            | "fit"
     )
 }
 

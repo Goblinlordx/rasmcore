@@ -5,16 +5,19 @@ use crate::node::PipelineError;
 use crate::ops::Filter;
 
 use super::super::color::ClutOp;
-use super::super::helpers::{rgb_to_hsl, hsl_to_rgb};
+use super::super::helpers::{hsl_to_rgb, rgb_to_hsl};
 
 use crate::filter_node::FilterNode;
 #[allow(unused_imports)]
 use crate::registry::{
-    FilterFactoryRegistration, OperationRegistration, OperationKind,
-    OperationCapabilities, ParamDescriptor, ParamMap, ParamType,
+    FilterFactoryRegistration, OperationCapabilities, OperationKind, OperationRegistration,
+    ParamDescriptor, ParamMap, ParamType,
 };
 
-use super::{build_curve_lut_f32, curve_from_params, hue_curve_from_params, HUE_CURVE_PARAMS, NORM_CURVE_PARAMS};
+use super::{
+    HUE_CURVE_PARAMS, NORM_CURVE_PARAMS, build_curve_lut_f32, curve_from_params,
+    hue_curve_from_params,
+};
 
 // ─── Hue vs Saturation ───────────────────────────────────────────────────
 

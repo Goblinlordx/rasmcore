@@ -94,7 +94,12 @@ pub trait AnalysisNode: Node {
     /// Run analysis on the input pixels, produce a typed result.
     ///
     /// `input` is f32 RGBA pixel data from the upstream node.
-    fn analyze(&self, input: &[f32], width: u32, height: u32) -> Result<AnalysisResult, PipelineError>;
+    fn analyze(
+        &self,
+        input: &[f32],
+        width: u32,
+        height: u32,
+    ) -> Result<AnalysisResult, PipelineError>;
 }
 
 // ─── Parameter Binding ────────────────────────────────────────────────────────
@@ -248,10 +253,8 @@ impl StagedPipeline {
         target_param: &str,
         updater: impl Fn(&dyn Node, &AnalysisResult) -> Box<dyn Node> + 'static,
     ) {
-        self.param_updaters.insert(
-            (target_node, target_param.to_string()),
-            Box::new(updater),
-        );
+        self.param_updaters
+            .insert((target_node, target_param.to_string()), Box::new(updater));
     }
 
     /// Validate all bindings (type checking only — no pixel data needed).
@@ -337,11 +340,8 @@ impl StagedPipeline {
         // For topological ordering, we check: does analysis node A have any upstream
         // node that is a target of another binding? If so, A must execute after that
         // binding is applied.
-        let bound_targets: std::collections::HashSet<u32> = self
-            .bindings
-            .iter()
-            .map(|b| b.target_node)
-            .collect();
+        let bound_targets: std::collections::HashSet<u32> =
+            self.bindings.iter().map(|b| b.target_node).collect();
 
         // For each analysis node, check if any of its upstream nodes (recursively)
         // are bound targets. If so, it depends on those bindings being applied first.
@@ -373,11 +373,7 @@ impl StagedPipeline {
             // Find analysis nodes whose dependencies are all satisfied
             let ready: Vec<u32> = remaining
                 .iter()
-                .filter(|id| {
-                    analysis_deps[id]
-                        .iter()
-                        .all(|dep| bound.contains(dep))
-                })
+                .filter(|id| analysis_deps[id].iter().all(|dep| bound.contains(dep)))
                 .copied()
                 .collect();
 
@@ -534,19 +530,26 @@ impl StagedPipeline {
             match constraint {
                 ParamConstraint::RectWithinUpstream => {
                     if let Some(rect) = result.as_rect()
-                        && (rect.right() > upstream_info.width || rect.bottom() > upstream_info.height) {
-                            return Err(format!(
-                                "rect ({},{} {}x{}) exceeds upstream dimensions ({}x{})",
-                                rect.x, rect.y, rect.width, rect.height,
-                                upstream_info.width, upstream_info.height,
-                            ));
-                        }
+                        && (rect.right() > upstream_info.width
+                            || rect.bottom() > upstream_info.height)
+                    {
+                        return Err(format!(
+                            "rect ({},{} {}x{}) exceeds upstream dimensions ({}x{})",
+                            rect.x,
+                            rect.y,
+                            rect.width,
+                            rect.height,
+                            upstream_info.width,
+                            upstream_info.height,
+                        ));
+                    }
                 }
                 ParamConstraint::Range { min, max } => {
                     if let Some(v) = result.as_scalar()
-                        && (v < *min || v > *max) {
-                            return Err(format!("value {v} outside range [{min}, {max}]"));
-                        }
+                        && (v < *min || v > *max)
+                    {
+                        return Err(format!("value {v} outside range [{min}, {max}]"));
+                    }
                 }
                 ParamConstraint::MaxContext(ctx) => {
                     if let Some(v) = result.as_scalar() {
@@ -588,15 +591,27 @@ mod tests {
 
     impl Node for MockSource {
         fn info(&self) -> NodeInfo {
-            NodeInfo { width: self.w, height: self.h, color_space: ColorSpace::Linear }
+            NodeInfo {
+                width: self.w,
+                height: self.h,
+                color_space: ColorSpace::Linear,
+            }
         }
-        fn compute(&self, request: Rect, _up: &mut dyn Upstream) -> Result<Vec<f32>, PipelineError> {
+        fn compute(
+            &self,
+            request: Rect,
+            _up: &mut dyn Upstream,
+        ) -> Result<Vec<f32>, PipelineError> {
             let n = request.width as usize * request.height as usize;
             let mut px = Vec::with_capacity(n * 4);
-            for _ in 0..n { px.extend_from_slice(&self.color); }
+            for _ in 0..n {
+                px.extend_from_slice(&self.color);
+            }
             Ok(px)
         }
-        fn upstream_ids(&self) -> Vec<u32> { vec![] }
+        fn upstream_ids(&self) -> Vec<u32> {
+            vec![]
+        }
     }
 
     /// Analysis node that computes the average brightness of input pixels.
@@ -609,17 +624,37 @@ mod tests {
 
     impl Node for MockAnalyzer {
         fn info(&self) -> NodeInfo {
-            NodeInfo { width: self.w, height: self.h, color_space: ColorSpace::Linear }
+            NodeInfo {
+                width: self.w,
+                height: self.h,
+                color_space: ColorSpace::Linear,
+            }
         }
-        fn compute(&self, request: Rect, upstream: &mut dyn Upstream) -> Result<Vec<f32>, PipelineError> {
+        fn compute(
+            &self,
+            request: Rect,
+            upstream: &mut dyn Upstream,
+        ) -> Result<Vec<f32>, PipelineError> {
             upstream.request(self.upstream_id, request)
         }
-        fn upstream_ids(&self) -> Vec<u32> { vec![self.upstream_id] }
-        fn is_analysis_node(&self) -> bool { true }
-        fn analyze(&self, input: &[f32], _w: u32, _h: u32) -> Option<Result<AnalysisResult, PipelineError>> {
+        fn upstream_ids(&self) -> Vec<u32> {
+            vec![self.upstream_id]
+        }
+        fn is_analysis_node(&self) -> bool {
+            true
+        }
+        fn analyze(
+            &self,
+            input: &[f32],
+            _w: u32,
+            _h: u32,
+        ) -> Option<Result<AnalysisResult, PipelineError>> {
             let n = input.len() / 4;
-            if n == 0 { return Some(Ok(AnalysisResult::Scalar(0.0))); }
-            let sum: f32 = input.chunks_exact(4)
+            if n == 0 {
+                return Some(Ok(AnalysisResult::Scalar(0.0)));
+            }
+            let sum: f32 = input
+                .chunks_exact(4)
                 .map(|px| (px[0] + px[1] + px[2]) / 3.0)
                 .sum();
             Some(Ok(AnalysisResult::Scalar(sum / n as f32)))
@@ -636,9 +671,17 @@ mod tests {
 
     impl Node for MockBrightness {
         fn info(&self) -> NodeInfo {
-            NodeInfo { width: self.w, height: self.h, color_space: ColorSpace::Linear }
+            NodeInfo {
+                width: self.w,
+                height: self.h,
+                color_space: ColorSpace::Linear,
+            }
         }
-        fn compute(&self, request: Rect, upstream: &mut dyn Upstream) -> Result<Vec<f32>, PipelineError> {
+        fn compute(
+            &self,
+            request: Rect,
+            upstream: &mut dyn Upstream,
+        ) -> Result<Vec<f32>, PipelineError> {
             let mut px = upstream.request(self.upstream_id, request)?;
             for chunk in px.chunks_exact_mut(4) {
                 chunk[0] = (chunk[0] + self.offset).clamp(0.0, 1.0);
@@ -647,7 +690,9 @@ mod tests {
             }
             Ok(px)
         }
-        fn upstream_ids(&self) -> Vec<u32> { vec![self.upstream_id] }
+        fn upstream_ids(&self) -> Vec<u32> {
+            vec![self.upstream_id]
+        }
     }
 
     // ─── Unit tests (analysis results, type compat, validation) ──────────
@@ -678,8 +723,14 @@ mod tests {
         assert!(types_compatible(AnalysisResultType::Scalar, ParamType::U32));
         assert!(types_compatible(AnalysisResultType::Rect, ParamType::Rect));
         assert!(!types_compatible(AnalysisResultType::Rect, ParamType::F32));
-        assert!(!types_compatible(AnalysisResultType::Scalar, ParamType::Rect));
-        assert!(!types_compatible(AnalysisResultType::Points, ParamType::F32));
+        assert!(!types_compatible(
+            AnalysisResultType::Scalar,
+            ParamType::Rect
+        ));
+        assert!(!types_compatible(
+            AnalysisResultType::Points,
+            ParamType::F32
+        ));
     }
 
     #[test]
@@ -718,44 +769,82 @@ mod tests {
         };
 
         let valid = AnalysisResult::Rect(Rect::new(100, 100, 800, 600));
-        assert!(StagedPipeline::validate_value(
-            &valid, &upstream, &[ParamConstraint::RectWithinUpstream],
-        ).is_ok());
+        assert!(
+            StagedPipeline::validate_value(
+                &valid,
+                &upstream,
+                &[ParamConstraint::RectWithinUpstream],
+            )
+            .is_ok()
+        );
 
         let invalid = AnalysisResult::Rect(Rect::new(1800, 100, 200, 100));
-        assert!(StagedPipeline::validate_value(
-            &invalid, &upstream, &[ParamConstraint::RectWithinUpstream],
-        ).is_err());
+        assert!(
+            StagedPipeline::validate_value(
+                &invalid,
+                &upstream,
+                &[ParamConstraint::RectWithinUpstream],
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn validate_scalar_range() {
-        let upstream = NodeInfo { width: 100, height: 100, color_space: ColorSpace::Linear };
+        let upstream = NodeInfo {
+            width: 100,
+            height: 100,
+            color_space: ColorSpace::Linear,
+        };
 
         let valid = AnalysisResult::Scalar(0.5);
-        assert!(StagedPipeline::validate_value(
-            &valid, &upstream, &[ParamConstraint::Range { min: 0.0, max: 1.0 }],
-        ).is_ok());
+        assert!(
+            StagedPipeline::validate_value(
+                &valid,
+                &upstream,
+                &[ParamConstraint::Range { min: 0.0, max: 1.0 }],
+            )
+            .is_ok()
+        );
 
         let invalid = AnalysisResult::Scalar(2.0);
-        assert!(StagedPipeline::validate_value(
-            &invalid, &upstream, &[ParamConstraint::Range { min: 0.0, max: 1.0 }],
-        ).is_err());
+        assert!(
+            StagedPipeline::validate_value(
+                &invalid,
+                &upstream,
+                &[ParamConstraint::Range { min: 0.0, max: 1.0 }],
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn validate_contextual_max() {
-        let upstream = NodeInfo { width: 1920, height: 1080, color_space: ColorSpace::Linear };
+        let upstream = NodeInfo {
+            width: 1920,
+            height: 1080,
+            color_space: ColorSpace::Linear,
+        };
 
         let valid = AnalysisResult::Scalar(1000.0);
-        assert!(StagedPipeline::validate_value(
-            &valid, &upstream, &[ParamConstraint::MaxContext(ContextRef::UpstreamWidth)],
-        ).is_ok());
+        assert!(
+            StagedPipeline::validate_value(
+                &valid,
+                &upstream,
+                &[ParamConstraint::MaxContext(ContextRef::UpstreamWidth)],
+            )
+            .is_ok()
+        );
 
         let invalid = AnalysisResult::Scalar(2000.0);
-        assert!(StagedPipeline::validate_value(
-            &invalid, &upstream, &[ParamConstraint::MaxContext(ContextRef::UpstreamWidth)],
-        ).is_err());
+        assert!(
+            StagedPipeline::validate_value(
+                &invalid,
+                &upstream,
+                &[ParamConstraint::MaxContext(ContextRef::UpstreamWidth)],
+            )
+            .is_err()
+        );
     }
 
     // ─── Pipeline structure tests ────────────────────────────────────────
@@ -795,19 +884,28 @@ mod tests {
 
     #[test]
     fn node_default_analyze_returns_none() {
-        let src = MockSource { w: 4, h: 4, color: [0.5, 0.5, 0.5, 1.0] };
+        let src = MockSource {
+            w: 4,
+            h: 4,
+            color: [0.5, 0.5, 0.5, 1.0],
+        };
         assert!(!src.is_analysis_node());
         assert!(src.analyze(&[], 0, 0).is_none());
     }
 
     #[test]
     fn mock_analyzer_returns_result() {
-        let analyzer = MockAnalyzer { upstream_id: 0, w: 2, h: 2 };
+        let analyzer = MockAnalyzer {
+            upstream_id: 0,
+            w: 2,
+            h: 2,
+        };
         assert!(analyzer.is_analysis_node());
 
         // 4 pixels, all [0.6, 0.3, 0.3, 1.0] → avg brightness = 0.4
-        let px = vec![0.6, 0.3, 0.3, 1.0, 0.6, 0.3, 0.3, 1.0,
-                      0.6, 0.3, 0.3, 1.0, 0.6, 0.3, 0.3, 1.0];
+        let px = vec![
+            0.6, 0.3, 0.3, 1.0, 0.6, 0.3, 0.3, 1.0, 0.6, 0.3, 0.3, 1.0, 0.6, 0.3, 0.3, 1.0,
+        ];
         let result = analyzer.analyze(&px, 2, 2).unwrap().unwrap();
         assert_eq!(result.result_type(), AnalysisResultType::Scalar);
         assert!((result.as_scalar().unwrap() - 0.4).abs() < 1e-6);
@@ -828,9 +926,22 @@ mod tests {
         // source(0) → analyzer(1) → brightness(2)
         // binding: analyzer(1) → brightness(2).offset
         let mut graph = crate::graph::Graph::new(0);
-        graph.add_node(Box::new(MockSource { w: 4, h: 4, color: [0.5, 0.5, 0.5, 1.0] }));
-        graph.add_node(Box::new(MockAnalyzer { upstream_id: 0, w: 4, h: 4 }));
-        graph.add_node(Box::new(MockBrightness { upstream_id: 0, w: 4, h: 4, offset: 0.0 }));
+        graph.add_node(Box::new(MockSource {
+            w: 4,
+            h: 4,
+            color: [0.5, 0.5, 0.5, 1.0],
+        }));
+        graph.add_node(Box::new(MockAnalyzer {
+            upstream_id: 0,
+            w: 4,
+            h: 4,
+        }));
+        graph.add_node(Box::new(MockBrightness {
+            upstream_id: 0,
+            w: 4,
+            h: 4,
+            offset: 0.0,
+        }));
 
         let mut staged = StagedPipeline::new(graph);
         staged.add_binding(ParamBinding {
@@ -859,11 +970,33 @@ mod tests {
         // binding: analyzer2(3) → brightness2(4).offset
         // analyzer2 depends on brightness(2) output, so it must be in wave 2
         let mut graph = crate::graph::Graph::new(0);
-        graph.add_node(Box::new(MockSource { w: 4, h: 4, color: [0.5, 0.5, 0.5, 1.0] }));
-        graph.add_node(Box::new(MockAnalyzer { upstream_id: 0, w: 4, h: 4 }));
-        graph.add_node(Box::new(MockBrightness { upstream_id: 0, w: 4, h: 4, offset: 0.0 }));
-        graph.add_node(Box::new(MockAnalyzer { upstream_id: 2, w: 4, h: 4 })); // depends on brightness(2)
-        graph.add_node(Box::new(MockBrightness { upstream_id: 2, w: 4, h: 4, offset: 0.0 }));
+        graph.add_node(Box::new(MockSource {
+            w: 4,
+            h: 4,
+            color: [0.5, 0.5, 0.5, 1.0],
+        }));
+        graph.add_node(Box::new(MockAnalyzer {
+            upstream_id: 0,
+            w: 4,
+            h: 4,
+        }));
+        graph.add_node(Box::new(MockBrightness {
+            upstream_id: 0,
+            w: 4,
+            h: 4,
+            offset: 0.0,
+        }));
+        graph.add_node(Box::new(MockAnalyzer {
+            upstream_id: 2,
+            w: 4,
+            h: 4,
+        })); // depends on brightness(2)
+        graph.add_node(Box::new(MockBrightness {
+            upstream_id: 2,
+            w: 4,
+            h: 4,
+            offset: 0.0,
+        }));
 
         let mut staged = StagedPipeline::new(graph);
         staged.add_binding(ParamBinding {
@@ -898,20 +1031,46 @@ mod tests {
         //           → analyzer_b(3) → brightness_b(4)
         // Both analyzers independent → same wave
         let mut graph = crate::graph::Graph::new(0);
-        graph.add_node(Box::new(MockSource { w: 4, h: 4, color: [0.5, 0.5, 0.5, 1.0] }));
-        graph.add_node(Box::new(MockAnalyzer { upstream_id: 0, w: 4, h: 4 }));
-        graph.add_node(Box::new(MockBrightness { upstream_id: 0, w: 4, h: 4, offset: 0.0 }));
-        graph.add_node(Box::new(MockAnalyzer { upstream_id: 0, w: 4, h: 4 }));
-        graph.add_node(Box::new(MockBrightness { upstream_id: 0, w: 4, h: 4, offset: 0.0 }));
+        graph.add_node(Box::new(MockSource {
+            w: 4,
+            h: 4,
+            color: [0.5, 0.5, 0.5, 1.0],
+        }));
+        graph.add_node(Box::new(MockAnalyzer {
+            upstream_id: 0,
+            w: 4,
+            h: 4,
+        }));
+        graph.add_node(Box::new(MockBrightness {
+            upstream_id: 0,
+            w: 4,
+            h: 4,
+            offset: 0.0,
+        }));
+        graph.add_node(Box::new(MockAnalyzer {
+            upstream_id: 0,
+            w: 4,
+            h: 4,
+        }));
+        graph.add_node(Box::new(MockBrightness {
+            upstream_id: 0,
+            w: 4,
+            h: 4,
+            offset: 0.0,
+        }));
 
         let mut staged = StagedPipeline::new(graph);
         staged.add_binding(ParamBinding {
-            source_node: 1, target_node: 2,
-            target_param: "offset".to_string(), transform: BindingTransform::Identity,
+            source_node: 1,
+            target_node: 2,
+            target_param: "offset".to_string(),
+            transform: BindingTransform::Identity,
         });
         staged.add_binding(ParamBinding {
-            source_node: 3, target_node: 4,
-            target_param: "offset".to_string(), transform: BindingTransform::Identity,
+            source_node: 3,
+            target_node: 4,
+            target_param: "offset".to_string(),
+            transform: BindingTransform::Identity,
         });
 
         let waves = staged.build_waves().unwrap();
@@ -935,10 +1094,21 @@ mod tests {
         // Analyzer sees avg brightness = 0.5, so offset = 0.5
         // Final brightness = clamp(0.5 + 0.5) = 1.0
         let mut graph = crate::graph::Graph::new(0);
-        let src = graph.add_node(Box::new(MockSource { w: 2, h: 2, color: [0.5, 0.5, 0.5, 1.0] }));
-        let ana = graph.add_node(Box::new(MockAnalyzer { upstream_id: src, w: 2, h: 2 }));
+        let src = graph.add_node(Box::new(MockSource {
+            w: 2,
+            h: 2,
+            color: [0.5, 0.5, 0.5, 1.0],
+        }));
+        let ana = graph.add_node(Box::new(MockAnalyzer {
+            upstream_id: src,
+            w: 2,
+            h: 2,
+        }));
         let bright = graph.add_node(Box::new(MockBrightness {
-            upstream_id: src, w: 2, h: 2, offset: 0.0,
+            upstream_id: src,
+            w: 2,
+            h: 2,
+            offset: 0.0,
         }));
 
         let mut staged = StagedPipeline::new(graph);
@@ -950,7 +1120,12 @@ mod tests {
         });
         staged.set_param_updater(bright, "offset", |_node, result| {
             let scalar = result.as_scalar().unwrap() as f32;
-            Box::new(MockBrightness { upstream_id: 0, w: 2, h: 2, offset: scalar })
+            Box::new(MockBrightness {
+                upstream_id: 0,
+                w: 2,
+                h: 2,
+                offset: scalar,
+            })
         });
 
         let output = staged.execute(bright).unwrap();
@@ -967,28 +1142,64 @@ mod tests {
         // Stage 1: analyzer1 sees 0.3 avg → brightness1 offset = 0.3, result = 0.6
         // Stage 2: analyzer2 sees 0.6 avg → brightness2 offset = 0.6, result = clamp(0.3+0.6)=0.9
         let mut graph = crate::graph::Graph::new(0);
-        let src = graph.add_node(Box::new(MockSource { w: 2, h: 2, color: [0.3, 0.3, 0.3, 1.0] }));
-        let ana1 = graph.add_node(Box::new(MockAnalyzer { upstream_id: src, w: 2, h: 2 }));
-        let bright1 = graph.add_node(Box::new(MockBrightness { upstream_id: src, w: 2, h: 2, offset: 0.0 }));
-        let ana2 = graph.add_node(Box::new(MockAnalyzer { upstream_id: bright1, w: 2, h: 2 }));
-        let bright2 = graph.add_node(Box::new(MockBrightness { upstream_id: src, w: 2, h: 2, offset: 0.0 }));
+        let src = graph.add_node(Box::new(MockSource {
+            w: 2,
+            h: 2,
+            color: [0.3, 0.3, 0.3, 1.0],
+        }));
+        let ana1 = graph.add_node(Box::new(MockAnalyzer {
+            upstream_id: src,
+            w: 2,
+            h: 2,
+        }));
+        let bright1 = graph.add_node(Box::new(MockBrightness {
+            upstream_id: src,
+            w: 2,
+            h: 2,
+            offset: 0.0,
+        }));
+        let ana2 = graph.add_node(Box::new(MockAnalyzer {
+            upstream_id: bright1,
+            w: 2,
+            h: 2,
+        }));
+        let bright2 = graph.add_node(Box::new(MockBrightness {
+            upstream_id: src,
+            w: 2,
+            h: 2,
+            offset: 0.0,
+        }));
 
         let mut staged = StagedPipeline::new(graph);
         staged.add_binding(ParamBinding {
-            source_node: ana1, target_node: bright1,
-            target_param: "offset".to_string(), transform: BindingTransform::Identity,
+            source_node: ana1,
+            target_node: bright1,
+            target_param: "offset".to_string(),
+            transform: BindingTransform::Identity,
         });
         staged.add_binding(ParamBinding {
-            source_node: ana2, target_node: bright2,
-            target_param: "offset".to_string(), transform: BindingTransform::Identity,
+            source_node: ana2,
+            target_node: bright2,
+            target_param: "offset".to_string(),
+            transform: BindingTransform::Identity,
         });
         staged.set_param_updater(bright1, "offset", |_node, result| {
             let s = result.as_scalar().unwrap() as f32;
-            Box::new(MockBrightness { upstream_id: 0, w: 2, h: 2, offset: s })
+            Box::new(MockBrightness {
+                upstream_id: 0,
+                w: 2,
+                h: 2,
+                offset: s,
+            })
         });
         staged.set_param_updater(bright2, "offset", |_node, result| {
             let s = result.as_scalar().unwrap() as f32;
-            Box::new(MockBrightness { upstream_id: 0, w: 2, h: 2, offset: s })
+            Box::new(MockBrightness {
+                upstream_id: 0,
+                w: 2,
+                h: 2,
+                offset: s,
+            })
         });
 
         let output = staged.execute(bright2).unwrap();
@@ -1001,7 +1212,11 @@ mod tests {
     fn execute_no_bindings_passthrough() {
         // No analysis — just render source directly
         let mut graph = crate::graph::Graph::new(0);
-        let src = graph.add_node(Box::new(MockSource { w: 2, h: 2, color: [0.7, 0.7, 0.7, 1.0] }));
+        let src = graph.add_node(Box::new(MockSource {
+            w: 2,
+            h: 2,
+            color: [0.7, 0.7, 0.7, 1.0],
+        }));
 
         let mut staged = StagedPipeline::new(graph);
         let output = staged.execute(src).unwrap();
@@ -1011,8 +1226,17 @@ mod tests {
     #[test]
     fn validate_rejects_non_analysis_source() {
         let mut graph = crate::graph::Graph::new(0);
-        graph.add_node(Box::new(MockSource { w: 2, h: 2, color: [0.5, 0.5, 0.5, 1.0] })); // node 0
-        graph.add_node(Box::new(MockBrightness { upstream_id: 0, w: 2, h: 2, offset: 0.1 })); // node 1
+        graph.add_node(Box::new(MockSource {
+            w: 2,
+            h: 2,
+            color: [0.5, 0.5, 0.5, 1.0],
+        })); // node 0
+        graph.add_node(Box::new(MockBrightness {
+            upstream_id: 0,
+            w: 2,
+            h: 2,
+            offset: 0.1,
+        })); // node 1
 
         let mut staged = StagedPipeline::new(graph);
         staged.add_binding(ParamBinding {

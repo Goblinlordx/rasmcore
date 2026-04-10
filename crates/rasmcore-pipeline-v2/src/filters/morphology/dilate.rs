@@ -25,5 +25,7 @@ impl Filter for Dilate {
         Some(vec![make_dilate_shader(width, height, self.radius)])
     }
 
-    fn tile_overlap(&self) -> u32 { self.radius }
+    fn tile_overlap(&self) -> u32 {
+        self.radius
+    }
 }

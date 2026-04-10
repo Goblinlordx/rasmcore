@@ -92,8 +92,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 "#;
 
 impl GpuFilter for ChromaticAberration {
-    fn shader_body(&self) -> &str { CHROMATIC_ABERRATION_WGSL }
-    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn shader_body(&self) -> &str {
+        CHROMATIC_ABERRATION_WGSL
+    }
+    fn workgroup_size(&self) -> [u32; 3] {
+        [16, 16, 1]
+    }
     fn params(&self, width: u32, height: u32) -> Vec<u8> {
         let mut buf = gpu_params_wh(width, height);
         gpu_params_push_f32(&mut buf, self.strength);

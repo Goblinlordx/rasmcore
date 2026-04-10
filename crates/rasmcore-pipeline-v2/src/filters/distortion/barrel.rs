@@ -1,6 +1,6 @@
 //! Barrel distortion filter.
 
-use crate::node::{PipelineError};
+use crate::node::PipelineError;
 use crate::ops::Filter;
 
 use super::super::helpers::{gpu_params_wh, sample_bilinear};
@@ -60,15 +60,24 @@ impl Filter for Barrel {
         Ok(out)
     }
 
-    fn gpu_shader_body(&self) -> Option<&'static str> { None }
+    fn gpu_shader_body(&self) -> Option<&'static str> {
+        None
+    }
 
     fn gpu_shader_passes(&self, width: u32, height: u32) -> Option<Vec<crate::node::GpuShader>> {
         let shader = format!("{SAMPLE_BILINEAR_WGSL}\n{BARREL_WGSL}");
         let mut params = gpu_params_wh(width, height);
         gpu_params_push_f32(&mut params, self.k1);
         gpu_params_push_f32(&mut params, self.k2);
-        Some(vec![crate::node::GpuShader::new(shader, "main", [16, 16, 1], params)])
+        Some(vec![crate::node::GpuShader::new(
+            shader,
+            "main",
+            [16, 16, 1],
+            params,
+        )])
     }
 
-    fn tile_overlap(&self) -> u32 { 0 }
+    fn tile_overlap(&self) -> u32 {
+        0
+    }
 }

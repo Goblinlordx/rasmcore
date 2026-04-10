@@ -154,21 +154,30 @@ impl Node for ViewTransformNode {
             }
             ViewTransform::AcesRrtSrgb => {
                 // Input is Linear sRGB working space — convert to AP1 first, then RRT+ODT
-                crate::color_math::apply_matrix(&mut pixels, &crate::color_math::srgb_to_acescg_matrix());
+                crate::color_math::apply_matrix(
+                    &mut pixels,
+                    &crate::color_math::srgb_to_acescg_matrix(),
+                );
                 crate::aces::apply_aces_output_transform(
                     &mut pixels,
                     crate::aces::aces_rrt_odt_srgb_pixel,
                 );
             }
             ViewTransform::AcesRrtRec709 => {
-                crate::color_math::apply_matrix(&mut pixels, &crate::color_math::srgb_to_acescg_matrix());
+                crate::color_math::apply_matrix(
+                    &mut pixels,
+                    &crate::color_math::srgb_to_acescg_matrix(),
+                );
                 crate::aces::apply_aces_output_transform(
                     &mut pixels,
                     crate::aces::aces_rrt_odt_rec709_pixel,
                 );
             }
             ViewTransform::AcesRrtP3 => {
-                crate::color_math::apply_matrix(&mut pixels, &crate::color_math::srgb_to_acescg_matrix());
+                crate::color_math::apply_matrix(
+                    &mut pixels,
+                    &crate::color_math::srgb_to_acescg_matrix(),
+                );
                 crate::aces::apply_aces_output_transform(
                     &mut pixels,
                     crate::aces::aces_rrt_odt_p3d65_pixel,
@@ -345,12 +354,20 @@ mod tests {
     }
 
     impl Node for PreferredCsFilter {
-        fn info(&self) -> NodeInfo { self.info.clone() }
-        fn compute(&self, request: Rect, upstream: &mut dyn Upstream) -> Result<Vec<f32>, PipelineError> {
+        fn info(&self) -> NodeInfo {
+            self.info.clone()
+        }
+        fn compute(
+            &self,
+            request: Rect,
+            upstream: &mut dyn Upstream,
+        ) -> Result<Vec<f32>, PipelineError> {
             // Pass through — the test is about auto-conversion, not filter behavior
             upstream.request(self.upstream, request)
         }
-        fn upstream_ids(&self) -> Vec<u32> { vec![self.upstream] }
+        fn upstream_ids(&self) -> Vec<u32> {
+            vec![self.upstream]
+        }
         fn preferred_color_space(&self) -> Option<ColorSpace> {
             Some(self.preferred)
         }
@@ -363,14 +380,21 @@ mod tests {
         // because convert-back restores the original space.
         let mut g = Graph::new(0);
         let src = g.add_node(Box::new(LinearSource {
-            w: 2, h: 2, color: [0.5, 0.3, 0.1, 1.0],
+            w: 2,
+            h: 2,
+            color: [0.5, 0.3, 0.1, 1.0],
         }));
         let src_info = g.node_info(src).unwrap();
         assert_eq!(src_info.color_space, ColorSpace::Linear);
 
         // Insert convert-to -> filter -> convert-back manually
         // (simulating what apply_filter does)
-        let convert_to = ColorConvertNode::new(src, src_info.clone(), ColorSpace::Linear, ColorSpace::AcesCct);
+        let convert_to = ColorConvertNode::new(
+            src,
+            src_info.clone(),
+            ColorSpace::Linear,
+            ColorSpace::AcesCct,
+        );
         let conv_to_id = g.add_node(Box::new(convert_to));
         let conv_to_info = g.node_info(conv_to_id).unwrap();
         assert_eq!(conv_to_info.color_space, ColorSpace::AcesCct);
@@ -383,7 +407,12 @@ mod tests {
         let filter_id = g.add_node(Box::new(filter));
         let filter_info = g.node_info(filter_id).unwrap();
 
-        let convert_back = ColorConvertNode::new(filter_id, filter_info, ColorSpace::AcesCct, ColorSpace::Linear);
+        let convert_back = ColorConvertNode::new(
+            filter_id,
+            filter_info,
+            ColorSpace::AcesCct,
+            ColorSpace::Linear,
+        );
         let back_id = g.add_node(Box::new(convert_back));
         let back_info = g.node_info(back_id).unwrap();
         assert_eq!(back_info.color_space, ColorSpace::Linear);
@@ -408,7 +437,9 @@ mod tests {
         // If filter prefers Linear and upstream is already Linear, no conversion needed
         let mut g = Graph::new(0);
         let src = g.add_node(Box::new(LinearSource {
-            w: 2, h: 2, color: [0.5, 0.5, 0.5, 1.0],
+            w: 2,
+            h: 2,
+            color: [0.5, 0.5, 0.5, 1.0],
         }));
         let src_info = g.node_info(src).unwrap();
         assert_eq!(src_info.color_space, ColorSpace::Linear);

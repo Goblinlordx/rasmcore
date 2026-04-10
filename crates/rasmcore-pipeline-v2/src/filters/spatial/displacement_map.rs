@@ -68,8 +68,12 @@ impl Filter for DisplacementMap {
 // ── DisplacementMap GPU (single-pass with map extra_buffer) ─────────────────
 
 impl GpuFilter for DisplacementMap {
-    fn shader_body(&self) -> &str { spatial::DISPLACEMENT_MAP }
-    fn workgroup_size(&self) -> [u32; 3] { [256, 1, 1] }
+    fn shader_body(&self) -> &str {
+        spatial::DISPLACEMENT_MAP
+    }
+    fn workgroup_size(&self) -> [u32; 3] {
+        [256, 1, 1]
+    }
     fn params(&self, w: u32, h: u32) -> Vec<u8> {
         let mut buf = Vec::with_capacity(16);
         buf.extend_from_slice(&w.to_le_bytes());

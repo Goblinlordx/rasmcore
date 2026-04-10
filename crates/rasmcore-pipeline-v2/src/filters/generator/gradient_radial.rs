@@ -12,14 +12,22 @@ use super::super::helpers::{gpu_params_wh, gpu_push_f32, gpu_push_u32};
 #[derive(Clone, rasmcore_macros::V2Filter)]
 #[filter(name = "gradient_radial", category = "generator")]
 pub struct GradientRadial {
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)] pub center_x: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)] pub center_y: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)] pub inner_r: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)] pub inner_g: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)] pub inner_b: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)] pub outer_r: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)] pub outer_g: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)] pub outer_b: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
+    pub center_x: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
+    pub center_y: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)]
+    pub inner_r: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)]
+    pub inner_g: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)]
+    pub inner_b: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)]
+    pub outer_r: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)]
+    pub outer_g: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)]
+    pub outer_b: f32,
 }
 
 const GRADIENT_RADIAL_WGSL: &str = r#"
@@ -54,9 +62,9 @@ impl Filter for GradientRadial {
                 let t = ((dx * dx + dy * dy).sqrt() * 2.0).min(1.0);
                 let i = ((y * width + x) * 4) as usize;
                 out[i] = self.inner_r + t * (self.outer_r - self.inner_r);
-                out[i+1] = self.inner_g + t * (self.outer_g - self.inner_g);
-                out[i+2] = self.inner_b + t * (self.outer_b - self.inner_b);
-                out[i+3] = 1.0;
+                out[i + 1] = self.inner_g + t * (self.outer_g - self.inner_g);
+                out[i + 2] = self.inner_b + t * (self.outer_b - self.inner_b);
+                out[i + 3] = 1.0;
             }
         }
         Ok(out)
@@ -64,10 +72,21 @@ impl Filter for GradientRadial {
 
     fn gpu_shader_passes(&self, _w: u32, _h: u32) -> Option<Vec<GpuShader>> {
         let mut p = gpu_params_wh(_w, _h);
-        gpu_push_f32(&mut p, self.center_x); gpu_push_f32(&mut p, self.center_y);
-        gpu_push_f32(&mut p, self.inner_r); gpu_push_f32(&mut p, self.inner_g); gpu_push_f32(&mut p, self.inner_b);
-        gpu_push_f32(&mut p, self.outer_r); gpu_push_f32(&mut p, self.outer_g); gpu_push_f32(&mut p, self.outer_b);
-        gpu_push_u32(&mut p, 0); gpu_push_u32(&mut p, 0);
-        Some(vec![GpuShader::new(GRADIENT_RADIAL_WGSL.to_string(), "main", [256, 1, 1], p)])
+        gpu_push_f32(&mut p, self.center_x);
+        gpu_push_f32(&mut p, self.center_y);
+        gpu_push_f32(&mut p, self.inner_r);
+        gpu_push_f32(&mut p, self.inner_g);
+        gpu_push_f32(&mut p, self.inner_b);
+        gpu_push_f32(&mut p, self.outer_r);
+        gpu_push_f32(&mut p, self.outer_g);
+        gpu_push_f32(&mut p, self.outer_b);
+        gpu_push_u32(&mut p, 0);
+        gpu_push_u32(&mut p, 0);
+        Some(vec![GpuShader::new(
+            GRADIENT_RADIAL_WGSL.to_string(),
+            "main",
+            [256, 1, 1],
+            p,
+        )])
     }
 }

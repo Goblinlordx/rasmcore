@@ -4,25 +4,25 @@
 //! evaluate ops compose into a single fused LUT or GPU shader. No manual
 //! GPU shader needed — the fusion optimizer handles it.
 
-pub mod add;
-pub mod subtract;
-pub mod multiply;
-pub mod divide;
 pub mod abs;
-pub mod pow;
+pub mod add;
+pub mod divide;
 pub mod log;
 pub mod max;
 pub mod min;
+pub mod multiply;
+pub mod pow;
+pub mod subtract;
 
-pub use add::EvaluateAdd;
-pub use subtract::EvaluateSubtract;
-pub use multiply::EvaluateMultiply;
-pub use divide::EvaluateDivide;
 pub use abs::EvaluateAbs;
-pub use pow::EvaluatePow;
+pub use add::EvaluateAdd;
+pub use divide::EvaluateDivide;
 pub use log::EvaluateLog;
 pub use max::EvaluateMax;
 pub use min::EvaluateMin;
+pub use multiply::EvaluateMultiply;
+pub use pow::EvaluatePow;
+pub use subtract::EvaluateSubtract;
 
 #[cfg(test)]
 mod tests {
@@ -32,9 +32,17 @@ mod tests {
     #[test]
     fn all_evaluate_filters_registered() {
         let factories = crate::registered_filter_factories();
-        for name in &["evaluate_add", "evaluate_subtract", "evaluate_multiply",
-                       "evaluate_divide", "evaluate_abs", "evaluate_pow",
-                       "evaluate_log", "evaluate_max", "evaluate_min"] {
+        for name in &[
+            "evaluate_add",
+            "evaluate_subtract",
+            "evaluate_multiply",
+            "evaluate_divide",
+            "evaluate_abs",
+            "evaluate_pow",
+            "evaluate_log",
+            "evaluate_max",
+            "evaluate_min",
+        ] {
             assert!(factories.contains(name), "{name} not registered");
         }
     }
@@ -66,7 +74,10 @@ mod tests {
     fn pow_has_analytic_expression() {
         let f = EvaluatePow { exponent: 2.2 };
         let exprs = f.analytic_expression_per_channel();
-        assert!(exprs.is_some(), "evaluate_pow should have analytic expression for fusion");
+        assert!(
+            exprs.is_some(),
+            "evaluate_pow should have analytic expression for fusion"
+        );
     }
 
     #[test]

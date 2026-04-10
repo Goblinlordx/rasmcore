@@ -14,7 +14,6 @@ pub fn encode_pixels(
     super::native_trivial::encode_bmp(pixels, info)
 }
 
-
 // ─── Encoder Registration ──────────────────────────────────────────────────
 
 inventory::submit! {

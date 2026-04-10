@@ -1,7 +1,7 @@
 use crate::node::PipelineError;
 use crate::ops::Filter;
 
-use super::{accum4_unit, clamp_coord, blur_params};
+use super::{accum4_unit, blur_params, clamp_coord};
 use crate::gpu_shaders::spatial;
 use crate::node::GpuShader;
 

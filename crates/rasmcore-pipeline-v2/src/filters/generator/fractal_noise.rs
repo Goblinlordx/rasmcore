@@ -4,7 +4,7 @@ use crate::node::{GpuShader, PipelineError};
 use crate::ops::Filter;
 
 use super::super::helpers::{gpu_params_wh, gpu_push_f32, gpu_push_u32};
-use super::{fbm_lacunarity_cpu};
+use super::fbm_lacunarity_cpu;
 
 // Fractal Noise (fBm with lacunarity)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -14,11 +14,16 @@ use super::{fbm_lacunarity_cpu};
 #[derive(Clone, rasmcore_macros::V2Filter)]
 #[filter(name = "fractal_noise", category = "generator")]
 pub struct FractalNoise {
-    #[param(min = 1.0, max = 200.0, step = 1.0, default = 50.0)] pub scale: f32,
-    #[param(min = 1, max = 10, step = 1, default = 6)] pub octaves: u32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)] pub persistence: f32,
-    #[param(min = 1.0, max = 4.0, step = 0.1, default = 2.0)] pub lacunarity: f32,
-    #[param(min = 0, max = 99999, step = 1, default = 42, hint = "rc.seed")] pub seed: u32,
+    #[param(min = 1.0, max = 200.0, step = 1.0, default = 50.0)]
+    pub scale: f32,
+    #[param(min = 1, max = 10, step = 1, default = 6)]
+    pub octaves: u32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
+    pub persistence: f32,
+    #[param(min = 1.0, max = 4.0, step = 0.1, default = 2.0)]
+    pub lacunarity: f32,
+    #[param(min = 0, max = 99999, step = 1, default = 42, hint = "rc.seed")]
+    pub seed: u32,
 }
 
 const FRACTAL_NOISE_WGSL: &str = r#"
@@ -73,7 +78,10 @@ impl Filter for FractalNoise {
                 let py = y as f32 / self.scale + sy;
                 let v = fbm_lacunarity_cpu(px, py, self.octaves, self.persistence, self.lacunarity);
                 let i = ((y * width + x) * 4) as usize;
-                out[i] = v; out[i+1] = v; out[i+2] = v; out[i+3] = 1.0;
+                out[i] = v;
+                out[i + 1] = v;
+                out[i + 2] = v;
+                out[i + 3] = 1.0;
             }
         }
         Ok(out)
@@ -87,6 +95,11 @@ impl Filter for FractalNoise {
         gpu_push_f32(&mut p, self.lacunarity);
         gpu_push_u32(&mut p, self.seed);
         gpu_push_u32(&mut p, 0);
-        Some(vec![GpuShader::new(FRACTAL_NOISE_WGSL.to_string(), "main", [256, 1, 1], p)])
+        Some(vec![GpuShader::new(
+            FRACTAL_NOISE_WGSL.to_string(),
+            "main",
+            [256, 1, 1],
+            p,
+        )])
     }
 }

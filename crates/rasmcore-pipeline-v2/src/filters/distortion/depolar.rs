@@ -1,11 +1,11 @@
 //! Depolar distortion filter.
 
-use crate::node::{PipelineError};
+use crate::node::PipelineError;
 use crate::ops::Filter;
 
-use std::f32::consts::PI;
 use super::super::helpers::{gpu_params_wh, sample_bilinear};
 use super::{SAMPLE_BILINEAR_WGSL, gpu_params_push_u32};
+use std::f32::consts::PI;
 
 // Depolar (Polar → Cartesian)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -70,8 +70,15 @@ impl Filter for Depolar {
         let mut params = gpu_params_wh(width, height);
         gpu_params_push_u32(&mut params, 0);
         gpu_params_push_u32(&mut params, 0);
-        Some(vec![crate::node::GpuShader::new(shader, "main", [16, 16, 1], params)])
+        Some(vec![crate::node::GpuShader::new(
+            shader,
+            "main",
+            [16, 16, 1],
+            params,
+        )])
     }
 
-    fn tile_overlap(&self) -> u32 { 0 }
+    fn tile_overlap(&self) -> u32 {
+        0
+    }
 }

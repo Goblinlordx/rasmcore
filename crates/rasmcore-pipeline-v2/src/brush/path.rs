@@ -6,7 +6,11 @@ use super::types::StrokePoint;
 ///
 /// `strength` controls smoothing amount: 0.0 = no smoothing, 1.0 = full.
 /// Returns a new path with interpolated points (original count × subdivision).
-pub fn smooth_catmull_rom(points: &[StrokePoint], strength: f32, subdivisions: u32) -> Vec<StrokePoint> {
+pub fn smooth_catmull_rom(
+    points: &[StrokePoint],
+    strength: f32,
+    subdivisions: u32,
+) -> Vec<StrokePoint> {
     if points.len() < 2 {
         return points.to_vec();
     }
@@ -21,7 +25,11 @@ pub fn smooth_catmull_rom(points: &[StrokePoint], strength: f32, subdivisions: u
         let p0 = if i > 0 { &points[i - 1] } else { &points[i] };
         let p1 = &points[i];
         let p2 = &points[i + 1];
-        let p3 = if i + 2 < n { &points[i + 2] } else { &points[i + 1] };
+        let p3 = if i + 2 < n {
+            &points[i + 2]
+        } else {
+            &points[i + 1]
+        };
 
         for s in 0..subdivisions {
             let t = s as f32 / subdivisions as f32;
@@ -37,11 +45,20 @@ pub fn smooth_catmull_rom(points: &[StrokePoint], strength: f32, subdivisions: u
     result
 }
 
-fn catmull_rom_interp(p0: &StrokePoint, p1: &StrokePoint, p2: &StrokePoint, p3: &StrokePoint, t: f32) -> StrokePoint {
+fn catmull_rom_interp(
+    p0: &StrokePoint,
+    p1: &StrokePoint,
+    p2: &StrokePoint,
+    p3: &StrokePoint,
+    t: f32,
+) -> StrokePoint {
     let cr = |a: f32, b: f32, c: f32, d: f32| -> f32 {
         let t2 = t * t;
         let t3 = t2 * t;
-        0.5 * ((2.0 * b) + (-a + c) * t + (2.0 * a - 5.0 * b + 4.0 * c - d) * t2 + (-a + 3.0 * b - 3.0 * c + d) * t3)
+        0.5 * ((2.0 * b)
+            + (-a + c) * t
+            + (2.0 * a - 5.0 * b + 4.0 * c - d) * t2
+            + (-a + 3.0 * b - 3.0 * c + d) * t3)
     };
     StrokePoint {
         x: cr(p0.x, p1.x, p2.x, p3.x),
@@ -96,8 +113,14 @@ mod tests {
 
     fn make_point(x: f32, y: f32) -> StrokePoint {
         StrokePoint {
-            x, y, pressure: 1.0, tilt_x: 0.0, tilt_y: 0.0,
-            rotation: 0.0, velocity: 0.0, timestamp: 0.0,
+            x,
+            y,
+            pressure: 1.0,
+            tilt_x: 0.0,
+            tilt_y: 0.0,
+            rotation: 0.0,
+            velocity: 0.0,
+            timestamp: 0.0,
         }
     }
 

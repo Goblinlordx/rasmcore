@@ -68,7 +68,9 @@ impl GpuFilter for OilPaint {
     fn shader_body(&self) -> &str {
         include_str!("../../shaders/oil_paint.wgsl")
     }
-    fn workgroup_size(&self) -> [u32; 3] { [8, 8, 1] }
+    fn workgroup_size(&self) -> [u32; 3] {
+        [8, 8, 1]
+    }
     fn params(&self, width: u32, height: u32) -> Vec<u8> {
         let mut buf = gpu_params_wh(width, height);
         gpu_params_push_u32(&mut buf, self.radius);

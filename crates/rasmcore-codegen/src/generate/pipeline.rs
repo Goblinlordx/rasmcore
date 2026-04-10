@@ -92,13 +92,19 @@ pub fn generate_nodes(filters: &[FilterReg]) -> String {
             code.push_str("        let __cfg = &self.config;\n");
             if !f.f32_native {
                 code.push_str("        // Auto-wrap: f32 → u8 → compute → u8 → f32\n");
-                code.push_str("        if __info.format == crate::domain::types::PixelFormat::Rgba32f {\n");
+                code.push_str(
+                    "        if __info.format == crate::domain::types::PixelFormat::Rgba32f {\n",
+                );
                 code.push_str("            let __info_u8 = ImageInfo { format: crate::domain::types::PixelFormat::Rgba8, ..__info.clone() };\n");
                 code.push_str("            let mut __up = |rect: Rect| {\n");
                 code.push_str("                let f32_px = upstream_fn(__uid, rect)?;\n");
-                code.push_str("                Ok(crate::domain::quantize_f32::rgba32f_to_rgba8(&f32_px))\n");
+                code.push_str(
+                    "                Ok(crate::domain::quantize_f32::rgba32f_to_rgba8(&f32_px))\n",
+                );
                 code.push_str("            };\n");
-                code.push_str("            let result_u8 = __cfg.compute(request, &mut __up, &__info_u8)?;\n");
+                code.push_str(
+                    "            let result_u8 = __cfg.compute(request, &mut __up, &__info_u8)?;\n",
+                );
                 code.push_str("            // Promote result back to f32\n");
                 code.push_str("            let n = result_u8.len() / 4;\n");
                 code.push_str("            let mut out = Vec::with_capacity(n * 16);\n");
@@ -243,7 +249,9 @@ pub fn generate_nodes(filters: &[FilterReg]) -> String {
                 code.push_str("            let __info_u8 = ImageInfo { format: crate::domain::types::PixelFormat::Rgba8, ..self.source_info.clone() };\n");
                 code.push_str("            let mut upstream = |rect: Rect| {\n");
                 code.push_str("                let f32_px = upstream_fn(upstream_id, rect)?;\n");
-                code.push_str("                Ok(crate::domain::quantize_f32::rgba32f_to_rgba8(&f32_px))\n");
+                code.push_str(
+                    "                Ok(crate::domain::quantize_f32::rgba32f_to_rgba8(&f32_px))\n",
+                );
                 code.push_str("            };\n");
                 code.push_str(&format!(
                     "            let result_u8 = filters::{domain_fn}(request, &mut upstream, &__info_u8{extra_args})?;\n"
@@ -380,27 +388,31 @@ pub fn generate_adapter_macro(
             if let Some(config_name) = &f.config_struct {
                 let domain_type = to_qualified_binding_type(config_name);
                 if let Some(fields) = param_structs.get(config_name.as_str()) {
-                    let field_inits: Vec<String> = fields
-                        .iter()
-                        .map(|field| {
-                            let fname = field.name.trim_start_matches('_');
-                            // Check if this field is a nested struct (e.g., ColorRgb, ColorRgba)
-                            let nested = param_structs.get(&field.param_type);
-                            if let Some(nested_fields) = nested {
-                                let nested_type = to_qualified_binding_type(&field.param_type);
-                                let nested_inits: Vec<String> = nested_fields.iter().map(|nf| {
+                    let field_inits: Vec<String> =
+                        fields
+                            .iter()
+                            .map(|field| {
+                                let fname = field.name.trim_start_matches('_');
+                                // Check if this field is a nested struct (e.g., ColorRgb, ColorRgba)
+                                let nested = param_structs.get(&field.param_type);
+                                if let Some(nested_fields) = nested {
+                                    let nested_type = to_qualified_binding_type(&field.param_type);
+                                    let nested_inits: Vec<String> = nested_fields.iter().map(|nf| {
                                     let nfname = nf.name.trim_start_matches('_');
                                     format!("                {nfname}: wit_config.{fname}.{nfname}")
                                 }).collect();
-                                format!(
-                                    "            {fname}: {nested_type} {{\n{}\n            }}",
-                                    nested_inits.join(",\n")
-                                )
-                            } else {
-                                format!("            {fname}: {}", proxy_scale_expr(fname, field))
-                            }
-                        })
-                        .collect();
+                                    format!(
+                                        "            {fname}: {nested_type} {{\n{}\n            }}",
+                                        nested_inits.join(",\n")
+                                    )
+                                } else {
+                                    format!(
+                                        "            {fname}: {}",
+                                        proxy_scale_expr(fname, field)
+                                    )
+                                }
+                            })
+                            .collect();
                     body_lines.push(format!(
                         "        let config = {domain_type} {{\n{}\n        }};",
                         field_inits.join(",\n")
@@ -417,27 +429,32 @@ pub fn generate_adapter_macro(
                 let struct_name = &t[1..];
                 let domain_type = to_qualified_binding_type(struct_name);
                 if let Some(fields) = param_structs.get(struct_name) {
-                    let field_inits: Vec<String> =
-                        fields
-                            .iter()
-                            .map(|field| {
-                                let fname = field.name.trim_start_matches('_');
-                                let nested = param_structs.get(&field.param_type);
-                                if let Some(nested_fields) = nested {
-                                    let nested_type = to_qualified_binding_type(&field.param_type);
-                                    let nested_inits: Vec<String> = nested_fields.iter().map(|nf| {
-                                let nfname = nf.name.trim_start_matches('_');
-                                format!("                {nfname}: {}", proxy_scale_expr(&format!("{fname}.{nfname}"), nf))
-                            }).collect();
-                                    format!(
-                                        "            {fname}: {nested_type} {{\n{}\n            }}",
-                                        nested_inits.join(",\n")
-                                    )
-                                } else {
-                                    format!("            {fname}: {}", proxy_scale_expr(fname, field))
-                                }
-                            })
-                            .collect();
+                    let field_inits: Vec<String> = fields
+                        .iter()
+                        .map(|field| {
+                            let fname = field.name.trim_start_matches('_');
+                            let nested = param_structs.get(&field.param_type);
+                            if let Some(nested_fields) = nested {
+                                let nested_type = to_qualified_binding_type(&field.param_type);
+                                let nested_inits: Vec<String> = nested_fields
+                                    .iter()
+                                    .map(|nf| {
+                                        let nfname = nf.name.trim_start_matches('_');
+                                        format!(
+                                            "                {nfname}: {}",
+                                            proxy_scale_expr(&format!("{fname}.{nfname}"), nf)
+                                        )
+                                    })
+                                    .collect();
+                                format!(
+                                    "            {fname}: {nested_type} {{\n{}\n            }}",
+                                    nested_inits.join(",\n")
+                                )
+                            } else {
+                                format!("            {fname}: {}", proxy_scale_expr(fname, field))
+                            }
+                        })
+                        .collect();
                     body_lines.push(format!(
                         "        let config = {domain_type} {{\n{}\n        }};",
                         field_inits.join(",\n")

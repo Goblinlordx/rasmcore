@@ -287,7 +287,10 @@ mod tests {
         ];
         for i in 0..offsets.len() {
             for j in i + 1..offsets.len() {
-                assert_ne!(offsets[i], offsets[j], "duplicate seed offset at {i} and {j}");
+                assert_ne!(
+                    offsets[i], offsets[j],
+                    "duplicate seed offset at {i} and {j}"
+                );
             }
         }
     }
@@ -323,7 +326,10 @@ mod tests {
         let variance = sum_sq / n as f64 - mean * mean;
         // Standard normal: mean ≈ 0, variance ≈ 1
         assert!(mean.abs() < 0.05, "mean too far from 0: {mean}");
-        assert!((variance - 1.0).abs() < 0.1, "variance too far from 1: {variance}");
+        assert!(
+            (variance - 1.0).abs() < 0.1,
+            "variance too far from 1: {variance}"
+        );
     }
 
     #[test]

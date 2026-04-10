@@ -4,23 +4,23 @@
 //! Edge detectors are spatial (need 3x3 neighborhood). Threshold filters are
 //! point ops on luminance. All have GPU shaders.
 
-mod sobel;
-mod scharr;
-mod laplacian;
-mod canny;
-mod threshold_binary;
-mod otsu_threshold;
-mod triangle_threshold;
 mod adaptive_threshold;
+mod canny;
+mod laplacian;
+mod otsu_threshold;
+mod scharr;
+mod sobel;
+mod threshold_binary;
+mod triangle_threshold;
 
-pub use sobel::Sobel;
-pub use scharr::Scharr;
-pub use laplacian::Laplacian;
-pub use canny::Canny;
-pub use threshold_binary::ThresholdBinary;
-pub use otsu_threshold::OtsuThreshold;
-pub use triangle_threshold::TriangleThreshold;
 pub use adaptive_threshold::AdaptiveThreshold;
+pub use canny::Canny;
+pub use laplacian::Laplacian;
+pub use otsu_threshold::OtsuThreshold;
+pub use scharr::Scharr;
+pub use sobel::Sobel;
+pub use threshold_binary::ThresholdBinary;
+pub use triangle_threshold::TriangleThreshold;
 
 // Re-export kernel constants used by canny
 pub(crate) use sobel::{SOBEL_X, SOBEL_Y};
@@ -54,7 +54,9 @@ mod tests {
     #[test]
     fn threshold_binary_splits() {
         let img = gradient_image(16, 16);
-        let out = ThresholdBinary { threshold: 0.5 }.compute(&img, 16, 16).unwrap();
+        let out = ThresholdBinary { threshold: 0.5 }
+            .compute(&img, 16, 16)
+            .unwrap();
         assert_eq!(out[0], 0.0);
         let last = (15 * 4) as usize;
         assert_eq!(out[last], 1.0);
@@ -65,14 +67,21 @@ mod tests {
         let img = gradient_image(32, 32);
         let out = OtsuThreshold.compute(&img, 32, 32).unwrap();
         for px in out.chunks_exact(4) {
-            assert!(px[0] == 0.0 || px[0] == 1.0, "otsu should produce binary: {}", px[0]);
+            assert!(
+                px[0] == 0.0 || px[0] == 1.0,
+                "otsu should produce binary: {}",
+                px[0]
+            );
         }
     }
 
     #[test]
     fn adaptive_threshold_runs() {
         let img = gradient_image(16, 16);
-        let f = AdaptiveThreshold { radius: 3, offset: 0.02 };
+        let f = AdaptiveThreshold {
+            radius: 3,
+            offset: 0.02,
+        };
         let out = f.compute(&img, 16, 16).unwrap();
         assert_eq!(out.len(), img.len());
     }
@@ -80,11 +89,17 @@ mod tests {
     #[test]
     fn canny_produces_binary_edges() {
         let img = gradient_image(16, 16);
-        let out = Canny { low: 0.05, high: 0.2 }.compute(&img, 16, 16).unwrap();
+        let out = Canny {
+            low: 0.05,
+            high: 0.2,
+        }
+        .compute(&img, 16, 16)
+        .unwrap();
         for px in out.chunks_exact(4) {
             assert!(
                 px[0] == 0.0 || (px[0] - 0.5).abs() < 1e-6 || (px[0] - 1.0).abs() < 1e-6,
-                "canny output should be 0/0.5/1, got {}", px[0]
+                "canny output should be 0/0.5/1, got {}",
+                px[0]
             );
         }
         let edge_count = out.chunks_exact(4).filter(|px| px[0] > 0.0).count();
@@ -95,7 +110,16 @@ mod tests {
     fn filters_registered() {
         let ops = crate::registered_operations();
         let names: Vec<&str> = ops.iter().map(|o| o.name).collect();
-        for f in &["sobel", "scharr", "laplacian", "canny", "threshold_binary", "otsu_threshold", "triangle_threshold", "adaptive_threshold"] {
+        for f in &[
+            "sobel",
+            "scharr",
+            "laplacian",
+            "canny",
+            "threshold_binary",
+            "otsu_threshold",
+            "triangle_threshold",
+            "adaptive_threshold",
+        ] {
             assert!(names.contains(f), "{f} not registered");
         }
     }
@@ -105,7 +129,11 @@ mod tests {
         let f = OtsuThreshold;
         let shaders = f.gpu_shader_passes(32, 32);
         assert!(shaders.is_some(), "otsu should have GPU shaders");
-        assert_eq!(shaders.unwrap().len(), 3, "otsu should be 3-pass (hist reduce + hist merge + apply)");
+        assert_eq!(
+            shaders.unwrap().len(),
+            3,
+            "otsu should be 3-pass (hist reduce + hist merge + apply)"
+        );
     }
 
     #[test]

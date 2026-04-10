@@ -51,8 +51,12 @@ impl Filter for Convolve {
 // ── Convolve GPU (single-pass with kernel extra_buffer) ─────────────────────
 
 impl GpuFilter for Convolve {
-    fn shader_body(&self) -> &str { spatial::CONVOLVE }
-    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn shader_body(&self) -> &str {
+        spatial::CONVOLVE
+    }
+    fn workgroup_size(&self) -> [u32; 3] {
+        [16, 16, 1]
+    }
     fn params(&self, w: u32, h: u32) -> Vec<u8> {
         let mut buf = Vec::with_capacity(32);
         buf.extend_from_slice(&w.to_le_bytes());

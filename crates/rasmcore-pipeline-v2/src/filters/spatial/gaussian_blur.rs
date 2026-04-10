@@ -1,13 +1,18 @@
 use crate::node::PipelineError;
 use crate::ops::Filter;
 
-use super::{accum4, clamp_coord, gaussian_kernel_1d, gaussian_kernel_bytes, blur_params};
+use super::{accum4, blur_params, clamp_coord, gaussian_kernel_1d, gaussian_kernel_bytes};
 use crate::gpu_shaders::spatial;
 use crate::node::GpuShader;
 
 /// Gaussian blur — separable convolution on f32 data.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "gaussian_blur", category = "spatial", cost = "O(n * r) separable", doc = "docs/operations/filters/spatial/gaussian_blur.adoc")]
+#[filter(
+    name = "gaussian_blur",
+    category = "spatial",
+    cost = "O(n * r) separable",
+    doc = "docs/operations/filters/spatial/gaussian_blur.adoc"
+)]
 pub struct GaussianBlur {
     /// Blur radius in pixels. Larger values produce stronger blur.
     #[param(min = 0.0, max = 100.0, default = 1.0)]
@@ -41,7 +46,9 @@ impl Filter for GaussianBlur {
                 tmp[out_idx..out_idx + 4].copy_from_slice(&sum);
             }
             for x in (w.saturating_sub(r))..w {
-                if x < r { continue; } // already handled above
+                if x < r {
+                    continue;
+                } // already handled above
                 let mut sum = [0.0f32; 4];
                 for (kx, &kw) in kernel.iter().enumerate() {
                     let sx = clamp_coord(x as i32 + kx as i32 - r as i32, w);
@@ -86,7 +93,9 @@ impl Filter for GaussianBlur {
             }
         }
         for y in (h.saturating_sub(r))..h {
-            if y < r { continue; }
+            if y < r {
+                continue;
+            }
             for x in 0..w {
                 let mut sum = [0.0f32; 4];
                 for (ky, &kw) in kernel.iter().enumerate() {

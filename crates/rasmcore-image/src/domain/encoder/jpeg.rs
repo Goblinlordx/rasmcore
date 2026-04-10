@@ -153,7 +153,6 @@ pub fn embed_iptc(jpeg_data: &[u8], iptc_data: &[u8]) -> Result<Vec<u8>, ImageEr
     Ok(result)
 }
 
-
 // ─── Encoder Registration ──────────────────────────────────────────────────
 
 inventory::submit! {

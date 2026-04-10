@@ -18,9 +18,11 @@ impl StrokePoint {
     pub fn lerp(a: &Self, b: &Self, t: f32) -> Self {
         let l = |a: f32, b: f32| a + t * (b - a);
         Self {
-            x: l(a.x, b.x), y: l(a.y, b.y),
+            x: l(a.x, b.x),
+            y: l(a.y, b.y),
             pressure: l(a.pressure, b.pressure),
-            tilt_x: l(a.tilt_x, b.tilt_x), tilt_y: l(a.tilt_y, b.tilt_y),
+            tilt_x: l(a.tilt_x, b.tilt_x),
+            tilt_y: l(a.tilt_y, b.tilt_y),
             rotation: l(a.rotation, b.rotation),
             velocity: l(a.velocity, b.velocity),
             timestamp: l(a.timestamp, b.timestamp),

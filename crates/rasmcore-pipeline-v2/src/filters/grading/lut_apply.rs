@@ -8,8 +8,7 @@ use super::super::color::ClutOp;
 
 #[allow(unused_imports)]
 use crate::registry::{
-    OperationRegistration, OperationKind,
-    OperationCapabilities, ParamDescriptor, ParamType,
+    OperationCapabilities, OperationKind, OperationRegistration, ParamDescriptor, ParamType,
 };
 
 // ─── ApplyCubeLut ─────────────────────────────────────────────────────────

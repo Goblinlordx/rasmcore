@@ -100,7 +100,11 @@ pub struct HillisSteeleScan {
 
 impl HillisSteeleScan {
     pub fn new(op: ScanOp, mode: ScanMode, workgroup_size: u32) -> Self {
-        Self { op, mode, workgroup_size }
+        Self {
+            op,
+            mode,
+            workgroup_size,
+        }
     }
 
     /// Generate WGSL for Hillis-Steele scan within shared memory.
@@ -118,7 +122,8 @@ impl HillisSteeleScan {
         let wg = self.workgroup_size;
         let exclusive_shift = match self.mode {
             ScanMode::Inclusive => "",
-            ScanMode::Exclusive => "
+            ScanMode::Exclusive => {
+                "
     // Shift right for exclusive scan
     workgroupBarrier();
     if (lid > 0u) {
@@ -128,10 +133,12 @@ impl HillisSteeleScan {
     }
     workgroupBarrier();
     buf_in[lid] = buf_out[lid];
-    workgroupBarrier();",
+    workgroupBarrier();"
+            }
         };
 
-        format!(r#"
+        format!(
+            r#"
 {op_fn}
 const IDENTITY: u32 = {identity};
 const WG_SIZE: u32 = {wg}u;
@@ -180,7 +187,8 @@ fn main(@builtin(local_invocation_id) lid_v: vec3<u32>) {{
         output[lid] = (*buf_in)[lid];
     }}
 }}
-"#)
+"#
+        )
     }
 }
 
@@ -202,7 +210,11 @@ pub struct BlellochScan {
 
 impl BlellochScan {
     pub fn new(op: ScanOp, mode: ScanMode, workgroup_size: u32) -> Self {
-        Self { op, mode, workgroup_size }
+        Self {
+            op,
+            mode,
+            workgroup_size,
+        }
     }
 
     /// Build GPU shader passes for scanning an array of `array_len` u32 elements.
@@ -302,7 +314,8 @@ impl BlellochScan {
             ScanMode::Inclusive => "(*shared)[lid]",
             ScanMode::Exclusive => "select((*shared)[lid - 1u], IDENTITY, lid == 0u)",
         };
-        format!(r#"
+        format!(
+            r#"
 {op_fn}
 const IDENTITY: u32 = {identity};
 const WG: u32 = {wg}u;
@@ -363,7 +376,8 @@ fn main(
         block_sums[wgid.x] = (*shared)[WG - 1u];
     }}
 }}
-"#)
+"#
+        )
     }
 
     /// Pass 2: scan the block sums array (single workgroup).
@@ -371,7 +385,8 @@ fn main(
         let wg = self.workgroup_size;
         let op_fn = self.op_fn_wgsl();
         let identity = self.identity_wgsl();
-        format!(r#"
+        format!(
+            r#"
 {op_fn}
 const IDENTITY: u32 = {identity};
 const WG: u32 = {wg}u;
@@ -422,14 +437,16 @@ fn main(@builtin(local_invocation_id) lid_v: vec3<u32>) {{
         }}
     }}
 }}
-"#)
+"#
+        )
     }
 
     /// Pass 3: add block prefix to each element.
     fn propagate_wgsl(&self) -> String {
         let wg = self.workgroup_size;
         let op_fn = self.op_fn_wgsl();
-        format!(r#"
+        format!(
+            r#"
 {op_fn}
 const WG: u32 = {wg}u;
 
@@ -451,7 +468,8 @@ fn main(
     let result = scan_op(prefix, current);
     output[gid] = vec4(f32(result) / 65535.0, 0.0, 0.0, 0.0);
 }}
-"#)
+"#
+        )
     }
 }
 
@@ -495,7 +513,8 @@ impl ParallelReduce {
         };
 
         // Pass 1: per-workgroup tree reduction
-        let pass1_wgsl = format!(r#"
+        let pass1_wgsl = format!(
+            r#"
 {op_fn}
 const IDENTITY: u32 = {identity};
 const WG: u32 = {wg}u;
@@ -531,7 +550,8 @@ fn main(
         partials[wgid.x] = shared[0];
     }}
 }}
-"#);
+"#
+        );
 
         let p1 = GpuShader::new(pass1_wgsl, "main", [wg, 1, 1], {
             let mut p = Vec::with_capacity(16);
@@ -540,14 +560,16 @@ fn main(
             p.extend_from_slice(&0u32.to_le_bytes());
             p.extend_from_slice(&0u32.to_le_bytes());
             p
-        }).with_reduction_buffers(vec![ReductionBuffer {
+        })
+        .with_reduction_buffers(vec![ReductionBuffer {
             id: buffer_id,
             initial_data: vec![0u8; num_blocks as usize * 4],
             read_write: true,
         }]);
 
         // Pass 2: reduce partials to single value (workgroup 0 only)
-        let pass2_wgsl = format!(r#"
+        let pass2_wgsl = format!(
+            r#"
 {op_fn}
 const IDENTITY: u32 = {identity};
 const WG: u32 = {wg}u;
@@ -578,7 +600,8 @@ fn main(@builtin(local_invocation_id) lid_v: vec3<u32>) {{
         result[0] = shared[0];
     }}
 }}
-"#);
+"#
+        );
 
         let p2 = GpuShader::new(pass2_wgsl, "main", [wg, 1, 1], {
             let mut p = Vec::with_capacity(16);
@@ -587,7 +610,8 @@ fn main(@builtin(local_invocation_id) lid_v: vec3<u32>) {{
             p.extend_from_slice(&0u32.to_le_bytes());
             p.extend_from_slice(&0u32.to_le_bytes());
             p
-        }).with_reduction_buffers(vec![ReductionBuffer {
+        })
+        .with_reduction_buffers(vec![ReductionBuffer {
             id: buffer_id,
             initial_data: vec![],
             read_write: true,
@@ -626,14 +650,22 @@ mod tests {
     fn blelloch_small_array_single_pass() {
         let scan = BlellochScan::new(ScanOp::Sum, ScanMode::Exclusive, 256);
         let passes = scan.build_passes(100);
-        assert_eq!(passes.passes.len(), 1, "≤ workgroup size should be single pass");
+        assert_eq!(
+            passes.passes.len(),
+            1,
+            "≤ workgroup size should be single pass"
+        );
     }
 
     #[test]
     fn blelloch_large_array_three_passes() {
         let scan = BlellochScan::new(ScanOp::Sum, ScanMode::Exclusive, 256);
         let passes = scan.build_passes(1000);
-        assert_eq!(passes.passes.len(), 3, "> workgroup size should be 3 passes");
+        assert_eq!(
+            passes.passes.len(),
+            3,
+            "> workgroup size should be 3 passes"
+        );
     }
 
     #[test]
@@ -648,7 +680,10 @@ mod tests {
         let reduce = ParallelReduce::new(ScanOp::Min, 256);
         let passes = reduce.build_passes(100);
         let wgsl = &passes.passes[0].body;
-        assert!(wgsl.contains("0xFFFFFFFF"), "min identity should be u32::MAX");
+        assert!(
+            wgsl.contains("0xFFFFFFFF"),
+            "min identity should be u32::MAX"
+        );
     }
 
     #[test]

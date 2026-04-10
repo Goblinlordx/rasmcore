@@ -24,16 +24,22 @@ impl Filter for Laplacian {
             for x in 0..w {
                 let v = convolve3x3(input, w, h, x as i32, y as i32, &LAPLACIAN_K).abs() * scale;
                 let idx = (y * w + x) * 4;
-                out[idx] = v; out[idx + 1] = v; out[idx + 2] = v;
+                out[idx] = v;
+                out[idx + 1] = v;
+                out[idx + 2] = v;
                 out[idx + 3] = input[idx + 3];
             }
         }
         Ok(out)
     }
 
-    fn tile_overlap(&self) -> u32 { 1 }
+    fn tile_overlap(&self) -> u32 {
+        1
+    }
 
-    fn gpu_shader_body(&self) -> Option<&'static str> { Some(LAPLACIAN_WGSL) }
+    fn gpu_shader_body(&self) -> Option<&'static str> {
+        Some(LAPLACIAN_WGSL)
+    }
 
     fn gpu_params(&self, width: u32, height: u32) -> Option<Vec<u8>> {
         let mut buf = Vec::with_capacity(16);

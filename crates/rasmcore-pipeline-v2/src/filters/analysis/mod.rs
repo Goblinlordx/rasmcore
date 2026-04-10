@@ -1,28 +1,28 @@
 //! Analysis and transform filters — feature detection, seam carving,
 //! perspective correction, and interpolation.
 
+mod connected_components;
 mod harris_corners;
-mod perspective_warp;
+mod hough_lines;
 mod perspective_correct;
-mod sparse_color;
-mod seam_carve_width;
+mod perspective_warp;
 mod seam_carve_height;
+mod seam_carve_width;
 mod smart_crop;
 mod smart_crop_analysis;
-mod hough_lines;
-mod connected_components;
+mod sparse_color;
 mod template_match;
 
+pub use connected_components::ConnectedComponents;
 pub use harris_corners::HarrisCorners;
-pub use perspective_warp::PerspectiveWarp;
+pub use hough_lines::HoughLines;
 pub use perspective_correct::PerspectiveCorrect;
-pub use sparse_color::SparseColor;
-pub use seam_carve_width::SeamCarveWidth;
+pub use perspective_warp::PerspectiveWarp;
 pub use seam_carve_height::SeamCarveHeight;
+pub use seam_carve_width::SeamCarveWidth;
 pub use smart_crop::SmartCrop;
 pub use smart_crop_analysis::SmartCropAnalysis;
-pub use hough_lines::HoughLines;
-pub use connected_components::ConnectedComponents;
+pub use sparse_color::SparseColor;
 pub use template_match::TemplateMatch;
 
 const SAMPLE_BILINEAR_WGSL: &str = r#"
@@ -43,7 +43,6 @@ fn sample_bilinear_f32(fx: f32, fy: f32) -> vec4<f32> {
 
 pub use smart_crop_analysis::smart_crop_find_rect;
 
-
 // ═══════════════════════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════════════════
@@ -56,9 +55,18 @@ mod tests {
     #[test]
     fn all_analysis_transform_filters_registered() {
         let factories = crate::registered_filter_factories();
-        for name in &["harris_corners", "perspective_warp", "perspective_correct",
-                       "sparse_color", "seam_carve_width", "seam_carve_height",
-                       "smart_crop", "hough_lines", "connected_components", "template_match"] {
+        for name in &[
+            "harris_corners",
+            "perspective_warp",
+            "perspective_correct",
+            "sparse_color",
+            "seam_carve_width",
+            "seam_carve_height",
+            "smart_crop",
+            "hough_lines",
+            "connected_components",
+            "template_match",
+        ] {
             assert!(factories.contains(name), "{name} not registered");
         }
     }
@@ -67,9 +75,14 @@ mod tests {
     fn perspective_identity() {
         let input = vec![0.5, 0.3, 0.1, 1.0, 0.8, 0.6, 0.4, 1.0];
         let f = PerspectiveWarp {
-            h11: 1.0, h12: 0.0, h13: 0.0,
-            h21: 0.0, h22: 1.0, h23: 0.0,
-            h31: 0.0, h32: 0.0,
+            h11: 1.0,
+            h12: 0.0,
+            h13: 0.0,
+            h21: 0.0,
+            h22: 1.0,
+            h23: 0.0,
+            h31: 0.0,
+            h32: 0.0,
         };
         let out = f.compute(&input, 2, 1).unwrap();
         for (a, b) in input.iter().zip(out.iter()) {
@@ -78,11 +91,10 @@ mod tests {
     }
 }
 
-
 #[cfg(test)]
 mod smart_crop_analysis_tests {
-    use crate::staged::{AnalysisNode, AnalysisResult};
     use super::{SmartCropAnalysis, smart_crop_find_rect};
+    use crate::staged::{AnalysisNode, AnalysisResult};
 
     fn gradient_image(w: u32, h: u32) -> Vec<f32> {
         let n = (w * h) as usize;
@@ -98,7 +110,8 @@ mod smart_crop_analysis_tests {
     fn smart_crop_analysis_produces_rect() {
         let img = gradient_image(100, 100);
         let info = crate::node::NodeInfo {
-            width: 100, height: 100,
+            width: 100,
+            height: 100,
             color_space: crate::color_space::ColorSpace::Linear,
         };
         let node = SmartCropAnalysis::new(0, info, 0.5);

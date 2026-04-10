@@ -5,26 +5,26 @@
 //! the same pattern with `sample_bilinear_f32()`.
 
 mod barrel;
-mod spherize;
-mod swirl;
-mod ripple;
-mod wave;
-mod polar;
 mod depolar;
+mod displacement_map;
 mod liquify;
 mod mesh_warp;
-mod displacement_map;
+mod polar;
+mod ripple;
+mod spherize;
+mod swirl;
+mod wave;
 
 pub use barrel::Barrel;
-pub use spherize::Spherize;
-pub use swirl::Swirl;
-pub use ripple::Ripple;
-pub use wave::Wave;
-pub use polar::Polar;
 pub use depolar::Depolar;
+pub use displacement_map::DisplacementMap;
 pub use liquify::Liquify;
 pub use mesh_warp::MeshWarp;
-pub use displacement_map::DisplacementMap;
+pub use polar::Polar;
+pub use ripple::Ripple;
+pub use spherize::Spherize;
+pub use swirl::Swirl;
+pub use wave::Wave;
 
 /// WGSL bilinear sampling helper — prepended to each distortion shader.
 const SAMPLE_BILINEAR_WGSL: &str = r#"
@@ -87,7 +87,10 @@ mod tests {
     #[test]
     fn swirl_identity_at_zero_angle() {
         let input = solid_image(4, 4, [0.5, 0.3, 0.1, 1.0]);
-        let f = Swirl { angle: 0.0, radius: 100.0 };
+        let f = Swirl {
+            angle: 0.0,
+            radius: 100.0,
+        };
         let out = f.compute(&input, 4, 4).unwrap();
         for (a, b) in input.iter().zip(out.iter()) {
             assert!((a - b).abs() < 0.02, "expected {a}, got {b}");
@@ -97,8 +100,14 @@ mod tests {
     #[test]
     fn wave_changes_pixels() {
         let mut input = vec![0.0f32; 16 * 16 * 4];
-        for i in 0..input.len() { input[i] = (i as f32 / input.len() as f32); }
-        let f = Wave { amplitude: 5.0, wavelength: 8.0, vertical: false };
+        for i in 0..input.len() {
+            input[i] = (i as f32 / input.len() as f32);
+        }
+        let f = Wave {
+            amplitude: 5.0,
+            wavelength: 8.0,
+            vertical: false,
+        };
         let out = f.compute(&input, 16, 16).unwrap();
         assert_ne!(input, out);
     }
@@ -106,8 +115,18 @@ mod tests {
     #[test]
     fn all_distortion_filters_registered() {
         let factories = crate::registered_filter_factories();
-        for name in &["barrel", "spherize", "swirl", "ripple", "wave",
-                       "polar", "depolar", "liquify", "mesh_warp", "displacement_map"] {
+        for name in &[
+            "barrel",
+            "spherize",
+            "swirl",
+            "ripple",
+            "wave",
+            "polar",
+            "depolar",
+            "liquify",
+            "mesh_warp",
+            "displacement_map",
+        ] {
             assert!(factories.contains(name), "{name} not registered");
         }
     }

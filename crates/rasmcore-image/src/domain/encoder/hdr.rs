@@ -101,7 +101,6 @@ fn to_rgbe(r: f32, g: f32, b: f32) -> [u8; 4] {
     ]
 }
 
-
 // ─── Encoder Registration ──────────────────────────────────────────────────
 
 inventory::submit! {
@@ -207,13 +206,22 @@ mod tests {
         for (i, &(orig_r, orig_g, orig_b)) in orig_values.iter().enumerate() {
             let off = i * 12;
             let back_r = f32::from_le_bytes([
-                decoded.pixels[off], decoded.pixels[off+1], decoded.pixels[off+2], decoded.pixels[off+3],
+                decoded.pixels[off],
+                decoded.pixels[off + 1],
+                decoded.pixels[off + 2],
+                decoded.pixels[off + 3],
             ]);
             let back_g = f32::from_le_bytes([
-                decoded.pixels[off+4], decoded.pixels[off+5], decoded.pixels[off+6], decoded.pixels[off+7],
+                decoded.pixels[off + 4],
+                decoded.pixels[off + 5],
+                decoded.pixels[off + 6],
+                decoded.pixels[off + 7],
             ]);
             let back_b = f32::from_le_bytes([
-                decoded.pixels[off+8], decoded.pixels[off+9], decoded.pixels[off+10], decoded.pixels[off+11],
+                decoded.pixels[off + 8],
+                decoded.pixels[off + 9],
+                decoded.pixels[off + 10],
+                decoded.pixels[off + 11],
             ]);
 
             // RGBE tolerance: ~1/128 relative error per channel
@@ -267,20 +275,23 @@ mod tests {
         }
 
         let info_rgba = ImageInfo {
-            width: w, height: h,
+            width: w,
+            height: h,
             format: PixelFormat::Rgba32f,
             color_space: ColorSpace::Srgb,
         };
 
         // EXR f32 encode
-        let exr_bytes = exr_enc::encode_pixels(&rgba_f32, &info_rgba, &exr_enc::ExrEncodeConfig).unwrap();
+        let exr_bytes =
+            exr_enc::encode_pixels(&rgba_f32, &info_rgba, &exr_enc::ExrEncodeConfig).unwrap();
 
         // EXR f32 decode
         let decoded_exr = decoder::decode_f32(&exr_bytes).unwrap();
         assert_eq!(decoded_exr.info.format, PixelFormat::Rgba32f);
 
         // HDR f32 encode (from Rgba32f — HDR accepts it)
-        let hdr_bytes = encode_pixels(&decoded_exr.pixels, &decoded_exr.info, &HdrEncodeConfig).unwrap();
+        let hdr_bytes =
+            encode_pixels(&decoded_exr.pixels, &decoded_exr.info, &HdrEncodeConfig).unwrap();
 
         // HDR f32 decode
         let decoded_hdr = decoder::decode_f32(&hdr_bytes).unwrap();
@@ -291,12 +302,16 @@ mod tests {
             let exr_off = i * 16;
             let hdr_off = i * 12;
             let exr_r = f32::from_le_bytes([
-                decoded_exr.pixels[exr_off], decoded_exr.pixels[exr_off+1],
-                decoded_exr.pixels[exr_off+2], decoded_exr.pixels[exr_off+3],
+                decoded_exr.pixels[exr_off],
+                decoded_exr.pixels[exr_off + 1],
+                decoded_exr.pixels[exr_off + 2],
+                decoded_exr.pixels[exr_off + 3],
             ]);
             let hdr_r = f32::from_le_bytes([
-                decoded_hdr.pixels[hdr_off], decoded_hdr.pixels[hdr_off+1],
-                decoded_hdr.pixels[hdr_off+2], decoded_hdr.pixels[hdr_off+3],
+                decoded_hdr.pixels[hdr_off],
+                decoded_hdr.pixels[hdr_off + 1],
+                decoded_hdr.pixels[hdr_off + 2],
+                decoded_hdr.pixels[hdr_off + 3],
             ]);
             let tol = (exr_r * 0.02).max(0.005);
             assert!(

@@ -39,7 +39,12 @@ impl Filter for AddAlpha {
         let mut p = gpu_params_wh(_width, _height);
         gpu_push_f32(&mut p, self.alpha);
         gpu_push_u32(&mut p, 0);
-        Some(vec![GpuShader::new(ADD_ALPHA_WGSL.to_string(), "main", [256, 1, 1], p)])
+        Some(vec![GpuShader::new(
+            ADD_ALPHA_WGSL.to_string(),
+            "main",
+            [256, 1, 1],
+            p,
+        )])
     }
 }
 

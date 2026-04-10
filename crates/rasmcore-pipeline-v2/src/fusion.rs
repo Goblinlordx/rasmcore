@@ -173,7 +173,10 @@ pub fn is_constant(expr: &PointOpExpr) -> bool {
         | PointOpExpr::Pow(a, b)
         | PointOpExpr::Max(a, b)
         | PointOpExpr::Min(a, b) => is_constant(a) && is_constant(b),
-        PointOpExpr::Clamp(v, _, _) | PointOpExpr::Floor(v) | PointOpExpr::Exp(v) | PointOpExpr::Ln(v) => is_constant(v),
+        PointOpExpr::Clamp(v, _, _)
+        | PointOpExpr::Floor(v)
+        | PointOpExpr::Exp(v)
+        | PointOpExpr::Ln(v) => is_constant(v),
         PointOpExpr::Select(cond, t, f) => is_constant(cond) && is_constant(t) && is_constant(f),
     }
 }
@@ -300,32 +303,60 @@ impl F32Lut {
 
             // Integer indices (clamped to table bounds)
             let mx = (self.table.len() - 2) as u32;
-            let i0r = (t0r as u32).min(mx) as usize; let i0g = (t0g as u32).min(mx) as usize; let i0b = (t0b as u32).min(mx) as usize;
-            let i1r = (t1r as u32).min(mx) as usize; let i1g = (t1g as u32).min(mx) as usize; let i1b = (t1b as u32).min(mx) as usize;
-            let i2r = (t2r as u32).min(mx) as usize; let i2g = (t2g as u32).min(mx) as usize; let i2b = (t2b as u32).min(mx) as usize;
-            let i3r = (t3r as u32).min(mx) as usize; let i3g = (t3g as u32).min(mx) as usize; let i3b = (t3b as u32).min(mx) as usize;
+            let i0r = (t0r as u32).min(mx) as usize;
+            let i0g = (t0g as u32).min(mx) as usize;
+            let i0b = (t0b as u32).min(mx) as usize;
+            let i1r = (t1r as u32).min(mx) as usize;
+            let i1g = (t1g as u32).min(mx) as usize;
+            let i1b = (t1b as u32).min(mx) as usize;
+            let i2r = (t2r as u32).min(mx) as usize;
+            let i2g = (t2g as u32).min(mx) as usize;
+            let i2b = (t2b as u32).min(mx) as usize;
+            let i3r = (t3r as u32).min(mx) as usize;
+            let i3g = (t3g as u32).min(mx) as usize;
+            let i3b = (t3b as u32).min(mx) as usize;
 
             // Fractions
-            let f0r = t0r - i0r as f32; let f0g = t0g - i0g as f32; let f0b = t0b - i0b as f32;
-            let f1r = t1r - i1r as f32; let f1g = t1g - i1g as f32; let f1b = t1b - i1b as f32;
-            let f2r = t2r - i2r as f32; let f2g = t2g - i2g as f32; let f2b = t2b - i2b as f32;
-            let f3r = t3r - i3r as f32; let f3g = t3g - i3g as f32; let f3b = t3b - i3b as f32;
+            let f0r = t0r - i0r as f32;
+            let f0g = t0g - i0g as f32;
+            let f0b = t0b - i0b as f32;
+            let f1r = t1r - i1r as f32;
+            let f1g = t1g - i1g as f32;
+            let f1b = t1b - i1b as f32;
+            let f2r = t2r - i2r as f32;
+            let f2g = t2g - i2g as f32;
+            let f2b = t2b - i2b as f32;
+            let f3r = t3r - i3r as f32;
+            let f3g = t3g - i3g as f32;
+            let f3b = t3b - i3b as f32;
 
             // Lookups + lerp (12 independent chains)
             unsafe {
                 let tbl = &self.table;
-                s[0]  = tbl.get_unchecked(i0r).clone() + f0r * (tbl.get_unchecked(i0r + 1) - tbl.get_unchecked(i0r));
-                s[1]  = tbl.get_unchecked(i0g).clone() + f0g * (tbl.get_unchecked(i0g + 1) - tbl.get_unchecked(i0g));
-                s[2]  = tbl.get_unchecked(i0b).clone() + f0b * (tbl.get_unchecked(i0b + 1) - tbl.get_unchecked(i0b));
-                s[4]  = tbl.get_unchecked(i1r).clone() + f1r * (tbl.get_unchecked(i1r + 1) - tbl.get_unchecked(i1r));
-                s[5]  = tbl.get_unchecked(i1g).clone() + f1g * (tbl.get_unchecked(i1g + 1) - tbl.get_unchecked(i1g));
-                s[6]  = tbl.get_unchecked(i1b).clone() + f1b * (tbl.get_unchecked(i1b + 1) - tbl.get_unchecked(i1b));
-                s[8]  = tbl.get_unchecked(i2r).clone() + f2r * (tbl.get_unchecked(i2r + 1) - tbl.get_unchecked(i2r));
-                s[9]  = tbl.get_unchecked(i2g).clone() + f2g * (tbl.get_unchecked(i2g + 1) - tbl.get_unchecked(i2g));
-                s[10] = tbl.get_unchecked(i2b).clone() + f2b * (tbl.get_unchecked(i2b + 1) - tbl.get_unchecked(i2b));
-                s[12] = tbl.get_unchecked(i3r).clone() + f3r * (tbl.get_unchecked(i3r + 1) - tbl.get_unchecked(i3r));
-                s[13] = tbl.get_unchecked(i3g).clone() + f3g * (tbl.get_unchecked(i3g + 1) - tbl.get_unchecked(i3g));
-                s[14] = tbl.get_unchecked(i3b).clone() + f3b * (tbl.get_unchecked(i3b + 1) - tbl.get_unchecked(i3b));
+                s[0] = tbl.get_unchecked(i0r).clone()
+                    + f0r * (tbl.get_unchecked(i0r + 1) - tbl.get_unchecked(i0r));
+                s[1] = tbl.get_unchecked(i0g).clone()
+                    + f0g * (tbl.get_unchecked(i0g + 1) - tbl.get_unchecked(i0g));
+                s[2] = tbl.get_unchecked(i0b).clone()
+                    + f0b * (tbl.get_unchecked(i0b + 1) - tbl.get_unchecked(i0b));
+                s[4] = tbl.get_unchecked(i1r).clone()
+                    + f1r * (tbl.get_unchecked(i1r + 1) - tbl.get_unchecked(i1r));
+                s[5] = tbl.get_unchecked(i1g).clone()
+                    + f1g * (tbl.get_unchecked(i1g + 1) - tbl.get_unchecked(i1g));
+                s[6] = tbl.get_unchecked(i1b).clone()
+                    + f1b * (tbl.get_unchecked(i1b + 1) - tbl.get_unchecked(i1b));
+                s[8] = tbl.get_unchecked(i2r).clone()
+                    + f2r * (tbl.get_unchecked(i2r + 1) - tbl.get_unchecked(i2r));
+                s[9] = tbl.get_unchecked(i2g).clone()
+                    + f2g * (tbl.get_unchecked(i2g + 1) - tbl.get_unchecked(i2g));
+                s[10] = tbl.get_unchecked(i2b).clone()
+                    + f2b * (tbl.get_unchecked(i2b + 1) - tbl.get_unchecked(i2b));
+                s[12] = tbl.get_unchecked(i3r).clone()
+                    + f3r * (tbl.get_unchecked(i3r + 1) - tbl.get_unchecked(i3r));
+                s[13] = tbl.get_unchecked(i3g).clone()
+                    + f3g * (tbl.get_unchecked(i3g + 1) - tbl.get_unchecked(i3g));
+                s[14] = tbl.get_unchecked(i3b).clone()
+                    + f3b * (tbl.get_unchecked(i3b + 1) - tbl.get_unchecked(i3b));
             }
             // Alpha channels (s[3], s[7], s[11], s[15]) untouched
         }
@@ -686,7 +717,8 @@ impl Node for FusedPointOpNode {
             extra_buffers: vec![],
             reduction_buffers: vec![],
             convergence_check: None,
-            loop_dispatch: None, setup: None,
+            loop_dispatch: None,
+            setup: None,
         })
     }
 
@@ -705,7 +737,11 @@ impl Node for FusedPointOpNode {
 
     fn fusion_clut(&self) -> Option<Clut3D> {
         Some(Clut3D::from_fn(33, |r, g, b| {
-            (self.luts[0].apply(r), self.luts[1].apply(g), self.luts[2].apply(b))
+            (
+                self.luts[0].apply(r),
+                self.luts[1].apply(g),
+                self.luts[2].apply(b),
+            )
         }))
     }
 }
@@ -749,7 +785,10 @@ impl Node for FusedClutNode {
         params.extend_from_slice(&0u32.to_le_bytes()); // padding
 
         // Pass 3D LUT grid as extra read-only storage buffer
-        let lut_bytes: Vec<u8> = self.clut.data.iter()
+        let lut_bytes: Vec<u8> = self
+            .clut
+            .data
+            .iter()
             .flat_map(|v| v.to_le_bytes())
             .collect();
 
@@ -761,7 +800,8 @@ impl Node for FusedClutNode {
             extra_buffers: vec![lut_bytes],
             reduction_buffers: vec![],
             convergence_check: None,
-            loop_dispatch: None, setup: None,
+            loop_dispatch: None,
+            setup: None,
         })
     }
 
@@ -816,12 +856,18 @@ fn insert_preferred_csc_nodes(graph: &mut Graph) {
 
     let n = graph.node_count() as usize;
     // Collect nodes that need CSC wrapping: (node_id, upstream_cs, preferred_cs)
-    let mut to_wrap: Vec<(u32, crate::color_space::ColorSpace, crate::color_space::ColorSpace)> = Vec::new();
+    let mut to_wrap: Vec<(
+        u32,
+        crate::color_space::ColorSpace,
+        crate::color_space::ColorSpace,
+    )> = Vec::new();
     for i in 0..n {
         let node = graph.get_node(i as u32);
         if let Some(preferred) = node.preferred_color_space() {
             let upstream_ids = node.upstream_ids();
-            if upstream_ids.len() != 1 { continue; }
+            if upstream_ids.len() != 1 {
+                continue;
+            }
             // Use the actual upstream color space, not an assumed working space.
             let upstream_cs = graph.get_node(upstream_ids[0]).info().color_space;
             if preferred != upstream_cs {
@@ -834,14 +880,19 @@ fn insert_preferred_csc_nodes(graph: &mut Graph) {
     for (node_id, upstream_cs, preferred) in to_wrap {
         let node = graph.get_node(node_id);
         let upstream_ids = node.upstream_ids();
-        if upstream_ids.len() != 1 { continue; }
+        if upstream_ids.len() != 1 {
+            continue;
+        }
         let original_upstream = upstream_ids[0];
         let info = node.info();
 
         // CSC before: upstream_cs → preferred
         let csc_before = ColorConvertNode::new(
             original_upstream,
-            NodeInfo { color_space: preferred, ..info.clone() },
+            NodeInfo {
+                color_space: preferred,
+                ..info.clone()
+            },
             upstream_cs,
             preferred,
         );
@@ -852,7 +903,10 @@ fn insert_preferred_csc_nodes(graph: &mut Graph) {
         // CSC after: preferred → upstream_cs (restore original space)
         let csc_after = ColorConvertNode::new(
             node_id,
-            NodeInfo { color_space: upstream_cs, ..info },
+            NodeInfo {
+                color_space: upstream_cs,
+                ..info
+            },
             preferred,
             upstream_cs,
         );
@@ -911,7 +965,13 @@ fn fuse_analytical_chains(graph: &mut Graph) {
                 break;
             }
             let up = upstream_ids[0] as usize;
-            if up >= n || fused[up] || graph.get_node(up as u32).analytic_expression_per_channel().is_none() {
+            if up >= n
+                || fused[up]
+                || graph
+                    .get_node(up as u32)
+                    .analytic_expression_per_channel()
+                    .is_none()
+            {
                 break;
             }
             chain.push(up);
@@ -933,7 +993,10 @@ fn fuse_analytical_chains(graph: &mut Graph) {
 
         // Compose per-channel from innermost to outermost
         let mut composed = per_channel_exprs.last().unwrap().clone();
-        for exprs in per_channel_exprs[..per_channel_exprs.len() - 1].iter().rev() {
+        for exprs in per_channel_exprs[..per_channel_exprs.len() - 1]
+            .iter()
+            .rev()
+        {
             composed = [
                 PointOpExpr::compose(&exprs[0], &composed[0]),
                 PointOpExpr::compose(&exprs[1], &composed[1]),
@@ -1371,13 +1434,24 @@ mod tests {
     // ── CSC insertion + fusion tests ──
 
     /// Minimal source node for testing.
-    struct TestSource { info: crate::node::NodeInfo, pixels: Vec<f32> }
+    struct TestSource {
+        info: crate::node::NodeInfo,
+        pixels: Vec<f32>,
+    }
     impl crate::node::Node for TestSource {
-        fn info(&self) -> crate::node::NodeInfo { self.info.clone() }
-        fn compute(&self, _: crate::rect::Rect, _: &mut dyn crate::node::Upstream) -> Result<Vec<f32>, crate::node::PipelineError> {
+        fn info(&self) -> crate::node::NodeInfo {
+            self.info.clone()
+        }
+        fn compute(
+            &self,
+            _: crate::rect::Rect,
+            _: &mut dyn crate::node::Upstream,
+        ) -> Result<Vec<f32>, crate::node::PipelineError> {
             Ok(self.pixels.clone())
         }
-        fn upstream_ids(&self) -> Vec<u32> { vec![] }
+        fn upstream_ids(&self) -> Vec<u32> {
+            vec![]
+        }
     }
 
     fn make_test_graph(color_managed: bool) -> (Graph, u32, u32) {
@@ -1386,14 +1460,23 @@ mod tests {
         graph.set_color_managed(color_managed);
         graph.set_working_color_space(ColorSpace::AcesCg);
 
-        let info = crate::node::NodeInfo { width: 2, height: 2, color_space: ColorSpace::AcesCg };
-        let src = graph.add_node(Box::new(TestSource { info: info.clone(), pixels: vec![0.5; 16] }));
-        let lgg = crate::filters::grading::lift_gamma_gain::LiftGammaGain {
-            lift: [0.0, 0.0, 0.0], gamma: [1.0, 1.0, 1.0], gain: [1.2, 1.2, 1.2],
+        let info = crate::node::NodeInfo {
+            width: 2,
+            height: 2,
+            color_space: ColorSpace::AcesCg,
         };
-        let lgg_id = graph.add_node(Box::new(
-            crate::filter_node::FilterNode::new(src, info, lgg),
-        ));
+        let src = graph.add_node(Box::new(TestSource {
+            info: info.clone(),
+            pixels: vec![0.5; 16],
+        }));
+        let lgg = crate::filters::grading::lift_gamma_gain::LiftGammaGain {
+            lift: [0.0, 0.0, 0.0],
+            gamma: [1.0, 1.0, 1.0],
+            gain: [1.2, 1.2, 1.2],
+        };
+        let lgg_id = graph.add_node(Box::new(crate::filter_node::FilterNode::new(
+            src, info, lgg,
+        )));
         (graph, src, lgg_id)
     }
 
@@ -1402,7 +1485,11 @@ mod tests {
         let (mut graph, _, _) = make_test_graph(false);
         let count_before = graph.node_count();
         insert_preferred_csc_nodes(&mut graph);
-        assert_eq!(graph.node_count(), count_before, "No CSC when not color managed");
+        assert_eq!(
+            graph.node_count(),
+            count_before,
+            "No CSC when not color managed"
+        );
     }
 
     #[test]
@@ -1410,18 +1497,24 @@ mod tests {
         let (mut graph, _, _) = make_test_graph(true);
         let count_before = graph.node_count();
         insert_preferred_csc_nodes(&mut graph);
-        assert_eq!(graph.node_count(), count_before + 2, "Should insert 2 CSC nodes");
+        assert_eq!(
+            graph.node_count(),
+            count_before + 2,
+            "Should insert 2 CSC nodes"
+        );
     }
 
     #[test]
     fn fused_grading_matches_sequential() {
-        use crate::color_space::ColorSpace;
         use crate::color_math::convert_color_space;
+        use crate::color_space::ColorSpace;
         use crate::ops::Filter;
 
         let test_rgb = [0.3_f32, 0.5, 0.1];
         let lgg = crate::filters::grading::lift_gamma_gain::LiftGammaGain {
-            lift: [0.02, 0.01, 0.0], gamma: [0.9, 1.0, 1.1], gain: [1.1, 1.0, 0.95],
+            lift: [0.02, 0.01, 0.0],
+            gamma: [0.9, 1.0, 1.1],
+            gain: [1.1, 1.0, 0.95],
         };
 
         // Sequential: ACEScg → ACEScct → grade → ACEScg
@@ -1432,12 +1525,26 @@ mod tests {
         convert_color_space(&mut seq_result, ColorSpace::AcesCct, ColorSpace::AcesCg);
 
         // Fused: compose 3 CLUTs (CSC→cct + LGG + CSC→cg)
-        let csc_in = crate::color_convert::ColorConvertNode::new(0,
-            crate::node::NodeInfo { width: 1, height: 1, color_space: ColorSpace::AcesCct },
-            ColorSpace::AcesCg, ColorSpace::AcesCct);
-        let csc_out = crate::color_convert::ColorConvertNode::new(0,
-            crate::node::NodeInfo { width: 1, height: 1, color_space: ColorSpace::AcesCg },
-            ColorSpace::AcesCct, ColorSpace::AcesCg);
+        let csc_in = crate::color_convert::ColorConvertNode::new(
+            0,
+            crate::node::NodeInfo {
+                width: 1,
+                height: 1,
+                color_space: ColorSpace::AcesCct,
+            },
+            ColorSpace::AcesCg,
+            ColorSpace::AcesCct,
+        );
+        let csc_out = crate::color_convert::ColorConvertNode::new(
+            0,
+            crate::node::NodeInfo {
+                width: 1,
+                height: 1,
+                color_space: ColorSpace::AcesCg,
+            },
+            ColorSpace::AcesCct,
+            ColorSpace::AcesCg,
+        );
 
         use crate::node::Node;
         let clut_in = csc_in.fusion_clut().unwrap();
@@ -1447,11 +1554,20 @@ mod tests {
         let composed = compose_cluts(&clut_out, &compose_cluts(&clut_grade, &clut_in));
         let fused = composed.sample(test_rgb[0], test_rgb[1], test_rgb[2]);
 
-        let max_err = (fused.0 - seq_result[0]).abs()
+        let max_err = (fused.0 - seq_result[0])
+            .abs()
             .max((fused.1 - seq_result[1]).abs())
             .max((fused.2 - seq_result[2]).abs());
-        assert!(max_err < 0.02,
+        assert!(
+            max_err < 0.02,
             "Fused [{:.4},{:.4},{:.4}] vs sequential [{:.4},{:.4},{:.4}] max_err={:.6}",
-            fused.0, fused.1, fused.2, seq_result[0], seq_result[1], seq_result[2], max_err);
+            fused.0,
+            fused.1,
+            fused.2,
+            seq_result[0],
+            seq_result[1],
+            seq_result[2],
+            max_err
+        );
     }
 }

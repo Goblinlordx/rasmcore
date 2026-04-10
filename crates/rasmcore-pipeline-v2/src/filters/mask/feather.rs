@@ -72,9 +72,17 @@ impl Filter for Feather {
 
     fn gpu_shader_passes(&self, width: u32, height: u32) -> Option<Vec<GpuShader>> {
         let mut p = gpu_params_wh(width, height);
-        gpu_push_u32(&mut p, self.radius); gpu_push_u32(&mut p, 0);
-        Some(vec![GpuShader::new(FEATHER_WGSL.to_string(), "main", [16, 16, 1], p)])
+        gpu_push_u32(&mut p, self.radius);
+        gpu_push_u32(&mut p, 0);
+        Some(vec![GpuShader::new(
+            FEATHER_WGSL.to_string(),
+            "main",
+            [16, 16, 1],
+            p,
+        )])
     }
 
-    fn tile_overlap(&self) -> u32 { self.radius }
+    fn tile_overlap(&self) -> u32 {
+        self.radius
+    }
 }

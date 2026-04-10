@@ -58,7 +58,12 @@ pub fn encoder_target_format(format: &str) -> PixelFormat {
 
 #[inline]
 fn read_f32(bytes: &[u8], offset: usize) -> f32 {
-    f32::from_le_bytes([bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]])
+    f32::from_le_bytes([
+        bytes[offset],
+        bytes[offset + 1],
+        bytes[offset + 2],
+        bytes[offset + 3],
+    ])
 }
 
 /// BT.709 luma from linear RGB.

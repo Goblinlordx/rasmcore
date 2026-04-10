@@ -8,10 +8,14 @@ pub fn evaluate_dynamics(point: &StrokePoint, params: &BrushParams, rng_seed: u3
 
     // Map pressure/velocity to size/opacity via curves
     let size_mult = dynamics.pressure_size.evaluate(point.pressure)
-        * dynamics.velocity_size.evaluate(point.velocity.clamp(0.0, 1.0));
+        * dynamics
+            .velocity_size
+            .evaluate(point.velocity.clamp(0.0, 1.0));
     let opacity_mult = dynamics.pressure_opacity.evaluate(point.pressure);
     let angle_offset = dynamics.tilt_angle.evaluate(
-        (point.tilt_x * point.tilt_x + point.tilt_y * point.tilt_y).sqrt().clamp(0.0, 1.0),
+        (point.tilt_x * point.tilt_x + point.tilt_y * point.tilt_y)
+            .sqrt()
+            .clamp(0.0, 1.0),
     ) * std::f32::consts::PI;
 
     // Apply scatter — random perpendicular displacement
@@ -47,7 +51,11 @@ pub fn generate_stamp(size: u32, hardness: f32, roundness: f32, angle: f32) -> V
     let center = r;
     let cos_a = angle.cos();
     let sin_a = angle.sin();
-    let inv_roundness = if roundness > 1e-6 { 1.0 / roundness } else { 100.0 };
+    let inv_roundness = if roundness > 1e-6 {
+        1.0 / roundness
+    } else {
+        100.0
+    };
 
     let mut stamp = Vec::with_capacity((size * size) as usize);
     for y in 0..size {
@@ -120,13 +128,21 @@ mod tests {
     #[test]
     fn dynamics_pressure_affects_size() {
         let point = StrokePoint {
-            x: 50.0, y: 50.0, pressure: 0.5, tilt_x: 0.0, tilt_y: 0.0,
-            rotation: 0.0, velocity: 0.0, timestamp: 0.0,
+            x: 50.0,
+            y: 50.0,
+            pressure: 0.5,
+            tilt_x: 0.0,
+            tilt_y: 0.0,
+            rotation: 0.0,
+            velocity: 0.0,
+            timestamp: 0.0,
         };
         let params = BrushParams {
             diameter: 20.0,
             dynamics: DynamicsCurves {
-                pressure_size: DynamicsCurve { points: vec![(0.0, 0.2), (1.0, 1.0)] },
+                pressure_size: DynamicsCurve {
+                    points: vec![(0.0, 0.2), (1.0, 1.0)],
+                },
                 ..DynamicsCurves::default()
             },
             ..BrushParams::default()
@@ -139,8 +155,14 @@ mod tests {
     #[test]
     fn scatter_displaces_position() {
         let point = StrokePoint {
-            x: 50.0, y: 50.0, pressure: 1.0, tilt_x: 0.0, tilt_y: 0.0,
-            rotation: 0.0, velocity: 0.0, timestamp: 0.0,
+            x: 50.0,
+            y: 50.0,
+            pressure: 1.0,
+            tilt_x: 0.0,
+            tilt_y: 0.0,
+            rotation: 0.0,
+            velocity: 0.0,
+            timestamp: 0.0,
         };
         let params = BrushParams {
             scatter: 1.0,

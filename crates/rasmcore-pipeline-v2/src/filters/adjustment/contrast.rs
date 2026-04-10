@@ -6,7 +6,12 @@ use crate::ops::{Filter, PointOpExpr};
 ///
 /// `output = (input - 0.5) * factor + 0.5`
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "contrast", category = "adjustment", cost = "O(n)", doc = "docs/operations/filters/adjustment/contrast.adoc")]
+#[filter(
+    name = "contrast",
+    category = "adjustment",
+    cost = "O(n)",
+    doc = "docs/operations/filters/adjustment/contrast.adoc"
+)]
 pub struct Contrast {
     /// Contrast multiplier. Positive increases contrast, negative decreases.
     #[param(min = -1.0, max = 1.0, step = 0.02, default = 0.0)]

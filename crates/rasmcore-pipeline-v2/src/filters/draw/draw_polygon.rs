@@ -3,9 +3,9 @@
 use crate::node::{GpuShader, PipelineError};
 use crate::ops::Filter;
 
-use std::f32::consts::PI;
 use super::super::helpers::{gpu_params_wh, gpu_push_f32, gpu_push_u32};
-use super::{SDF_BLEND_WGSL, sdf_coverage, blend};
+use super::{SDF_BLEND_WGSL, blend, sdf_coverage};
+use std::f32::consts::PI;
 
 // Draw Polygon (regular N-gon)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -14,15 +14,24 @@ use super::{SDF_BLEND_WGSL, sdf_coverage, blend};
 #[derive(Clone, rasmcore_macros::V2Filter)]
 #[filter(name = "draw_polygon", category = "draw")]
 pub struct DrawPolygon {
-    #[param(min = 0.0, max = 8192.0, step = 1.0, default = 200.0)] pub cx: f32,
-    #[param(min = 0.0, max = 8192.0, step = 1.0, default = 200.0)] pub cy: f32,
-    #[param(min = 1.0, max = 4096.0, step = 1.0, default = 80.0)] pub radius: f32,
-    #[param(min = 3, max = 24, step = 1, default = 6)] pub sides: u32,
-    #[param(min = 0.0, max = 50.0, step = 0.5, default = 0.0)] pub stroke_width: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)] pub color_r: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.8)] pub color_g: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.2)] pub color_b: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)] pub color_a: f32,
+    #[param(min = 0.0, max = 8192.0, step = 1.0, default = 200.0)]
+    pub cx: f32,
+    #[param(min = 0.0, max = 8192.0, step = 1.0, default = 200.0)]
+    pub cy: f32,
+    #[param(min = 1.0, max = 4096.0, step = 1.0, default = 80.0)]
+    pub radius: f32,
+    #[param(min = 3, max = 24, step = 1, default = 6)]
+    pub sides: u32,
+    #[param(min = 0.0, max = 50.0, step = 0.5, default = 0.0)]
+    pub stroke_width: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)]
+    pub color_r: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.8)]
+    pub color_g: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.2)]
+    pub color_b: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)]
+    pub color_a: f32,
 }
 
 const DRAW_POLYGON_WGSL: &str = r#"
@@ -69,7 +78,14 @@ impl Filter for DrawPolygon {
                 let cov = sdf_coverage(dist, self.stroke_width, fill);
                 if cov > 0.0 {
                     let i = ((y * width + x) * 4) as usize;
-                    blend(&mut out[i..i+4], self.color_r, self.color_g, self.color_b, self.color_a, cov);
+                    blend(
+                        &mut out[i..i + 4],
+                        self.color_r,
+                        self.color_g,
+                        self.color_b,
+                        self.color_a,
+                        cov,
+                    );
                 }
             }
         }
@@ -79,12 +95,15 @@ impl Filter for DrawPolygon {
     fn gpu_shader_passes(&self, _width: u32, _height: u32) -> Option<Vec<GpuShader>> {
         let shader = format!("{SDF_BLEND_WGSL}\n{DRAW_POLYGON_WGSL}");
         let mut p = gpu_params_wh(_width, _height);
-        gpu_push_f32(&mut p, self.cx); gpu_push_f32(&mut p, self.cy);
+        gpu_push_f32(&mut p, self.cx);
+        gpu_push_f32(&mut p, self.cy);
         gpu_push_f32(&mut p, self.radius);
         gpu_push_f32(&mut p, self.sides.max(3) as f32);
         gpu_push_f32(&mut p, self.stroke_width);
-        gpu_push_f32(&mut p, self.color_r); gpu_push_f32(&mut p, self.color_g);
-        gpu_push_f32(&mut p, self.color_b); gpu_push_f32(&mut p, self.color_a);
+        gpu_push_f32(&mut p, self.color_r);
+        gpu_push_f32(&mut p, self.color_g);
+        gpu_push_f32(&mut p, self.color_b);
+        gpu_push_f32(&mut p, self.color_a);
         gpu_push_u32(&mut p, 0);
         Some(vec![GpuShader::new(shader, "main", [256, 1, 1], p)])
     }

@@ -9,8 +9,8 @@
 //! the decoded output first: decoded_srgb → srgb_to_linear → compare with input.
 
 use rasmcore_codecs_v2::{decode_with_hint, encode};
-use rasmcore_pipeline_v2::color_math::srgb_to_linear;
 use rasmcore_pipeline_v2::ColorSpace;
+use rasmcore_pipeline_v2::color_math::srgb_to_linear;
 
 // ─── Test image generators ──────────────────────────────────────────────────
 
@@ -19,10 +19,10 @@ fn gradient_4x4() -> Vec<f32> {
     let mut pixels = Vec::with_capacity(4 * 4 * 4);
     for i in 0..16 {
         let v = i as f32 / 15.0;
-        pixels.push(v);       // R
+        pixels.push(v); // R
         pixels.push(v * 0.5); // G
         pixels.push(1.0 - v); // B
-        pixels.push(1.0);     // A
+        pixels.push(1.0); // A
     }
     pixels
 }
@@ -254,9 +254,9 @@ fn roundtrip_fits_preserves_linear() {
     let mut input = Vec::with_capacity(4 * 4 * 4);
     for i in 0..16 {
         let v = i as f32 / 15.0;
-        input.push(v);   // R
-        input.push(v);   // G
-        input.push(v);   // B
+        input.push(v); // R
+        input.push(v); // G
+        input.push(v); // B
         input.push(1.0); // A
     }
 

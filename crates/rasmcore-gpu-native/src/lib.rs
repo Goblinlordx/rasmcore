@@ -139,8 +139,14 @@ impl WgpuExecutorV2 {
             mapped_at_creation: false,
         });
         *pp = Some((
-            CachedBuffer { buffer: buf_a.clone(), size: buf_size },
-            CachedBuffer { buffer: buf_b.clone(), size: buf_size },
+            CachedBuffer {
+                buffer: buf_a.clone(),
+                size: buf_size,
+            },
+            CachedBuffer {
+                buffer: buf_b.clone(),
+                size: buf_size,
+            },
             buf_size,
         ));
         (buf_a, buf_b)
@@ -159,7 +165,10 @@ impl WgpuExecutorV2 {
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        *s = Some(CachedBuffer { buffer: buf.clone(), size: buf_size });
+        *s = Some(CachedBuffer {
+            buffer: buf.clone(),
+            size: buf_size,
+        });
         buf
     }
 
@@ -176,7 +185,10 @@ impl WgpuExecutorV2 {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        *u = Some(CachedBuffer { buffer: buf.clone(), size: needed });
+        *u = Some(CachedBuffer {
+            buffer: buf.clone(),
+            size: needed,
+        });
         buf
     }
 
@@ -201,10 +213,7 @@ impl WgpuExecutorV2 {
 impl WgpuExecutorV2 {
     /// Allocate reduction buffers from shader declarations.
     /// Returns a map of reduction buffer ID → wgpu::Buffer.
-    fn allocate_reduction_buffers(
-        &self,
-        ops: &[GpuShader],
-    ) -> HashMap<u32, wgpu::Buffer> {
+    fn allocate_reduction_buffers(&self, ops: &[GpuShader]) -> HashMap<u32, wgpu::Buffer> {
         let mut bufs: HashMap<u32, wgpu::Buffer> = HashMap::new();
         for op in ops {
             for rb in &op.reduction_buffers {
@@ -243,14 +252,19 @@ impl WgpuExecutorV2 {
         let shader_module = self.get_shader(&setup.body)?;
 
         // Allocate output buffers (read-write for setup, then read for per-pixel)
-        let output_bufs: Vec<wgpu::Buffer> = setup.output_buffer_sizes.iter().enumerate().map(|(i, &size)| {
-            self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some(&format!("v2-setup-out-{i}")),
-                size: size as u64,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-                mapped_at_creation: false,
+        let output_bufs: Vec<wgpu::Buffer> = setup
+            .output_buffer_sizes
+            .iter()
+            .enumerate()
+            .map(|(i, &size)| {
+                self.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some(&format!("v2-setup-out-{i}")),
+                    size: size as u64,
+                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                    mapped_at_creation: false,
+                })
             })
-        }).collect();
+            .collect();
 
         // Create params buffer for the setup shader
         let params_buf = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -285,10 +299,12 @@ impl WgpuExecutorV2 {
             });
         }
 
-        let bg_layout = self.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("v2-setup-layout"),
-            entries: &layout_entries,
-        });
+        let bg_layout = self
+            .device
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("v2-setup-layout"),
+                entries: &layout_entries,
+            });
 
         let mut bg_entries: Vec<wgpu::BindGroupEntry> = vec![wgpu::BindGroupEntry {
             binding: 0,
@@ -307,25 +323,31 @@ impl WgpuExecutorV2 {
             entries: &bg_entries,
         });
 
-        let pipeline_layout = self.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("v2-setup-pl"),
-            bind_group_layouts: &[&bg_layout],
-            push_constant_ranges: &[],
-        });
+        let pipeline_layout = self
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("v2-setup-pl"),
+                bind_group_layouts: &[&bg_layout],
+                push_constant_ranges: &[],
+            });
 
-        let pipeline = self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("v2-setup-cp"),
-            layout: Some(&pipeline_layout),
-            module: &shader_module,
-            entry_point: Some(setup.entry_point),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("v2-setup-cp"),
+                layout: Some(&pipeline_layout),
+                module: &shader_module,
+                entry_point: Some(setup.entry_point),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
         // Dispatch
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("v2-setup-enc"),
-        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("v2-setup-enc"),
+            });
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("v2-setup-pass"),
@@ -333,12 +355,18 @@ impl WgpuExecutorV2 {
             });
             pass.set_pipeline(&pipeline);
             pass.set_bind_group(0, &bind_group, &[]);
-            pass.dispatch_workgroups(setup.dispatch_size[0], setup.dispatch_size[1], setup.dispatch_size[2]);
+            pass.dispatch_workgroups(
+                setup.dispatch_size[0],
+                setup.dispatch_size[1],
+                setup.dispatch_size[2],
+            );
         }
         self.queue.submit(std::iter::once(encoder.finish()));
 
         // Cache output buffers
-        self.setup_cache.borrow_mut().insert(params_hash, output_bufs);
+        self.setup_cache
+            .borrow_mut()
+            .insert(params_hash, output_bufs);
 
         Ok(params_hash)
     }
@@ -510,24 +538,24 @@ impl WgpuExecutorV2 {
             entries: &bg_entries,
         });
 
-        let pipeline_layout =
-            self.device
-                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("v2-pipeline-layout"),
-                    bind_group_layouts: &[&bind_group_layout],
-                    push_constant_ranges: &[],
-                });
+        let pipeline_layout = self
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("v2-pipeline-layout"),
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
-        let pipeline =
-            self.device
-                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                    label: Some("v2-pipeline"),
-                    layout: Some(&pipeline_layout),
-                    module: &shader_module,
-                    entry_point: Some(op.entry_point),
-                    compilation_options: Default::default(),
-                    cache: None,
-                });
+        let pipeline = self
+            .device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("v2-pipeline"),
+                layout: Some(&pipeline_layout),
+                module: &shader_module,
+                entry_point: Some(op.entry_point),
+                compilation_options: Default::default(),
+                cache: None,
+            });
 
         let [wg_x, wg_y, _wg_z] = op.workgroup_size;
         let dispatch_x = (width + wg_x - 1) / wg_x;
@@ -649,8 +677,10 @@ impl WgpuExecutorV2 {
         for (i, op) in ops.iter().enumerate() {
             let cache_borrow = self.setup_cache.borrow();
             let setup_buf_refs: Vec<&wgpu::Buffer> = if let Some(hash) = setup_hashes[i] {
-                cache_borrow.get(&hash)
-                    .map(|bufs| bufs.iter().collect()).unwrap_or_default()
+                cache_borrow
+                    .get(&hash)
+                    .map(|bufs| bufs.iter().collect())
+                    .unwrap_or_default()
             } else {
                 vec![]
             };
@@ -770,8 +800,10 @@ impl GpuExecutor for WgpuExecutorV2 {
         for (i, op) in ops.iter().enumerate() {
             let cache_borrow = self.setup_cache.borrow();
             let setup_buf_refs: Vec<&wgpu::Buffer> = if let Some(hash) = setup_hashes[i] {
-                cache_borrow.get(&hash)
-                    .map(|bufs| bufs.iter().collect()).unwrap_or_default()
+                cache_borrow
+                    .get(&hash)
+                    .map(|bufs| bufs.iter().collect())
+                    .unwrap_or_default()
             } else {
                 vec![]
             };
@@ -799,7 +831,8 @@ impl GpuExecutor for WgpuExecutorV2 {
                         break;
                     }
                     // Reset counter to zero for the next iteration pair.
-                    self.queue.write_buffer(conv_buf, 0, &vec![0u8; conv_buf.size() as usize]);
+                    self.queue
+                        .write_buffer(conv_buf, 0, &vec![0u8; conv_buf.size() as usize]);
                 }
             }
 

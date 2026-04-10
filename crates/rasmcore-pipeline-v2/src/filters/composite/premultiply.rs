@@ -73,7 +73,12 @@ mod tests {
         let pre = Premultiply.compute(&input, 1, 1).unwrap();
         let back = Unpremultiply.compute(&pre, 1, 1).unwrap();
         for i in 0..4 {
-            assert!((back[i] - input[i]).abs() < 1e-5, "channel {i}: {} vs {}", back[i], input[i]);
+            assert!(
+                (back[i] - input[i]).abs() < 1e-5,
+                "channel {i}: {} vs {}",
+                back[i],
+                input[i]
+            );
         }
     }
 }

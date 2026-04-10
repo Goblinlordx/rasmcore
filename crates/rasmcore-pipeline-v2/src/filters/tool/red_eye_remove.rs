@@ -4,7 +4,7 @@ use crate::node::{GpuShader, PipelineError};
 use crate::ops::Filter;
 
 use super::super::helpers::{gpu_params_wh, gpu_push_f32, gpu_push_u32};
-use super::{smoothstep_f32};
+use super::smoothstep_f32;
 
 // Red Eye Remove — desaturate red within circular region
 // ═══════════════════════════════════════════════════════════════════════════
@@ -13,10 +13,14 @@ use super::{smoothstep_f32};
 #[derive(Clone, rasmcore_macros::V2Filter)]
 #[filter(name = "red_eye_remove", category = "tool")]
 pub struct RedEyeRemove {
-    #[param(min = 0.0, max = 1.0, step = 0.001, default = 0.5)] pub center_x: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.001, default = 0.5)] pub center_y: f32,
-    #[param(min = 1.0, max = 200.0, step = 1.0, default = 30.0, hint = "rc.pixels")] pub radius: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)] pub threshold: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.001, default = 0.5)]
+    pub center_x: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.001, default = 0.5)]
+    pub center_y: f32,
+    #[param(min = 1.0, max = 200.0, step = 1.0, default = 30.0, hint = "rc.pixels")]
+    pub radius: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
+    pub threshold: f32,
 }
 
 const RED_EYE_WGSL: &str = r#"
@@ -55,13 +59,15 @@ impl Filter for RedEyeRemove {
             for x in 0..width {
                 let dx = x as f32 - cx;
                 let dy = y as f32 - cy;
-                let dist = (dx*dx + dy*dy).sqrt();
-                if dist >= self.radius { continue; }
+                let dist = (dx * dx + dy * dy).sqrt();
+                if dist >= self.radius {
+                    continue;
+                }
                 let i = ((y * width + x) * 4) as usize;
-                let total = (out[i] + out[i+1] + out[i+2]).max(0.001);
+                let total = (out[i] + out[i + 1] + out[i + 2]).max(0.001);
                 let red_ratio = out[i] / total;
                 if red_ratio > self.threshold {
-                    let luma = out[i] * 0.2126 + out[i+1] * 0.7152 + out[i+2] * 0.0722;
+                    let luma = out[i] * 0.2126 + out[i + 1] * 0.7152 + out[i + 2] * 0.0722;
                     let falloff = 1.0 - smoothstep_f32(self.radius * 0.5, self.radius, dist);
                     let factor = (red_ratio - self.threshold) / (1.0 - self.threshold) * falloff;
                     out[i] = out[i] * (1.0 - factor) + luma * factor;
@@ -77,7 +83,13 @@ impl Filter for RedEyeRemove {
         gpu_push_f32(&mut p, self.center_y * _h as f32);
         gpu_push_f32(&mut p, self.radius);
         gpu_push_f32(&mut p, self.threshold);
-        gpu_push_u32(&mut p, 0); gpu_push_u32(&mut p, 0);
-        Some(vec![GpuShader::new(RED_EYE_WGSL.to_string(), "main", [256, 1, 1], p)])
+        gpu_push_u32(&mut p, 0);
+        gpu_push_u32(&mut p, 0);
+        Some(vec![GpuShader::new(
+            RED_EYE_WGSL.to_string(),
+            "main",
+            [256, 1, 1],
+            p,
+        )])
     }
 }

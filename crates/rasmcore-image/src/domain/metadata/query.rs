@@ -3,11 +3,11 @@
 //! Provides structured access to image metadata via dot-path strings
 //! (e.g., "exif.Artist", "xmp.Creator", "iptc.Headline", "icc.ProfileName").
 
-use crate::domain::error::ImageError;
 use super::exif::{ExifMetadata, read_exif};
 use super::iptc::parse_iptc;
 use super::set::MetadataSet;
 use super::xmp::parse_xmp;
+use crate::domain::error::ImageError;
 use std::collections::BTreeMap;
 
 // ─── Field Registries ────────────────────────────────────────────────────

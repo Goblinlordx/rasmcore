@@ -1,4 +1,4 @@
-use super::{find_nearest, ImageError, ImageInfo, Rgb};
+use super::{ImageError, ImageInfo, Rgb, find_nearest};
 
 /// Floyd-Steinberg error-diffusion dithering.
 ///

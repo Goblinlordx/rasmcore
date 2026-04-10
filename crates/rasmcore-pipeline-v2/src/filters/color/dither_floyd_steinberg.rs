@@ -92,6 +92,10 @@ mod tests {
             );
             unique.insert(key);
         }
-        assert!(unique.len() <= 2, "Should have <=2 colors, got {}", unique.len());
+        assert!(
+            unique.len() <= 2,
+            "Should have <=2 colors, got {}",
+            unique.len()
+        );
     }
 }

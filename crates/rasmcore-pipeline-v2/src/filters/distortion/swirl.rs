@@ -1,6 +1,6 @@
 //! Swirl distortion filter.
 
-use crate::node::{PipelineError};
+use crate::node::PipelineError;
 use crate::ops::Filter;
 
 use super::super::helpers::{gpu_params_wh, sample_bilinear};
@@ -15,7 +15,13 @@ use super::{SAMPLE_BILINEAR_WGSL, gpu_params_push_f32};
 pub struct Swirl {
     #[param(min = -10.0, max = 10.0, step = 0.1, default = 2.0, hint = "rc.angle_deg")]
     pub angle: f32,
-    #[param(min = 1.0, max = 2000.0, step = 1.0, default = 300.0, hint = "rc.pixels")]
+    #[param(
+        min = 1.0,
+        max = 2000.0,
+        step = 1.0,
+        default = 300.0,
+        hint = "rc.pixels"
+    )]
     pub radius: f32,
 }
 
@@ -73,8 +79,15 @@ impl Filter for Swirl {
         let mut params = gpu_params_wh(width, height);
         gpu_params_push_f32(&mut params, self.angle);
         gpu_params_push_f32(&mut params, self.radius);
-        Some(vec![crate::node::GpuShader::new(shader, "main", [16, 16, 1], params)])
+        Some(vec![crate::node::GpuShader::new(
+            shader,
+            "main",
+            [16, 16, 1],
+            params,
+        )])
     }
 
-    fn tile_overlap(&self) -> u32 { 0 }
+    fn tile_overlap(&self) -> u32 {
+        0
+    }
 }

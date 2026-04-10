@@ -29,5 +29,7 @@ impl Filter for MorphClose {
         ])
     }
 
-    fn tile_overlap(&self) -> u32 { self.radius * 2 }
+    fn tile_overlap(&self) -> u32 {
+        self.radius * 2
+    }
 }

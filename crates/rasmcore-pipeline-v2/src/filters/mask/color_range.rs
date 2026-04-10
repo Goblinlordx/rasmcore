@@ -67,9 +67,17 @@ impl Filter for ColorRange {
 
     fn gpu_shader_passes(&self, width: u32, height: u32) -> Option<Vec<GpuShader>> {
         let mut p = gpu_params_wh(width, height);
-        gpu_push_f32(&mut p, self.target_r); gpu_push_f32(&mut p, self.target_g);
-        gpu_push_f32(&mut p, self.target_b); gpu_push_f32(&mut p, self.threshold);
-        gpu_push_f32(&mut p, self.softness); gpu_push_u32(&mut p, 0);
-        Some(vec![GpuShader::new(COLOR_RANGE_WGSL.to_string(), "main", [256, 1, 1], p)])
+        gpu_push_f32(&mut p, self.target_r);
+        gpu_push_f32(&mut p, self.target_g);
+        gpu_push_f32(&mut p, self.target_b);
+        gpu_push_f32(&mut p, self.threshold);
+        gpu_push_f32(&mut p, self.softness);
+        gpu_push_u32(&mut p, 0);
+        Some(vec![GpuShader::new(
+            COLOR_RANGE_WGSL.to_string(),
+            "main",
+            [256, 1, 1],
+            p,
+        )])
     }
 }

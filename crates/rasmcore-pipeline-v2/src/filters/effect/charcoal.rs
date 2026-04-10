@@ -8,7 +8,11 @@ use super::{clamp_coord, gpu_params_push_u32, luminance};
 
 /// Charcoal — edge detection → blur → invert for pencil sketch effect.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "charcoal", category = "effect", cost = "O(n * radius) via gaussian_blur")]
+#[filter(
+    name = "charcoal",
+    category = "effect",
+    cost = "O(n * radius) via gaussian_blur"
+)]
 pub struct Charcoal {
     #[param(min = 0.0, max = 20.0, default = 1.0)]
     pub radius: f32,

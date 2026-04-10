@@ -3,8 +3,8 @@
 use crate::node::{GpuShader, PipelineError};
 use crate::ops::Filter;
 
-use std::f32::consts::PI;
 use super::super::helpers::{gpu_params_wh, gpu_push_f32};
+use std::f32::consts::PI;
 
 // Plasma
 // ═══════════════════════════════════════════════════════════════════════════
@@ -13,8 +13,10 @@ use super::super::helpers::{gpu_params_wh, gpu_push_f32};
 #[derive(Clone, rasmcore_macros::V2Filter)]
 #[filter(name = "plasma", category = "generator")]
 pub struct Plasma {
-    #[param(min = 1.0, max = 200.0, step = 1.0, default = 30.0)] pub scale: f32,
-    #[param(min = 0.0, max = 10.0, step = 0.1, default = 0.0)] pub time: f32,
+    #[param(min = 1.0, max = 200.0, step = 1.0, default = 30.0)]
+    pub scale: f32,
+    #[param(min = 0.0, max = 10.0, step = 0.1, default = 0.0)]
+    pub time: f32,
 }
 
 const PLASMA_WGSL: &str = r#"
@@ -58,9 +60,9 @@ impl Filter for Plasma {
                 let v = (v1 + v2 + v3 + v4) * 0.25;
                 let i = ((y * width + x) * 4) as usize;
                 out[i] = (v * PI).sin() * 0.5 + 0.5;
-                out[i+1] = (v * PI + 2.094).sin() * 0.5 + 0.5;
-                out[i+2] = (v * PI + 4.189).sin() * 0.5 + 0.5;
-                out[i+3] = 1.0;
+                out[i + 1] = (v * PI + 2.094).sin() * 0.5 + 0.5;
+                out[i + 2] = (v * PI + 4.189).sin() * 0.5 + 0.5;
+                out[i + 3] = 1.0;
             }
         }
         Ok(out)
@@ -68,7 +70,13 @@ impl Filter for Plasma {
 
     fn gpu_shader_passes(&self, _w: u32, _h: u32) -> Option<Vec<GpuShader>> {
         let mut p = gpu_params_wh(_w, _h);
-        gpu_push_f32(&mut p, self.scale); gpu_push_f32(&mut p, self.time);
-        Some(vec![GpuShader::new(PLASMA_WGSL.to_string(), "main", [256, 1, 1], p)])
+        gpu_push_f32(&mut p, self.scale);
+        gpu_push_f32(&mut p, self.time);
+        Some(vec![GpuShader::new(
+            PLASMA_WGSL.to_string(),
+            "main",
+            [256, 1, 1],
+            p,
+        )])
     }
 }

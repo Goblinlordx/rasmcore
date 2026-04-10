@@ -3,7 +3,10 @@
 use crate::node::{GpuShader, PipelineError};
 use crate::ops::Filter;
 
-use super::{dilate_cpu, erode_cpu, make_dilate_shader, make_erode_shader, make_snapshot_shader, make_sub_shader, SUB_CURRENT_MINUS_SNAP_WGSL};
+use super::{
+    SUB_CURRENT_MINUS_SNAP_WGSL, dilate_cpu, erode_cpu, make_dilate_shader, make_erode_shader,
+    make_snapshot_shader, make_sub_shader,
+};
 
 // Morph Black Hat (close − input)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -43,5 +46,7 @@ impl Filter for MorphBlackhat {
         ])
     }
 
-    fn tile_overlap(&self) -> u32 { self.radius * 2 }
+    fn tile_overlap(&self) -> u32 {
+        self.radius * 2
+    }
 }

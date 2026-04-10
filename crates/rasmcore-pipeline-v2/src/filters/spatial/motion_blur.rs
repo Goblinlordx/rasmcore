@@ -9,7 +9,7 @@ use crate::gpu_shaders::spatial;
 #[filter(name = "motion_blur", category = "spatial", cost = "O(n * length)")]
 pub struct MotionBlur {
     #[param(min = 0.0, max = 360.0, default = 0.0)]
-    pub angle: f32,  // degrees
+    pub angle: f32, // degrees
     #[param(min = 0.0, max = 200.0, default = 10.0)]
     pub length: f32, // pixels
 }

@@ -7,7 +7,9 @@
 use crate::color_math;
 use crate::color_space::ColorSpace;
 use crate::lmt::Lmt;
-use crate::node::{Node, NodeInfo, NodeCapabilities, GpuShader, PipelineError, Upstream, InputRectEstimate};
+use crate::node::{
+    GpuShader, InputRectEstimate, Node, NodeCapabilities, NodeInfo, PipelineError, Upstream,
+};
 use crate::rect::Rect;
 
 /// What kind of transform this is (metadata for validation/UI).
@@ -65,7 +67,12 @@ impl ColorTransform {
                 let out = lmt.apply(pixels);
                 pixels.copy_from_slice(&out);
             }
-            ColorTransformInner::Cdl { slope, offset, power, saturation } => {
+            ColorTransformInner::Cdl {
+                slope,
+                offset,
+                power,
+                saturation,
+            } => {
                 let sat = *saturation;
                 for px in pixels.chunks_exact_mut(4) {
                     // SOP per channel
@@ -106,20 +113,108 @@ pub struct TransformPresetInfo {
 pub fn preset_list() -> Vec<TransformPresetInfo> {
     let mut presets = vec![
         // IDTs — source → ACES (one-directional)
-        TransformPresetInfo { name: "idt-srgb", display_name: "sRGB (IDT)", kind: TransformKind::Idt, source_space: "sRGB", target_space: "ACEScg", vendor: "Academy", description: "sRGB/Rec.709 input to ACEScg" },
-        TransformPresetInfo { name: "idt-rec709", display_name: "Rec.709 (IDT)", kind: TransformKind::Idt, source_space: "Rec.709", target_space: "ACEScg", vendor: "Academy", description: "Rec.709 input to ACEScg" },
-        TransformPresetInfo { name: "idt-rec2020", display_name: "Rec.2020 (IDT)", kind: TransformKind::Idt, source_space: "Rec.2020", target_space: "ACEScg", vendor: "Academy", description: "Rec.2020 input to ACEScg" },
-        TransformPresetInfo { name: "idt-p3", display_name: "Display P3 (IDT)", kind: TransformKind::Idt, source_space: "Display P3", target_space: "ACEScg", vendor: "Academy", description: "Display P3 input to ACEScg" },
+        TransformPresetInfo {
+            name: "idt-srgb",
+            display_name: "sRGB (IDT)",
+            kind: TransformKind::Idt,
+            source_space: "sRGB",
+            target_space: "ACEScg",
+            vendor: "Academy",
+            description: "sRGB/Rec.709 input to ACEScg",
+        },
+        TransformPresetInfo {
+            name: "idt-rec709",
+            display_name: "Rec.709 (IDT)",
+            kind: TransformKind::Idt,
+            source_space: "Rec.709",
+            target_space: "ACEScg",
+            vendor: "Academy",
+            description: "Rec.709 input to ACEScg",
+        },
+        TransformPresetInfo {
+            name: "idt-rec2020",
+            display_name: "Rec.2020 (IDT)",
+            kind: TransformKind::Idt,
+            source_space: "Rec.2020",
+            target_space: "ACEScg",
+            vendor: "Academy",
+            description: "Rec.2020 input to ACEScg",
+        },
+        TransformPresetInfo {
+            name: "idt-p3",
+            display_name: "Display P3 (IDT)",
+            kind: TransformKind::Idt,
+            source_space: "Display P3",
+            target_space: "ACEScg",
+            vendor: "Academy",
+            description: "Display P3 input to ACEScg",
+        },
         // Output Transforms — ACES → display (one-directional)
-        TransformPresetInfo { name: "ot-srgb", display_name: "sRGB 100 nits (OT)", kind: TransformKind::OutputTransform, source_space: "ACEScg", target_space: "sRGB", vendor: "Academy", description: "ACEScg to sRGB display" },
-        TransformPresetInfo { name: "ot-rec709", display_name: "Rec.709 100 nits (OT)", kind: TransformKind::OutputTransform, source_space: "ACEScg", target_space: "Rec.709", vendor: "Academy", description: "ACEScg to Rec.709 display" },
-        TransformPresetInfo { name: "ot-rec2020", display_name: "Rec.2020 100 nits (OT)", kind: TransformKind::OutputTransform, source_space: "ACEScg", target_space: "Rec.2020", vendor: "Academy", description: "ACEScg to Rec.2020 display" },
-        TransformPresetInfo { name: "ot-p3", display_name: "Display P3 100 nits (OT)", kind: TransformKind::OutputTransform, source_space: "ACEScg", target_space: "Display P3", vendor: "Academy", description: "ACEScg to Display P3 display" },
+        TransformPresetInfo {
+            name: "ot-srgb",
+            display_name: "sRGB 100 nits (OT)",
+            kind: TransformKind::OutputTransform,
+            source_space: "ACEScg",
+            target_space: "sRGB",
+            vendor: "Academy",
+            description: "ACEScg to sRGB display",
+        },
+        TransformPresetInfo {
+            name: "ot-rec709",
+            display_name: "Rec.709 100 nits (OT)",
+            kind: TransformKind::OutputTransform,
+            source_space: "ACEScg",
+            target_space: "Rec.709",
+            vendor: "Academy",
+            description: "ACEScg to Rec.709 display",
+        },
+        TransformPresetInfo {
+            name: "ot-rec2020",
+            display_name: "Rec.2020 100 nits (OT)",
+            kind: TransformKind::OutputTransform,
+            source_space: "ACEScg",
+            target_space: "Rec.2020",
+            vendor: "Academy",
+            description: "ACEScg to Rec.2020 display",
+        },
+        TransformPresetInfo {
+            name: "ot-p3",
+            display_name: "Display P3 100 nits (OT)",
+            kind: TransformKind::OutputTransform,
+            source_space: "ACEScg",
+            target_space: "Display P3",
+            vendor: "Academy",
+            description: "ACEScg to Display P3 display",
+        },
         // CSCs — bidirectional working space conversions
-        TransformPresetInfo { name: "csc-acescg-to-cct", display_name: "ACEScg to ACEScct", kind: TransformKind::Csc, source_space: "ACEScg", target_space: "ACEScct", vendor: "Academy", description: "Linear to log grading space" },
-        TransformPresetInfo { name: "csc-acescct-to-cg", display_name: "ACEScct to ACEScg", kind: TransformKind::Csc, source_space: "ACEScct", target_space: "ACEScg", vendor: "Academy", description: "Log to linear compositing space" },
+        TransformPresetInfo {
+            name: "csc-acescg-to-cct",
+            display_name: "ACEScg to ACEScct",
+            kind: TransformKind::Csc,
+            source_space: "ACEScg",
+            target_space: "ACEScct",
+            vendor: "Academy",
+            description: "Linear to log grading space",
+        },
+        TransformPresetInfo {
+            name: "csc-acescct-to-cg",
+            display_name: "ACEScct to ACEScg",
+            kind: TransformKind::Csc,
+            source_space: "ACEScct",
+            target_space: "ACEScg",
+            vendor: "Academy",
+            description: "Log to linear compositing space",
+        },
         // Utility
-        TransformPresetInfo { name: "identity", display_name: "Identity", kind: TransformKind::Lmt, source_space: "any", target_space: "any", vendor: "Academy", description: "Passthrough (no-op)" },
+        TransformPresetInfo {
+            name: "identity",
+            display_name: "Identity",
+            kind: TransformKind::Lmt,
+            source_space: "any",
+            target_space: "any",
+            vendor: "Academy",
+            description: "Passthrough (no-op)",
+        },
     ];
     // Add camera IDT presets
     presets.extend(crate::camera_idt::camera_preset_list());
@@ -130,90 +225,208 @@ pub fn preset_list() -> Vec<TransformPresetInfo> {
 /// Helper to build a CSC preset.
 fn csc_preset(name: &str, from: ColorSpace, to: ColorSpace, kind: TransformKind) -> ColorTransform {
     ColorTransform {
-        name: name.into(), kind,
-        source_space: from, target_space: to,
+        name: name.into(),
+        kind,
+        source_space: from,
+        target_space: to,
         inner: ColorTransformInner::ColorSpaceConvert { from, to },
     }
 }
 
 fn ot_preset(
-    name: &str, target: ColorSpace,
-    peak: f32, gamut: crate::aces2::LimitingPrimaries, eotf: crate::aces2::Eotf,
+    name: &str,
+    target: ColorSpace,
+    peak: f32,
+    gamut: crate::aces2::LimitingPrimaries,
+    eotf: crate::aces2::Eotf,
 ) -> ColorTransform {
     ColorTransform {
         name: name.into(),
         kind: TransformKind::OutputTransform,
         source_space: ColorSpace::AcesCg,
         target_space: target,
-        inner: ColorTransformInner::Aces2OutputTransform(
-            crate::aces2::init_aces2_ot_params(peak, gamut, eotf),
-        ),
+        inner: ColorTransformInner::Aces2OutputTransform(crate::aces2::init_aces2_ot_params(
+            peak, gamut, eotf,
+        )),
     }
 }
 
 pub fn load_preset(name: &str) -> Result<ColorTransform, PipelineError> {
-    use crate::aces2::{LimitingPrimaries as LP, Eotf};
+    use crate::aces2::{Eotf, LimitingPrimaries as LP};
     match name {
         // IDTs — source → ACEScg
-        "idt-srgb" => Ok(csc_preset(name, ColorSpace::Srgb, ColorSpace::AcesCg, TransformKind::Idt)),
-        "idt-rec709" => Ok(csc_preset(name, ColorSpace::Rec709, ColorSpace::AcesCg, TransformKind::Idt)),
-        "idt-rec2020" => Ok(csc_preset(name, ColorSpace::Rec2020, ColorSpace::AcesCg, TransformKind::Idt)),
-        "idt-p3" => Ok(csc_preset(name, ColorSpace::DisplayP3, ColorSpace::AcesCg, TransformKind::Idt)),
+        "idt-srgb" => Ok(csc_preset(
+            name,
+            ColorSpace::Srgb,
+            ColorSpace::AcesCg,
+            TransformKind::Idt,
+        )),
+        "idt-rec709" => Ok(csc_preset(
+            name,
+            ColorSpace::Rec709,
+            ColorSpace::AcesCg,
+            TransformKind::Idt,
+        )),
+        "idt-rec2020" => Ok(csc_preset(
+            name,
+            ColorSpace::Rec2020,
+            ColorSpace::AcesCg,
+            TransformKind::Idt,
+        )),
+        "idt-p3" => Ok(csc_preset(
+            name,
+            ColorSpace::DisplayP3,
+            ColorSpace::AcesCg,
+            TransformKind::Idt,
+        )),
 
         // ── Output Transforms — ACES 2.0 algorithmic ──────────────────────
 
         // SDR 100 nit
-        "ot-srgb" | "ot-sdr-rec709-srgb"
-            => Ok(ot_preset(name, ColorSpace::Srgb, 100.0, LP::Rec709, Eotf::Srgb)),
-        "ot-rec709" | "ot-sdr-rec709"
-            => Ok(ot_preset(name, ColorSpace::Rec709, 100.0, LP::Rec709, Eotf::Bt1886)),
-        "ot-p3" | "ot-sdr-p3"
-            => Ok(ot_preset(name, ColorSpace::DisplayP3, 100.0, LP::P3, Eotf::Srgb)),
-        "ot-sdr-p3-bt1886"
-            => Ok(ot_preset(name, ColorSpace::DisplayP3, 100.0, LP::P3, Eotf::Bt1886)),
-        "ot-rec2020" | "ot-sdr-rec2020"
-            => Ok(ot_preset(name, ColorSpace::Rec2020, 100.0, LP::Rec2020, Eotf::Bt1886)),
+        "ot-srgb" | "ot-sdr-rec709-srgb" => Ok(ot_preset(
+            name,
+            ColorSpace::Srgb,
+            100.0,
+            LP::Rec709,
+            Eotf::Srgb,
+        )),
+        "ot-rec709" | "ot-sdr-rec709" => Ok(ot_preset(
+            name,
+            ColorSpace::Rec709,
+            100.0,
+            LP::Rec709,
+            Eotf::Bt1886,
+        )),
+        "ot-p3" | "ot-sdr-p3" => Ok(ot_preset(
+            name,
+            ColorSpace::DisplayP3,
+            100.0,
+            LP::P3,
+            Eotf::Srgb,
+        )),
+        "ot-sdr-p3-bt1886" => Ok(ot_preset(
+            name,
+            ColorSpace::DisplayP3,
+            100.0,
+            LP::P3,
+            Eotf::Bt1886,
+        )),
+        "ot-rec2020" | "ot-sdr-rec2020" => Ok(ot_preset(
+            name,
+            ColorSpace::Rec2020,
+            100.0,
+            LP::Rec2020,
+            Eotf::Bt1886,
+        )),
 
         // HDR PQ — P3 gamut
-        "ot-hdr-p3-600"
-            => Ok(ot_preset(name, ColorSpace::DisplayP3, 600.0, LP::P3, Eotf::Pq)),
-        "ot-hdr-p3-1000"
-            => Ok(ot_preset(name, ColorSpace::DisplayP3, 1000.0, LP::P3, Eotf::Pq)),
-        "ot-hdr-p3-2000"
-            => Ok(ot_preset(name, ColorSpace::DisplayP3, 2000.0, LP::P3, Eotf::Pq)),
-        "ot-hdr-p3-4000"
-            => Ok(ot_preset(name, ColorSpace::DisplayP3, 4000.0, LP::P3, Eotf::Pq)),
+        "ot-hdr-p3-600" => Ok(ot_preset(
+            name,
+            ColorSpace::DisplayP3,
+            600.0,
+            LP::P3,
+            Eotf::Pq,
+        )),
+        "ot-hdr-p3-1000" => Ok(ot_preset(
+            name,
+            ColorSpace::DisplayP3,
+            1000.0,
+            LP::P3,
+            Eotf::Pq,
+        )),
+        "ot-hdr-p3-2000" => Ok(ot_preset(
+            name,
+            ColorSpace::DisplayP3,
+            2000.0,
+            LP::P3,
+            Eotf::Pq,
+        )),
+        "ot-hdr-p3-4000" => Ok(ot_preset(
+            name,
+            ColorSpace::DisplayP3,
+            4000.0,
+            LP::P3,
+            Eotf::Pq,
+        )),
 
         // HDR PQ — Rec.2020 gamut
-        "ot-hdr-rec2020-600"
-            => Ok(ot_preset(name, ColorSpace::Rec2020, 600.0, LP::Rec2020, Eotf::Pq)),
-        "ot-hdr-rec2020-1000"
-            => Ok(ot_preset(name, ColorSpace::Rec2020, 1000.0, LP::Rec2020, Eotf::Pq)),
-        "ot-hdr-rec2020-2000"
-            => Ok(ot_preset(name, ColorSpace::Rec2020, 2000.0, LP::Rec2020, Eotf::Pq)),
-        "ot-hdr-rec2020-4000"
-            => Ok(ot_preset(name, ColorSpace::Rec2020, 4000.0, LP::Rec2020, Eotf::Pq)),
+        "ot-hdr-rec2020-600" => Ok(ot_preset(
+            name,
+            ColorSpace::Rec2020,
+            600.0,
+            LP::Rec2020,
+            Eotf::Pq,
+        )),
+        "ot-hdr-rec2020-1000" => Ok(ot_preset(
+            name,
+            ColorSpace::Rec2020,
+            1000.0,
+            LP::Rec2020,
+            Eotf::Pq,
+        )),
+        "ot-hdr-rec2020-2000" => Ok(ot_preset(
+            name,
+            ColorSpace::Rec2020,
+            2000.0,
+            LP::Rec2020,
+            Eotf::Pq,
+        )),
+        "ot-hdr-rec2020-4000" => Ok(ot_preset(
+            name,
+            ColorSpace::Rec2020,
+            4000.0,
+            LP::Rec2020,
+            Eotf::Pq,
+        )),
 
         // HLG (BBC/NHK broadcast HDR)
-        "ot-hlg-rec2020-1000"
-            => Ok(ot_preset(name, ColorSpace::Rec2020, 1000.0, LP::Rec2020, Eotf::Hlg)),
+        "ot-hlg-rec2020-1000" => Ok(ot_preset(
+            name,
+            ColorSpace::Rec2020,
+            1000.0,
+            LP::Rec2020,
+            Eotf::Hlg,
+        )),
 
         // CSCs — working space conversions
-        "csc-acescg-to-cct" => Ok(csc_preset(name, ColorSpace::AcesCg, ColorSpace::AcesCct, TransformKind::Csc)),
-        "csc-acescct-to-cg" => Ok(csc_preset(name, ColorSpace::AcesCct, ColorSpace::AcesCg, TransformKind::Csc)),
+        "csc-acescg-to-cct" => Ok(csc_preset(
+            name,
+            ColorSpace::AcesCg,
+            ColorSpace::AcesCct,
+            TransformKind::Csc,
+        )),
+        "csc-acescct-to-cg" => Ok(csc_preset(
+            name,
+            ColorSpace::AcesCct,
+            ColorSpace::AcesCg,
+            TransformKind::Csc,
+        )),
         // Utility
-        "identity" => Ok(csc_preset(name, ColorSpace::Linear, ColorSpace::Linear, TransformKind::Lmt)),
+        "identity" => Ok(csc_preset(
+            name,
+            ColorSpace::Linear,
+            ColorSpace::Linear,
+            TransformKind::Lmt,
+        )),
         // Camera IDTs
-        name if name.starts_with("idt-arri-") || name.starts_with("idt-sony-")
-            || name.starts_with("idt-red-") || name.starts_with("idt-bmd-") => {
+        name if name.starts_with("idt-arri-")
+            || name.starts_with("idt-sony-")
+            || name.starts_with("idt-red-")
+            || name.starts_with("idt-bmd-") =>
+        {
             crate::camera_idt::load_camera_preset(name)
         }
-        _ => Err(PipelineError::InvalidParams(format!("unknown transform preset: {name}"))),
+        _ => Err(PipelineError::InvalidParams(format!(
+            "unknown transform preset: {name}"
+        ))),
     }
 }
 
 /// Parse a color transform from file data.
-pub fn parse_transform(data: &[u8], format_hint: Option<&str>) -> Result<ColorTransform, PipelineError> {
+pub fn parse_transform(
+    data: &[u8],
+    format_hint: Option<&str>,
+) -> Result<ColorTransform, PipelineError> {
     let text = std::str::from_utf8(data)
         .map_err(|_| PipelineError::InvalidParams("transform data is not valid UTF-8".into()))?;
 
@@ -223,12 +436,19 @@ pub fn parse_transform(data: &[u8], format_hint: Option<&str>) -> Result<ColorTr
             "cube"
         } else if text.contains("<ProcessList") {
             "clf"
-        } else if text.contains("<ColorCorrection") || text.contains("<ColorDecisionList")
-            || text.contains("<ColorCorrectionCollection") || text.contains("<SOPNode") {
+        } else if text.contains("<ColorCorrection")
+            || text.contains("<ColorDecisionList")
+            || text.contains("<ColorCorrectionCollection")
+            || text.contains("<SOPNode")
+        {
             "cdl"
         } else if text.trim_start().starts_with("<?xml") {
             // Generic XML — could be CLF or CDL, check further
-            if text.contains("<ProcessList") { "clf" } else { "cdl" }
+            if text.contains("<ProcessList") {
+                "clf"
+            } else {
+                "cdl"
+            }
         } else {
             "unknown"
         }
@@ -271,7 +491,9 @@ pub fn parse_transform(data: &[u8], format_hint: Option<&str>) -> Result<ColorTr
                 },
             })
         }
-        _ => Err(PipelineError::InvalidParams(format!("unsupported transform format: {format}"))),
+        _ => Err(PipelineError::InvalidParams(format!(
+            "unsupported transform format: {format}"
+        ))),
     }
 }
 
@@ -291,23 +513,38 @@ impl ColorTransformNode {
             height: upstream_info.height,
             color_space: transform.target_space,
         };
-        Self { upstream, info, transform }
+        Self {
+            upstream,
+            info,
+            transform,
+        }
     }
 }
 
 impl Node for ColorTransformNode {
-    fn info(&self) -> NodeInfo { self.info.clone() }
+    fn info(&self) -> NodeInfo {
+        self.info.clone()
+    }
 
-    fn compute(&self, request: Rect, upstream: &mut dyn Upstream) -> Result<Vec<f32>, PipelineError> {
+    fn compute(
+        &self,
+        request: Rect,
+        upstream: &mut dyn Upstream,
+    ) -> Result<Vec<f32>, PipelineError> {
         let mut pixels = upstream.request(self.upstream, request)?;
         self.transform.apply(&mut pixels);
         Ok(pixels)
     }
 
-    fn upstream_ids(&self) -> Vec<u32> { vec![self.upstream] }
+    fn upstream_ids(&self) -> Vec<u32> {
+        vec![self.upstream]
+    }
 
     fn capabilities(&self) -> NodeCapabilities {
-        let has_gpu = matches!(self.transform.inner, ColorTransformInner::Aces2OutputTransform(_));
+        let has_gpu = matches!(
+            self.transform.inner,
+            ColorTransformInner::Aces2OutputTransform(_)
+        );
         NodeCapabilities {
             gpu: has_gpu,
             ..Default::default()
@@ -342,51 +579,83 @@ fn aces2_ot_gpu_shader(ot: &crate::aces2::Aces2OtParams, width: u32, height: u32
 
     // Helper: append f32/u32/matrix to the buffer
     macro_rules! p {
-        (u32 $v:expr) => { params.extend_from_slice(&($v).to_le_bytes()) };
-        (f32 $v:expr) => { params.extend_from_slice(&($v).to_le_bytes()) };
-        (m33 $m:expr) => { for &v in ($m).iter() { params.extend_from_slice(&v.to_le_bytes()); } };
+        (u32 $v:expr) => {
+            params.extend_from_slice(&($v).to_le_bytes())
+        };
+        (f32 $v:expr) => {
+            params.extend_from_slice(&($v).to_le_bytes())
+        };
+        (m33 $m:expr) => {
+            for &v in ($m).iter() {
+                params.extend_from_slice(&v.to_le_bytes());
+            }
+        };
     }
 
     let ap0_to_ap1 = rgb_to_rgb_f33(&AP0_PRIMS, &AP1_PRIMS);
     let ap1_to_ap0 = rgb_to_rgb_f33(&AP1_PRIMS, &AP0_PRIMS);
-    let upper_bound = 8.0 * (128.0 + 768.0 * ((ot.peak_luminance / 100.0).ln() / (10000.0_f32 / 100.0).ln()));
+    let upper_bound =
+        8.0 * (128.0 + 768.0 * ((ot.peak_luminance / 100.0).ln() / (10000.0_f32 / 100.0).ln()));
     let eotf_id: u32 = match ot.eotf {
-        crate::aces2::Eotf::Srgb => 0, crate::aces2::Eotf::Bt1886 => 1,
-        crate::aces2::Eotf::Pq => 2, crate::aces2::Eotf::Hlg => 3,
+        crate::aces2::Eotf::Srgb => 0,
+        crate::aces2::Eotf::Bt1886 => 1,
+        crate::aces2::Eotf::Pq => 2,
+        crate::aces2::Eotf::Hlg => 3,
     };
 
-    p!(u32 width); p!(u32 height);
-    p!(m33 &ot.p_in.matrix_rgb_to_cam16_c);
-    p!(m33 &ot.p_in.matrix_cone_response_to_aab);
-    p!(m33 &ot.p_out.matrix_aab_to_cone_response);
-    p!(m33 &ot.p_out.matrix_cam16_c_to_rgb);
-    p!(f32 ot.p_in.f_l_n); p!(f32 ot.p_in.cz); p!(f32 ot.p_in.inv_cz); p!(f32 ot.p_in.a_w_j);
-    p!(m33 &ap0_to_ap1); p!(m33 &ap1_to_ap0);
+    p!(u32 width);
+    p!(u32 height);
+    p!(m33 & ot.p_in.matrix_rgb_to_cam16_c);
+    p!(m33 & ot.p_in.matrix_cone_response_to_aab);
+    p!(m33 & ot.p_out.matrix_aab_to_cone_response);
+    p!(m33 & ot.p_out.matrix_cam16_c_to_rgb);
+    p!(f32 ot.p_in.f_l_n);
+    p!(f32 ot.p_in.cz);
+    p!(f32 ot.p_in.inv_cz);
+    p!(f32 ot.p_in.a_w_j);
+    p!(m33 & ap0_to_ap1);
+    p!(m33 & ap1_to_ap0);
     p!(f32 upper_bound);
-    p!(f32 ot.tone.n_r); p!(f32 ot.tone.g); p!(f32 ot.tone.t_1); p!(f32 ot.tone.s_2); p!(f32 ot.tone.m_2);
-    p!(f32 ot.chroma.sat); p!(f32 ot.chroma.sat_thr); p!(f32 ot.chroma.compr); p!(f32 ot.chroma.chroma_compress_scale);
-    p!(f32 ot.shared.limit_j_max); p!(f32 ot.shared.model_gamma_inv);
-    p!(f32 ot.gamut.mid_j); p!(f32 ot.gamut.focus_dist); p!(f32 ot.gamut.lower_hull_gamma_inv);
-    p!(u32 eotf_id); p!(f32 ot.peak_luminance); p!(u32 0u32);
+    p!(f32 ot.tone.n_r);
+    p!(f32 ot.tone.g);
+    p!(f32 ot.tone.t_1);
+    p!(f32 ot.tone.s_2);
+    p!(f32 ot.tone.m_2);
+    p!(f32 ot.chroma.sat);
+    p!(f32 ot.chroma.sat_thr);
+    p!(f32 ot.chroma.compr);
+    p!(f32 ot.chroma.chroma_compress_scale);
+    p!(f32 ot.shared.limit_j_max);
+    p!(f32 ot.shared.model_gamma_inv);
+    p!(f32 ot.gamut.mid_j);
+    p!(f32 ot.gamut.focus_dist);
+    p!(f32 ot.gamut.lower_hull_gamma_inv);
+    p!(u32 eotf_id);
+    p!(f32 ot.peak_luminance);
+    p!(u32 0u32);
 
     // Build setup params: append reach + limiting gamut CAM16 matrices
     let p_reach = crate::aces2::cam16::init_jmh_params(&AP1_PRIMS);
     let p_limit = &ot.p_out;
     let mut setup_params = params.clone();
     macro_rules! sp {
-        (m33 $m:expr) => { for &v in ($m).iter() { setup_params.extend_from_slice(&v.to_le_bytes()); } };
+        (m33 $m:expr) => {
+            for &v in ($m).iter() {
+                setup_params.extend_from_slice(&v.to_le_bytes());
+            }
+        };
     }
-    sp!(m33 &p_reach.matrix_rgb_to_cam16_c);
-    sp!(m33 &p_reach.matrix_cone_response_to_aab);
-    sp!(m33 &p_reach.matrix_aab_to_cone_response);
-    sp!(m33 &p_reach.matrix_cam16_c_to_rgb);
-    sp!(m33 &p_limit.matrix_rgb_to_cam16_c);
-    sp!(m33 &p_limit.matrix_cone_response_to_aab);
+    sp!(m33 & p_reach.matrix_rgb_to_cam16_c);
+    sp!(m33 & p_reach.matrix_cone_response_to_aab);
+    sp!(m33 & p_reach.matrix_aab_to_cone_response);
+    sp!(m33 & p_reach.matrix_cam16_c_to_rgb);
+    sp!(m33 & p_limit.matrix_rgb_to_cam16_c);
+    sp!(m33 & p_limit.matrix_cone_response_to_aab);
 
     let table_sizes = [
-        363 * 4,       // reach_m_table: 363 f32
-        363 * 3 * 4,   // cusp_table: 363 × 3 f32
-        363 * 4,       // hue_table: 363 f32
+        363 * 4,     // reach_m_table: 363 f32
+        363 * 3 * 4, // cusp_table: 363 × 3 f32
+        363 * 4,     // hue_table: 363 f32
     ];
 
     let setup = crate::node::GpuSetup {
@@ -462,8 +731,11 @@ mod tests {
         // OT includes tone mapping, so output won't match input exactly.
         // Verify output is valid display values (0-1 after sRGB encoding).
         for i in 0..3 {
-            assert!(pixels[i] >= 0.0 && pixels[i] <= 1.0,
-                "ch{i} out of range: {}", pixels[i]);
+            assert!(
+                pixels[i] >= 0.0 && pixels[i] <= 1.0,
+                "ch{i} out of range: {}",
+                pixels[i]
+            );
         }
         assert!((pixels[3] - 1.0).abs() < 1e-6, "alpha preserved");
     }
@@ -471,18 +743,29 @@ mod tests {
     #[test]
     fn aces2_ot_gpu_shader_produces_valid_shader() {
         let ot = crate::aces2::init_aces2_ot_params(
-            100.0, crate::aces2::LimitingPrimaries::Rec709, crate::aces2::Eotf::Srgb,
+            100.0,
+            crate::aces2::LimitingPrimaries::Rec709,
+            crate::aces2::Eotf::Srgb,
         );
         let shader = aces2_ot_gpu_shader(&ot, 100, 100);
         // Verify shader body contains key ACES2 functions
         assert!(shader.body.contains("fn cone_fwd"), "missing cone_fwd");
-        assert!(shader.body.contains("fn tonescale_fwd"), "missing tonescale_fwd");
-        assert!(shader.body.contains("fn gamut_compress"), "missing gamut_compress");
+        assert!(
+            shader.body.contains("fn tonescale_fwd"),
+            "missing tonescale_fwd"
+        );
+        assert!(
+            shader.body.contains("fn gamut_compress"),
+            "missing gamut_compress"
+        );
         assert!(shader.body.contains("fn apply_eotf"), "missing apply_eotf");
         // Verify workgroup size
         assert_eq!(shader.workgroup_size, [16, 16, 1]);
         // Tables now come from GpuSetup, not extra_buffers
-        assert!(shader.extra_buffers.is_empty(), "tables should come from setup, not extra_buffers");
+        assert!(
+            shader.extra_buffers.is_empty(),
+            "tables should come from setup, not extra_buffers"
+        );
         // Verify setup shader exists
         let setup = shader.setup.as_ref().expect("should have GpuSetup");
         assert_eq!(setup.output_buffer_sizes.len(), 3, "need 3 output buffers");
@@ -490,9 +773,16 @@ mod tests {
         assert_eq!(setup.output_buffer_sizes[1], 363 * 3 * 4, "cusp_table size");
         assert_eq!(setup.output_buffer_sizes[2], 363 * 4, "hue_table size");
         assert_eq!(setup.dispatch_size, [6, 1, 1], "dispatch workgroups");
-        assert!(setup.body.contains("fn build_reach_m"), "setup should contain table build");
+        assert!(
+            setup.body.contains("fn build_reach_m"),
+            "setup should contain table build"
+        );
         // Verify params buffer is reasonably sized
-        assert!(shader.params.len() > 100, "params too small: {}", shader.params.len());
+        assert!(
+            shader.params.len() > 100,
+            "params too small: {}",
+            shader.params.len()
+        );
     }
 
     #[test]
@@ -501,29 +791,38 @@ mod tests {
         // that the GPU shader would use. This validates the param serialization
         // is feeding the same values the CPU uses.
         let ot = crate::aces2::init_aces2_ot_params(
-            100.0, crate::aces2::LimitingPrimaries::Rec709, crate::aces2::Eotf::Srgb,
+            100.0,
+            crate::aces2::LimitingPrimaries::Rec709,
+            crate::aces2::Eotf::Srgb,
         );
         // 18% grey through CPU
-        let cpu_result = crate::aces2::output_transform_fwd_linear(
-            &[0.18, 0.18, 0.18], &ot,
-        );
+        let cpu_result = crate::aces2::output_transform_fwd_linear(&[0.18, 0.18, 0.18], &ot);
         // Grey should be nearly achromatic
-        let spread = (cpu_result[0] - cpu_result[1]).abs()
+        let spread = (cpu_result[0] - cpu_result[1])
+            .abs()
             .max((cpu_result[1] - cpu_result[2]).abs());
         assert!(spread < 0.01, "grey should be achromatic: {:?}", cpu_result);
         // And positive
-        assert!(cpu_result[0] > 0.0 && cpu_result[0] < 2.0,
-            "grey output unreasonable: {:?}", cpu_result);
+        assert!(
+            cpu_result[0] > 0.0 && cpu_result[0] < 2.0,
+            "grey output unreasonable: {:?}",
+            cpu_result
+        );
     }
 
     #[test]
     fn aces2_ot_gpu_shader_hdr_config() {
         let ot = crate::aces2::init_aces2_ot_params(
-            1000.0, crate::aces2::LimitingPrimaries::Rec2020, crate::aces2::Eotf::Pq,
+            1000.0,
+            crate::aces2::LimitingPrimaries::Rec2020,
+            crate::aces2::Eotf::Pq,
         );
         let shader = aces2_ot_gpu_shader(&ot, 3840, 2160);
         assert!(shader.setup.is_some(), "HDR config should have setup");
-        assert!(shader.extra_buffers.is_empty(), "tables from setup, not CPU");
+        assert!(
+            shader.extra_buffers.is_empty(),
+            "tables from setup, not CPU"
+        );
         assert!(shader.params.len() > 100);
     }
 

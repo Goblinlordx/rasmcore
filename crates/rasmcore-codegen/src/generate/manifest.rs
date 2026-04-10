@@ -1,7 +1,7 @@
 //! Generate param-manifest.json from structured data.
 
 use crate::types::{CodegenData, ParamField};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use super::helpers::{default_range_for_type, to_pascal_case};
 
@@ -249,7 +249,7 @@ mod tests {
                 color_op: false,
                 gpu: false,
                 derive_style: false,
-            f32_native: false,
+                f32_native: false,
                 rect_request: true,
             }],
             generators: vec![],

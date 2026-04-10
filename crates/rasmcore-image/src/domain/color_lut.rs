@@ -810,7 +810,9 @@ pub fn parse_3dl(text: &str) -> Result<ColorLut3D, ImageError> {
     }
 
     if data.is_empty() {
-        return Err(ImageError::InvalidInput("no RGB data found in .3dl file".into()));
+        return Err(ImageError::InvalidInput(
+            "no RGB data found in .3dl file".into(),
+        ));
     }
 
     // Infer grid size from entry count (must be a perfect cube)
@@ -883,7 +885,9 @@ pub fn parse_csp(text: &str) -> Result<ColorLut3D, ImageError> {
         )));
     }
     if lines.len() < 2 {
-        return Err(ImageError::InvalidInput("missing LUT type line in .csp".into()));
+        return Err(ImageError::InvalidInput(
+            "missing LUT type line in .csp".into(),
+        ));
     }
     let lut_type = lines[1].trim();
     if lut_type != "3D" {
@@ -1506,10 +1510,7 @@ mod tests {
         for (i, (orig, back)) in identity.data.iter().zip(parsed.data.iter()).enumerate() {
             for c in 0..3 {
                 let diff = (orig[c] - back[c]).abs();
-                assert!(
-                    diff < 0.002,
-                    "3dl roundtrip entry {i} ch {c}: diff={diff}"
-                );
+                assert!(diff < 0.002, "3dl roundtrip entry {i} ch {c}: diff={diff}");
             }
         }
     }

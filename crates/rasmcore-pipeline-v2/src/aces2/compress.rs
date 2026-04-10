@@ -3,8 +3,8 @@
 //! Chroma compression reduces colorfulness at luminance extremes.
 //! Gamut compression maps out-of-gamut colors to the display boundary.
 
-use super::constants::*;
 use super::cam16::*;
+use super::constants::*;
 use super::tonescale::*;
 
 // ─── Chroma Compress Params ────────────────────────────────────────────────
@@ -19,13 +19,21 @@ pub struct ChromaCompressParams {
 }
 
 /// Initialize chroma compress params from peak luminance.
-pub fn init_chroma_compress_params(peak_luminance: f32, ts: &ToneScaleParams) -> ChromaCompressParams {
+pub fn init_chroma_compress_params(
+    peak_luminance: f32,
+    ts: &ToneScaleParams,
+) -> ChromaCompressParams {
     let compr = CHROMA_COMPRESS + CHROMA_COMPRESS * CHROMA_COMPRESS_FACT * ts.log_peak;
     let sat = (CHROMA_EXPAND - CHROMA_EXPAND * CHROMA_EXPAND_FACT * ts.log_peak).max(0.2);
     let sat_thr = CHROMA_EXPAND_THR / ts.n;
     let chroma_compress_scale = (0.03379 * peak_luminance).powf(0.30596) - 0.45135;
 
-    ChromaCompressParams { sat, sat_thr, compr, chroma_compress_scale }
+    ChromaCompressParams {
+        sat,
+        sat_thr,
+        compr,
+        chroma_compress_scale,
+    }
 }
 
 // ─── Shared Compression Params ─────────────────────────────────────────────
@@ -80,7 +88,7 @@ fn make_reach_m_table(reach_params: &JMhParams, limit_j_max: f32) -> Vec<f32> {
 
     // Wrap entries
     table[0] = table[TABLE_BASE_INDEX + TABLE_NOMINAL_SIZE - 1]; // lower wrap
-    table[TABLE_UPPER_WRAP] = table[TABLE_BASE_INDEX];            // upper wrap 1
+    table[TABLE_UPPER_WRAP] = table[TABLE_BASE_INDEX]; // upper wrap 1
     if TABLE_UPPER_WRAP + 1 < TABLE_TOTAL_SIZE {
         table[TABLE_UPPER_WRAP + 1] = table[TABLE_BASE_INDEX + 1]; // upper wrap 2
     }
@@ -98,11 +106,18 @@ pub fn init_shared_compression_params(
     let model_gamma_inv = 1.0 / model_gamma();
     let reach_m_table = make_reach_m_table(reach_params, limit_j_max);
 
-    SharedCompressionParams { limit_j_max, model_gamma_inv, reach_m_table }
+    SharedCompressionParams {
+        limit_j_max,
+        model_gamma_inv,
+        reach_m_table,
+    }
 }
 
 /// Resolve per-hue parameters from shared params.
-pub fn resolve_compression_params(hue: f32, p: &SharedCompressionParams) -> ResolvedCompressionParams {
+pub fn resolve_compression_params(
+    hue: f32,
+    p: &SharedCompressionParams,
+) -> ResolvedCompressionParams {
     let reach_max_m = reach_m_from_table(hue, &p.reach_m_table);
     ResolvedCompressionParams {
         limit_j_max: p.limit_j_max,
@@ -134,16 +149,22 @@ pub fn chroma_compress_norm(cos_hr: f32, sin_hr: f32, chroma_compress_scale: f32
     let sin_hr3 = 3.0 * sin_hr - 4.0 * sin_hr * sin_hr * sin_hr;
 
     let w = &CHROMA_COMPRESS_WEIGHTS;
-    let m = w[0] * cos_hr + w[1] * cos_hr2 + w[2] * cos_hr3
-          + w[4] * sin_hr + w[5] * sin_hr2 + w[6] * sin_hr3
-          + w[7];
+    let m = w[0] * cos_hr
+        + w[1] * cos_hr2
+        + w[2] * cos_hr3
+        + w[4] * sin_hr
+        + w[5] * sin_hr2
+        + w[6] * sin_hr3
+        + w[7];
 
     m * chroma_compress_scale
 }
 
 /// Toe function (forward): smooth compression below limit.
 pub fn toe_fwd(x: f32, limit: f32, k1_in: f32, k2_in: f32) -> f32 {
-    if x > limit { return x; }
+    if x > limit {
+        return x;
+    }
     let k2 = k2_in.max(0.001);
     let k1 = (k1_in * k1_in + k2 * k2).sqrt();
     let k3 = (limit + k1) / (limit + k2);
@@ -154,7 +175,9 @@ pub fn toe_fwd(x: f32, limit: f32, k1_in: f32, k2_in: f32) -> f32 {
 
 /// Toe function (inverse).
 pub fn toe_inv(x: f32, limit: f32, k1_in: f32, k2_in: f32) -> f32 {
-    if x > limit { return x; }
+    if x > limit {
+        return x;
+    }
     let k2 = k2_in.max(0.001);
     let k1 = (k1_in * k1_in + k2 * k2).sqrt();
     let k3 = (limit + k1) / (limit + k2);
@@ -163,8 +186,11 @@ pub fn toe_inv(x: f32, limit: f32, k1_in: f32, k2_in: f32) -> f32 {
 
 /// Forward chroma compression: compress colorfulness based on tonemapped lightness.
 pub fn chroma_compress_fwd(
-    jmh: &F3, j_ts: f32, mnorm: f32,
-    rp: &ResolvedCompressionParams, pc: &ChromaCompressParams,
+    jmh: &F3,
+    j_ts: f32,
+    mnorm: f32,
+    rp: &ResolvedCompressionParams,
+    pc: &ChromaCompressParams,
 ) -> F3 {
     let j = jmh[0];
     let m = jmh[1];
@@ -180,7 +206,13 @@ pub fn chroma_compress_fwd(
 
     let mut m_cp = m * (j_ts / j).powf(rp.model_gamma_inv);
     m_cp /= mnorm;
-    m_cp = limit - toe_fwd(limit - m_cp, limit - 0.001, snj * pc.sat, (nj * nj + pc.sat_thr).sqrt());
+    m_cp = limit
+        - toe_fwd(
+            limit - m_cp,
+            limit - 0.001,
+            snj * pc.sat,
+            (nj * nj + pc.sat_thr).sqrt(),
+        );
     m_cp = toe_fwd(m_cp, limit, nj * pc.compr, snj);
     m_cp *= mnorm;
 
@@ -189,8 +221,11 @@ pub fn chroma_compress_fwd(
 
 /// Inverse chroma compression.
 pub fn chroma_compress_inv(
-    jmh: &F3, j: f32, mnorm: f32,
-    rp: &ResolvedCompressionParams, pc: &ChromaCompressParams,
+    jmh: &F3,
+    j: f32,
+    mnorm: f32,
+    rp: &ResolvedCompressionParams,
+    pc: &ChromaCompressParams,
 ) -> F3 {
     let j_ts = jmh[0];
     let m_cp = jmh[1];
@@ -206,7 +241,13 @@ pub fn chroma_compress_inv(
 
     let mut m = m_cp / mnorm;
     m = toe_inv(m, limit, nj * pc.compr, snj);
-    m = limit - toe_inv(limit - m, limit - 0.001, snj * pc.sat, (nj * nj + pc.sat_thr).sqrt());
+    m = limit
+        - toe_inv(
+            limit - m,
+            limit - 0.001,
+            snj * pc.sat,
+            (nj * nj + pc.sat_thr).sqrt(),
+        );
     m *= mnorm;
     m *= (j_ts / j).powf(-rp.model_gamma_inv);
 
@@ -222,7 +263,7 @@ pub struct GamutCompressParams {
     pub focus_dist: f32,
     pub lower_hull_gamma_inv: f32,
     pub hue_linearity_search_range: [i32; 2],
-    pub hue_table: Vec<f32>,          // TABLE_TOTAL_SIZE
+    pub hue_table: Vec<f32>,             // TABLE_TOTAL_SIZE
     pub gamut_cusp_table: Vec<[f32; 3]>, // TABLE_TOTAL_SIZE × 3 [J, M, gamma_top_inv]
 }
 
@@ -230,7 +271,7 @@ pub struct GamutCompressParams {
 #[derive(Debug, Clone, Copy)]
 pub struct HueDependantGamutParams {
     pub gamma_bottom_inv: f32,
-    pub jm_cusp: F2,      // [J_cusp, M_cusp]
+    pub jm_cusp: F2, // [J_cusp, M_cusp]
     pub gamma_top_inv: f32,
     pub focus_j: f32,
     pub analytical_threshold: f32,
@@ -272,26 +313,63 @@ fn solve_j_intersect(j: f32, m: f32, focus_j: f32, max_j: f32, slope_gain: f32) 
 }
 
 /// Compression vector slope.
-fn compute_compression_vector_slope(intersect_j: f32, focus_j: f32, limit_j_max: f32, slope_gain: f32) -> f32 {
-    let dir = if intersect_j < focus_j { intersect_j } else { limit_j_max - intersect_j };
+fn compute_compression_vector_slope(
+    intersect_j: f32,
+    focus_j: f32,
+    limit_j_max: f32,
+    slope_gain: f32,
+) -> f32 {
+    let dir = if intersect_j < focus_j {
+        intersect_j
+    } else {
+        limit_j_max - intersect_j
+    };
     dir * (intersect_j - focus_j) / (focus_j * slope_gain)
 }
 
 /// Estimate intersection of compression line with gamut boundary hull.
-fn estimate_line_boundary_m(j_axis: f32, slope: f32, inv_gamma: f32, j_max: f32, m_max: f32, j_ref: f32) -> f32 {
+fn estimate_line_boundary_m(
+    j_axis: f32,
+    slope: f32,
+    inv_gamma: f32,
+    j_max: f32,
+    m_max: f32,
+    j_ref: f32,
+) -> f32 {
     let norm_j = j_axis / j_ref;
     let shifted = j_ref * norm_j.powf(inv_gamma);
     shifted * m_max / (j_max - slope * m_max)
 }
 
 /// Find gamut boundary intersection M from upper and lower hull estimates.
-fn find_gamut_boundary_m(jm_cusp: &F2, j_max: f32, gamma_top_inv: f32, gamma_bottom_inv: f32,
-                         j_src: f32, slope: f32, j_cusp_intersect: f32) -> f32 {
-    let m_lower = estimate_line_boundary_m(j_src, slope, gamma_bottom_inv, jm_cusp[0], jm_cusp[1], j_cusp_intersect);
+fn find_gamut_boundary_m(
+    jm_cusp: &F2,
+    j_max: f32,
+    gamma_top_inv: f32,
+    gamma_bottom_inv: f32,
+    j_src: f32,
+    slope: f32,
+    j_cusp_intersect: f32,
+) -> f32 {
+    let m_lower = estimate_line_boundary_m(
+        j_src,
+        slope,
+        gamma_bottom_inv,
+        jm_cusp[0],
+        jm_cusp[1],
+        j_cusp_intersect,
+    );
     let f_j_cusp = j_max - j_cusp_intersect;
     let f_j_src = j_max - j_src;
     let f_cusp_j = j_max - jm_cusp[0];
-    let m_upper = estimate_line_boundary_m(f_j_src, -slope, gamma_top_inv, f_cusp_j, jm_cusp[1], f_j_cusp);
+    let m_upper = estimate_line_boundary_m(
+        f_j_src,
+        -slope,
+        gamma_top_inv,
+        f_cusp_j,
+        jm_cusp[1],
+        f_j_cusp,
+    );
     smin_scaled(m_lower, m_upper, jm_cusp[1])
 }
 
@@ -305,7 +383,9 @@ fn remap_m_fwd(m: f32, gamut_m: f32, reach_m: f32) -> f32 {
     let ratio = gamut_m / reach_m;
     let proportion = ratio.max(COMPRESSION_THRESHOLD);
     let threshold = proportion * gamut_m;
-    if m <= threshold || proportion >= 1.0 { return m; }
+    if m <= threshold || proportion >= 1.0 {
+        return m;
+    }
     let m_off = m - threshold;
     let gamut_off = gamut_m - threshold;
     let reach_off = reach_m - threshold;
@@ -335,15 +415,27 @@ fn lookup_hue_interval(h: f32, hue_table: &[f32], search_range: &[i32; 2]) -> us
 fn cusp_from_table(i_hi: usize, t: f32, table: &[[f32; 3]]) -> [f32; 3] {
     let lo = &table[i_hi - 1];
     let hi = &table[i_hi];
-    [lerpf(lo[0], hi[0], t), lerpf(lo[1], hi[1], t), lerpf(lo[2], hi[2], t)]
+    [
+        lerpf(lo[0], hi[0], t),
+        lerpf(lo[1], hi[1], t),
+        lerpf(lo[2], hi[2], t),
+    ]
 }
 
 fn compute_focus_j(cusp_j: f32, mid_j: f32, limit_j_max: f32) -> f32 {
-    lerpf(cusp_j, mid_j, (CUSP_MID_BLEND - cusp_j / limit_j_max).min(1.0))
+    lerpf(
+        cusp_j,
+        mid_j,
+        (CUSP_MID_BLEND - cusp_j / limit_j_max).min(1.0),
+    )
 }
 
 /// Initialize hue-dependent gamut params for a given hue.
-pub fn init_hue_gamut_params(hue: f32, sr: &ResolvedCompressionParams, p: &GamutCompressParams) -> HueDependantGamutParams {
+pub fn init_hue_gamut_params(
+    hue: f32,
+    sr: &ResolvedCompressionParams,
+    p: &GamutCompressParams,
+) -> HueDependantGamutParams {
     let i_hi = lookup_hue_interval(hue, &p.hue_table, &p.hue_linearity_search_range);
     let t = (hue - p.hue_table[i_hi - 1]) / (p.hue_table[i_hi] - p.hue_table[i_hi - 1]);
     let cusp = cusp_from_table(i_hi, t, &p.gamut_cusp_table);
@@ -363,23 +455,51 @@ pub fn init_hue_gamut_params(hue: f32, sr: &ResolvedCompressionParams, p: &Gamut
 }
 
 /// Core gamut compression (forward).
-fn compress_gamut_fwd(jmh: &F3, jx: f32, sr: &ResolvedCompressionParams, p: &GamutCompressParams, hdp: &HueDependantGamutParams) -> F3 {
+fn compress_gamut_fwd(
+    jmh: &F3,
+    jx: f32,
+    sr: &ResolvedCompressionParams,
+    p: &GamutCompressParams,
+    hdp: &HueDependantGamutParams,
+) -> F3 {
     let j = jmh[0];
     let m = jmh[1];
     let h = jmh[2];
 
     let slope_gain = get_focus_gain(jx, hdp.analytical_threshold, sr.limit_j_max, p.focus_dist);
     let j_intersect = solve_j_intersect(j, m, hdp.focus_j, sr.limit_j_max, slope_gain);
-    let slope = compute_compression_vector_slope(j_intersect, hdp.focus_j, sr.limit_j_max, slope_gain);
+    let slope =
+        compute_compression_vector_slope(j_intersect, hdp.focus_j, sr.limit_j_max, slope_gain);
 
-    let j_cusp_intersect = solve_j_intersect(hdp.jm_cusp[0], hdp.jm_cusp[1], hdp.focus_j, sr.limit_j_max, slope_gain);
-    let gamut_m = find_gamut_boundary_m(&hdp.jm_cusp, sr.limit_j_max, hdp.gamma_top_inv, hdp.gamma_bottom_inv, j_intersect, slope, j_cusp_intersect);
+    let j_cusp_intersect = solve_j_intersect(
+        hdp.jm_cusp[0],
+        hdp.jm_cusp[1],
+        hdp.focus_j,
+        sr.limit_j_max,
+        slope_gain,
+    );
+    let gamut_m = find_gamut_boundary_m(
+        &hdp.jm_cusp,
+        sr.limit_j_max,
+        hdp.gamma_top_inv,
+        hdp.gamma_bottom_inv,
+        j_intersect,
+        slope,
+        j_cusp_intersect,
+    );
 
     if gamut_m <= 0.0 {
         return [j, 0.0, h];
     }
 
-    let reach_m = estimate_line_boundary_m(j_intersect, slope, sr.model_gamma_inv, sr.limit_j_max, sr.reach_max_m, sr.limit_j_max);
+    let reach_m = estimate_line_boundary_m(
+        j_intersect,
+        slope,
+        sr.model_gamma_inv,
+        sr.limit_j_max,
+        sr.reach_max_m,
+        sr.limit_j_max,
+    );
     let remapped = remap_m_fwd(m, gamut_m, reach_m);
 
     [j_intersect + remapped * slope, remapped, h]
@@ -391,8 +511,12 @@ pub fn gamut_compress_fwd(jmh: &F3, sr: &ResolvedCompressionParams, p: &GamutCom
     let m = jmh[1];
     let h = jmh[2];
 
-    if j <= 0.0 { return [0.0, 0.0, h]; }
-    if m <= 0.0 || j > sr.limit_j_max { return [j, 0.0, h]; }
+    if j <= 0.0 {
+        return [0.0, 0.0, h];
+    }
+    if m <= 0.0 || j > sr.limit_j_max {
+        return [j, 0.0, h];
+    }
 
     let hdp = init_hue_gamut_params(h, sr, p);
     compress_gamut_fwd(jmh, jmh[0], sr, p, &hdp)
@@ -403,9 +527,21 @@ pub fn gamut_compress_fwd(jmh: &F3, sr: &ResolvedCompressionParams, p: &GamutCom
 /// Generate unit cube cusp corner RGB values (R, Y, G, C, B, M order).
 fn generate_cusp_corner(corner: usize) -> F3 {
     [
-        if ((corner + 1) % CUSP_CORNER_COUNT) < 3 { 1.0 } else { 0.0 },
-        if ((corner + 5) % CUSP_CORNER_COUNT) < 3 { 1.0 } else { 0.0 },
-        if ((corner + 3) % CUSP_CORNER_COUNT) < 3 { 1.0 } else { 0.0 },
+        if ((corner + 1) % CUSP_CORNER_COUNT) < 3 {
+            1.0
+        } else {
+            0.0
+        },
+        if ((corner + 5) % CUSP_CORNER_COUNT) < 3 {
+            1.0
+        } else {
+            0.0
+        },
+        if ((corner + 3) % CUSP_CORNER_COUNT) < 3 {
+            1.0
+        } else {
+            0.0
+        },
     ]
 }
 
@@ -422,7 +558,9 @@ fn build_limiting_cusp_corners(params: &JMhParams, peak: f32) -> (Vec<F3>, Vec<F
         let corner = generate_cusp_corner(i);
         let rgb = mult_f_f3(scale, &corner);
         let jmh = rgb_to_jmh(&rgb, params);
-        if i == 0 || jmh[2] < temp_jmh[min_idx][2] { min_idx = i; }
+        if i == 0 || jmh[2] < temp_jmh[min_idx][2] {
+            min_idx = i;
+        }
         temp_rgb.push(rgb);
         temp_jmh.push(jmh);
     }
@@ -460,10 +598,16 @@ fn find_reach_corners(params: &JMhParams, limit_j_max: f32, max_source: f32) -> 
             let mid = (lo + hi) / 2.0;
             let test = mult_f_f3(mid, &rgb_vec);
             let a = rgb_to_aab(&test, params)[0];
-            if a < limit_a { lo = mid; } else { hi = mid; }
+            if a < limit_a {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
         }
         let jmh = rgb_to_jmh(&mult_f_f3(hi, &rgb_vec), params);
-        if i == 0 || jmh[2] < temp.get(min_idx).map(|v: &F3| v[2]).unwrap_or(f32::MAX) { min_idx = i; }
+        if i == 0 || jmh[2] < temp.get(min_idx).map(|v: &F3| v[2]).unwrap_or(f32::MAX) {
+            min_idx = i;
+        }
         temp.push(jmh);
     }
 
@@ -482,7 +626,10 @@ fn find_reach_corners(params: &JMhParams, limit_j_max: f32, max_source: f32) -> 
 fn find_display_cusp(hue: f32, rgb_corners: &[F3], jmh_corners: &[F3], params: &JMhParams) -> F2 {
     let mut upper = 1;
     for i in 1..TOTAL_CORNER_COUNT {
-        if jmh_corners[i][2] > hue { upper = i; break; }
+        if jmh_corners[i][2] > hue {
+            upper = i;
+            break;
+        }
     }
     let lower = upper - 1;
     if jmh_corners[lower][2] == hue {
@@ -545,14 +692,26 @@ pub fn init_gamut_compress_params(
     let mut ri = 1;
     let mut di = 1;
     while ri <= CUSP_CORNER_COUNT || di <= CUSP_CORNER_COUNT {
-        let rh = if ri <= CUSP_CORNER_COUNT { reach_jmh[ri][2] } else { f32::MAX };
-        let dh = if di <= CUSP_CORNER_COUNT { limit_jmh[di][2] } else { f32::MAX };
-        if (rh - dh).abs() < 1e-6 {
-            sorted_hues.push(rh); ri += 1; di += 1;
-        } else if rh < dh {
-            sorted_hues.push(rh); ri += 1;
+        let rh = if ri <= CUSP_CORNER_COUNT {
+            reach_jmh[ri][2]
         } else {
-            sorted_hues.push(dh); di += 1;
+            f32::MAX
+        };
+        let dh = if di <= CUSP_CORNER_COUNT {
+            limit_jmh[di][2]
+        } else {
+            f32::MAX
+        };
+        if (rh - dh).abs() < 1e-6 {
+            sorted_hues.push(rh);
+            ri += 1;
+            di += 1;
+        } else if rh < dh {
+            sorted_hues.push(rh);
+            ri += 1;
+        } else {
+            sorted_hues.push(dh);
+            di += 1;
         }
     }
 
@@ -615,20 +774,38 @@ pub fn init_gamut_compress_params(
                 let sg = get_focus_gain(test_j, thresh, shared.limit_j_max, focus_dist);
                 let ji = solve_j_intersect(test_j, jm_cusp[1], focus_j_val, shared.limit_j_max, sg);
                 let sl = compute_compression_vector_slope(ji, focus_j_val, shared.limit_j_max, sg);
-                let jci = solve_j_intersect(jm_cusp[0], jm_cusp[1], focus_j_val, shared.limit_j_max, sg);
-                let approx_m = find_gamut_boundary_m(&jm_cusp, shared.limit_j_max, top_gamma_inv, lower_hull_gamma_inv, ji, sl, jci);
+                let jci =
+                    solve_j_intersect(jm_cusp[0], jm_cusp[1], focus_j_val, shared.limit_j_max, sg);
+                let approx_m = find_gamut_boundary_m(
+                    &jm_cusp,
+                    shared.limit_j_max,
+                    top_gamma_inv,
+                    lower_hull_gamma_inv,
+                    ji,
+                    sl,
+                    jci,
+                );
                 let approx_j = ji + sl * approx_m;
                 let jmh_test = [approx_j, approx_m, hue];
                 let rgb = jmh_to_rgb(&jmh_test, limit_params);
                 // "Outside hull" = any channel exceeds limit OR any channel < 0
-                let outside = rgb[0] > lum_limit || rgb[1] > lum_limit || rgb[2] > lum_limit
-                    || rgb[0] < 0.0 || rgb[1] < 0.0 || rgb[2] < 0.0;
+                let outside = rgb[0] > lum_limit
+                    || rgb[1] > lum_limit
+                    || rgb[2] > lum_limit
+                    || rgb[0] < 0.0
+                    || rgb[1] < 0.0
+                    || rgb[2] < 0.0;
                 if !outside {
                     all_outside = false;
                     break;
                 }
             }
-            if all_outside { outside = true; } else { lo = hi; hi += GAMMA_SEARCH_STEP; }
+            if all_outside {
+                outside = true;
+            } else {
+                lo = hi;
+                hi += GAMMA_SEARCH_STEP;
+            }
         }
 
         // Binary search refinement
@@ -641,20 +818,37 @@ pub fn init_gamut_compress_params(
                 let sg = get_focus_gain(test_j, thresh, shared.limit_j_max, focus_dist);
                 let ji = solve_j_intersect(test_j, jm_cusp[1], focus_j_val, shared.limit_j_max, sg);
                 let sl = compute_compression_vector_slope(ji, focus_j_val, shared.limit_j_max, sg);
-                let jci = solve_j_intersect(jm_cusp[0], jm_cusp[1], focus_j_val, shared.limit_j_max, sg);
-                let approx_m = find_gamut_boundary_m(&jm_cusp, shared.limit_j_max, top_gamma_inv, lower_hull_gamma_inv, ji, sl, jci);
+                let jci =
+                    solve_j_intersect(jm_cusp[0], jm_cusp[1], focus_j_val, shared.limit_j_max, sg);
+                let approx_m = find_gamut_boundary_m(
+                    &jm_cusp,
+                    shared.limit_j_max,
+                    top_gamma_inv,
+                    lower_hull_gamma_inv,
+                    ji,
+                    sl,
+                    jci,
+                );
                 let approx_j = ji + sl * approx_m;
                 let jmh_test = [approx_j, approx_m, hue];
                 let rgb = jmh_to_rgb(&jmh_test, limit_params);
                 // "Outside hull" = any channel exceeds limit OR any channel < 0
-                let outside = rgb[0] > lum_limit || rgb[1] > lum_limit || rgb[2] > lum_limit
-                    || rgb[0] < 0.0 || rgb[1] < 0.0 || rgb[2] < 0.0;
+                let outside = rgb[0] > lum_limit
+                    || rgb[1] > lum_limit
+                    || rgb[2] > lum_limit
+                    || rgb[0] < 0.0
+                    || rgb[1] < 0.0
+                    || rgb[2] < 0.0;
                 if !outside {
                     all_outside = false;
                     break;
                 }
             }
-            if all_outside { hi = mid; } else { lo = mid; }
+            if all_outside {
+                hi = mid;
+            } else {
+                lo = mid;
+            }
         }
 
         gamut_cusp_table[i][2] = 1.0 / hi;
@@ -667,10 +861,15 @@ pub fn init_gamut_compress_params(
     }
 
     // Determine hue linearity search range (simplified: use full range)
-    let hue_linearity_search_range = [-(TABLE_NOMINAL_SIZE as i32 / 2), TABLE_NOMINAL_SIZE as i32 / 2];
+    let hue_linearity_search_range = [
+        -(TABLE_NOMINAL_SIZE as i32 / 2),
+        TABLE_NOMINAL_SIZE as i32 / 2,
+    ];
 
     GamutCompressParams {
-        mid_j, focus_dist, lower_hull_gamma_inv,
+        mid_j,
+        focus_dist,
+        lower_hull_gamma_inv,
         hue_linearity_search_range,
         hue_table,
         gamut_cusp_table,
@@ -686,7 +885,10 @@ mod tests {
         for x in [0.0, 0.1, 0.3, 0.5, 0.8, 0.99, 1.5] {
             let fwd = toe_fwd(x, 1.0, 0.5, 0.3);
             let inv = toe_inv(fwd, 1.0, 0.5, 0.3);
-            assert!((inv - x).abs() < 0.001, "toe roundtrip at x={x}: fwd={fwd}, inv={inv}");
+            assert!(
+                (inv - x).abs() < 0.001,
+                "toe roundtrip at x={x}: fwd={fwd}, inv={inv}"
+            );
         }
     }
 
@@ -706,9 +908,12 @@ mod tests {
     #[test]
     fn chroma_compress_norm_varies_with_hue() {
         let cc = init_chroma_compress_params(100.0, &init_tonescale_params(100.0));
-        let n0 = chroma_compress_norm(1.0, 0.0, cc.chroma_compress_scale);  // 0 degrees
+        let n0 = chroma_compress_norm(1.0, 0.0, cc.chroma_compress_scale); // 0 degrees
         let n90 = chroma_compress_norm(0.0, 1.0, cc.chroma_compress_scale); // 90 degrees
-        assert!((n0 - n90).abs() > 0.1, "norm should vary with hue: {n0} vs {n90}");
+        assert!(
+            (n0 - n90).abs() > 0.1,
+            "norm should vary with hue: {n0} vs {n90}"
+        );
     }
 
     #[test]
@@ -723,7 +928,11 @@ mod tests {
         let jmh = [50.0, 0.0, 0.0];
         let rp = resolve_compression_params(0.0, &shared);
         let result = chroma_compress_fwd(&jmh, 50.0, 1.0, &rp, &cc);
-        assert!((result[1]).abs() < 1e-6, "grey M should stay 0: {}", result[1]);
+        assert!(
+            (result[1]).abs() < 1e-6,
+            "grey M should stay 0: {}",
+            result[1]
+        );
     }
 
     #[test]
@@ -732,7 +941,11 @@ mod tests {
         let cc = init_chroma_compress_params(100.0, &ts);
         assert!(cc.sat > 0.0, "sat: {}", cc.sat);
         assert!(cc.compr > 0.0, "compr: {}", cc.compr);
-        assert!(cc.chroma_compress_scale > 0.0, "scale: {}", cc.chroma_compress_scale);
+        assert!(
+            cc.chroma_compress_scale > 0.0,
+            "scale: {}",
+            cc.chroma_compress_scale
+        );
     }
 
     #[test]
@@ -740,8 +953,16 @@ mod tests {
         let p_in = init_jmh_params(&AP0_PRIMS);
         let p_reach = init_jmh_params(&AP1_PRIMS);
         let shared = init_shared_compression_params(100.0, &p_in, &p_reach);
-        assert!(shared.limit_j_max > 0.0, "limit_j_max: {}", shared.limit_j_max);
-        assert!(shared.model_gamma_inv > 0.0, "model_gamma_inv: {}", shared.model_gamma_inv);
+        assert!(
+            shared.limit_j_max > 0.0,
+            "limit_j_max: {}",
+            shared.limit_j_max
+        );
+        assert!(
+            shared.model_gamma_inv > 0.0,
+            "model_gamma_inv: {}",
+            shared.model_gamma_inv
+        );
         assert_eq!(shared.reach_m_table.len(), TABLE_TOTAL_SIZE);
         for (i, &v) in shared.reach_m_table.iter().enumerate() {
             assert!(v >= 0.0, "reach_m_table[{i}] = {v} (should be >= 0)");
@@ -753,13 +974,19 @@ mod tests {
         use super::super::params::*;
         let ref_dir = match reference_dir() {
             Some(d) => d,
-            None => { eprintln!("SKIP: reference vectors not found"); return; }
+            None => {
+                eprintln!("SKIP: reference vectors not found");
+                return;
+            }
         };
 
         let ref_path = ref_dir.join("tonescale_compress_100nit.bin");
         let vectors = match load_reference_vectors(&ref_path) {
             Some(v) => v,
-            None => { eprintln!("SKIP: tonescale_compress_100nit.bin not found"); return; }
+            None => {
+                eprintln!("SKIP: tonescale_compress_100nit.bin not found");
+                return;
+            }
         };
 
         // Initialize all params (same as OCIO does for SDR 100 nit)
@@ -802,14 +1029,18 @@ mod tests {
             let h_err = if result[1] > 0.1 && v.output[1] > 0.1 {
                 let dh = (result[2] - v.output[2]).abs();
                 dh.min(360.0 - dh)
-            } else { 0.0 };
+            } else {
+                0.0
+            };
 
             let vec_err = j_err.max(m_err).max(h_err);
             max_err = max_err.max(vec_err);
 
             if vec_err > tolerance {
                 if fail < 10 {
-                    eprintln!("  FAIL vec[{i}]: J_err:{j_err:.6} M_err:{m_err:.6} h_err:{h_err:.3}");
+                    eprintln!(
+                        "  FAIL vec[{i}]: J_err:{j_err:.6} M_err:{m_err:.6} h_err:{h_err:.3}"
+                    );
                 }
                 fail += 1;
             } else {
@@ -820,8 +1051,10 @@ mod tests {
         eprintln!("Tonescale+compress: {pass} pass, {fail} fail, max_err={max_err:.6}");
 
         if fail > 0 {
-            panic!("Tonescale+compress: {fail}/{} exceed tolerance (max_err={max_err:.6})",
-                   pass + fail);
+            panic!(
+                "Tonescale+compress: {fail}/{} exceed tolerance (max_err={max_err:.6})",
+                pass + fail
+            );
         }
         assert!(pass > 0);
     }
@@ -831,19 +1064,25 @@ mod tests {
         use super::super::params::*;
         let ref_dir = match reference_dir() {
             Some(d) => d,
-            None => { eprintln!("SKIP: reference vectors not found"); return; }
+            None => {
+                eprintln!("SKIP: reference vectors not found");
+                return;
+            }
         };
         let ref_path = ref_dir.join("gamut_compress_100nit.bin");
         let vectors = match load_reference_vectors(&ref_path) {
             Some(v) => v,
-            None => { eprintln!("SKIP: gamut_compress_100nit.bin not found"); return; }
+            None => {
+                eprintln!("SKIP: gamut_compress_100nit.bin not found");
+                return;
+            }
         };
 
         // Initialize all params for SDR 100 nit with Rec.709 limiting primaries
         let p_in = init_jmh_params(&AP0_PRIMS);
         let p_reach = init_jmh_params(&AP1_PRIMS);
         // Rec.709 primaries for limiting gamut
-        let rec709: [(f32,f32); 4] = [(0.64,0.33), (0.30,0.60), (0.15,0.06), (0.3127,0.3290)];
+        let rec709: [(f32, f32); 4] = [(0.64, 0.33), (0.30, 0.60), (0.15, 0.06), (0.3127, 0.3290)];
         let p_limit = init_jmh_params(&rec709);
         let ts = init_tonescale_params(100.0);
         let shared = init_shared_compression_params(100.0, &p_in, &p_reach);
@@ -863,14 +1102,18 @@ mod tests {
             let h_err = if actual[1] > 0.1 && v.output[1] > 0.1 {
                 let dh = (actual[2] - v.output[2]).abs();
                 dh.min(360.0 - dh)
-            } else { 0.0 };
+            } else {
+                0.0
+            };
 
             let vec_err = j_err.max(m_err).max(h_err);
             max_err = max_err.max(vec_err);
 
             if vec_err > tolerance {
                 if fail < 5 {
-                    eprintln!("  FAIL vec[{i}]: J_err:{j_err:.4} M_err:{m_err:.4} h_err:{h_err:.3}");
+                    eprintln!(
+                        "  FAIL vec[{i}]: J_err:{j_err:.4} M_err:{m_err:.4} h_err:{h_err:.3}"
+                    );
                 }
                 fail += 1;
             } else {
@@ -886,7 +1129,10 @@ mod tests {
         let total = pass + fail;
         let pass_rate = pass as f64 / total as f64;
         eprintln!("  Pass rate: {pass_rate:.4} ({pass}/{total}), max_err: {max_err:.6}");
-        assert!(pass_rate > 0.80, "Gamut compress pass rate too low: {pass_rate:.2} ({fail} failures)");
+        assert!(
+            pass_rate > 0.80,
+            "Gamut compress pass rate too low: {pass_rate:.2} ({fail} failures)"
+        );
         assert!(pass > 0);
     }
 }

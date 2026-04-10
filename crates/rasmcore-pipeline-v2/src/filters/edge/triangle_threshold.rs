@@ -44,7 +44,12 @@ impl Filter for TriangleThreshold {
             hist[bin] += 1;
         }
         // Find peak
-        let peak_idx = hist.iter().enumerate().max_by_key(|&(_, &v)| v).map(|(i, _)| i).unwrap_or(0);
+        let peak_idx = hist
+            .iter()
+            .enumerate()
+            .max_by_key(|&(_, &v)| v)
+            .map(|(i, _)| i)
+            .unwrap_or(0);
         // Find farthest non-zero bin from peak
         let far_idx = if peak_idx < 128 {
             hist.iter().rposition(|&h| h > 0).unwrap_or(255)
@@ -58,17 +63,27 @@ impl Filter for TriangleThreshold {
         // Find bin with max distance from line
         let mut best_t = peak_idx;
         let mut max_dist = 0.0f64;
-        let (lo, hi) = if peak_idx < far_idx { (peak_idx, far_idx) } else { (far_idx, peak_idx) };
+        let (lo, hi) = if peak_idx < far_idx {
+            (peak_idx, far_idx)
+        } else {
+            (far_idx, peak_idx)
+        };
         for t in lo..=hi {
-            let d = ((y2 - y1) * t as f64 - (x2 - x1) * hist[t] as f64 + x2 * y1 - y2 * x1).abs() / len;
-            if d > max_dist { max_dist = d; best_t = t; }
+            let d =
+                ((y2 - y1) * t as f64 - (x2 - x1) * hist[t] as f64 + x2 * y1 - y2 * x1).abs() / len;
+            if d > max_dist {
+                max_dist = d;
+                best_t = t;
+            }
         }
         let threshold = best_t as f32 / 255.0;
         let mut out = input.to_vec();
         for px in out.chunks_exact_mut(4) {
             let l = luminance(px[0], px[1], px[2]);
             let v = if l >= threshold { 1.0 } else { 0.0 };
-            px[0] = v; px[1] = v; px[2] = v;
+            px[0] = v;
+            px[1] = v;
+            px[2] = v;
         }
         Ok(out)
     }
@@ -83,9 +98,8 @@ impl Filter for TriangleThreshold {
         params.extend_from_slice(&height.to_le_bytes());
         params.extend_from_slice(&total.to_le_bytes());
         params.extend_from_slice(&0u32.to_le_bytes());
-        let pass3 = GpuShader::new(
-            TRIANGLE_APPLY_WGSL.to_string(), "main", [256, 1, 1], params,
-        ).with_reduction_buffers(vec![reduction.read_buffer(&passes)]);
+        let pass3 = GpuShader::new(TRIANGLE_APPLY_WGSL.to_string(), "main", [256, 1, 1], params)
+            .with_reduction_buffers(vec![reduction.read_buffer(&passes)]);
         Some(vec![passes.pass1, passes.pass2, pass3])
     }
 }

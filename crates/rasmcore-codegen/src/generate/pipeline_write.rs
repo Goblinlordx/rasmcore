@@ -211,8 +211,7 @@ pub fn generate_adapter_methods(encoders: &[EncoderInfo]) -> String {
 /// Same configs as pipeline write but named `<format>-encode-config` (not write).
 pub fn generate_wit_encode_configs(encoders: &[EncoderInfo]) -> String {
     // Reuse the write config generation — same records, different naming
-    generate_wit_configs(encoders)
-        .replace("-write-config", "-encode-config")
+    generate_wit_configs(encoders).replace("-write-config", "-encode-config")
 }
 
 /// Generate WIT encode method declarations for the stateless encoder interface.
@@ -257,13 +256,21 @@ pub fn generate_stateless_encoder_adapter(encoders: &[EncoderInfo]) -> String {
         } else {
             // Has config fields — extract quality if present, delegate to generic encode
             let quality_field = enc.fields.iter().find(|f| f.name == "quality");
-            let config_name = if quality_field.is_some() { "config" } else { "_config" };
+            let config_name = if quality_field.is_some() {
+                "config"
+            } else {
+                "_config"
+            };
             code.push_str(&format!(
                 "    fn {method_name}(pixels: Vec<u8>, info: types::ImageInfo, {config_name}: encoder::{config_pascal}) -> Result<Vec<u8>, RasmcoreError> {{\n"
             ));
             code.push_str("        let domain_info = to_domain_image_info(&info);\n");
             if let Some(qf) = quality_field {
-                let default = if qf.default_val.is_empty() { "0" } else { &qf.default_val };
+                let default = if qf.default_val.is_empty() {
+                    "0"
+                } else {
+                    &qf.default_val
+                };
                 code.push_str(&format!(
                     "        let quality = Some(config.quality.unwrap_or({default}));\n"
                 ));
@@ -372,7 +379,9 @@ mod tests {
 /// For encoders with a quality field, the quality param is applied.
 pub fn generate_encode_dispatch(encoders: &[EncoderInfo]) -> String {
     let mut code = String::new();
-    code.push_str("// Auto-generated encode dispatch — replaces hardcoded match in encoder/mod.rs.\n");
+    code.push_str(
+        "// Auto-generated encode dispatch — replaces hardcoded match in encoder/mod.rs.\n",
+    );
     code.push_str("// Do not edit — regenerate by changing encoder configs and rebuilding.\n\n");
     code.push_str("macro_rules! generated_encode_dispatch {\n");
     code.push_str("    ($pixels:expr, $info:expr, $format:expr, $quality:expr) => {\n");
@@ -406,13 +415,21 @@ pub fn generate_encode_dispatch(encoders: &[EncoderInfo]) -> String {
             "fits" => vec!["fits", "fit"],
             _ => vec![format.as_str()],
         };
-        let pattern = aliases.iter().map(|a| format!("\"{}\"", a)).collect::<Vec<_>>().join(" | ");
+        let pattern = aliases
+            .iter()
+            .map(|a| format!("\"{}\"", a))
+            .collect::<Vec<_>>()
+            .join(" | ");
 
         if has_real_config {
             code.push_str(&format!("            {pattern} => {{\n"));
             if has_quality {
                 let has_extra_fields = enc.fields.iter().any(|f| f.name != "quality");
-                let struct_tail = if has_extra_fields { ", ..Default::default()" } else { "" };
+                let struct_tail = if has_extra_fields {
+                    ", ..Default::default()"
+                } else {
+                    ""
+                };
                 code.push_str(&format!(
                     "                let config = {module}::{config_struct} {{ quality: $quality.unwrap_or({module}::{config_struct}::default().quality){struct_tail} }};\n"
                 ));
@@ -435,7 +452,9 @@ pub fn generate_encode_dispatch(encoders: &[EncoderInfo]) -> String {
         }
     }
 
-    code.push_str("            other => Err(crate::domain::error::ImageError::UnsupportedFormat(\n");
+    code.push_str(
+        "            other => Err(crate::domain::error::ImageError::UnsupportedFormat(\n",
+    );
     code.push_str("                [\"encode format '\", other, \"' not supported\"].concat()\n");
     code.push_str("            ))\n");
     code.push_str("        }\n");
@@ -443,4 +462,3 @@ pub fn generate_encode_dispatch(encoders: &[EncoderInfo]) -> String {
     code.push_str("}\n");
     code
 }
-

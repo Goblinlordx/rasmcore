@@ -7,7 +7,11 @@ use crate::ops::Filter;
 /// `R(x,y) = log(I(x,y)) - log(G * I(x,y))`
 /// Enhances local contrast by removing illumination estimate.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "retinex_ssr", category = "enhancement", cost = "O(n * sigma) via gaussian_blur")]
+#[filter(
+    name = "retinex_ssr",
+    category = "enhancement",
+    cost = "O(n * sigma) via gaussian_blur"
+)]
 pub struct RetinexSsr {
     #[param(min = 0.0, max = 200.0, default = 80.0)]
     pub sigma: f32,
@@ -49,9 +53,9 @@ impl Filter for RetinexSsr {
 
 // ── RetinexSsr GPU (blur + log-domain apply) ────────────────────────────
 
+use crate::filters::spatial::{blur_params, gaussian_kernel_bytes};
 use crate::gpu_shaders::{enhancement as enh_shaders, spatial};
 use crate::node::GpuShader;
-use crate::filters::spatial::{gaussian_kernel_bytes, blur_params};
 
 gpu_filter_passes_only!(RetinexSsr,
     passes(self_, w, h) => {

@@ -132,7 +132,13 @@ fn main() {
     }
 
     let pixels = (width as u64) * (height as u64);
-    println!("bench-pipeline: {}x{} ({} Mpx), {} brightness nodes", width, height, pixels / 1_000_000, num_nodes);
+    println!(
+        "bench-pipeline: {}x{} ({} Mpx), {} brightness nodes",
+        width,
+        height,
+        pixels / 1_000_000,
+        num_nodes
+    );
     println!();
 
     // ── CPU benchmark ──
@@ -145,16 +151,26 @@ fn main() {
         let cpu_ms = t.elapsed().as_secs_f64() * 1000.0;
 
         let trace = graph.take_trace();
-        let fusion_us: u64 = trace.by_kind(TraceEventKind::Fusion).iter().map(|e| e.duration_us).sum();
-        let cpu_us: u64 = trace.by_kind(TraceEventKind::CpuFallback).iter().map(|e| e.duration_us).sum();
+        let fusion_us: u64 = trace
+            .by_kind(TraceEventKind::Fusion)
+            .iter()
+            .map(|e| e.duration_us)
+            .sum();
+        let cpu_us: u64 = trace
+            .by_kind(TraceEventKind::CpuFallback)
+            .iter()
+            .map(|e| e.duration_us)
+            .sum();
 
         println!("CPU path:");
         println!("  Total:    {cpu_ms:.1} ms");
         println!("  Fusion:   {:.1} ms", fusion_us as f64 / 1000.0);
         println!("  Compute:  {:.1} ms", cpu_us as f64 / 1000.0);
-        println!("  Events:   {} fusion, {} cpu_fallback",
+        println!(
+            "  Events:   {} fusion, {} cpu_fallback",
             trace.by_kind(TraceEventKind::Fusion).len(),
-            trace.by_kind(TraceEventKind::CpuFallback).len());
+            trace.by_kind(TraceEventKind::CpuFallback).len()
+        );
         println!();
     }
 
@@ -175,9 +191,21 @@ fn main() {
                 let cold_ms = t.elapsed().as_secs_f64() * 1000.0;
 
                 let trace = graph.take_trace();
-                let fusion_us: u64 = trace.by_kind(TraceEventKind::Fusion).iter().map(|e| e.duration_us).sum();
-                let gpu_us: u64 = trace.by_kind(TraceEventKind::GpuDispatch).iter().map(|e| e.duration_us).sum();
-                let cpu_us: u64 = trace.by_kind(TraceEventKind::CpuFallback).iter().map(|e| e.duration_us).sum();
+                let fusion_us: u64 = trace
+                    .by_kind(TraceEventKind::Fusion)
+                    .iter()
+                    .map(|e| e.duration_us)
+                    .sum();
+                let gpu_us: u64 = trace
+                    .by_kind(TraceEventKind::GpuDispatch)
+                    .iter()
+                    .map(|e| e.duration_us)
+                    .sum();
+                let cpu_us: u64 = trace
+                    .by_kind(TraceEventKind::CpuFallback)
+                    .iter()
+                    .map(|e| e.duration_us)
+                    .sum();
 
                 println!("GPU path (cold):");
                 println!("  Total:    {cold_ms:.1} ms");
@@ -186,10 +214,12 @@ fn main() {
                 if cpu_us > 0 {
                     println!("  CPU fb:   {:.1} ms", cpu_us as f64 / 1000.0);
                 }
-                println!("  Events:   {} fusion, {} gpu_dispatch, {} cpu_fallback",
+                println!(
+                    "  Events:   {} fusion, {} gpu_dispatch, {} cpu_fallback",
                     trace.by_kind(TraceEventKind::Fusion).len(),
                     trace.by_kind(TraceEventKind::GpuDispatch).len(),
-                    trace.by_kind(TraceEventKind::CpuFallback).len());
+                    trace.by_kind(TraceEventKind::CpuFallback).len()
+                );
                 println!();
 
                 // Warm run (shader cached, device warm)
@@ -215,14 +245,20 @@ fn main() {
                             let warm_ms = t.elapsed().as_secs_f64() * 1000.0;
 
                             let trace = graph.take_trace();
-                            let gpu_us: u64 = trace.by_kind(TraceEventKind::GpuDispatch).iter().map(|e| e.duration_us).sum();
+                            let gpu_us: u64 = trace
+                                .by_kind(TraceEventKind::GpuDispatch)
+                                .iter()
+                                .map(|e| e.duration_us)
+                                .sum();
 
                             println!("GPU path (warm):");
                             println!("  Total:    {warm_ms:.1} ms");
                             println!("  GPU:      {:.1} ms", gpu_us as f64 / 1000.0);
-                            println!("  Events:   {} gpu_dispatch, {} cpu_fallback",
+                            println!(
+                                "  Events:   {} gpu_dispatch, {} cpu_fallback",
                                 trace.by_kind(TraceEventKind::GpuDispatch).len(),
-                                trace.by_kind(TraceEventKind::CpuFallback).len());
+                                trace.by_kind(TraceEventKind::CpuFallback).len()
+                            );
                         }
                         Err(e) => println!("  Warm run skipped: {e}"),
                     }

@@ -4,7 +4,7 @@ use crate::node::{GpuShader, PipelineError};
 use crate::ops::Filter;
 
 use super::super::helpers::{gpu_params_wh, gpu_push_f32, sample_bilinear};
-use super::{SAMPLE_BILINEAR_WGSL};
+use super::SAMPLE_BILINEAR_WGSL;
 
 // Smudge — directional displacement within circular brush
 // ═══════════════════════════════════════════════════════════════════════════
@@ -14,12 +14,18 @@ use super::{SAMPLE_BILINEAR_WGSL};
 #[derive(Clone, rasmcore_macros::V2Filter)]
 #[filter(name = "smudge", category = "tool")]
 pub struct Smudge {
-    #[param(min = 0.0, max = 1.0, step = 0.001, default = 0.5)] pub center_x: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.001, default = 0.5)] pub center_y: f32,
-    #[param(min = 1.0, max = 500.0, step = 1.0, default = 50.0, hint = "rc.pixels")] pub radius: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)] pub strength: f32,
-    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.5)] pub direction_x: f32,
-    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0)] pub direction_y: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.001, default = 0.5)]
+    pub center_x: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.001, default = 0.5)]
+    pub center_y: f32,
+    #[param(min = 1.0, max = 500.0, step = 1.0, default = 50.0, hint = "rc.pixels")]
+    pub radius: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
+    pub strength: f32,
+    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.5)]
+    pub direction_x: f32,
+    #[param(min = -1.0, max = 1.0, step = 0.01, default = 0.0)]
+    pub direction_y: f32,
 }
 
 const SMUDGE_WGSL: &str = r#"
@@ -52,15 +58,17 @@ impl Filter for Smudge {
             for x in 0..width {
                 let dx = x as f32 - cx;
                 let dy = y as f32 - cy;
-                let dist = (dx*dx + dy*dy).sqrt();
-                if dist >= self.radius { continue; }
+                let dist = (dx * dx + dy * dy).sqrt();
+                if dist >= self.radius {
+                    continue;
+                }
                 let t = dist / self.radius;
                 let w = (-2.0 * t * t).exp() * self.strength;
                 let sx = x as f32 - self.direction_x * w * self.radius;
                 let sy = y as f32 - self.direction_y * w * self.radius;
                 let src = sample_bilinear(input, width, height, sx, sy);
                 let i = ((y * width + x) * 4) as usize;
-                out[i..i+4].copy_from_slice(&src);
+                out[i..i + 4].copy_from_slice(&src);
             }
         }
         Ok(out)

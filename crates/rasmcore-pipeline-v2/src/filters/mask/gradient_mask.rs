@@ -57,9 +57,17 @@ impl Filter for GradientMask {
 
     fn gpu_shader_passes(&self, width: u32, height: u32) -> Option<Vec<GpuShader>> {
         let mut p = gpu_params_wh(width, height);
-        gpu_push_f32(&mut p, self.start); gpu_push_f32(&mut p, self.end);
+        gpu_push_f32(&mut p, self.start);
+        gpu_push_f32(&mut p, self.end);
         gpu_push_f32(&mut p, if self.vertical { 1.0 } else { 0.0 });
-        gpu_push_u32(&mut p, 0); gpu_push_u32(&mut p, 0); gpu_push_u32(&mut p, 0);
-        Some(vec![GpuShader::new(GRADIENT_MASK_WGSL.to_string(), "main", [256, 1, 1], p)])
+        gpu_push_u32(&mut p, 0);
+        gpu_push_u32(&mut p, 0);
+        gpu_push_u32(&mut p, 0);
+        Some(vec![GpuShader::new(
+            GRADIENT_MASK_WGSL.to_string(),
+            "main",
+            [256, 1, 1],
+            p,
+        )])
     }
 }

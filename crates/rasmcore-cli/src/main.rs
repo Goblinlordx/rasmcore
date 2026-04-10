@@ -14,8 +14,8 @@ use std::process;
 use rasmcore_pipeline_v2::graph::Graph;
 use rasmcore_pipeline_v2::node::NodeInfo;
 use rasmcore_pipeline_v2::registry::{
-    create_filter_node, decode_via_registry, encode_via_registry,
-    registered_filter_registrations, ParamMap,
+    ParamMap, create_filter_node, decode_via_registry, encode_via_registry,
+    registered_filter_registrations,
 };
 
 #[cfg(feature = "gpu")]
@@ -199,7 +199,9 @@ fn to_param_map(params: &HashMap<String, String>) -> ParamMap {
 
 fn build_and_execute(
     commands: Vec<CliCommand>,
-    #[cfg(feature = "gpu")] gpu_executor: Option<std::rc::Rc<dyn rasmcore_pipeline_v2::gpu::GpuExecutor>>,
+    #[cfg(feature = "gpu")] gpu_executor: Option<
+        std::rc::Rc<dyn rasmcore_pipeline_v2::gpu::GpuExecutor>,
+    >,
 ) -> Result<(), String> {
     let mut graph = Graph::new(64 * 1024 * 1024); // 64MB spatial cache
 
@@ -234,7 +236,10 @@ fn build_and_execute(
                     info,
                 }));
                 active_node = Some(id);
-                eprintln!("  [read] {path} → node {id} ({}x{})", decoded.width, decoded.height);
+                eprintln!(
+                    "  [read] {path} → node {id} ({}x{})",
+                    decoded.width, decoded.height
+                );
             }
 
             CliCommand::Filter {
@@ -298,9 +303,10 @@ fn build_and_execute(
                     .map_err(|e| format!("Failed to get node info: {e}"))?;
 
                 // Encode via V2 codec registry
-                let bytes = encode_via_registry(format, &pixels, info.width, info.height, &ParamMap::new())
-                    .ok_or_else(|| format!("Unsupported output format: {format}"))?
-                    .map_err(|e| format!("Failed to encode {format}: {e}"))?;
+                let bytes =
+                    encode_via_registry(format, &pixels, info.width, info.height, &ParamMap::new())
+                        .ok_or_else(|| format!("Unsupported output format: {format}"))?
+                        .map_err(|e| format!("Failed to encode {format}: {e}"))?;
 
                 std::fs::write(path, &bytes).map_err(|e| format!("Failed to write {path}: {e}"))?;
                 eprintln!("  [done] {} bytes written", bytes.len());
@@ -353,7 +359,11 @@ fn print_filters() {
     let regs = registered_filter_registrations();
     let mut by_category: HashMap<&str, Vec<_>> = HashMap::new();
     for r in &regs {
-        let cat = if r.category.is_empty() { "uncategorized" } else { r.category };
+        let cat = if r.category.is_empty() {
+            "uncategorized"
+        } else {
+            r.category
+        };
         by_category.entry(cat).or_default().push(*r);
     }
 

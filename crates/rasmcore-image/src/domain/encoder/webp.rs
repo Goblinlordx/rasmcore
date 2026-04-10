@@ -52,7 +52,6 @@ fn encode_lossy(pixels: &[u8], info: &ImageInfo, quality: u8) -> Result<Vec<u8>,
         .map_err(|e| ImageError::ProcessingFailed(format!("WebP lossy encode failed: {e}")))
 }
 
-
 // ─── Encoder Registration ──────────────────────────────────────────────────
 
 inventory::submit! {

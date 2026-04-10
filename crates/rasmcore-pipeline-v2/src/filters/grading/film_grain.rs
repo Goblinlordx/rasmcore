@@ -1,8 +1,8 @@
 //! Film grain simulation — position-dependent, NOT CLUT-compatible.
 
 use crate::node::PipelineError;
-use crate::ops::{Filter, GpuFilter};
 use crate::noise;
+use crate::ops::{Filter, GpuFilter};
 
 use super::super::helpers::luminance;
 
@@ -145,7 +145,8 @@ impl GpuFilter for FilmGrain {
             extra_buffers: self.extra_buffers(),
             reduction_buffers: vec![],
             convergence_check: None,
-            loop_dispatch: None, setup: None,
+            loop_dispatch: None,
+            setup: None,
         }
     }
 }
@@ -185,7 +186,10 @@ mod tests {
         };
         let out1 = f.compute(&input, 1, 1).unwrap();
         let out2 = f.compute(&input, 1, 1).unwrap();
-        assert_eq!(out1, out2, "Film grain should be deterministic with same seed");
+        assert_eq!(
+            out1, out2,
+            "Film grain should be deterministic with same seed"
+        );
     }
 
     #[test]
@@ -217,14 +221,38 @@ mod tests {
     #[test]
     fn film_grain_gpu_shader_valid() {
         let shader = film_grain_shader();
-        assert!(shader.contains("fn splitmix64("), "Shader should contain splitmix64");
-        assert!(shader.contains("fn noise_2d("), "Shader should contain noise_2d");
-        assert!(shader.contains("@compute @workgroup_size(16, 16, 1)"), "Shader should have workgroup_size");
-        assert!(shader.contains("load_pixel"), "Shader should use load_pixel");
-        assert!(shader.contains("store_pixel"), "Shader should use store_pixel");
-        assert!(shader.contains("params.amount"), "Shader should reference params.amount");
-        assert!(shader.contains("params.color_grain"), "Shader should reference color_grain flag");
-        assert!(shader.contains("params.seed_lo"), "Shader should use seed_lo/seed_hi");
+        assert!(
+            shader.contains("fn splitmix64("),
+            "Shader should contain splitmix64"
+        );
+        assert!(
+            shader.contains("fn noise_2d("),
+            "Shader should contain noise_2d"
+        );
+        assert!(
+            shader.contains("@compute @workgroup_size(16, 16, 1)"),
+            "Shader should have workgroup_size"
+        );
+        assert!(
+            shader.contains("load_pixel"),
+            "Shader should use load_pixel"
+        );
+        assert!(
+            shader.contains("store_pixel"),
+            "Shader should use store_pixel"
+        );
+        assert!(
+            shader.contains("params.amount"),
+            "Shader should reference params.amount"
+        );
+        assert!(
+            shader.contains("params.color_grain"),
+            "Shader should reference color_grain flag"
+        );
+        assert!(
+            shader.contains("params.seed_lo"),
+            "Shader should use seed_lo/seed_hi"
+        );
     }
 
     #[test]
@@ -248,6 +276,9 @@ mod tests {
         // seed_lo and seed_hi should be non-zero (XOR'd with SEED_FILM_GRAIN)
         let seed_lo = u32::from_le_bytes(params[16..20].try_into().unwrap());
         let seed_hi = u32::from_le_bytes(params[20..24].try_into().unwrap());
-        assert!(seed_lo != 0 || seed_hi != 0, "Seed should be mixed with offset");
+        assert!(
+            seed_lo != 0 || seed_hi != 0,
+            "Seed should be mixed with offset"
+        );
     }
 }

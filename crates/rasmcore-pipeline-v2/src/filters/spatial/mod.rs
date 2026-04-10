@@ -159,7 +159,9 @@ pub(crate) fn make_polygon_kernel(radius: u32, sides: u32, rotation_deg: f32) ->
             let dx = kx as f32 - rf;
             let dy = ky as f32 - rf;
             // Point is inside polygon if it's inside ALL half-planes
-            let inside = normals.iter().all(|&(nx, ny)| dx * nx + dy * ny <= rf + 0.5);
+            let inside = normals
+                .iter()
+                .all(|&(nx, ny)| dx * nx + dy * ny <= rf + 0.5);
             if inside {
                 kernel[ky * ksize + kx] = 1.0;
             }
@@ -255,7 +257,8 @@ mod tests {
         assert!(
             kernel_5s.len() > kernel_3s.len(),
             "5*sigma kernel ({}) should be larger than 3*sigma kernel ({})",
-            kernel_5s.len(), kernel_3s.len()
+            kernel_5s.len(),
+            kernel_3s.len()
         );
         // 5*sigma: ksize = round(5*2*5+1) = 51
         // 3*sigma: ksize = round(5*2*3+1) = 31
@@ -270,7 +273,7 @@ mod tests {
         assert_eq!(center as usize, kernel.len() / 2);
         assert_eq!(bytes.len(), kernel.len() * 4);
         for (i, &w) in kernel.iter().enumerate() {
-            let from_bytes = f32::from_le_bytes(bytes[i*4..i*4+4].try_into().unwrap());
+            let from_bytes = f32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().unwrap());
             assert!((from_bytes - w).abs() < 1e-7, "mismatch at index {i}");
         }
     }
@@ -287,7 +290,10 @@ mod tests {
     #[test]
     fn sharpen_preserves_solid() {
         let input = solid_rgba(16, 16, [0.5, 0.5, 0.5, 1.0]);
-        let sharp = Sharpen { radius: 2.0, amount: 1.0 };
+        let sharp = Sharpen {
+            radius: 2.0,
+            amount: 1.0,
+        };
         let output = sharp.compute(&input, 16, 16).unwrap();
         // Sharpening a solid image = no change (no edges)
         assert!((output[0] - 0.5).abs() < 0.01);
@@ -339,7 +345,10 @@ mod tests {
     #[test]
     fn motion_blur_zero_length_identity() {
         let input = gradient_rgba(8, 8);
-        let mb = MotionBlur { angle: 0.0, length: 0.0 };
+        let mb = MotionBlur {
+            angle: 0.0,
+            length: 0.0,
+        };
         let output = mb.compute(&input, 8, 8).unwrap();
         assert_eq!(input, output);
     }
@@ -387,12 +396,48 @@ mod tests {
         let input = gradient_rgba(32, 32);
         let n = 32 * 32 * 4;
 
-        assert_eq!(GaussianBlur { radius: 3.0 }.compute(&input, 32, 32).unwrap().len(), n);
-        assert_eq!(BoxBlur { radius: 2 }.compute(&input, 32, 32).unwrap().len(), n);
-        assert_eq!(Sharpen { radius: 2.0, amount: 1.0 }.compute(&input, 32, 32).unwrap().len(), n);
-        assert_eq!(Median { radius: 1 }.compute(&input, 32, 32).unwrap().len(), n);
-        assert_eq!(HighPass { radius: 2.0 }.compute(&input, 32, 32).unwrap().len(), n);
-        assert_eq!(MotionBlur { angle: 45.0, length: 5.0 }.compute(&input, 32, 32).unwrap().len(), n);
+        assert_eq!(
+            GaussianBlur { radius: 3.0 }
+                .compute(&input, 32, 32)
+                .unwrap()
+                .len(),
+            n
+        );
+        assert_eq!(
+            BoxBlur { radius: 2 }.compute(&input, 32, 32).unwrap().len(),
+            n
+        );
+        assert_eq!(
+            Sharpen {
+                radius: 2.0,
+                amount: 1.0
+            }
+            .compute(&input, 32, 32)
+            .unwrap()
+            .len(),
+            n
+        );
+        assert_eq!(
+            Median { radius: 1 }.compute(&input, 32, 32).unwrap().len(),
+            n
+        );
+        assert_eq!(
+            HighPass { radius: 2.0 }
+                .compute(&input, 32, 32)
+                .unwrap()
+                .len(),
+            n
+        );
+        assert_eq!(
+            MotionBlur {
+                angle: 45.0,
+                length: 5.0
+            }
+            .compute(&input, 32, 32)
+            .unwrap()
+            .len(),
+            n
+        );
     }
 
     // ── GPU wiring tests ─────────────────────────────────────────────────────
@@ -416,7 +461,10 @@ mod tests {
 
     #[test]
     fn sharpen_gpu_produces_3_passes() {
-        let sharp = Sharpen { radius: 2.0, amount: 1.0 };
+        let sharp = Sharpen {
+            radius: 2.0,
+            amount: 1.0,
+        };
         let passes = sharp.gpu_shaders(64, 64);
         assert_eq!(passes.len(), 3, "Sharpen: blur H + blur V + unsharp apply");
     }
@@ -454,7 +502,11 @@ mod tests {
 
     #[test]
     fn bilateral_gpu_single_pass() {
-        let bilat = Bilateral { diameter: 5, sigma_color: 0.1, sigma_space: 3.0 };
+        let bilat = Bilateral {
+            diameter: 5,
+            sigma_color: 0.1,
+            sigma_space: 3.0,
+        };
         let passes = bilat.gpu_shaders(64, 64);
         assert_eq!(passes.len(), 1);
         // Params should be 32 bytes (8 x u32/f32)
@@ -464,7 +516,10 @@ mod tests {
 
     #[test]
     fn motion_blur_gpu_single_pass() {
-        let mb = MotionBlur { angle: 45.0, length: 10.0 };
+        let mb = MotionBlur {
+            angle: 45.0,
+            length: 10.0,
+        };
         let passes = mb.gpu_shaders(64, 64);
         assert_eq!(passes.len(), 1);
         let params = mb.params(64, 64);
@@ -491,14 +546,50 @@ mod tests {
 
         assert!(!GaussianBlur { radius: 3.0 }.gpu_shaders(w, h).is_empty());
         assert!(!BoxBlur { radius: 2 }.gpu_shaders(w, h).is_empty());
-        assert!(!Sharpen { radius: 2.0, amount: 1.0 }.gpu_shaders(w, h).is_empty());
+        assert!(
+            !Sharpen {
+                radius: 2.0,
+                amount: 1.0
+            }
+            .gpu_shaders(w, h)
+            .is_empty()
+        );
         assert!(!Median { radius: 1 }.gpu_shaders(w, h).is_empty());
-        assert!(!Convolve {
-            kernel: vec![1.0; 9], kernel_width: 3, kernel_height: 3, divisor: 9.0,
-        }.gpu_shaders(w, h).is_empty());
-        assert!(!Bilateral { diameter: 5, sigma_color: 0.1, sigma_space: 3.0 }.gpu_shaders(w, h).is_empty());
-        assert!(!MotionBlur { angle: 0.0, length: 5.0 }.gpu_shaders(w, h).is_empty());
+        assert!(
+            !Convolve {
+                kernel: vec![1.0; 9],
+                kernel_width: 3,
+                kernel_height: 3,
+                divisor: 9.0,
+            }
+            .gpu_shaders(w, h)
+            .is_empty()
+        );
+        assert!(
+            !Bilateral {
+                diameter: 5,
+                sigma_color: 0.1,
+                sigma_space: 3.0
+            }
+            .gpu_shaders(w, h)
+            .is_empty()
+        );
+        assert!(
+            !MotionBlur {
+                angle: 0.0,
+                length: 5.0
+            }
+            .gpu_shaders(w, h)
+            .is_empty()
+        );
         assert!(!HighPass { radius: 2.0 }.gpu_shaders(w, h).is_empty());
-        assert!(!DisplacementMap { map_x: vec![0.0; 1024], map_y: vec![0.0; 1024] }.gpu_shaders(w, h).is_empty());
+        assert!(
+            !DisplacementMap {
+                map_x: vec![0.0; 1024],
+                map_y: vec![0.0; 1024]
+            }
+            .gpu_shaders(w, h)
+            .is_empty()
+        );
     }
 }

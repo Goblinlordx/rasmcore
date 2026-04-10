@@ -16,15 +16,17 @@ pub struct TemplateMatch {
 
 impl Filter for TemplateMatch {
     fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
-        let w = width as usize; let h = height as usize;
+        let w = width as usize;
+        let h = height as usize;
         let ts = self.template_size as usize;
-        let tx = w / 2 - ts / 2; let ty = h / 2 - ts / 2;
+        let tx = w / 2 - ts / 2;
+        let ty = h / 2 - ts / 2;
         // Extract template from center
         let mut tmpl = Vec::with_capacity(ts * ts);
         for dy in 0..ts {
             for dx in 0..ts {
                 let i = ((ty + dy) * w + tx + dx) * 4;
-                tmpl.push(input[i] * 0.2126 + input[i+1] * 0.7152 + input[i+2] * 0.0722);
+                tmpl.push(input[i] * 0.2126 + input[i + 1] * 0.7152 + input[i + 2] * 0.0722);
             }
         }
         // Normalized cross-correlation
@@ -35,13 +37,17 @@ impl Filter for TemplateMatch {
                 for dy in 0..ts {
                     for dx in 0..ts {
                         let i = ((y + dy) * w + x + dx) * 4;
-                        let luma = input[i] * 0.2126 + input[i+1] * 0.7152 + input[i+2] * 0.0722;
+                        let luma =
+                            input[i] * 0.2126 + input[i + 1] * 0.7152 + input[i + 2] * 0.0722;
                         sum += luma * tmpl[dy * ts + dx];
                     }
                 }
                 let v = (sum / (ts * ts) as f32).min(1.0);
                 let oi = (y * w + x) * 4;
-                out[oi] = v; out[oi+1] = v; out[oi+2] = v; out[oi+3] = 1.0;
+                out[oi] = v;
+                out[oi + 1] = v;
+                out[oi + 2] = v;
+                out[oi + 3] = 1.0;
             }
         }
         Ok(out)
@@ -54,7 +60,8 @@ impl Filter for TemplateMatch {
         // so we use a self-correlation approach: the shader computes per-pixel
         // gradient energy as a proxy for "match strength" (simplified).
         let ts = self.template_size;
-        let tmpl_wgsl = format!(r#"
+        let tmpl_wgsl = format!(
+            r#"
 struct Params {{ width: u32, height: u32, ts: u32, _pad: u32, }}
 @group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
 @group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
@@ -81,11 +88,15 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {{
   let v = clamp(variance * 10.0, 0.0, 1.0);
   output[idx] = vec4<f32>(v, v, v, input[idx].w);
 }}
-"#);
+"#
+        );
         let mut p = gpu_params_wh(_w, _h);
-        gpu_push_u32(&mut p, ts); gpu_push_u32(&mut p, 0);
+        gpu_push_u32(&mut p, ts);
+        gpu_push_u32(&mut p, 0);
         Some(vec![GpuShader::new(tmpl_wgsl, "main", [16, 16, 1], p)])
     }
 
-    fn tile_overlap(&self) -> u32 { self.template_size / 2 }
+    fn tile_overlap(&self) -> u32 {
+        self.template_size / 2
+    }
 }

@@ -31,12 +31,18 @@ pub struct BufferPool {
 
 impl BufferPool {
     pub fn new() -> Self {
-        Self { buffers: Vec::new(), max_idle: 4 }
+        Self {
+            buffers: Vec::new(),
+            max_idle: 4,
+        }
     }
 
     /// Create a pool with a custom max idle count.
     pub fn with_max_idle(max_idle: usize) -> Self {
-        Self { buffers: Vec::new(), max_idle }
+        Self {
+            buffers: Vec::new(),
+            max_idle,
+        }
     }
 
     /// Take a buffer from the pool, or allocate a new one at the given size.
@@ -309,7 +315,10 @@ impl Graph {
 
     /// Get the content hash for a node.
     pub fn content_hash(&self, node_id: u32) -> ContentHash {
-        self.content_hashes.get(node_id as usize).copied().unwrap_or(ZERO_HASH)
+        self.content_hashes
+            .get(node_id as usize)
+            .copied()
+            .unwrap_or(ZERO_HASH)
     }
 
     /// Set the cross-pipeline layer cache (injected, shared).
@@ -395,10 +404,7 @@ impl Graph {
     /// chain exists.
     ///
     /// Used by hosts (browser JS) that handle GPU dispatch externally.
-    pub fn gpu_plan(
-        &mut self,
-        node_id: u32,
-    ) -> Result<Option<GpuPlan>, PipelineError> {
+    pub fn gpu_plan(&mut self, node_id: u32) -> Result<Option<GpuPlan>, PipelineError> {
         // Run fusion first
         if !self.optimized {
             crate::fusion::optimize(self);
@@ -502,9 +508,11 @@ impl Graph {
         // PriorStage referencing that target.
         let mut stages = Vec::new();
         // Track which source_ids have been computed (name of the stage that computed them)
-        let mut computed_sources: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
+        let mut computed_sources: std::collections::HashMap<u32, String> =
+            std::collections::HashMap::new();
         // Also track which node_ids are display targets (for ref-based branching)
-        let mut target_nodes: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
+        let mut target_nodes: std::collections::HashMap<u32, String> =
+            std::collections::HashMap::new();
         for c in &chains {
             target_nodes.insert(c.node_id, c.name.clone());
         }
@@ -558,7 +566,8 @@ impl Graph {
 
         // Emit deferred stages (targets that branch from another target's output)
         for c in deferred {
-            let prior_name = target_nodes.get(&c.source_id)
+            let prior_name = target_nodes
+                .get(&c.source_id)
                 .or_else(|| computed_sources.get(&c.source_id))
                 .cloned()
                 .unwrap_or_default();
@@ -597,10 +606,7 @@ impl Graph {
         let chain = self.collect_gpu_chain(node_id, info.width, info.height);
 
         if let Some((_source_id, shaders)) = chain {
-            let sources: Vec<String> = shaders
-                .iter()
-                .map(|s| s.body.clone())
-                .collect();
+            let sources: Vec<String> = shaders.iter().map(|s| s.body.clone()).collect();
             executor.prepare(&sources);
         }
 
@@ -666,12 +672,15 @@ impl Graph {
                         has_any_analysis = true;
                     }
                     // Prepend (we're walking backwards)
-                    entries.insert(0, ChainEntry {
-                        node_index: current as usize,
-                        shaders: s,
-                        has_analysis_outputs: ao,
-                        has_analysis_inputs: ai,
-                    });
+                    entries.insert(
+                        0,
+                        ChainEntry {
+                            node_index: current as usize,
+                            shaders: s,
+                            has_analysis_outputs: ao,
+                            has_analysis_inputs: ai,
+                        },
+                    );
                     current = upstream_ids[0];
                 }
                 _ => {
@@ -686,10 +695,8 @@ impl Graph {
 
         // Fast path: no analysis nodes — return shaders directly (zero overhead).
         if !has_any_analysis {
-            let chain: Vec<crate::node::GpuShader> = entries
-                .into_iter()
-                .flat_map(|e| e.shaders)
-                .collect();
+            let chain: Vec<crate::node::GpuShader> =
+                entries.into_iter().flat_map(|e| e.shaders).collect();
             return Some((current, chain));
         }
 
@@ -708,10 +715,8 @@ impl Graph {
             Ok(c) => c,
             Err(_) => {
                 // Negotiation failed — fall back to non-analysis chain
-                let chain: Vec<crate::node::GpuShader> = entries
-                    .into_iter()
-                    .flat_map(|e| e.shaders)
-                    .collect();
+                let chain: Vec<crate::node::GpuShader> =
+                    entries.into_iter().flat_map(|e| e.shaders).collect();
                 return Some((current, chain));
             }
         };
@@ -721,8 +726,8 @@ impl Graph {
         for (i, entry) in entries.into_iter().enumerate() {
             if entry.has_analysis_outputs || entry.has_analysis_inputs {
                 let mapping = ctx.node_mapping(i);
-                if let Some(resolved_shaders) = self.nodes[entry.node_index]
-                    .gpu_shaders_with_context(width, height, &mapping)
+                if let Some(resolved_shaders) =
+                    self.nodes[entry.node_index].gpu_shaders_with_context(width, height, &mapping)
                 {
                     chain.extend(resolved_shaders);
                 } else {
@@ -749,7 +754,9 @@ impl Graph {
             && let Some((pixels, _w, _h)) = lc.borrow_mut().get(&node_hash)
         {
             // Layer cache stores full-node output. If request is a sub-region, crop.
-            let info = self.nodes.get(node_id as usize)
+            let info = self
+                .nodes
+                .get(node_id as usize)
                 .ok_or(PipelineError::NodeNotFound(node_id))?
                 .info();
             let full_rect = Rect::new(0, 0, info.width, info.height);
@@ -773,11 +780,19 @@ impl Graph {
 
         // 2. GPU-primary dispatch — batch consecutive GPU nodes
         if let Some(executor) = &self.gpu_executor
-            && let Some((source_id, gpu_chain)) = self.collect_gpu_chain(node_id, info.width, info.height)
+            && let Some((source_id, gpu_chain)) =
+                self.collect_gpu_chain(node_id, info.width, info.height)
         {
             let timer = if self.tracing {
-                Some(TraceTimer::new(TraceEventKind::GpuDispatch, format!("node_{node_id}"))
-                    .with_detail(format!("{} shaders, {}x{}", gpu_chain.len(), request.width, request.height)))
+                Some(
+                    TraceTimer::new(TraceEventKind::GpuDispatch, format!("node_{node_id}"))
+                        .with_detail(format!(
+                            "{} shaders, {}x{}",
+                            gpu_chain.len(),
+                            request.width,
+                            request.height
+                        )),
+                )
             } else {
                 None
             };
@@ -789,7 +804,8 @@ impl Graph {
                     if let Some(t) = timer {
                         self.trace.push(t.finish());
                     }
-                    self.cache.store(node_id, request, gpu_pixels.clone(), node_hash);
+                    self.cache
+                        .store(node_id, request, gpu_pixels.clone(), node_hash);
                     return Ok(gpu_pixels);
                 }
                 Err(_) => {
@@ -800,8 +816,10 @@ impl Graph {
 
         // 3. CPU fallback
         let cpu_timer = if self.tracing {
-            Some(TraceTimer::new(TraceEventKind::CpuFallback, format!("node_{node_id}"))
-                .with_detail(format!("{}x{}", request.width, request.height)))
+            Some(
+                TraceTimer::new(TraceEventKind::CpuFallback, format!("node_{node_id}"))
+                    .with_detail(format!("{}x{}", request.width, request.height)),
+            )
         } else {
             None
         };
@@ -838,8 +856,7 @@ impl Graph {
         } else {
             pixels.clone()
         };
-        self.cache
-            .store(node_id, request, cache_pixels, node_hash);
+        self.cache.store(node_id, request, cache_pixels, node_hash);
 
         // Layer cache — store full-node results for cross-pipeline reuse.
         // Only store when the request covers the full node output.
@@ -848,7 +865,8 @@ impl Graph {
         {
             let full_rect = Rect::new(0, 0, info.width, info.height);
             if request == full_rect && !lc.borrow().contains(&node_hash) {
-                lc.borrow_mut().store(node_hash, &pixels, info.width, info.height);
+                lc.borrow_mut()
+                    .store(node_hash, &pixels, info.width, info.height);
             }
         }
 
@@ -863,8 +881,10 @@ impl Graph {
         // Run fusion optimizer before execution — skip if already optimized
         if !self.optimized {
             let timer = if self.tracing {
-                Some(TraceTimer::new(TraceEventKind::Fusion, "optimize")
-                    .with_detail(format!("{} nodes", self.nodes.len())))
+                Some(
+                    TraceTimer::new(TraceEventKind::Fusion, "optimize")
+                        .with_detail(format!("{} nodes", self.nodes.len())),
+                )
             } else {
                 None
             };
@@ -908,8 +928,7 @@ impl Graph {
                 for row in 0..th as usize {
                     let dst = (y as usize + row) * stride + x as usize * 4;
                     let src = row * tile_stride;
-                    out[dst..dst + tile_stride]
-                        .copy_from_slice(&tile[src..src + tile_stride]);
+                    out[dst..dst + tile_stride].copy_from_slice(&tile[src..src + tile_stride]);
                 }
                 x += tile_size;
             }
@@ -969,9 +988,9 @@ impl Graph {
         // Get the upstream IDs for this analysis node
         let upstream_ids = node.upstream_ids();
         if upstream_ids.is_empty() {
-            return Some(Err(PipelineError::ComputeError(
-                format!("analysis node {node_id} has no upstream"),
-            )));
+            return Some(Err(PipelineError::ComputeError(format!(
+                "analysis node {node_id} has no upstream"
+            ))));
         }
 
         // Fetch full pixels from the first upstream
@@ -999,7 +1018,9 @@ impl Graph {
         node_id: u32,
         updater: impl FnOnce(&dyn Node) -> Box<dyn Node>,
     ) -> Result<(), PipelineError> {
-        let node = self.nodes.get(node_id as usize)
+        let node = self
+            .nodes
+            .get(node_id as usize)
             .ok_or(PipelineError::NodeNotFound(node_id))?;
         let new_node = updater(&**node);
         self.nodes[node_id as usize] = new_node;
@@ -1344,7 +1365,10 @@ mod tests {
 
         let _pixels = g.request_full(src).unwrap();
         let trace = g.take_trace();
-        assert!(trace.events.is_empty(), "no events when tracing is disabled");
+        assert!(
+            trace.events.is_empty(),
+            "no events when tracing is disabled"
+        );
     }
 
     #[test]
@@ -1368,7 +1392,11 @@ mod tests {
         assert!(plan.is_some(), "non-GPU nodes get a passthrough plan");
         let plan = plan.unwrap();
         assert!(plan.shaders.is_empty(), "passthrough plan has no shaders");
-        assert_eq!(plan.input_pixels.len(), 4 * 4 * 4, "pixels from CPU compute");
+        assert_eq!(
+            plan.input_pixels.len(),
+            4 * 4 * 4,
+            "pixels from CPU compute"
+        );
     }
 
     #[test]
@@ -1381,8 +1409,9 @@ mod tests {
         }));
 
         // Inject custom pixels as if GPU computed them
-        let injected = vec![1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0,
-                            0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+        let injected = vec![
+            1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+        ];
         g.inject_gpu_result(src, injected.clone());
 
         // Subsequent render should return the injected data (from cache)
@@ -1405,7 +1434,11 @@ mod tests {
 
         let src_hash = source_hash(b"test image");
         let src = g.add_node_with_hash(
-            Box::new(SolidColorNode { width: 2, height: 2, color: [0.5, 0.3, 0.1, 1.0] }),
+            Box::new(SolidColorNode {
+                width: 2,
+                height: 2,
+                color: [0.5, 0.3, 0.1, 1.0],
+            }),
             src_hash,
         );
 
@@ -1417,7 +1450,11 @@ mod tests {
             let info = g.node_info(prev_id).unwrap();
             let h = content_hash(&prev_hash, &format!("scale_{i}"), &factor.to_le_bytes());
             let id = g.add_node_with_hash(
-                Box::new(ScaleNode { upstream: prev_id, factor, info }),
+                Box::new(ScaleNode {
+                    upstream: prev_id,
+                    factor,
+                    info,
+                }),
                 h,
             );
             ids.push(id);
@@ -1430,7 +1467,9 @@ mod tests {
 
     #[test]
     fn layer_cache_identity_all_hits_on_second_run() {
-        let lc = Rc::new(RefCell::new(crate::layer_cache::LayerCache::new(64 * 1024 * 1024)));
+        let lc = Rc::new(RefCell::new(crate::layer_cache::LayerCache::new(
+            64 * 1024 * 1024,
+        )));
 
         // First run: all misses, all results stored
         let (mut g1, ids1) = build_5_filter_chain(lc.clone(), [1.0, 2.0, 0.5, 1.5, 0.8]);
@@ -1438,7 +1477,10 @@ mod tests {
         let out1 = g1.request_full(last1).unwrap();
 
         let stats1 = lc.borrow().stats();
-        assert_eq!(stats1.entries, 6, "all 6 nodes (source + 5 filters) should be stored");
+        assert_eq!(
+            stats1.entries, 6,
+            "all 6 nodes (source + 5 filters) should be stored"
+        );
         assert_eq!(stats1.hits, 0, "no hits on first run");
         assert_eq!(stats1.misses, 6, "6 misses on first run (one per node)");
 
@@ -1452,13 +1494,18 @@ mod tests {
 
         let stats2 = lc.borrow().stats();
         // The last node hits immediately — no intermediate nodes are checked
-        assert_eq!(stats2.hits, 1, "1 hit (last node short-circuits entire chain)");
+        assert_eq!(
+            stats2.hits, 1,
+            "1 hit (last node short-circuits entire chain)"
+        );
         assert_eq!(stats2.misses, 6, "no new misses on identical second run");
     }
 
     #[test]
     fn layer_cache_5_filter_chain_last_param_changed() {
-        let lc = Rc::new(RefCell::new(crate::layer_cache::LayerCache::new(64 * 1024 * 1024)));
+        let lc = Rc::new(RefCell::new(crate::layer_cache::LayerCache::new(
+            64 * 1024 * 1024,
+        )));
 
         // First run: source → scale(1.0) → scale(2.0) → scale(0.5) → scale(1.5) → scale(0.8)
         let (mut g1, ids1) = build_5_filter_chain(lc.clone(), [1.0, 2.0, 0.5, 1.5, 0.8]);
@@ -1486,7 +1533,9 @@ mod tests {
 
     #[test]
     fn layer_cache_middle_param_change_invalidates_downstream() {
-        let lc = Rc::new(RefCell::new(crate::layer_cache::LayerCache::new(64 * 1024 * 1024)));
+        let lc = Rc::new(RefCell::new(crate::layer_cache::LayerCache::new(
+            64 * 1024 * 1024,
+        )));
 
         // First run
         let (mut g1, ids1) = build_5_filter_chain(lc.clone(), [1.0, 2.0, 0.5, 1.5, 0.8]);
@@ -1521,15 +1570,28 @@ mod tests {
 
     impl Node for MockGpuNode {
         fn info(&self) -> NodeInfo {
-            NodeInfo { width: self.width, height: self.height, color_space: ColorSpace::Linear }
+            NodeInfo {
+                width: self.width,
+                height: self.height,
+                color_space: ColorSpace::Linear,
+            }
         }
-        fn compute(&self, request: Rect, upstream: &mut dyn Upstream) -> Result<Vec<f32>, PipelineError> {
+        fn compute(
+            &self,
+            request: Rect,
+            upstream: &mut dyn Upstream,
+        ) -> Result<Vec<f32>, PipelineError> {
             upstream.request(self.upstream, request)
         }
-        fn upstream_ids(&self) -> Vec<u32> { vec![self.upstream] }
+        fn upstream_ids(&self) -> Vec<u32> {
+            vec![self.upstream]
+        }
         fn gpu_shaders(&self, _w: u32, _h: u32) -> Option<Vec<crate::node::GpuShader>> {
             Some(vec![crate::node::GpuShader::new(
-                self.shader_body.clone(), "main", [8, 8, 1], vec![],
+                self.shader_body.clone(),
+                "main",
+                [8, 8, 1],
+                vec![],
             )])
         }
     }
@@ -1546,22 +1608,44 @@ mod tests {
     }
 
     impl MockAnalysisProducer {
-        fn new(upstream: u32, w: u32, h: u32, logical_id: u32, kind: crate::analysis_buffer::AnalysisBufferKind) -> Self {
+        fn new(
+            upstream: u32,
+            w: u32,
+            h: u32,
+            logical_id: u32,
+            kind: crate::analysis_buffer::AnalysisBufferKind,
+        ) -> Self {
             Self {
-                upstream, width: w, height: h, logical_id, kind,
-                outputs: vec![crate::analysis_buffer::AnalysisBufferDecl::new(logical_id, kind)],
+                upstream,
+                width: w,
+                height: h,
+                logical_id,
+                kind,
+                outputs: vec![crate::analysis_buffer::AnalysisBufferDecl::new(
+                    logical_id, kind,
+                )],
             }
         }
     }
 
     impl Node for MockAnalysisProducer {
         fn info(&self) -> NodeInfo {
-            NodeInfo { width: self.width, height: self.height, color_space: ColorSpace::Linear }
+            NodeInfo {
+                width: self.width,
+                height: self.height,
+                color_space: ColorSpace::Linear,
+            }
         }
-        fn compute(&self, request: Rect, upstream: &mut dyn Upstream) -> Result<Vec<f32>, PipelineError> {
+        fn compute(
+            &self,
+            request: Rect,
+            upstream: &mut dyn Upstream,
+        ) -> Result<Vec<f32>, PipelineError> {
             upstream.request(self.upstream, request)
         }
-        fn upstream_ids(&self) -> Vec<u32> { vec![self.upstream] }
+        fn upstream_ids(&self) -> Vec<u32> {
+            vec![self.upstream]
+        }
         fn gpu_shaders(&self, _w: u32, _h: u32) -> Option<Vec<crate::node::GpuShader>> {
             // Two reduction passes using logical buffer ID
             Some(vec![
@@ -1580,7 +1664,9 @@ mod tests {
             ])
         }
         fn gpu_shaders_with_context(
-            &self, _w: u32, _h: u32,
+            &self,
+            _w: u32,
+            _h: u32,
             mapping: &crate::analysis_buffer::NodeBufferMapping,
         ) -> Option<Vec<crate::node::GpuShader>> {
             let resolved = mapping.resolve(self.logical_id);
@@ -1617,7 +1703,10 @@ mod tests {
     impl MockAnalysisConsumer {
         fn new(upstream: u32, w: u32, h: u32, logical_id: u32) -> Self {
             Self {
-                upstream, width: w, height: h, logical_id,
+                upstream,
+                width: w,
+                height: h,
+                logical_id,
                 inputs: vec![crate::analysis_buffer::AnalysisBufferRef::new(logical_id)],
             }
         }
@@ -1625,12 +1714,22 @@ mod tests {
 
     impl Node for MockAnalysisConsumer {
         fn info(&self) -> NodeInfo {
-            NodeInfo { width: self.width, height: self.height, color_space: ColorSpace::Linear }
+            NodeInfo {
+                width: self.width,
+                height: self.height,
+                color_space: ColorSpace::Linear,
+            }
         }
-        fn compute(&self, request: Rect, upstream: &mut dyn Upstream) -> Result<Vec<f32>, PipelineError> {
+        fn compute(
+            &self,
+            request: Rect,
+            upstream: &mut dyn Upstream,
+        ) -> Result<Vec<f32>, PipelineError> {
             upstream.request(self.upstream, request)
         }
-        fn upstream_ids(&self) -> Vec<u32> { vec![self.upstream] }
+        fn upstream_ids(&self) -> Vec<u32> {
+            vec![self.upstream]
+        }
         fn gpu_shaders(&self, _w: u32, _h: u32) -> Option<Vec<crate::node::GpuShader>> {
             // Apply shader that reads from logical buffer ID
             Some(vec![
@@ -1643,7 +1742,9 @@ mod tests {
             ])
         }
         fn gpu_shaders_with_context(
-            &self, _w: u32, _h: u32,
+            &self,
+            _w: u32,
+            _h: u32,
             mapping: &crate::analysis_buffer::NodeBufferMapping,
         ) -> Option<Vec<crate::node::GpuShader>> {
             let resolved = mapping.resolve(self.logical_id);
@@ -1665,12 +1766,22 @@ mod tests {
     fn collect_gpu_chain_plain_nodes_unchanged() {
         // Regression: plain GPU nodes (no analysis) work exactly as before
         let mut g = Graph::new(0);
-        let src = g.add_node(Box::new(SolidColorNode { width: 4, height: 4, color: [0.5; 4] }));
+        let src = g.add_node(Box::new(SolidColorNode {
+            width: 4,
+            height: 4,
+            color: [0.5; 4],
+        }));
         let n1 = g.add_node(Box::new(MockGpuNode {
-            upstream: src, width: 4, height: 4, shader_body: "// pass1".into(),
+            upstream: src,
+            width: 4,
+            height: 4,
+            shader_body: "// pass1".into(),
         }));
         let n2 = g.add_node(Box::new(MockGpuNode {
-            upstream: n1, width: 4, height: 4, shader_body: "// pass2".into(),
+            upstream: n1,
+            width: 4,
+            height: 4,
+            shader_body: "// pass2".into(),
         }));
 
         let result = g.collect_gpu_chain(n2, 4, 4);
@@ -1686,11 +1797,22 @@ mod tests {
     fn collect_gpu_chain_stops_at_non_gpu() {
         // Regression: chain stops at non-GPU node
         let mut g = Graph::new(0);
-        let src = g.add_node(Box::new(SolidColorNode { width: 4, height: 4, color: [0.5; 4] }));
+        let src = g.add_node(Box::new(SolidColorNode {
+            width: 4,
+            height: 4,
+            color: [0.5; 4],
+        }));
         let info = g.node_info(src).unwrap();
-        let cpu_node = g.add_node(Box::new(ScaleNode { upstream: src, factor: 2.0, info }));
+        let cpu_node = g.add_node(Box::new(ScaleNode {
+            upstream: src,
+            factor: 2.0,
+            info,
+        }));
         let gpu_node = g.add_node(Box::new(MockGpuNode {
-            upstream: cpu_node, width: 4, height: 4, shader_body: "// gpu".into(),
+            upstream: cpu_node,
+            width: 4,
+            height: 4,
+            shader_body: "// gpu".into(),
         }));
 
         let result = g.collect_gpu_chain(gpu_node, 4, 4);
@@ -1705,9 +1827,17 @@ mod tests {
         // Analysis producer → consumer should merge into one chain
         // with resolved buffer IDs (starting from 1000)
         let mut g = Graph::new(0);
-        let src = g.add_node(Box::new(SolidColorNode { width: 4, height: 4, color: [0.5; 4] }));
+        let src = g.add_node(Box::new(SolidColorNode {
+            width: 4,
+            height: 4,
+            color: [0.5; 4],
+        }));
         let producer = g.add_node(Box::new(MockAnalysisProducer::new(
-            src, 4, 4, 0, crate::analysis_buffer::AnalysisBufferKind::Histogram256,
+            src,
+            4,
+            4,
+            0,
+            crate::analysis_buffer::AnalysisBufferKind::Histogram256,
         )));
         let consumer = g.add_node(Box::new(MockAnalysisConsumer::new(producer, 4, 4, 0)));
 
@@ -1719,24 +1849,43 @@ mod tests {
         assert_eq!(shaders.len(), 3, "merged chain should have 3 shaders");
 
         // All reduction buffers should use the same resolved ID (≥1000)
-        let buf_ids: Vec<u32> = shaders.iter()
+        let buf_ids: Vec<u32> = shaders
+            .iter()
             .flat_map(|s| s.reduction_buffers.iter().map(|b| b.id))
             .collect();
-        assert!(buf_ids.iter().all(|&id| id >= 1000), "resolved IDs should be ≥1000");
-        assert!(buf_ids.iter().all(|&id| id == buf_ids[0]), "all should share same resolved ID");
+        assert!(
+            buf_ids.iter().all(|&id| id >= 1000),
+            "resolved IDs should be ≥1000"
+        );
+        assert!(
+            buf_ids.iter().all(|&id| id == buf_ids[0]),
+            "all should share same resolved ID"
+        );
     }
 
     #[test]
     fn collect_gpu_chain_two_analysis_pairs_distinct_ids() {
         // Two independent analysis→render pairs should get different resolved IDs
         let mut g = Graph::new(0);
-        let src = g.add_node(Box::new(SolidColorNode { width: 4, height: 4, color: [0.5; 4] }));
+        let src = g.add_node(Box::new(SolidColorNode {
+            width: 4,
+            height: 4,
+            color: [0.5; 4],
+        }));
         let prod1 = g.add_node(Box::new(MockAnalysisProducer::new(
-            src, 4, 4, 0, crate::analysis_buffer::AnalysisBufferKind::Histogram256,
+            src,
+            4,
+            4,
+            0,
+            crate::analysis_buffer::AnalysisBufferKind::Histogram256,
         )));
         let cons1 = g.add_node(Box::new(MockAnalysisConsumer::new(prod1, 4, 4, 0)));
         let prod2 = g.add_node(Box::new(MockAnalysisProducer::new(
-            cons1, 4, 4, 0, crate::analysis_buffer::AnalysisBufferKind::ChannelMinMax,
+            cons1,
+            4,
+            4,
+            0,
+            crate::analysis_buffer::AnalysisBufferKind::ChannelMinMax,
         )));
         let cons2 = g.add_node(Box::new(MockAnalysisConsumer::new(prod2, 4, 4, 0)));
 
@@ -1748,10 +1897,12 @@ mod tests {
         assert_eq!(shaders.len(), 6);
 
         // Extract buffer IDs from each pair
-        let pair1_ids: Vec<u32> = shaders[0..3].iter()
+        let pair1_ids: Vec<u32> = shaders[0..3]
+            .iter()
             .flat_map(|s| s.reduction_buffers.iter().map(|b| b.id))
             .collect();
-        let pair2_ids: Vec<u32> = shaders[3..6].iter()
+        let pair2_ids: Vec<u32> = shaders[3..6]
+            .iter()
             .flat_map(|s| s.reduction_buffers.iter().map(|b| b.id))
             .collect();
 
@@ -1759,7 +1910,10 @@ mod tests {
         assert!(pair1_ids.iter().all(|&id| id == pair1_ids[0]));
         assert!(pair2_ids.iter().all(|&id| id == pair2_ids[0]));
         // But the two pairs should differ
-        assert_ne!(pair1_ids[0], pair2_ids[0], "two analysis pairs must have different resolved IDs");
+        assert_ne!(
+            pair1_ids[0], pair2_ids[0],
+            "two analysis pairs must have different resolved IDs"
+        );
     }
 
     #[test]
@@ -1767,12 +1921,23 @@ mod tests {
         // source → analysis_producer → plain_gpu → analysis_consumer
         // All should merge into one chain
         let mut g = Graph::new(0);
-        let src = g.add_node(Box::new(SolidColorNode { width: 4, height: 4, color: [0.5; 4] }));
+        let src = g.add_node(Box::new(SolidColorNode {
+            width: 4,
+            height: 4,
+            color: [0.5; 4],
+        }));
         let producer = g.add_node(Box::new(MockAnalysisProducer::new(
-            src, 4, 4, 0, crate::analysis_buffer::AnalysisBufferKind::ChannelSum,
+            src,
+            4,
+            4,
+            0,
+            crate::analysis_buffer::AnalysisBufferKind::ChannelSum,
         )));
         let plain = g.add_node(Box::new(MockGpuNode {
-            upstream: producer, width: 4, height: 4, shader_body: "// intermediate".into(),
+            upstream: producer,
+            width: 4,
+            height: 4,
+            shader_body: "// intermediate".into(),
         }));
         let consumer = g.add_node(Box::new(MockAnalysisConsumer::new(plain, 4, 4, 0)));
 
@@ -1788,9 +1953,17 @@ mod tests {
     fn gpu_plan_with_analysis_nodes() {
         // gpu_plan() should use the analysis-aware collect_gpu_chain
         let mut g = Graph::new(0);
-        let src = g.add_node(Box::new(SolidColorNode { width: 2, height: 2, color: [0.5; 4] }));
+        let src = g.add_node(Box::new(SolidColorNode {
+            width: 2,
+            height: 2,
+            color: [0.5; 4],
+        }));
         let producer = g.add_node(Box::new(MockAnalysisProducer::new(
-            src, 2, 2, 0, crate::analysis_buffer::AnalysisBufferKind::Histogram256,
+            src,
+            2,
+            2,
+            0,
+            crate::analysis_buffer::AnalysisBufferKind::Histogram256,
         )));
         let consumer = g.add_node(Box::new(MockAnalysisConsumer::new(producer, 2, 2, 0)));
 
@@ -1810,21 +1983,34 @@ mod tests {
         // Two targets branching from the same analysis source should share
         // the analysis chain via PriorStage.
         let mut g = Graph::new(0);
-        let src = g.add_node(Box::new(SolidColorNode { width: 2, height: 2, color: [0.5; 4] }));
+        let src = g.add_node(Box::new(SolidColorNode {
+            width: 2,
+            height: 2,
+            color: [0.5; 4],
+        }));
         let producer = g.add_node(Box::new(MockAnalysisProducer::new(
-            src, 2, 2, 0, crate::analysis_buffer::AnalysisBufferKind::Histogram256,
+            src,
+            2,
+            2,
+            0,
+            crate::analysis_buffer::AnalysisBufferKind::Histogram256,
         )));
         // Target A: producer → consumer_a
         let consumer_a = g.add_node(Box::new(MockAnalysisConsumer::new(producer, 2, 2, 0)));
         // Target B: producer → plain_gpu (separate branch)
         let plain_b = g.add_node(Box::new(MockGpuNode {
-            upstream: producer, width: 2, height: 2, shader_body: "// branch_b".into(),
+            upstream: producer,
+            width: 2,
+            height: 2,
+            shader_body: "// branch_b".into(),
         }));
 
-        let plan = g.render_multi_gpu_plan(&[
-            ("target_a".into(), consumer_a),
-            ("target_b".into(), plain_b),
-        ]).unwrap();
+        let plan = g
+            .render_multi_gpu_plan(&[
+                ("target_a".into(), consumer_a),
+                ("target_b".into(), plain_b),
+            ])
+            .unwrap();
 
         assert_eq!(plan.stages.len(), 2);
         assert_eq!(plan.stages[0].target_name, "target_a");

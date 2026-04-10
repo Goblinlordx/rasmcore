@@ -271,15 +271,24 @@ impl ParamMap {
     }
 
     pub fn get_node_ref(&self, key: &str) -> Option<u32> {
-        match self.refs.get(key) { Some(TypedRef::Node(id)) => Some(*id), _ => None }
+        match self.refs.get(key) {
+            Some(TypedRef::Node(id)) => Some(*id),
+            _ => None,
+        }
     }
 
     pub fn get_font_ref(&self, key: &str) -> Option<u32> {
-        match self.refs.get(key) { Some(TypedRef::Font(id)) => Some(*id), _ => None }
+        match self.refs.get(key) {
+            Some(TypedRef::Font(id)) => Some(*id),
+            _ => None,
+        }
     }
 
     pub fn get_lut_ref(&self, key: &str) -> Option<u32> {
-        match self.refs.get(key) { Some(TypedRef::Lut(id)) => Some(*id), _ => None }
+        match self.refs.get(key) {
+            Some(TypedRef::Lut(id)) => Some(*id),
+            _ => None,
+        }
     }
 
     pub fn get_font(&self, key: &str) -> Option<std::rc::Rc<crate::font::Font>> {
@@ -330,9 +339,18 @@ impl ParamMap {
         for k in rkeys {
             out.extend_from_slice(k.as_bytes());
             match &self.refs[k] {
-                TypedRef::Node(id) => { out.push(0x03); out.extend_from_slice(&id.to_le_bytes()); }
-                TypedRef::Font(id) => { out.push(0x04); out.extend_from_slice(&id.to_le_bytes()); }
-                TypedRef::Lut(id) => { out.push(0x05); out.extend_from_slice(&id.to_le_bytes()); }
+                TypedRef::Node(id) => {
+                    out.push(0x03);
+                    out.extend_from_slice(&id.to_le_bytes());
+                }
+                TypedRef::Font(id) => {
+                    out.push(0x04);
+                    out.extend_from_slice(&id.to_le_bytes());
+                }
+                TypedRef::Lut(id) => {
+                    out.push(0x05);
+                    out.extend_from_slice(&id.to_le_bytes());
+                }
             }
         }
         out
@@ -343,11 +361,8 @@ impl ParamMap {
 ///
 /// Returns a boxed Node (FilterNode wrapping the concrete filter).
 /// The factory is responsible for extracting typed params from the ParamMap.
-pub type FilterFactory = fn(
-    upstream_id: u32,
-    info: NodeInfo,
-    params: &ParamMap,
-) -> Box<dyn crate::node::Node>;
+pub type FilterFactory =
+    fn(upstream_id: u32, info: NodeInfo, params: &ParamMap) -> Box<dyn crate::node::Node>;
 
 /// Registration entry for a dynamically-constructible filter.
 ///
@@ -506,9 +521,7 @@ pub struct DecodedImageV2 {
 }
 
 /// Decode function: takes encoded bytes → f32 RGBA pixels.
-pub type DecoderFactory = fn(
-    data: &[u8],
-) -> Result<DecodedImageV2, crate::node::PipelineError>;
+pub type DecoderFactory = fn(data: &[u8]) -> Result<DecodedImageV2, crate::node::PipelineError>;
 
 /// Detection function: checks if data matches this codec's format.
 pub type FormatDetector = fn(data: &[u8]) -> bool;
@@ -601,24 +614,48 @@ mod tests {
 
     static TEST_CROP_PARAMS: [ParamDescriptor; 4] = [
         ParamDescriptor {
-            name: "x", value_type: ParamType::U32,
-            min: Some(0.0), max: None, step: Some(1.0), default: Some(0.0),
-            hint: None, description: "", constraints: &CONSTRAINT_MAX_W,
+            name: "x",
+            value_type: ParamType::U32,
+            min: Some(0.0),
+            max: None,
+            step: Some(1.0),
+            default: Some(0.0),
+            hint: None,
+            description: "",
+            constraints: &CONSTRAINT_MAX_W,
         },
         ParamDescriptor {
-            name: "y", value_type: ParamType::U32,
-            min: Some(0.0), max: None, step: Some(1.0), default: Some(0.0),
-            hint: None, description: "", constraints: &CONSTRAINT_MAX_H,
+            name: "y",
+            value_type: ParamType::U32,
+            min: Some(0.0),
+            max: None,
+            step: Some(1.0),
+            default: Some(0.0),
+            hint: None,
+            description: "",
+            constraints: &CONSTRAINT_MAX_H,
         },
         ParamDescriptor {
-            name: "width", value_type: ParamType::U32,
-            min: Some(1.0), max: None, step: Some(1.0), default: Some(100.0),
-            hint: None, description: "", constraints: &CONSTRAINT_MAX_W,
+            name: "width",
+            value_type: ParamType::U32,
+            min: Some(1.0),
+            max: None,
+            step: Some(1.0),
+            default: Some(100.0),
+            hint: None,
+            description: "",
+            constraints: &CONSTRAINT_MAX_W,
         },
         ParamDescriptor {
-            name: "height", value_type: ParamType::U32,
-            min: Some(1.0), max: None, step: Some(1.0), default: Some(100.0),
-            hint: None, description: "", constraints: &CONSTRAINT_MAX_H,
+            name: "height",
+            value_type: ParamType::U32,
+            min: Some(1.0),
+            max: None,
+            step: Some(1.0),
+            default: Some(100.0),
+            hint: None,
+            description: "",
+            constraints: &CONSTRAINT_MAX_H,
         },
     ];
 
@@ -712,7 +749,10 @@ mod tests {
     #[test]
     fn v2_filters_appear_in_registered_operations() {
         let all = registered_operations();
-        let filters: Vec<_> = all.iter().filter(|o| o.kind == OperationKind::Filter).collect();
+        let filters: Vec<_> = all
+            .iter()
+            .filter(|o| o.kind == OperationKind::Filter)
+            .collect();
         // V2Filter derive macro should register both FilterFactoryRegistration AND OperationRegistration
         // "brightness" is a V2Filter — it must appear in registered_operations()
         assert!(
@@ -726,9 +766,16 @@ mod tests {
     #[test]
     fn filter_factory_creates_brightness() {
         let factories = registered_filter_factories();
-        assert!(factories.contains(&"brightness"), "brightness factory not registered");
+        assert!(
+            factories.contains(&"brightness"),
+            "brightness factory not registered"
+        );
 
-        let info = crate::node::NodeInfo { width: 4, height: 4, color_space: crate::color_space::ColorSpace::Linear };
+        let info = crate::node::NodeInfo {
+            width: 4,
+            height: 4,
+            color_space: crate::color_space::ColorSpace::Linear,
+        };
         let mut params = ParamMap::new();
         params.floats.insert("amount".into(), 0.1);
 
@@ -738,7 +785,11 @@ mod tests {
 
     #[test]
     fn filter_factory_unknown_returns_none() {
-        let info = crate::node::NodeInfo { width: 4, height: 4, color_space: crate::color_space::ColorSpace::Linear };
+        let info = crate::node::NodeInfo {
+            width: 4,
+            height: 4,
+            color_space: crate::color_space::ColorSpace::Linear,
+        };
         let params = ParamMap::new();
         assert!(create_filter_node("nonexistent_filter", 0, info, &params).is_none());
     }
@@ -746,8 +797,18 @@ mod tests {
     #[test]
     fn all_adjustment_factories_registered() {
         let factories = registered_filter_factories();
-        for name in &["brightness", "contrast", "gamma", "exposure", "invert", "levels",
-                       "posterize", "dodge", "burn", "solarize"] {
+        for name in &[
+            "brightness",
+            "contrast",
+            "gamma",
+            "exposure",
+            "invert",
+            "levels",
+            "posterize",
+            "dodge",
+            "burn",
+            "solarize",
+        ] {
             assert!(factories.contains(name), "{name} factory not registered");
         }
     }

@@ -58,8 +58,12 @@ impl AcesAuditResult {
 
 impl std::fmt::Display for AcesAuditResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "ACES Compliance Audit: {}/{} nodes safe",
-            self.compliant + self.log_compatible, self.total_nodes)?;
+        writeln!(
+            f,
+            "ACES Compliance Audit: {}/{} nodes safe",
+            self.compliant + self.log_compatible,
+            self.total_nodes
+        )?;
         if self.violations.is_empty() {
             writeln!(f, "  PASS — all nodes are ACES-compliant")?;
         } else {
@@ -133,56 +137,84 @@ impl Graph {
 mod tests {
     use super::*;
     use crate::color_space::ColorSpace;
-    use crate::node::{
-        AcesCompliance, Node, NodeInfo, PipelineError, Upstream,
-    };
+    use crate::node::{AcesCompliance, Node, NodeInfo, PipelineError, Upstream};
     use crate::rect::Rect;
 
     struct CompliantNode;
     impl Node for CompliantNode {
         fn info(&self) -> NodeInfo {
-            NodeInfo { width: 4, height: 4, color_space: ColorSpace::Linear }
+            NodeInfo {
+                width: 4,
+                height: 4,
+                color_space: ColorSpace::Linear,
+            }
         }
         fn compute(&self, _r: Rect, _u: &mut dyn Upstream) -> Result<Vec<f32>, PipelineError> {
             Ok(vec![0.0; 64])
         }
-        fn upstream_ids(&self) -> Vec<u32> { vec![] }
-        fn aces_compliance(&self) -> AcesCompliance { AcesCompliance::Compliant }
+        fn upstream_ids(&self) -> Vec<u32> {
+            vec![]
+        }
+        fn aces_compliance(&self) -> AcesCompliance {
+            AcesCompliance::Compliant
+        }
     }
 
     struct LogNode;
     impl Node for LogNode {
         fn info(&self) -> NodeInfo {
-            NodeInfo { width: 4, height: 4, color_space: ColorSpace::AcesCct }
+            NodeInfo {
+                width: 4,
+                height: 4,
+                color_space: ColorSpace::AcesCct,
+            }
         }
         fn compute(&self, _r: Rect, _u: &mut dyn Upstream) -> Result<Vec<f32>, PipelineError> {
             Ok(vec![0.0; 64])
         }
-        fn upstream_ids(&self) -> Vec<u32> { vec![] }
-        fn aces_compliance(&self) -> AcesCompliance { AcesCompliance::Log }
+        fn upstream_ids(&self) -> Vec<u32> {
+            vec![]
+        }
+        fn aces_compliance(&self) -> AcesCompliance {
+            AcesCompliance::Log
+        }
     }
 
     struct NonCompliantNode;
     impl Node for NonCompliantNode {
         fn info(&self) -> NodeInfo {
-            NodeInfo { width: 4, height: 4, color_space: ColorSpace::Srgb }
+            NodeInfo {
+                width: 4,
+                height: 4,
+                color_space: ColorSpace::Srgb,
+            }
         }
         fn compute(&self, _r: Rect, _u: &mut dyn Upstream) -> Result<Vec<f32>, PipelineError> {
             Ok(vec![0.0; 64])
         }
-        fn upstream_ids(&self) -> Vec<u32> { vec![] }
-        fn aces_compliance(&self) -> AcesCompliance { AcesCompliance::NonCompliant }
+        fn upstream_ids(&self) -> Vec<u32> {
+            vec![]
+        }
+        fn aces_compliance(&self) -> AcesCompliance {
+            AcesCompliance::NonCompliant
+        }
     }
 
     struct UnknownNode;
     impl Node for UnknownNode {
         fn info(&self) -> NodeInfo {
-            NodeInfo { width: 4, height: 4, color_space: ColorSpace::Linear }
+            NodeInfo {
+                width: 4,
+                height: 4,
+                color_space: ColorSpace::Linear,
+            }
         }
         fn compute(&self, _r: Rect, _u: &mut dyn Upstream) -> Result<Vec<f32>, PipelineError> {
             Ok(vec![0.0; 64])
         }
-        fn upstream_ids(&self) -> Vec<u32> { vec![] }
+        fn upstream_ids(&self) -> Vec<u32> {
+            vec![]
+        }
         // default aces_compliance() → Unknown
     }
 
@@ -212,7 +244,10 @@ mod tests {
         assert_eq!(result.non_compliant, 1);
         assert_eq!(result.violations.len(), 1);
         assert_eq!(result.violations[0].node_id, 1);
-        assert_eq!(result.violations[0].compliance, AcesCompliance::NonCompliant);
+        assert_eq!(
+            result.violations[0].compliance,
+            AcesCompliance::NonCompliant
+        );
     }
 
     #[test]

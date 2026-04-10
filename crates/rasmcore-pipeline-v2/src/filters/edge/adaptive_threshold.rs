@@ -44,23 +44,31 @@ impl Filter for AdaptiveThreshold {
                 let x2 = (x + r + 1).min(w as i32) as usize;
                 let y2 = (y + r + 1).min(h as i32) as usize;
                 let area = ((x2 - x1) * (y2 - y1)) as f64;
-                let sum = integral[y2 * (w + 1) + x2] - integral[y1 * (w + 1) + x2]
-                        - integral[y2 * (w + 1) + x1] + integral[y1 * (w + 1) + x1];
+                let sum = integral[y2 * (w + 1) + x2]
+                    - integral[y1 * (w + 1) + x2]
+                    - integral[y2 * (w + 1) + x1]
+                    + integral[y1 * (w + 1) + x1];
                 let local_mean = (sum / area) as f32;
 
                 let idx = (y as usize * w + x as usize) * 4;
                 let l = luminance(input[idx], input[idx + 1], input[idx + 2]);
                 let v = if l >= local_mean - offset { 1.0 } else { 0.0 };
-                out[idx] = v; out[idx + 1] = v; out[idx + 2] = v;
+                out[idx] = v;
+                out[idx + 1] = v;
+                out[idx + 2] = v;
                 out[idx + 3] = input[idx + 3];
             }
         }
         Ok(out)
     }
 
-    fn tile_overlap(&self) -> u32 { self.radius }
+    fn tile_overlap(&self) -> u32 {
+        self.radius
+    }
 
-    fn gpu_shader_body(&self) -> Option<&'static str> { Some(ADAPTIVE_THRESHOLD_WGSL) }
+    fn gpu_shader_body(&self) -> Option<&'static str> {
+        Some(ADAPTIVE_THRESHOLD_WGSL)
+    }
 
     fn gpu_params(&self, width: u32, height: u32) -> Option<Vec<u8>> {
         let mut buf = Vec::with_capacity(16);

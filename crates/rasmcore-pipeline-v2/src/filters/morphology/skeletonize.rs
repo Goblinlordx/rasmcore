@@ -161,7 +161,9 @@ impl Filter for Skeletonize {
             let mut to_remove = Vec::new();
             for y in 1..h - 1 {
                 for x in 1..w - 1 {
-                    if !binary[y * w + x] { continue; }
+                    if !binary[y * w + x] {
+                        continue;
+                    }
                     let (transitions, neighbors) = zhang_suen_check(&binary, w, x, y);
                     if neighbors >= 2 && neighbors <= 6 && transitions == 1 {
                         let p2 = binary[(y - 1) * w + x] as u8;
@@ -174,13 +176,18 @@ impl Filter for Skeletonize {
                     }
                 }
             }
-            for &idx in &to_remove { binary[idx] = false; changed = true; }
+            for &idx in &to_remove {
+                binary[idx] = false;
+                changed = true;
+            }
 
             // Step 2
             to_remove.clear();
             for y in 1..h - 1 {
                 for x in 1..w - 1 {
-                    if !binary[y * w + x] { continue; }
+                    if !binary[y * w + x] {
+                        continue;
+                    }
                     let (transitions, neighbors) = zhang_suen_check(&binary, w, x, y);
                     if neighbors >= 2 && neighbors <= 6 && transitions == 1 {
                         let p2 = binary[(y - 1) * w + x] as u8;
@@ -193,9 +200,14 @@ impl Filter for Skeletonize {
                     }
                 }
             }
-            for &idx in &to_remove { binary[idx] = false; changed = true; }
+            for &idx in &to_remove {
+                binary[idx] = false;
+                changed = true;
+            }
 
-            if !changed { break; }
+            if !changed {
+                break;
+            }
         }
 
         // Convert back to f32 RGBA
@@ -224,7 +236,12 @@ impl Filter for Skeletonize {
             let mut params = gpu_params_wh(width, height);
             params.extend_from_slice(&self.threshold.to_le_bytes());
             gpu_params_push_u32(&mut params, 0); // pad
-            passes.push(GpuShader::new(BINARIZE_WGSL.to_string(), "main", [16, 16, 1], params));
+            passes.push(GpuShader::new(
+                BINARIZE_WGSL.to_string(),
+                "main",
+                [16, 16, 1],
+                params,
+            ));
         }
 
         // Passes 1..N: Zhang-Suen sub-iterations
@@ -256,7 +273,8 @@ impl Filter for Skeletonize {
                     }],
                     // Only check after step2 — both steps accumulate into same counter
                     convergence_check: if sub == 1 { Some(change_buf_id) } else { None },
-                    loop_dispatch: None, setup: None,
+                    loop_dispatch: None,
+                    setup: None,
                 };
                 passes.push(shader);
             }
@@ -265,7 +283,9 @@ impl Filter for Skeletonize {
         Some(passes)
     }
 
-    fn tile_overlap(&self) -> u32 { 1 }
+    fn tile_overlap(&self) -> u32 {
+        1
+    }
 }
 
 /// Zhang-Suen helper: count transitions and neighbors in 8-connected ring.
@@ -283,7 +303,9 @@ fn zhang_suen_check(binary: &[bool], w: usize, x: usize, y: usize) -> (u8, u8) {
     let neighbors = p.iter().filter(|&&v| v).count() as u8;
     let mut transitions = 0u8;
     for i in 0..8 {
-        if !p[i] && p[(i + 1) % 8] { transitions += 1; }
+        if !p[i] && p[(i + 1) % 8] {
+            transitions += 1;
+        }
     }
     (transitions, neighbors)
 }

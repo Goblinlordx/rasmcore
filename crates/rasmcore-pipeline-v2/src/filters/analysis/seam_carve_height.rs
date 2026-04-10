@@ -1,6 +1,6 @@
 //! SeamCarveHeight filter.
 
-use crate::node::{PipelineError};
+use crate::node::PipelineError;
 use crate::ops::Filter;
 
 use super::SeamCarveWidth;
@@ -21,7 +21,7 @@ impl Filter for SeamCarveHeight {
             for x in 0..width as usize {
                 let si = (y * width as usize + x) * 4;
                 let di = (x * height as usize + y) * 4;
-                transposed[di..di+4].copy_from_slice(&input[si..si+4]);
+                transposed[di..di + 4].copy_from_slice(&input[si..si + 4]);
             }
         }
         let scw = SeamCarveWidth { seams: self.seams };
@@ -32,7 +32,7 @@ impl Filter for SeamCarveHeight {
             for x in 0..height as usize {
                 let si = (y * height as usize + x) * 4;
                 let di = (x * width as usize + y) * 4;
-                out[di..di+4].copy_from_slice(&carved[si..si+4]);
+                out[di..di + 4].copy_from_slice(&carved[si..si + 4]);
             }
         }
         Ok(out)

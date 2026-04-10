@@ -19,12 +19,16 @@ impl Filter for ThresholdBinary {
         for px in out.chunks_exact_mut(4) {
             let l = luminance(px[0], px[1], px[2]);
             let v = if l >= t { 1.0 } else { 0.0 };
-            px[0] = v; px[1] = v; px[2] = v;
+            px[0] = v;
+            px[1] = v;
+            px[2] = v;
         }
         Ok(out)
     }
 
-    fn gpu_shader_body(&self) -> Option<&'static str> { Some(THRESHOLD_WGSL) }
+    fn gpu_shader_body(&self) -> Option<&'static str> {
+        Some(THRESHOLD_WGSL)
+    }
 
     fn gpu_params(&self, width: u32, height: u32) -> Option<Vec<u8>> {
         let mut buf = Vec::with_capacity(16);

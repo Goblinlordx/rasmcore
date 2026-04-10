@@ -12,10 +12,14 @@ use super::super::helpers::{gpu_params_wh, gpu_push_f32, gpu_push_u32};
 #[derive(Clone, rasmcore_macros::V2Filter)]
 #[filter(name = "solid_color", category = "generator")]
 pub struct SolidColor {
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)] pub r: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)] pub g: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)] pub b: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)] pub a: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
+    pub r: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
+    pub g: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
+    pub b: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)]
+    pub a: f32,
 }
 
 const SOLID_COLOR_WGSL: &str = r#"
@@ -44,9 +48,17 @@ impl Filter for SolidColor {
 
     fn gpu_shader_passes(&self, w: u32, h: u32) -> Option<Vec<GpuShader>> {
         let mut p = gpu_params_wh(w, h);
-        gpu_push_f32(&mut p, self.r); gpu_push_f32(&mut p, self.g);
-        gpu_push_f32(&mut p, self.b); gpu_push_f32(&mut p, self.a);
-        gpu_push_u32(&mut p, 0); gpu_push_u32(&mut p, 0);
-        Some(vec![GpuShader::new(SOLID_COLOR_WGSL.to_string(), "main", [256, 1, 1], p)])
+        gpu_push_f32(&mut p, self.r);
+        gpu_push_f32(&mut p, self.g);
+        gpu_push_f32(&mut p, self.b);
+        gpu_push_f32(&mut p, self.a);
+        gpu_push_u32(&mut p, 0);
+        gpu_push_u32(&mut p, 0);
+        Some(vec![GpuShader::new(
+            SOLID_COLOR_WGSL.to_string(),
+            "main",
+            [256, 1, 1],
+            p,
+        )])
     }
 }

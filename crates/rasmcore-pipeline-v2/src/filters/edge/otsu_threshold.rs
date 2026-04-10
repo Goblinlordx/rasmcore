@@ -56,14 +56,21 @@ impl Filter for OtsuThreshold {
         let mut best_t = 0usize;
         for (t, &h) in hist.iter().enumerate() {
             w_bg += h as f64;
-            if w_bg == 0.0 { continue; }
+            if w_bg == 0.0 {
+                continue;
+            }
             let w_fg = total - w_bg;
-            if w_fg == 0.0 { break; }
+            if w_fg == 0.0 {
+                break;
+            }
             sum_bg += t as f64 * h as f64;
             let mean_bg = sum_bg / w_bg;
             let mean_fg = (sum_total - sum_bg) / w_fg;
             let var = w_bg * w_fg * (mean_bg - mean_fg).powi(2);
-            if var > max_var { max_var = var; best_t = t; }
+            if var > max_var {
+                max_var = var;
+                best_t = t;
+            }
         }
         let threshold = best_t as f32 / 255.0;
         // Apply
@@ -71,7 +78,9 @@ impl Filter for OtsuThreshold {
         for px in out.chunks_exact_mut(4) {
             let l = luminance(px[0], px[1], px[2]);
             let v = if l >= threshold { 1.0 } else { 0.0 };
-            px[0] = v; px[1] = v; px[2] = v;
+            px[0] = v;
+            px[1] = v;
+            px[2] = v;
         }
         Ok(out)
     }
@@ -86,9 +95,8 @@ impl Filter for OtsuThreshold {
         params.extend_from_slice(&height.to_le_bytes());
         params.extend_from_slice(&total.to_le_bytes());
         params.extend_from_slice(&0u32.to_le_bytes());
-        let pass3 = GpuShader::new(
-            OTSU_APPLY_WGSL.to_string(), "main", [256, 1, 1], params,
-        ).with_reduction_buffers(vec![reduction.read_buffer(&passes)]);
+        let pass3 = GpuShader::new(OTSU_APPLY_WGSL.to_string(), "main", [256, 1, 1], params)
+            .with_reduction_buffers(vec![reduction.read_buffer(&passes)]);
         Some(vec![passes.pass1, passes.pass2, pass3])
     }
 }

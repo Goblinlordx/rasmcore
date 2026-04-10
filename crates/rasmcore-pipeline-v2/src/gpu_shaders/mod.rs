@@ -5,11 +5,11 @@
 //! multiple shader constants (one per pass).
 
 pub mod analysis;
+pub mod brush;
 pub mod enhancement;
+pub mod grading;
 pub mod pixel_source;
 pub mod reduction;
 pub mod scan;
 pub mod spatial;
-pub mod grading;
 pub mod vignette;
-pub mod brush;

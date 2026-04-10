@@ -81,7 +81,7 @@ impl GpuFilter for Halftone {
         gpu_params_push_f32(&mut buf, freq);
         gpu_params_push_f32(&mut buf, (15.0 + self.angle_offset).to_radians()); // C angle
         gpu_params_push_f32(&mut buf, (75.0 + self.angle_offset).to_radians()); // M angle
-        gpu_params_push_f32(&mut buf, (0.0 + self.angle_offset).to_radians());  // Y angle
+        gpu_params_push_f32(&mut buf, (0.0 + self.angle_offset).to_radians()); // Y angle
         gpu_params_push_f32(&mut buf, (45.0 + self.angle_offset).to_radians()); // K angle
         gpu_params_push_u32(&mut buf, 0);
         buf

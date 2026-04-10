@@ -41,25 +41,15 @@ pub fn conversion_shader(
         HostPixelFormat::Rgba8 => {
             let params = build_params(width, height);
             Some(
-                GpuShader::new(
-                    RGBA8_SRGB_TO_F32.to_string(),
-                    "main",
-                    [256, 1, 1],
-                    params,
-                )
-                .with_extra_buffers(vec![raw_bytes.to_vec()]),
+                GpuShader::new(RGBA8_SRGB_TO_F32.to_string(), "main", [256, 1, 1], params)
+                    .with_extra_buffers(vec![raw_bytes.to_vec()]),
             )
         }
         HostPixelFormat::Rgba16 => {
             let params = build_params(width, height);
             Some(
-                GpuShader::new(
-                    RGBA16_TO_F32.to_string(),
-                    "main",
-                    [256, 1, 1],
-                    params,
-                )
-                .with_extra_buffers(vec![raw_bytes.to_vec()]),
+                GpuShader::new(RGBA16_TO_F32.to_string(), "main", [256, 1, 1], params)
+                    .with_extra_buffers(vec![raw_bytes.to_vec()]),
             )
         }
         HostPixelFormat::RgbaF32 => None,

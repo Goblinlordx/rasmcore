@@ -2,8 +2,8 @@ use crate::fusion::Clut3D;
 use crate::node::PipelineError;
 use crate::ops::Filter;
 
-use crate::filters::helpers::{rgb_to_hsl, hsl_to_rgb};
 use super::ClutOp;
+use crate::filters::helpers::{hsl_to_rgb, rgb_to_hsl};
 
 /// Selective color — adjust pixels matching a hue range in HSL space.
 #[derive(Clone, rasmcore_macros::V2Filter)]
@@ -94,7 +94,9 @@ impl ClutOp for SelectiveColor {
             self.saturation,
             self.lightness,
         );
-        Clut3D::from_fn(33, move |r, g, b| selective_color_pixel(r, g, b, th, hr, hs, sat, lig))
+        Clut3D::from_fn(33, move |r, g, b| {
+            selective_color_pixel(r, g, b, th, hr, hs, sat, lig)
+        })
     }
 }
 

@@ -27,12 +27,22 @@ impl Filter for SeamCarveWidth {
             let mut energy = vec![0.0f32; w * h];
             for y in 0..h {
                 for x in 0..w {
-                    let xp = (x + 1).min(w - 1); let xm = x.saturating_sub(1);
-                    let yp = (y + 1).min(h - 1); let ym = y.saturating_sub(1);
-                    let ix1 = (y * w + xp) * 4; let ix0 = (y * w + xm) * 4;
-                    let iy1 = (yp * w + x) * 4; let iy0 = (ym * w + x) * 4;
-                    let gx = ((buf[ix1] - buf[ix0]).powi(2) + (buf[ix1+1] - buf[ix0+1]).powi(2) + (buf[ix1+2] - buf[ix0+2]).powi(2)).sqrt();
-                    let gy = ((buf[iy1] - buf[iy0]).powi(2) + (buf[iy1+1] - buf[iy0+1]).powi(2) + (buf[iy1+2] - buf[iy0+2]).powi(2)).sqrt();
+                    let xp = (x + 1).min(w - 1);
+                    let xm = x.saturating_sub(1);
+                    let yp = (y + 1).min(h - 1);
+                    let ym = y.saturating_sub(1);
+                    let ix1 = (y * w + xp) * 4;
+                    let ix0 = (y * w + xm) * 4;
+                    let iy1 = (yp * w + x) * 4;
+                    let iy0 = (ym * w + x) * 4;
+                    let gx = ((buf[ix1] - buf[ix0]).powi(2)
+                        + (buf[ix1 + 1] - buf[ix0 + 1]).powi(2)
+                        + (buf[ix1 + 2] - buf[ix0 + 2]).powi(2))
+                    .sqrt();
+                    let gy = ((buf[iy1] - buf[iy0]).powi(2)
+                        + (buf[iy1 + 1] - buf[iy0 + 1]).powi(2)
+                        + (buf[iy1 + 2] - buf[iy0 + 2]).powi(2))
+                    .sqrt();
                     energy[y * w + x] = gx + gy;
                 }
             }
@@ -40,29 +50,47 @@ impl Filter for SeamCarveWidth {
             let mut dp = energy.clone();
             for y in 1..h {
                 for x in 0..w {
-                    let up = dp[(y-1)*w + x];
-                    let ul = if x > 0 { dp[(y-1)*w + x - 1] } else { f32::MAX };
-                    let ur = if x < w-1 { dp[(y-1)*w + x + 1] } else { f32::MAX };
-                    dp[y*w + x] += up.min(ul).min(ur);
+                    let up = dp[(y - 1) * w + x];
+                    let ul = if x > 0 {
+                        dp[(y - 1) * w + x - 1]
+                    } else {
+                        f32::MAX
+                    };
+                    let ur = if x < w - 1 {
+                        dp[(y - 1) * w + x + 1]
+                    } else {
+                        f32::MAX
+                    };
+                    dp[y * w + x] += up.min(ul).min(ur);
                 }
             }
             // Backtrack
             let mut seam = vec![0usize; h];
-            seam[h-1] = (0..w).min_by(|&a, &b| dp[(h-1)*w+a].partial_cmp(&dp[(h-1)*w+b]).unwrap()).unwrap();
-            for y in (0..h-1).rev() {
-                let x = seam[y+1];
+            seam[h - 1] = (0..w)
+                .min_by(|&a, &b| {
+                    dp[(h - 1) * w + a]
+                        .partial_cmp(&dp[(h - 1) * w + b])
+                        .unwrap()
+                })
+                .unwrap();
+            for y in (0..h - 1).rev() {
+                let x = seam[y + 1];
                 let mut best = x;
-                if x > 0 && dp[y*w+x-1] < dp[y*w+best] { best = x-1; }
-                if x < w-1 && dp[y*w+x+1] < dp[y*w+best] { best = x+1; }
+                if x > 0 && dp[y * w + x - 1] < dp[y * w + best] {
+                    best = x - 1;
+                }
+                if x < w - 1 && dp[y * w + x + 1] < dp[y * w + best] {
+                    best = x + 1;
+                }
                 seam[y] = best;
             }
             // Remove seam
-            let mut new_buf = Vec::with_capacity((w-1) * h * 4);
+            let mut new_buf = Vec::with_capacity((w - 1) * h * 4);
             for y in 0..h {
                 for x in 0..w {
                     if x != seam[y] {
                         let i = (y * w + x) * 4;
-                        new_buf.extend_from_slice(&buf[i..i+4]);
+                        new_buf.extend_from_slice(&buf[i..i + 4]);
                     }
                 }
             }
@@ -75,7 +103,7 @@ impl Filter for SeamCarveWidth {
             for x in 0..w {
                 let si = (y * w + x) * 4;
                 let di = (y * width as usize + x) * 4;
-                out[di..di+4].copy_from_slice(&buf[si..si+4]);
+                out[di..di + 4].copy_from_slice(&buf[si..si + 4]);
             }
         }
         Ok(out)
@@ -117,15 +145,22 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 "#;
 
         let mut energy_p = gpu_params_wh(_w, _h);
-        gpu_push_u32(&mut energy_p, 0); gpu_push_u32(&mut energy_p, 0);
+        gpu_push_u32(&mut energy_p, 0);
+        gpu_push_u32(&mut energy_p, 0);
 
         let mut passes = vec![GpuShader {
-            body: energy_wgsl.to_string(), entry_point: "main",
-            workgroup_size: [256, 1, 1], params: energy_p,
-            extra_buffers: vec![], convergence_check: None,
-            loop_dispatch: None, setup: None,
+            body: energy_wgsl.to_string(),
+            entry_point: "main",
+            workgroup_size: [256, 1, 1],
+            params: energy_p,
+            extra_buffers: vec![],
+            convergence_check: None,
+            loop_dispatch: None,
+            setup: None,
             reduction_buffers: vec![ReductionBuffer {
-                id: dp_buf_id, initial_data: vec![0u8; dp_buf_size], read_write: true,
+                id: dp_buf_id,
+                initial_data: vec![0u8; dp_buf_size],
+                read_write: true,
             }],
         }];
 
@@ -162,12 +197,21 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         gpu_push_u32(&mut row_p, 0); // row placeholder — overwritten by loop_dispatch
         gpu_push_u32(&mut row_p, 0); // pad
         passes.push(GpuShader {
-            body: dp_row_wgsl.to_string(), entry_point: "main",
-            workgroup_size: [256, 1, 1], params: row_p,
-            extra_buffers: vec![], convergence_check: None,
-            loop_dispatch: Some(crate::node::LoopDispatch { count: _h, param_offset: 8 }), setup: None,
+            body: dp_row_wgsl.to_string(),
+            entry_point: "main",
+            workgroup_size: [256, 1, 1],
+            params: row_p,
+            extra_buffers: vec![],
+            convergence_check: None,
+            loop_dispatch: Some(crate::node::LoopDispatch {
+                count: _h,
+                param_offset: 8,
+            }),
+            setup: None,
             reduction_buffers: vec![ReductionBuffer {
-                id: dp_buf_id, initial_data: vec![], read_write: true,
+                id: dp_buf_id,
+                initial_data: vec![],
+                read_write: true,
             }],
         });
 

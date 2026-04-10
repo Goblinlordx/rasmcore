@@ -6,7 +6,6 @@
 //!
 //! No format dispatch. No u8/u16 paths. No PixelFormat. Just f32.
 
-pub mod helpers;
 pub mod adjustment;
 pub mod alpha;
 pub mod analysis;
@@ -16,12 +15,13 @@ pub mod distortion;
 pub mod draw;
 pub mod edge;
 pub mod effect;
+pub mod enhancement;
 pub mod evaluate;
 pub mod generator;
-pub mod enhancement;
-pub mod morphology;
 pub mod grading;
+pub mod helpers;
 pub mod mask;
+pub mod morphology;
 pub mod scope;
 pub mod spatial;
 pub mod tool;

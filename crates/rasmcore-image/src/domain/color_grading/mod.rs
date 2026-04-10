@@ -44,7 +44,11 @@ pub(crate) fn apply_rgb_transform(
 ) -> Result<Vec<u8>, ImageError> {
     match info.format {
         PixelFormat::Rgb32f | PixelFormat::Rgba32f => {
-            let ch = if info.format == PixelFormat::Rgba32f { 4 } else { 3 };
+            let ch = if info.format == PixelFormat::Rgba32f {
+                4
+            } else {
+                3
+            };
             let mut samples: Vec<f32> = pixels
                 .chunks_exact(4)
                 .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
@@ -59,7 +63,11 @@ pub(crate) fn apply_rgb_transform(
             Ok(samples.iter().flat_map(|v| v.to_le_bytes()).collect())
         }
         PixelFormat::Rgb8 | PixelFormat::Rgba8 => {
-            let bpp = if info.format == PixelFormat::Rgba8 { 4 } else { 3 };
+            let bpp = if info.format == PixelFormat::Rgba8 {
+                4
+            } else {
+                3
+            };
             let expected = info.width as usize * info.height as usize * bpp;
             if pixels.len() < expected {
                 return Err(ImageError::InvalidParameters("pixel data too small".into()));

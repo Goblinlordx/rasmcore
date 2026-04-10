@@ -506,8 +506,13 @@ fn parity_smart_crop_registered() {
     let info = info_rgb8(w, h);
 
     let r = Rect::new(0, 0, info.width, info.height);
-    let config = filters::SmartCrop { target_width: 64, target_height: 64 };
-    let result = config.compute(r, &mut |_| Ok(pixels.to_vec()), &info).unwrap();
+    let config = filters::SmartCrop {
+        target_width: 64,
+        target_height: 64,
+    };
+    let result = config
+        .compute(r, &mut |_| Ok(pixels.to_vec()), &info)
+        .unwrap();
     assert_eq!(
         result.len(),
         64 * 64 * 3,
@@ -689,7 +694,9 @@ fn parity_vibrance() {
 
     let r = Rect::new(0, 0, info.width, info.height);
     let config = filters::VibranceParams { amount: 40.0 };
-    let ours = config.compute(r, &mut |_| Ok(pixels.to_vec()), &info).unwrap();
+    let ours = config
+        .compute(r, &mut |_| Ok(pixels.to_vec()), &info)
+        .unwrap();
 
     let script = format!(
         r#"
@@ -746,8 +753,20 @@ fn parity_channel_mixer() {
     let info = info_rgb8(w, h);
 
     let r = Rect::new(0, 0, info.width, info.height);
-    let config = filters::ChannelMixerParams { rr: 0.8, rg: 0.1, rb: 0.1, gr: 0.1, gg: 0.8, gb: 0.1, br: 0.1, bg: 0.1, bb: 0.8 };
-    let ours = config.compute(r, &mut |_| Ok(pixels.to_vec()), &info).unwrap();
+    let config = filters::ChannelMixerParams {
+        rr: 0.8,
+        rg: 0.1,
+        rb: 0.1,
+        gr: 0.1,
+        gg: 0.8,
+        gb: 0.1,
+        br: 0.1,
+        bg: 0.1,
+        bb: 0.8,
+    };
+    let ours = config
+        .compute(r, &mut |_| Ok(pixels.to_vec()), &info)
+        .unwrap();
 
     let script = format!(
         r#"
@@ -775,7 +794,10 @@ fn parity_sparse_color_shepard() {
         &mut |_| Ok(pixels.to_vec()),
         &info,
         "0,0:FF0000;31,31:0000FF".to_string(),
-        &filters::SparseColorParams { points: String::new(), power: 2.0 },
+        &filters::SparseColorParams {
+            points: String::new(),
+            power: 2.0,
+        },
     )
     .unwrap();
 
@@ -820,8 +842,14 @@ fn parity_modulate_hsl() {
 
     // brightness=80%, saturation=120%, hue=30 degrees
     let r = Rect::new(0, 0, info.width, info.height);
-    let config = filters::ModulateParams { brightness: 80.0, saturation: 120.0, hue: 30.0 };
-    let ours = config.compute(r, &mut |_| Ok(pixels.to_vec()), &info).unwrap();
+    let config = filters::ModulateParams {
+        brightness: 80.0,
+        saturation: 120.0,
+        hue: 30.0,
+    };
+    let ours = config
+        .compute(r, &mut |_| Ok(pixels.to_vec()), &info)
+        .unwrap();
 
     let script = format!(
         r#"

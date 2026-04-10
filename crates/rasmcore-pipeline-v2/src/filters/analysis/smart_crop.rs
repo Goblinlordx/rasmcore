@@ -1,8 +1,7 @@
 //! SmartCrop filter.
 
-use crate::node::{PipelineError};
+use crate::node::PipelineError;
 use crate::ops::Filter;
-
 
 /// Smart crop — crop to most salient region based on edge energy.
 #[derive(Clone, rasmcore_macros::V2Filter)]
@@ -14,19 +13,24 @@ pub struct SmartCrop {
 
 impl Filter for SmartCrop {
     fn compute(&self, input: &[f32], width: u32, height: u32) -> Result<Vec<f32>, PipelineError> {
-        let w = width as usize; let h = height as usize;
+        let w = width as usize;
+        let h = height as usize;
         let cw = ((w as f32 * self.ratio) as usize).max(1).min(w);
         let ch = ((h as f32 * self.ratio) as usize).max(1).min(h);
-        if cw >= w && ch >= h { return Ok(input.to_vec()); }
+        if cw >= w && ch >= h {
+            return Ok(input.to_vec());
+        }
 
         // Find region with maximum gradient energy (analysis pass)
-        let mut best_x = 0; let mut best_y = 0; let mut best_energy = f32::NEG_INFINITY;
+        let mut best_x = 0;
+        let mut best_y = 0;
+        let mut best_energy = f32::NEG_INFINITY;
         let step = 4.max(cw / 10);
         for sy in (0..=h.saturating_sub(ch)).step_by(step) {
             for sx in (0..=w.saturating_sub(cw)).step_by(step) {
                 let mut energy = 0.0f32;
-                for y in (sy..sy+ch).step_by(4) {
-                    for x in (sx..sx+cw).step_by(4) {
+                for y in (sy..sy + ch).step_by(4) {
+                    for x in (sx..sx + cw).step_by(4) {
                         if x + 1 < w {
                             let i = (y * w + x) * 4;
                             let i1 = (y * w + x + 1) * 4;
@@ -35,7 +39,11 @@ impl Filter for SmartCrop {
                         }
                     }
                 }
-                if energy > best_energy { best_energy = energy; best_x = sx; best_y = sy; }
+                if energy > best_energy {
+                    best_energy = energy;
+                    best_x = sx;
+                    best_y = sy;
+                }
             }
         }
 
@@ -45,7 +53,7 @@ impl Filter for SmartCrop {
             for x in 0..cw {
                 let si = ((best_y + y) * w + best_x + x) * 4;
                 let di = (y * cw + x) * 4;
-                out[di..di+4].copy_from_slice(&input[si..si+4]);
+                out[di..di + 4].copy_from_slice(&input[si..si + 4]);
             }
         }
         Ok(out)

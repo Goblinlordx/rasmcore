@@ -192,7 +192,6 @@ fn extract_slice_data(bitstream: &[u8]) -> Result<Vec<u8>, ImageError> {
     }
 }
 
-
 // ─── Encoder Registration ──────────────────────────────────────────────────
 
 inventory::submit! {

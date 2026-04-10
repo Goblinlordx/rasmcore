@@ -7,7 +7,11 @@ use super::clamp_coord;
 ///
 /// Compares patches in search window, weights by similarity.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "nlm_denoise", category = "enhancement", cost = "O(n * sr^2 * pr^2)")]
+#[filter(
+    name = "nlm_denoise",
+    category = "enhancement",
+    cost = "O(n * sr^2 * pr^2)"
+)]
 pub struct NlmDenoise {
     #[param(min = 0.0, max = 1.0, default = 0.1)]
     pub h: f32,
@@ -69,7 +73,11 @@ impl Filter for NlmDenoise {
                 }
 
                 let idx = (y * w + x) * 4;
-                let inv_w = if weight_sum > 1e-10 { 1.0 / weight_sum } else { 1.0 };
+                let inv_w = if weight_sum > 1e-10 {
+                    1.0 / weight_sum
+                } else {
+                    1.0
+                };
                 for c in 0..3 {
                     out[idx + c] = sum[c] * inv_w;
                 }

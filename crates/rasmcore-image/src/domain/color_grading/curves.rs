@@ -1,4 +1,7 @@
-use super::{apply_rgb_transform, eval_hermite, monotone_tangents, hsl_to_rgb, rgb_to_hsl, ImageError, ImageInfo};
+use super::{
+    ImageError, ImageInfo, apply_rgb_transform, eval_hermite, hsl_to_rgb, monotone_tangents,
+    rgb_to_hsl,
+};
 
 /// Per-channel tone curve from control points.
 ///

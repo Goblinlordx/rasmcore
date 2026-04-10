@@ -42,8 +42,12 @@ impl Filter for BokehBlur {
 // ── BokehBlur GPU (kernel convolution via extra_buffer) ─────────────────────
 
 impl GpuFilter for BokehBlur {
-    fn shader_body(&self) -> &str { spatial::LENS_BLUR }
-    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn shader_body(&self) -> &str {
+        spatial::LENS_BLUR
+    }
+    fn workgroup_size(&self) -> [u32; 3] {
+        [16, 16, 1]
+    }
     fn params(&self, w: u32, h: u32) -> Vec<u8> {
         let ksize = self.radius * 2 + 1;
         let kernel = if self.shape == 1 {

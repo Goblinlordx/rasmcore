@@ -507,8 +507,8 @@ impl<'a> EwaSampler<'a> {
     #[inline]
     pub fn internal_to_native(&self, v: f64) -> f32 {
         match self.sample_fmt {
-            SampleFormat::U8 => (v / 257.0) as f32,   // Q16 → [0, 255]
-            SampleFormat::U16 => v as f32,              // Q16 → [0, 65535]
+            SampleFormat::U8 => (v / 257.0) as f32, // Q16 → [0, 255]
+            SampleFormat::U16 => v as f32,          // Q16 → [0, 65535]
             SampleFormat::F16 | SampleFormat::F32 => v as f32, // native f64 → f32
         }
     }

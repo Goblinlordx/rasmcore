@@ -6,7 +6,11 @@ use crate::ops::Filter;
 /// `sigma < 1.0`: enhance fine detail (compress large gradients).
 /// `sigma > 1.0`: suppress fine detail (smoothing).
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "pyramid_detail_remap", category = "enhancement", cost = "O(n * levels * sigma)")]
+#[filter(
+    name = "pyramid_detail_remap",
+    category = "enhancement",
+    cost = "O(n * levels * sigma)"
+)]
 pub struct PyramidDetailRemap {
     #[param(min = 0.0, max = 5.0, default = 0.5)]
     pub sigma: f32,
@@ -21,7 +25,9 @@ impl Filter for PyramidDetailRemap {
         let sigma = self.sigma;
         let levels = if self.levels == 0 {
             // Auto: log2(min(w,h)) - 2, clamped to [3, 7]
-            ((w.min(h) as f32).log2() as u32).saturating_sub(2).clamp(3, 7)
+            ((w.min(h) as f32).log2() as u32)
+                .saturating_sub(2)
+                .clamp(3, 7)
         } else {
             self.levels
         };

@@ -6,20 +6,20 @@
 
 mod dilate;
 mod erode;
-mod morph_open;
+mod morph_blackhat;
 mod morph_close;
 mod morph_gradient;
+mod morph_open;
 mod morph_tophat;
-mod morph_blackhat;
 mod skeletonize;
 
 pub use dilate::Dilate;
 pub use erode::Erode;
-pub use morph_open::MorphOpen;
+pub use morph_blackhat::MorphBlackhat;
 pub use morph_close::MorphClose;
 pub use morph_gradient::MorphGradient;
+pub use morph_open::MorphOpen;
 pub use morph_tophat::MorphTophat;
-pub use morph_blackhat::MorphBlackhat;
 pub use skeletonize::Skeletonize;
 
 use crate::node::GpuShader;
@@ -237,8 +237,9 @@ pub(super) fn make_snapshot_shader(width: u32, height: u32, buf_id: u32) -> GpuS
             initial_data: vec![0u8; buf_size],
             read_write: true,
         }],
-            convergence_check: None,
-            loop_dispatch: None, setup: None,
+        convergence_check: None,
+        loop_dispatch: None,
+        setup: None,
     }
 }
 
@@ -257,13 +258,19 @@ pub(super) fn make_sub_shader(wgsl: &str, width: u32, height: u32, buf_id: u32) 
             initial_data: vec![], // reuse existing allocation
             read_write: false,    // read-only on this pass
         }],
-            convergence_check: None,
-            loop_dispatch: None, setup: None,
+        convergence_check: None,
+        loop_dispatch: None,
+        setup: None,
     }
 }
 
 /// Erode reading from a snapshot buffer instead of ping-pong input.
-pub(super) fn make_erode_from_snap_shader(width: u32, height: u32, radius: u32, snap_id: u32) -> GpuShader {
+pub(super) fn make_erode_from_snap_shader(
+    width: u32,
+    height: u32,
+    radius: u32,
+    snap_id: u32,
+) -> GpuShader {
     let mut params = gpu_params_wh(width, height);
     gpu_params_push_u32(&mut params, radius);
     gpu_params_push_u32(&mut params, 0);
@@ -278,8 +285,9 @@ pub(super) fn make_erode_from_snap_shader(width: u32, height: u32, radius: u32, 
             initial_data: vec![],
             read_write: false,
         }],
-            convergence_check: None,
-            loop_dispatch: None, setup: None,
+        convergence_check: None,
+        loop_dispatch: None,
+        setup: None,
     }
 }
 
@@ -309,8 +317,16 @@ mod tests {
     #[test]
     fn all_morphology_filters_registered() {
         let factories = crate::registered_filter_factories();
-        for name in &["dilate", "erode", "morph_open", "morph_close",
-                       "morph_gradient", "morph_tophat", "morph_blackhat", "skeletonize"] {
+        for name in &[
+            "dilate",
+            "erode",
+            "morph_open",
+            "morph_close",
+            "morph_gradient",
+            "morph_tophat",
+            "morph_blackhat",
+            "skeletonize",
+        ] {
             assert!(factories.contains(name), "{name} not registered");
         }
     }

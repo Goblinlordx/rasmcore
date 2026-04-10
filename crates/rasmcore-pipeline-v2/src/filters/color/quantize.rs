@@ -70,8 +70,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 "#;
 
 impl GpuFilter for Quantize {
-    fn shader_body(&self) -> &str { QUANTIZE_WGSL }
-    fn workgroup_size(&self) -> [u32; 3] { [256, 1, 1] }
+    fn shader_body(&self) -> &str {
+        QUANTIZE_WGSL
+    }
+    fn workgroup_size(&self) -> [u32; 3] {
+        [256, 1, 1]
+    }
     fn params(&self, width: u32, height: u32) -> Vec<u8> {
         let mut buf = Vec::with_capacity(16);
         buf.extend_from_slice(&width.to_le_bytes());
@@ -112,6 +116,10 @@ mod tests {
             );
             unique.insert(key);
         }
-        assert!(unique.len() <= 4, "Should have <=4 colors, got {}", unique.len());
+        assert!(
+            unique.len() <= 4,
+            "Should have <=4 colors, got {}",
+            unique.len()
+        );
     }
 }

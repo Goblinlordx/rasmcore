@@ -220,7 +220,6 @@ pub fn encode_pages(seq: &FrameSequence, config: &TiffEncodeConfig) -> Result<Ve
     Ok(buf)
 }
 
-
 // ─── Encoder Registration ──────────────────────────────────────────────────
 
 inventory::submit! {

@@ -3,23 +3,23 @@
 //! Each filter composites a shape onto the input image using signed distance
 //! fields for anti-aliased edges. GPU shaders compute the SDF per-pixel.
 
-mod draw_line;
-mod draw_rect;
+mod draw_arc;
 mod draw_circle;
 mod draw_ellipse;
-mod draw_arc;
+mod draw_line;
 mod draw_polygon;
-mod solid_fill;
+mod draw_rect;
 mod draw_text;
+mod solid_fill;
 
-pub use draw_line::DrawLine;
-pub use draw_rect::DrawRect;
+pub use draw_arc::DrawArc;
 pub use draw_circle::DrawCircle;
 pub use draw_ellipse::DrawEllipse;
-pub use draw_arc::DrawArc;
+pub use draw_line::DrawLine;
 pub use draw_polygon::DrawPolygon;
-pub use solid_fill::SolidFill;
+pub use draw_rect::DrawRect;
 pub use draw_text::DrawTextNode;
+pub use solid_fill::SolidFill;
 
 /// Blend a color onto a pixel with given coverage (0..1).
 #[inline(always)]
@@ -70,8 +70,15 @@ mod tests {
     #[test]
     fn all_draw_filters_registered() {
         let factories = crate::registered_filter_factories();
-        for name in &["draw_line", "draw_rect", "draw_circle", "draw_ellipse",
-                       "draw_arc", "draw_polygon", "solid_fill"] {
+        for name in &[
+            "draw_line",
+            "draw_rect",
+            "draw_circle",
+            "draw_ellipse",
+            "draw_arc",
+            "draw_polygon",
+            "solid_fill",
+        ] {
             assert!(factories.contains(name), "{name} not registered");
         }
     }
@@ -80,8 +87,14 @@ mod tests {
     fn draw_circle_modifies_pixels() {
         let input = vec![0.0f32; 100 * 100 * 4];
         let f = DrawCircle {
-            cx: 50.0, cy: 50.0, radius: 20.0, stroke_width: 0.0,
-            color_r: 1.0, color_g: 0.0, color_b: 0.0, color_a: 1.0,
+            cx: 50.0,
+            cy: 50.0,
+            radius: 20.0,
+            stroke_width: 0.0,
+            color_r: 1.0,
+            color_g: 0.0,
+            color_b: 0.0,
+            color_a: 1.0,
         };
         let out = f.compute(&input, 100, 100).unwrap();
         // Center pixel should be red
@@ -94,7 +107,12 @@ mod tests {
     #[test]
     fn solid_fill_blends() {
         let input = vec![1.0, 1.0, 1.0, 1.0]; // white pixel
-        let f = SolidFill { color_r: 0.0, color_g: 0.0, color_b: 0.0, color_a: 0.5 };
+        let f = SolidFill {
+            color_r: 0.0,
+            color_g: 0.0,
+            color_b: 0.0,
+            color_a: 0.5,
+        };
         let out = f.compute(&input, 1, 1).unwrap();
         // 50% black over white = 0.5 gray
         assert!((out[0] - 0.5).abs() < 0.01);

@@ -117,8 +117,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 "#;
 
 impl GpuFilter for SparseColor {
-    fn shader_body(&self) -> &str { SPARSE_COLOR_WGSL }
-    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn shader_body(&self) -> &str {
+        SPARSE_COLOR_WGSL
+    }
+    fn workgroup_size(&self) -> [u32; 3] {
+        [16, 16, 1]
+    }
     fn params(&self, width: u32, height: u32) -> Vec<u8> {
         let mut buf = Vec::with_capacity(16);
         buf.extend_from_slice(&width.to_le_bytes());
@@ -162,10 +166,7 @@ mod tests {
     #[test]
     fn sparse_color_exact_point() {
         let points = vec![(0.0, 0.0, 1.0, 0.0, 0.0)]; // top-left = red
-        let f = SparseColor {
-            points,
-            power: 2.0,
-        };
+        let f = SparseColor { points, power: 2.0 };
         let input = vec![0.5, 0.5, 0.5, 1.0];
         let out = f.compute(&input, 1, 1).unwrap();
         assert_rgb_close(&out, (1.0, 0.0, 0.0), 0.01, "sparse exact point");

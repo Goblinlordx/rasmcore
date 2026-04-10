@@ -3,7 +3,10 @@
 use crate::node::{GpuShader, PipelineError};
 use crate::ops::Filter;
 
-use super::{dilate_cpu, erode_cpu, make_dilate_shader, make_erode_shader, make_snapshot_shader, make_sub_shader, SUB_SNAP_MINUS_CURRENT_WGSL};
+use super::{
+    SUB_SNAP_MINUS_CURRENT_WGSL, dilate_cpu, erode_cpu, make_dilate_shader, make_erode_shader,
+    make_snapshot_shader, make_sub_shader,
+};
 
 // Morph Top Hat (input − open)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -43,5 +46,7 @@ impl Filter for MorphTophat {
         ])
     }
 
-    fn tile_overlap(&self) -> u32 { self.radius * 2 }
+    fn tile_overlap(&self) -> u32 {
+        self.radius * 2
+    }
 }

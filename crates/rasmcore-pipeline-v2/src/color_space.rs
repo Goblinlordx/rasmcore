@@ -8,8 +8,9 @@
 ///
 /// Tracked per-node in `NodeInfo`. The graph walker uses this to detect
 /// mismatches and insert automatic conversions at node boundaries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-#[derive(Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, Default,
+)]
 pub enum ColorSpace {
     /// Linear sRGB (D65). The default working space for VFX operations.
     /// Blur, composite, resize — all should operate in linear light.
@@ -46,7 +47,6 @@ pub enum ColorSpace {
     /// Used for raw/untagged data or when color management is disabled.
     Unknown,
 }
-
 
 impl ColorSpace {
     /// True if this color space uses linear light (no transfer function).

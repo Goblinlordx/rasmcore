@@ -1,4 +1,4 @@
-use super::{find_nearest, find_nearest_index, ImageError, ImageInfo, Rgb};
+use super::{ImageError, ImageInfo, Rgb, find_nearest, find_nearest_index};
 
 /// Generate an N-color palette from an RGB8 image using the median cut algorithm.
 ///

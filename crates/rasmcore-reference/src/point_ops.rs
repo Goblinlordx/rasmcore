@@ -110,7 +110,13 @@ pub fn solarize(input: &[f32], _w: u32, _h: u32, threshold: f32) -> Vec<f32> {
 /// where `sig(x) = 1 / (1 + exp(-strength * (x - midpoint)))`
 ///
 /// Validated against: ImageMagick 7.1.1 `-sigmoidal-contrast {strength}x{midpoint*100}%`
-pub fn sigmoidal_contrast(input: &[f32], _w: u32, _h: u32, strength: f32, midpoint: f32) -> Vec<f32> {
+pub fn sigmoidal_contrast(
+    input: &[f32],
+    _w: u32,
+    _h: u32,
+    strength: f32,
+    midpoint: f32,
+) -> Vec<f32> {
     if strength.abs() < 1e-6 {
         return input.to_vec();
     }

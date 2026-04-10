@@ -2,8 +2,8 @@ use crate::fusion::Clut3D;
 use crate::node::PipelineError;
 use crate::ops::Filter;
 
-use crate::filters::helpers::luminance;
 use super::ClutOp;
+use crate::filters::helpers::luminance;
 
 /// Photo filter — color overlay with optional luminosity preservation.
 #[derive(Clone, rasmcore_macros::V2Filter)]

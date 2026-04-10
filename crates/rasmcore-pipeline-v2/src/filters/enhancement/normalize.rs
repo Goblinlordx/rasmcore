@@ -134,8 +134,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 "#;
 
 impl GpuFilter for Normalize {
-    fn shader_body(&self) -> &str { NORMALIZE_APPLY_WGSL }
-    fn workgroup_size(&self) -> [u32; 3] { [256, 1, 1] }
+    fn shader_body(&self) -> &str {
+        NORMALIZE_APPLY_WGSL
+    }
+    fn workgroup_size(&self) -> [u32; 3] {
+        [256, 1, 1]
+    }
     fn params(&self, width: u32, height: u32) -> Vec<u8> {
         let total = width * height;
         let black_clip_count = (total as f32 * self.black_clip) as u32;

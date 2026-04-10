@@ -58,17 +58,29 @@ pub struct ReductionPasses {
 impl GpuReduction {
     /// Create a ChannelSum reduction with the given workgroup size.
     pub fn channel_sum(workgroup_size: u32) -> Self {
-        Self { kind: ReductionKind::ChannelSum, workgroup_size, buffer_id: 0 }
+        Self {
+            kind: ReductionKind::ChannelSum,
+            workgroup_size,
+            buffer_id: 0,
+        }
     }
 
     /// Create a ChannelMinMax reduction with the given workgroup size.
     pub fn channel_min_max(workgroup_size: u32) -> Self {
-        Self { kind: ReductionKind::ChannelMinMax, workgroup_size, buffer_id: 0 }
+        Self {
+            kind: ReductionKind::ChannelMinMax,
+            workgroup_size,
+            buffer_id: 0,
+        }
     }
 
     /// Create a Histogram256 reduction with the given workgroup size.
     pub fn histogram_256(workgroup_size: u32) -> Self {
-        Self { kind: ReductionKind::Histogram256, workgroup_size, buffer_id: 0 }
+        Self {
+            kind: ReductionKind::Histogram256,
+            workgroup_size,
+            buffer_id: 0,
+        }
     }
 
     /// Set a custom buffer ID (for chaining multiple reductions).
@@ -167,7 +179,8 @@ impl GpuReduction {
                 read_write: true,
             }],
             convergence_check: None,
-            loop_dispatch: None, setup: None,
+            loop_dispatch: None,
+            setup: None,
         };
 
         let pass2 = GpuShader {
@@ -182,7 +195,8 @@ impl GpuReduction {
                 read_write: true,
             }],
             convergence_check: None,
-            loop_dispatch: None, setup: None,
+            loop_dispatch: None,
+            setup: None,
         };
 
         ReductionPasses {
@@ -229,7 +243,8 @@ impl GpuReduction {
                 read_write: true,
             }],
             convergence_check: None,
-            loop_dispatch: None, setup: None,
+            loop_dispatch: None,
+            setup: None,
         };
 
         let pass2 = GpuShader {
@@ -244,7 +259,8 @@ impl GpuReduction {
                 read_write: true,
             }],
             convergence_check: None,
-            loop_dispatch: None, setup: None,
+            loop_dispatch: None,
+            setup: None,
         };
 
         ReductionPasses {
@@ -292,7 +308,8 @@ impl GpuReduction {
                 read_write: true,
             }],
             convergence_check: None,
-            loop_dispatch: None, setup: None,
+            loop_dispatch: None,
+            setup: None,
         };
 
         let pass2 = GpuShader {
@@ -307,7 +324,8 @@ impl GpuReduction {
                 read_write: true,
             }],
             convergence_check: None,
-            loop_dispatch: None, setup: None,
+            loop_dispatch: None,
+            setup: None,
         };
 
         ReductionPasses {
@@ -702,9 +720,18 @@ mod tests {
         let r = GpuReduction::channel_sum(256);
         let passes = r.build_passes(100, 100);
         let body = &passes.pass2.body;
-        assert!(body.contains("if (wid.x == 0u)"), "Reduction gated to workgroup 0");
-        assert!(body.contains("partials[0] = shared[0]"), "Writes final result");
-        assert!(body.contains("output[idx] = input[idx]"), "Passthrough pixels");
+        assert!(
+            body.contains("if (wid.x == 0u)"),
+            "Reduction gated to workgroup 0"
+        );
+        assert!(
+            body.contains("partials[0] = shared[0]"),
+            "Writes final result"
+        );
+        assert!(
+            body.contains("output[idx] = input[idx]"),
+            "Passthrough pixels"
+        );
     }
 
     #[test]
@@ -787,7 +814,10 @@ mod tests {
         let per_thread = (num_wg + 255) / 256;
         // Must fit: 256 threads × per_thread ≈ num_wg
         assert!(per_thread * 256 >= num_wg);
-        assert!(per_thread < 1000, "Per-thread load reasonable: {per_thread}");
+        assert!(
+            per_thread < 1000,
+            "Per-thread load reasonable: {per_thread}"
+        );
     }
 
     #[test]
@@ -835,8 +865,14 @@ mod tests {
         let r = GpuReduction::histogram_256(256);
         let passes = r.build_passes(100, 100);
         let body = &passes.pass2.body;
-        assert!(body.contains("wg_idx * 768u"), "Should iterate workgroup histograms");
-        assert!(body.contains("if (wid.x == 0u)"), "Merge gated to workgroup 0");
+        assert!(
+            body.contains("wg_idx * 768u"),
+            "Should iterate workgroup histograms"
+        );
+        assert!(
+            body.contains("if (wid.x == 0u)"),
+            "Merge gated to workgroup 0"
+        );
     }
 
     #[test]
@@ -852,9 +888,15 @@ mod tests {
 
     #[test]
     fn histogram_256_buffer_id_with_explicit() {
-        let sum = GpuReduction::channel_sum(256).with_buffer_id(0).build_passes(10, 10);
-        let mm = GpuReduction::channel_min_max(256).with_buffer_id(1).build_passes(10, 10);
-        let hist = GpuReduction::histogram_256(256).with_buffer_id(2).build_passes(10, 10);
+        let sum = GpuReduction::channel_sum(256)
+            .with_buffer_id(0)
+            .build_passes(10, 10);
+        let mm = GpuReduction::channel_min_max(256)
+            .with_buffer_id(1)
+            .build_passes(10, 10);
+        let hist = GpuReduction::histogram_256(256)
+            .with_buffer_id(2)
+            .build_passes(10, 10);
         let ids = [sum.buffer_id, mm.buffer_id, hist.buffer_id];
         assert_ne!(ids[0], ids[1]);
         assert_ne!(ids[0], ids[2]);

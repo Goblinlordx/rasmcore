@@ -134,7 +134,8 @@ impl GpuShader {
             extra_buffers: vec![],
             reduction_buffers: vec![],
             convergence_check: None,
-            loop_dispatch: None, setup: None,
+            loop_dispatch: None,
+            setup: None,
         }
     }
 
@@ -160,7 +161,10 @@ impl GpuShader {
     /// Set loop dispatch: run this shader `count` times, writing iteration
     /// index (0..count) as u32 at `param_offset` in the params buffer.
     pub fn with_loop_dispatch(mut self, count: u32, param_offset: usize) -> Self {
-        self.loop_dispatch = Some(LoopDispatch { count, param_offset });
+        self.loop_dispatch = Some(LoopDispatch {
+            count,
+            param_offset,
+        });
         self
     }
 }
@@ -488,7 +492,10 @@ impl std::fmt::Display for PipelineError {
             PipelineError::GpuError(msg) => write!(f, "GPU error: {msg}"),
             PipelineError::InvalidParams(msg) => write!(f, "invalid params: {msg}"),
             PipelineError::BufferMismatch { expected, actual } => {
-                write!(f, "buffer mismatch: expected {expected} floats, got {actual}")
+                write!(
+                    f,
+                    "buffer mismatch: expected {expected} floats, got {actual}"
+                )
             }
         }
     }

@@ -30,9 +30,7 @@ impl Filter for TonemapReinhard {
 
 impl ClutOp for TonemapReinhard {
     fn build_clut(&self) -> Clut3D {
-        Clut3D::from_fn(33, |r, g, b| {
-            (r / (1.0 + r), g / (1.0 + g), b / (1.0 + b))
-        })
+        Clut3D::from_fn(33, |r, g, b| (r / (1.0 + r), g / (1.0 + g), b / (1.0 + b)))
     }
 }
 
@@ -54,7 +52,11 @@ impl Filter for TonemapDrago {
         let bias_pow = (self.bias.ln() / 0.5f32.ln()).max(0.01);
         let mut out = input.to_vec();
         let drago = |v: f32| -> f32 {
-            if v <= 0.0 { 0.0 } else { ((1.0 + v).ln() / log_max).powf(1.0 / bias_pow) }
+            if v <= 0.0 {
+                0.0
+            } else {
+                ((1.0 + v).ln() / log_max).powf(1.0 / bias_pow)
+            }
         };
         for pixel in out.chunks_exact_mut(4) {
             pixel[0] = drago(pixel[0]);
@@ -108,9 +110,7 @@ impl Filter for TonemapFilmic {
     fn compute(&self, input: &[f32], _width: u32, _height: u32) -> Result<Vec<f32>, PipelineError> {
         let mut out = input.to_vec();
         let (a, b, c, d, e) = (self.a, self.b, self.c, self.d, self.e);
-        let filmic = |x: f32| -> f32 {
-            x * (a * x + b) / (x * (c * x + d) + e)
-        };
+        let filmic = |x: f32| -> f32 { x * (a * x + b) / (x * (c * x + d) + e) };
         for pixel in out.chunks_exact_mut(4) {
             pixel[0] = filmic(pixel[0]);
             pixel[1] = filmic(pixel[1]);

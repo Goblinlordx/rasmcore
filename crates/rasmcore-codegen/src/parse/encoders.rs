@@ -110,7 +110,9 @@ fn extract_default_from_attrs(attrs: &[syn::Attribute]) -> String {
                     // Stop at whitespace, paren, period, comma, or end
                     let val: String = after
                         .chars()
-                        .take_while(|c| !c.is_whitespace() && !matches!(c, ')' | '.' | ',' | '(' | '\n'))
+                        .take_while(|c| {
+                            !c.is_whitespace() && !matches!(c, ')' | '.' | ',' | '(' | '\n')
+                        })
                         .collect();
                     let val = val.trim().to_string();
                     if !val.is_empty() {

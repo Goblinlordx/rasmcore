@@ -14,10 +14,14 @@ use super::perlin_noise::PERLIN_NOISE_WGSL;
 #[derive(Clone, rasmcore_macros::V2Filter)]
 #[filter(name = "simplex_noise", category = "generator")]
 pub struct SimplexNoise {
-    #[param(min = 1.0, max = 200.0, step = 1.0, default = 50.0)] pub scale: f32,
-    #[param(min = 1, max = 8, step = 1, default = 4)] pub octaves: u32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)] pub persistence: f32,
-    #[param(min = 0, max = 99999, step = 1, default = 7, hint = "rc.seed")] pub seed: u32,
+    #[param(min = 1.0, max = 200.0, step = 1.0, default = 50.0)]
+    pub scale: f32,
+    #[param(min = 1, max = 8, step = 1, default = 4)]
+    pub octaves: u32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
+    pub persistence: f32,
+    #[param(min = 0, max = 99999, step = 1, default = 7, hint = "rc.seed")]
+    pub seed: u32,
 }
 
 impl Filter for SimplexNoise {
@@ -33,7 +37,10 @@ impl Filter for SimplexNoise {
                 let py = y as f32 / self.scale + seed_offset_y;
                 let v = fbm_cpu(px, py, self.octaves, self.persistence);
                 let i = ((y * width + x) * 4) as usize;
-                out[i] = v; out[i+1] = v; out[i+2] = v; out[i+3] = 1.0;
+                out[i] = v;
+                out[i + 1] = v;
+                out[i + 2] = v;
+                out[i + 3] = 1.0;
             }
         }
         Ok(out)
@@ -46,7 +53,13 @@ impl Filter for SimplexNoise {
         gpu_push_u32(&mut p, self.octaves);
         gpu_push_f32(&mut p, self.persistence);
         gpu_push_u32(&mut p, self.seed.wrapping_add(10000));
-        gpu_push_u32(&mut p, 0); gpu_push_u32(&mut p, 0);
-        Some(vec![GpuShader::new(PERLIN_NOISE_WGSL.to_string(), "main", [256, 1, 1], p)])
+        gpu_push_u32(&mut p, 0);
+        gpu_push_u32(&mut p, 0);
+        Some(vec![GpuShader::new(
+            PERLIN_NOISE_WGSL.to_string(),
+            "main",
+            [256, 1, 1],
+            p,
+        )])
     }
 }

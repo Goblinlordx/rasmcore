@@ -9,7 +9,11 @@ use crate::filters::helpers::luminance;
 /// Independently lighten shadows and darken highlights via soft-light blending
 /// on the luminance channel with compress-gated weight masks.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "shadow_highlight", category = "enhancement", cost = "O(n * radius)")]
+#[filter(
+    name = "shadow_highlight",
+    category = "enhancement",
+    cost = "O(n * radius)"
+)]
 pub struct ShadowHighlight {
     #[param(min = -100.0, max = 100.0, default = 0.0)]
     pub shadows: f32,
@@ -46,7 +50,9 @@ impl Filter for ShadowHighlight {
 
         // Blur luminance
         let mut luma_rgba: Vec<f32> = luma.iter().flat_map(|&v| [v, v, v, 1.0]).collect();
-        let blur = GaussianBlur { radius: self.radius };
+        let blur = GaussianBlur {
+            radius: self.radius,
+        };
         luma_rgba = blur.compute(&luma_rgba, width, height)?;
         let blurred_luma: Vec<f32> = luma_rgba.chunks_exact(4).map(|p| p[0]).collect();
 
@@ -91,8 +97,8 @@ impl Filter for ShadowHighlight {
                     let chroma = v - gray;
 
                     // Shadow saturation correction
-                    let sat_adj = 1.0 + chroma.signum() * sw * (sc - 1.0)
-                        + chroma.signum() * hw * (hc - 1.0);
+                    let sat_adj =
+                        1.0 + chroma.signum() * sw * (sc - 1.0) + chroma.signum() * hw * (hc - 1.0);
 
                     out[idx + c] = new_luma + chroma * sat_adj.max(0.0) * ratio;
                 }
@@ -105,9 +111,9 @@ impl Filter for ShadowHighlight {
 
 // ── ShadowHighlight GPU (blur luma + apply) ─────────────────────────────
 
+use crate::filters::spatial::{blur_params, gaussian_kernel_bytes};
 use crate::gpu_shaders::{enhancement as enh_shaders, spatial};
 use crate::node::GpuShader;
-use crate::filters::spatial::{gaussian_kernel_bytes, blur_params};
 
 gpu_filter_passes_only!(ShadowHighlight,
     passes(self_, w, h) => {

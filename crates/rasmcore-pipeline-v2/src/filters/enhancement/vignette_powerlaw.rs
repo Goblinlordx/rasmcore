@@ -74,8 +74,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 "#;
 
 impl GpuFilter for VignettePowerlaw {
-    fn shader_body(&self) -> &str { VIGNETTE_POWERLAW_WGSL }
-    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn shader_body(&self) -> &str {
+        VIGNETTE_POWERLAW_WGSL
+    }
+    fn workgroup_size(&self) -> [u32; 3] {
+        [16, 16, 1]
+    }
     fn params(&self, width: u32, height: u32) -> Vec<u8> {
         let cx = width as f32 / 2.0;
         let cy = height as f32 / 2.0;

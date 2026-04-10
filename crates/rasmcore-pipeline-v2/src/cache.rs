@@ -6,9 +6,9 @@
 //!
 //! Uses LRU eviction bounded by both entry count and byte budget.
 
-use std::collections::HashMap;
-use crate::rect::Rect;
 use crate::hash::ContentHash;
+use crate::rect::Rect;
+use std::collections::HashMap;
 
 /// Cached tile region with f32 pixel data.
 struct CachedRegion {
@@ -115,7 +115,12 @@ impl SpatialCache {
         }
 
         let entries = self.entries.entry(node_id).or_default();
-        entries.push(CachedRegion { rect, data, _hash: hash, generation: current_gen });
+        entries.push(CachedRegion {
+            rect,
+            data,
+            _hash: hash,
+            generation: current_gen,
+        });
         self.current_bytes += byte_size;
         self.entry_count += 1;
     }

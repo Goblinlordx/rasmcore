@@ -1,18 +1,14 @@
 //! Dab stamp compositing onto the accumulation buffer.
 
-use super::types::{AccumulationBuffer, DabInstance};
 use super::dab::generate_stamp;
+use super::types::{AccumulationBuffer, DabInstance};
 
 /// Composite a dab stamp onto the accumulation buffer.
 ///
 /// Uses max-opacity blending: each pixel retains the maximum alpha
 /// contribution from any dab, preventing darkening from overlap.
 /// This matches Photoshop's stroke accumulation model.
-pub fn composite_dab(
-    buf: &mut AccumulationBuffer,
-    dab: &DabInstance,
-    color: [f32; 4],
-) {
+pub fn composite_dab(buf: &mut AccumulationBuffer, dab: &DabInstance, color: [f32; 4]) {
     let stamp_size = dab.size.round().max(1.0) as u32;
     if stamp_size == 0 {
         return;
@@ -85,8 +81,13 @@ mod tests {
     fn composite_dab_leaves_mark() {
         let mut buf = AccumulationBuffer::new(32, 32);
         let dab = DabInstance {
-            x: 16.0, y: 16.0, size: 10.0, opacity: 1.0,
-            angle: 0.0, roundness: 1.0, hardness: 1.0,
+            x: 16.0,
+            y: 16.0,
+            size: 10.0,
+            opacity: 1.0,
+            angle: 0.0,
+            roundness: 1.0,
+            hardness: 1.0,
         };
         composite_dab(&mut buf, &dab, [1.0, 0.0, 0.0, 1.0]);
         // Center should have color
@@ -100,8 +101,13 @@ mod tests {
         let mut buf = AccumulationBuffer::new(16, 16);
         // Dab near edge — should not panic
         let dab = DabInstance {
-            x: 1.0, y: 1.0, size: 10.0, opacity: 1.0,
-            angle: 0.0, roundness: 1.0, hardness: 1.0,
+            x: 1.0,
+            y: 1.0,
+            size: 10.0,
+            opacity: 1.0,
+            angle: 0.0,
+            roundness: 1.0,
+            hardness: 1.0,
         };
         composite_dab(&mut buf, &dab, [1.0, 1.0, 1.0, 1.0]);
         // Should not crash — dab extends past (0,0)
@@ -111,8 +117,13 @@ mod tests {
     fn max_opacity_blend_no_darkening() {
         let mut buf = AccumulationBuffer::new(4, 4);
         let dab = DabInstance {
-            x: 2.0, y: 2.0, size: 4.0, opacity: 0.5,
-            angle: 0.0, roundness: 1.0, hardness: 1.0,
+            x: 2.0,
+            y: 2.0,
+            size: 4.0,
+            opacity: 0.5,
+            angle: 0.0,
+            roundness: 1.0,
+            hardness: 1.0,
         };
         composite_dab(&mut buf, &dab, [1.0, 0.0, 0.0, 1.0]);
         let alpha_1 = buf.data[(2 * 4 + 2) * 4 + 3];
@@ -120,13 +131,17 @@ mod tests {
         // Second dab at same position — alpha should not increase beyond first
         composite_dab(&mut buf, &dab, [1.0, 0.0, 0.0, 1.0]);
         let alpha_2 = buf.data[(2 * 4 + 2) * 4 + 3];
-        assert!((alpha_1 - alpha_2).abs() < 1e-6, "max-opacity should not accumulate");
+        assert!(
+            (alpha_1 - alpha_2).abs() < 1e-6,
+            "max-opacity should not accumulate"
+        );
     }
 
     #[test]
     fn stroke_composite_onto_layer() {
-        let mut layer = vec![0.5f32, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0,
-                             0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0];
+        let mut layer = vec![
+            0.5f32, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0,
+        ];
         let mut accum = AccumulationBuffer::new(2, 2);
         // Put a red mark at (0,0)
         accum.data[0] = 1.0; // R premultiplied

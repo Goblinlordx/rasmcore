@@ -2,8 +2,8 @@ use crate::fusion::Clut3D;
 use crate::node::PipelineError;
 use crate::ops::Filter;
 
-use crate::filters::helpers::{rgb_to_hsl, hsl_to_rgb};
 use super::ClutOp;
+use crate::filters::helpers::{hsl_to_rgb, rgb_to_hsl};
 
 /// Vibrance — perceptually-weighted saturation boost.
 /// Boosts less-saturated colors more than already-saturated ones.

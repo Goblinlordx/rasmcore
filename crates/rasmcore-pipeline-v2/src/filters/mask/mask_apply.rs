@@ -40,7 +40,13 @@ impl Filter for MaskApply {
 
     fn gpu_shader_passes(&self, width: u32, height: u32) -> Option<Vec<GpuShader>> {
         let mut p = gpu_params_wh(width, height);
-        gpu_push_u32(&mut p, 0); gpu_push_u32(&mut p, 0);
-        Some(vec![GpuShader::new(MASK_APPLY_WGSL.to_string(), "main", [256, 1, 1], p)])
+        gpu_push_u32(&mut p, 0);
+        gpu_push_u32(&mut p, 0);
+        Some(vec![GpuShader::new(
+            MASK_APPLY_WGSL.to_string(),
+            "main",
+            [256, 1, 1],
+            p,
+        )])
     }
 }

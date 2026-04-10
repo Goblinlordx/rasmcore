@@ -4,10 +4,10 @@
 //! This module converts from V1's various pixel formats to that uniform representation.
 
 use rasmcore_image::domain::types::{DecodedImage as V1DecodedImage, ImageInfo, PixelFormat};
+use rasmcore_pipeline_v2::PipelineError;
 use rasmcore_pipeline_v2::color_space::ColorSpace as V2ColorSpace;
 use rasmcore_pipeline_v2::node::NodeInfo;
 use rasmcore_pipeline_v2::ops::DecodedImage as V2DecodedImage;
-use rasmcore_pipeline_v2::PipelineError;
 
 /// Convert a V1 DecodedImage to V2 DecodedImage (f32 linear RGBA).
 ///
@@ -26,8 +26,8 @@ pub fn v1_to_v2(v1: V1DecodedImage) -> Result<V2DecodedImage, PipelineError> {
     }
 
     // Derive color space from metadata (ICC profile, EXIF), fallback to V1's declared space
-    let color_space = derive_color_space(&metadata)
-        .unwrap_or_else(|| map_color_space(v1.info.color_space));
+    let color_space =
+        derive_color_space(&metadata).unwrap_or_else(|| map_color_space(v1.info.color_space));
 
     // Linearize sRGB sources — V2 pipeline is f32 linear throughout.
     let pixels = if color_space == V2ColorSpace::Srgb {
@@ -129,11 +129,7 @@ pub fn f32_to_v1_rgb8(
 /// Convert f32 RGBA to V1-compatible f32 LE bytes (Rgba32f).
 ///
 /// For linear HDR formats (EXR, HDR, FITS) that encode f32 directly.
-pub fn f32_to_v1_rgba32f_bytes(
-    pixels: &[f32],
-    width: u32,
-    height: u32,
-) -> (Vec<u8>, ImageInfo) {
+pub fn f32_to_v1_rgba32f_bytes(pixels: &[f32], width: u32, height: u32) -> (Vec<u8>, ImageInfo) {
     let mut out = Vec::with_capacity(pixels.len() * 4);
     for &v in pixels {
         out.extend_from_slice(&v.to_le_bytes());
@@ -254,8 +250,12 @@ fn pixels_to_f32_rgba(
             for chunk in data.chunks_exact(16) {
                 out.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
                 out.push(f32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]));
-                out.push(f32::from_le_bytes([chunk[8], chunk[9], chunk[10], chunk[11]]));
-                out.push(f32::from_le_bytes([chunk[12], chunk[13], chunk[14], chunk[15]]));
+                out.push(f32::from_le_bytes([
+                    chunk[8], chunk[9], chunk[10], chunk[11],
+                ]));
+                out.push(f32::from_le_bytes([
+                    chunk[12], chunk[13], chunk[14], chunk[15],
+                ]));
             }
             Ok(out)
         }
@@ -264,7 +264,9 @@ fn pixels_to_f32_rgba(
             for chunk in data.chunks_exact(12) {
                 out.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
                 out.push(f32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]));
-                out.push(f32::from_le_bytes([chunk[8], chunk[9], chunk[10], chunk[11]]));
+                out.push(f32::from_le_bytes([
+                    chunk[8], chunk[9], chunk[10], chunk[11],
+                ]));
                 out.push(1.0);
             }
             Ok(out)
@@ -287,9 +289,7 @@ fn pixels_to_f32_rgba(
 }
 
 /// Map V1 ColorSpace to V2 ColorSpace.
-fn map_color_space(
-    v1: rasmcore_image::domain::types::ColorSpace,
-) -> V2ColorSpace {
+fn map_color_space(v1: rasmcore_image::domain::types::ColorSpace) -> V2ColorSpace {
     match v1 {
         rasmcore_image::domain::types::ColorSpace::Srgb => V2ColorSpace::Srgb,
         rasmcore_image::domain::types::ColorSpace::LinearSrgb => V2ColorSpace::Linear,
@@ -361,7 +361,10 @@ mod tests {
         let srgb_val = 128.0 / 255.0; // ~0.502
         let linear = srgb_to_linear(srgb_val);
         let back = linear_to_srgb_u8(linear);
-        assert!((back as i32 - 128).unsigned_abs() <= 1, "roundtrip: 128 → {back}");
+        assert!(
+            (back as i32 - 128).unsigned_abs() <= 1,
+            "roundtrip: 128 → {back}"
+        );
     }
 
     #[test]

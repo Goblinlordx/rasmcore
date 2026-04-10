@@ -159,10 +159,7 @@ pub fn generate_adapter_macro(
     code
 }
 
-fn generate_single_transform_method(
-    t: &TransformReg,
-    enums: &HashMap<String, EnumDef>,
-) -> String {
+fn generate_single_transform_method(t: &TransformReg, enums: &HashMap<String, EnumDef>) -> String {
     let mut code = String::new();
     let method_name = &t.name;
     let node_type = &t.node_type;
@@ -276,12 +273,8 @@ fn generate_multi_input_transform_method(
 
     // Get both source infos
     code.push_str("        let graph = self.graph.borrow();\n");
-    code.push_str(
-        "        let fg_info = graph.node_info(fg).map_err(to_wit_error)?;\n",
-    );
-    code.push_str(
-        "        let bg_info = graph.node_info(bg).map_err(to_wit_error)?;\n",
-    );
+    code.push_str("        let fg_info = graph.node_info(fg).map_err(to_wit_error)?;\n");
+    code.push_str("        let bg_info = graph.node_info(bg).map_err(to_wit_error)?;\n");
     code.push_str("        drop(graph);\n");
 
     // Convert params
@@ -357,9 +350,7 @@ fn generate_multi_input_transform_method(
     }
 
     // Add node (multi-input doesn't use add_node_derived since there are two upstreams)
-    code.push_str(
-        "        Ok(self.graph.borrow_mut().add_node_with_hash(Box::new(node), hash))\n",
-    );
+    code.push_str("        Ok(self.graph.borrow_mut().add_node_with_hash(Box::new(node), hash))\n");
 
     code.push_str("    }\n\n");
     code

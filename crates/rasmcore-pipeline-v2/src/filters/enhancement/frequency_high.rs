@@ -7,7 +7,11 @@ use crate::ops::Filter;
 /// `output = (input - blur(input)) + 0.5`
 /// The 0.5 offset provides a neutral midpoint for compositing.
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "frequency_high", category = "enhancement", cost = "O(n * sigma) via gaussian_blur")]
+#[filter(
+    name = "frequency_high",
+    category = "enhancement",
+    cost = "O(n * sigma) via gaussian_blur"
+)]
 pub struct FrequencyHigh {
     #[param(min = 0.0, max = 100.0, default = 3.0)]
     pub sigma: f32,
@@ -31,9 +35,9 @@ impl Filter for FrequencyHigh {
 
 // ── FrequencyHigh GPU (blur + subtract apply) ───────────────────────────
 
+use crate::filters::spatial::{blur_params, gaussian_kernel_bytes};
 use crate::gpu_shaders::{enhancement as enh_shaders, spatial};
 use crate::node::GpuShader;
-use crate::filters::spatial::{gaussian_kernel_bytes, blur_params};
 
 gpu_filter_passes_only!(FrequencyHigh,
     passes(self_, w, h) => {

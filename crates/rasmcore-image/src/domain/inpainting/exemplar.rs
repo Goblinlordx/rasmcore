@@ -1,5 +1,5 @@
 use super::super::error::ImageError;
-use super::{fmm_init_padded, neighbors_4_opencv, solve_eikonal, BAND, INSIDE, KNOWN, FmmEntry};
+use super::{BAND, FmmEntry, INSIDE, KNOWN, fmm_init_padded, neighbors_4_opencv, solve_eikonal};
 
 pub(crate) fn navier_stokes_inpaint(
     pixels: &[u8],

@@ -65,7 +65,6 @@ pub fn encode_pixels(
     Ok(buf)
 }
 
-
 // ─── Encoder Registration ──────────────────────────────────────────────────
 
 inventory::submit! {

@@ -19,11 +19,11 @@
 //! Source: OpenColorIO/src/OpenColorIO/ops/fixedfunction/ACES2/Transform.cpp
 //! License: BSD-3-Clause (see licenses/OCIO.txt in rasmcore-color-transforms)
 
-pub mod constants;
 pub mod cam16;
-pub mod tonescale;
 pub mod compress;
+pub mod constants;
 pub mod params;
+pub mod tonescale;
 
 use constants::*;
 
@@ -102,7 +102,12 @@ pub fn init_aces2_ot_params(
     let shared = compress::init_shared_compression_params(peak_luminance, &p_in, &p_reach);
     let chroma = compress::init_chroma_compress_params(peak_luminance, &tone);
     let gamut = compress::init_gamut_compress_params(
-        peak_luminance, &p_in, &p_out, &tone, &shared, &p_reach,
+        peak_luminance,
+        &p_in,
+        &p_out,
+        &tone,
+        &shared,
+        &p_reach,
     );
 
     Aces2OtParams {
@@ -162,10 +167,10 @@ pub fn output_transform_fwd(pixels: &mut [f32], params: &Aces2OtParams) {
         let j_ts = tonescale::tonescale_a_to_j_fwd(aab[0], &params.p_in, &params.tone);
 
         let rp = compress::resolve_compression_params(h, &params.shared);
-        let mnorm = compress::chroma_compress_norm(cos_hr, sin_hr, params.chroma.chroma_compress_scale);
-        let jmh_cc = compress::chroma_compress_fwd(
-            &[jmh[0], jmh[1], h], j_ts, mnorm, &rp, &params.chroma,
-        );
+        let mnorm =
+            compress::chroma_compress_norm(cos_hr, sin_hr, params.chroma.chroma_compress_scale);
+        let jmh_cc =
+            compress::chroma_compress_fwd(&[jmh[0], jmh[1], h], j_ts, mnorm, &rp, &params.chroma);
         let jmh_gc = compress::gamut_compress_fwd(&jmh_cc, &rp, &params.gamut);
 
         let aab_out = cam16::jmh_to_aab_with_trig(&jmh_gc, cos_hr, sin_hr, &params.p_out);
@@ -254,9 +259,8 @@ pub fn output_transform_fwd_linear(rgb_ap0: &F3, params: &Aces2OtParams) -> F3 {
 
     let rp = compress::resolve_compression_params(h, &params.shared);
     let mnorm = compress::chroma_compress_norm(cos_hr, sin_hr, params.chroma.chroma_compress_scale);
-    let jmh_cc = compress::chroma_compress_fwd(
-        &[jmh[0], jmh[1], h], j_ts, mnorm, &rp, &params.chroma,
-    );
+    let jmh_cc =
+        compress::chroma_compress_fwd(&[jmh[0], jmh[1], h], j_ts, mnorm, &rp, &params.chroma);
     let jmh_gc = compress::gamut_compress_fwd(&jmh_cc, &rp, &params.gamut);
 
     let aab_out = cam16::jmh_to_aab_with_trig(&jmh_gc, cos_hr, sin_hr, &params.p_out);
@@ -272,7 +276,11 @@ mod tests {
         let params = init_aces2_ot_params(100.0, LimitingPrimaries::Rec709, Eotf::Srgb);
         let mut pixels = vec![0.18, 0.18, 0.18, 1.0];
         output_transform_fwd(&mut pixels, &params);
-        assert!(pixels[0] > 0.2 && pixels[0] < 0.8, "midgrey sRGB: {}", pixels[0]);
+        assert!(
+            pixels[0] > 0.2 && pixels[0] < 0.8,
+            "midgrey sRGB: {}",
+            pixels[0]
+        );
     }
 
     #[test]
@@ -299,7 +307,11 @@ mod tests {
         let mut pixels = vec![5.0, 5.0, 5.0, 1.0];
         output_transform_fwd(&mut pixels, &params);
         for c in 0..3 {
-            assert!(pixels[c] >= 0.0 && pixels[c] <= 1.0, "HDR ch{c}: {}", pixels[c]);
+            assert!(
+                pixels[c] >= 0.0 && pixels[c] <= 1.0,
+                "HDR ch{c}: {}",
+                pixels[c]
+            );
         }
     }
 
@@ -308,7 +320,11 @@ mod tests {
         let params = init_aces2_ot_params(100.0, LimitingPrimaries::Rec709, Eotf::Srgb);
         let out = output_transform_fwd_linear(&[0.18, 0.18, 0.18], &params);
         let spread = (out[0] - out[1]).abs().max((out[1] - out[2]).abs());
-        assert!(spread < 0.01, "grey should be achromatic in output: {:?}", out);
+        assert!(
+            spread < 0.01,
+            "grey should be achromatic in output: {:?}",
+            out
+        );
     }
 
     /// Validate full SDR pipeline against 7500 OCIO reference vectors.
@@ -319,7 +335,9 @@ mod tests {
         let ref_dir = match reference_dir() {
             Some(d) => d,
             None => {
-                eprintln!("SKIP: reference vectors not found. Run ./tests/aces2-vectors/generate.sh");
+                eprintln!(
+                    "SKIP: reference vectors not found. Run ./tests/aces2-vectors/generate.sh"
+                );
                 return;
             }
         };
@@ -345,7 +363,10 @@ mod tests {
         );
 
         eprintln!("Full SDR pipeline: {pass} pass, {fail} fail, max_err={max_err:.8}");
-        assert_eq!(fail, 0, "SDR: {fail} vectors exceed tolerance {tolerance} (max_err={max_err:.6})");
+        assert_eq!(
+            fail, 0,
+            "SDR: {fail} vectors exceed tolerance {tolerance} (max_err={max_err:.6})"
+        );
         assert!(pass > 0, "No reference vectors loaded");
     }
 
@@ -359,7 +380,9 @@ mod tests {
         let ref_dir = match reference_dir() {
             Some(d) => d,
             None => {
-                eprintln!("SKIP: reference vectors not found. Run ./tests/aces2-vectors/generate.sh");
+                eprintln!(
+                    "SKIP: reference vectors not found. Run ./tests/aces2-vectors/generate.sh"
+                );
                 return;
             }
         };
@@ -372,7 +395,8 @@ mod tests {
         let tolerance = 0.5 * display_limit;
 
         let (pass, fail, max_err) = validate_full_pipeline(
-            &load_reference_vectors(&ref_path).expect("Failed to load full_hdr_1000nit_rec2020.bin"),
+            &load_reference_vectors(&ref_path)
+                .expect("Failed to load full_hdr_1000nit_rec2020.bin"),
             tolerance,
             |input| {
                 let linear_rgb = output_transform_fwd_linear(input, &params);
@@ -386,7 +410,10 @@ mod tests {
         );
 
         eprintln!("Full HDR pipeline: {pass} pass, {fail} fail, max_err={max_err:.8}");
-        assert_eq!(fail, 0, "HDR: {fail} vectors exceed tolerance {tolerance} (max_err={max_err:.6})");
+        assert_eq!(
+            fail, 0,
+            "HDR: {fail} vectors exceed tolerance {tolerance} (max_err={max_err:.6})"
+        );
         assert!(pass > 0, "No reference vectors loaded");
     }
 

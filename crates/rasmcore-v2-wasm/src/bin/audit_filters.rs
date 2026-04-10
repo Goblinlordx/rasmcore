@@ -6,26 +6,30 @@
 
 // Force linker to include filter registrations
 #[allow(unused_imports)]
-use rasmcore_pipeline_v2::filters as _v2_filters;
-#[allow(unused_imports)]
 use rasmcore_codecs_v2 as _v2_codecs;
+#[allow(unused_imports)]
+use rasmcore_pipeline_v2::filters as _v2_filters;
 use rasmcore_pipeline_v2::filters::scope;
 
 use rasmcore_pipeline_v2 as v2;
-use v2::{Graph, NodeInfo, ColorSpace, ParamMap, ParamType};
 use v2::node::{Node, PipelineError, Upstream};
 use v2::rect::Rect;
+use v2::{ColorSpace, Graph, NodeInfo, ParamMap, ParamType};
 
 struct TestSource {
     pixels: Vec<f32>,
     info: NodeInfo,
 }
 impl Node for TestSource {
-    fn info(&self) -> NodeInfo { self.info.clone() }
+    fn info(&self) -> NodeInfo {
+        self.info.clone()
+    }
     fn compute(&self, _r: Rect, _u: &mut dyn Upstream) -> Result<Vec<f32>, PipelineError> {
         Ok(self.pixels.clone())
     }
-    fn upstream_ids(&self) -> Vec<u32> { vec![] }
+    fn upstream_ids(&self) -> Vec<u32> {
+        vec![]
+    }
 }
 
 /// Encode params into binary format exactly as the JS playground does:
@@ -34,12 +38,13 @@ impl Node for TestSource {
 fn serialize_params_binary(params: &[v2::ParamDescriptor]) -> Vec<u8> {
     let mut buf = Vec::new();
     for p in params {
-        let v: f64 = p.default.filter(|d| d.abs() > 1e-6).unwrap_or_else(|| {
-            match (p.min, p.max) {
+        let v: f64 = p
+            .default
+            .filter(|d| d.abs() > 1e-6)
+            .unwrap_or_else(|| match (p.min, p.max) {
                 (Some(lo), Some(hi)) => lo + (hi - lo) * 0.3,
                 _ => 0.3,
-            }
-        });
+            });
 
         let name_bytes = p.name.as_bytes();
         buf.push(name_bytes.len() as u8);
@@ -75,27 +80,37 @@ fn deserialize_params(buf: &[u8]) -> ParamMap {
     while i < buf.len() {
         let name_len = buf[i] as usize;
         i += 1;
-        if i + name_len > buf.len() { break; }
+        if i + name_len > buf.len() {
+            break;
+        }
         let name = String::from_utf8_lossy(&buf[i..i + name_len]).to_string();
         i += name_len;
-        if i >= buf.len() { break; }
+        if i >= buf.len() {
+            break;
+        }
         let value_type = buf[i];
         i += 1;
         match value_type {
             0 => {
-                if i + 4 > buf.len() { break; }
+                if i + 4 > buf.len() {
+                    break;
+                }
                 let v = f32::from_le_bytes([buf[i], buf[i + 1], buf[i + 2], buf[i + 3]]);
                 map.floats.insert(name, v);
                 i += 4;
             }
             1 => {
-                if i + 4 > buf.len() { break; }
+                if i + 4 > buf.len() {
+                    break;
+                }
                 let v = u32::from_le_bytes([buf[i], buf[i + 1], buf[i + 2], buf[i + 3]]);
                 map.ints.insert(name, v as i64);
                 i += 4;
             }
             2 => {
-                if i + 1 > buf.len() { break; }
+                if i + 1 > buf.len() {
+                    break;
+                }
                 map.bools.insert(name, buf[i] != 0);
                 i += 1;
             }
@@ -109,16 +124,23 @@ fn deserialize_params(buf: &[u8]) -> ParamMap {
 fn direct_params(params: &[v2::ParamDescriptor]) -> ParamMap {
     let mut map = ParamMap::new();
     for p in params {
-        let v: f64 = p.default.filter(|d| d.abs() > 1e-6).unwrap_or_else(|| {
-            match (p.min, p.max) {
+        let v: f64 = p
+            .default
+            .filter(|d| d.abs() > 1e-6)
+            .unwrap_or_else(|| match (p.min, p.max) {
                 (Some(lo), Some(hi)) => lo + (hi - lo) * 0.3,
                 _ => 0.3,
-            }
-        });
+            });
         match p.value_type {
-            ParamType::F32 | ParamType::F64 => { map.floats.insert(p.name.into(), v as f32); }
-            ParamType::U32 | ParamType::I32 => { map.ints.insert(p.name.into(), v as i64); }
-            ParamType::Bool => { map.bools.insert(p.name.into(), v > 0.5); }
+            ParamType::F32 | ParamType::F64 => {
+                map.floats.insert(p.name.into(), v as f32);
+            }
+            ParamType::U32 | ParamType::I32 => {
+                map.ints.insert(p.name.into(), v as i64);
+            }
+            ParamType::Bool => {
+                map.bools.insert(p.name.into(), v > 0.5);
+            }
             _ => {}
         }
     }
@@ -131,7 +153,10 @@ fn test_filter(
     info: &NodeInfo,
     params: &ParamMap,
 ) -> Result<Vec<f32>, String> {
-    let src = Box::new(TestSource { pixels: pixels.to_vec(), info: info.clone() });
+    let src = Box::new(TestSource {
+        pixels: pixels.to_vec(),
+        info: info.clone(),
+    });
     let mut g = Graph::new(0);
     let sid = g.add_node(src);
     let node = v2::create_filter_node(name, sid, info.clone(), params)
@@ -165,7 +190,11 @@ fn main() {
             pixels.extend_from_slice(&[r, g, b, 1.0]);
         }
     }
-    let info = NodeInfo { width: w, height: h, color_space: ColorSpace::Linear };
+    let info = NodeInfo {
+        width: w,
+        height: h,
+        color_space: ColorSpace::Linear,
+    };
 
     let filters = v2::registry::registered_filter_registrations();
 
@@ -191,7 +220,8 @@ fn main() {
                     let d = direct_map.floats.get(p.name).copied().unwrap_or(f32::NAN);
                     let b = binary_map.floats.get(p.name).copied().unwrap_or(f32::NAN);
                     if (d - b).abs() > 1e-6 || d.is_nan() != b.is_nan() {
-                        param_diffs.push(format!("{}(f32): direct={:.4} binary={:.4}", p.name, d, b));
+                        param_diffs
+                            .push(format!("{}(f32): direct={:.4} binary={:.4}", p.name, d, b));
                     }
                 }
                 ParamType::U32 | ParamType::I32 => {
@@ -205,7 +235,8 @@ fn main() {
                     let d = direct_map.bools.get(p.name).copied();
                     let b = binary_map.bools.get(p.name).copied();
                     if d != b {
-                        param_diffs.push(format!("{}(bool): direct={:?} binary={:?}", p.name, d, b));
+                        param_diffs
+                            .push(format!("{}(bool): direct={:?} binary={:?}", p.name, d, b));
                     }
                 }
                 _ => {}
@@ -221,7 +252,9 @@ fn main() {
                 if a.len() != b.len() {
                     Some(format!("different lengths: {} vs {}", a.len(), b.len()))
                 } else {
-                    let max_diff = a.iter().zip(b.iter())
+                    let max_diff = a
+                        .iter()
+                        .zip(b.iter())
                         .map(|(x, y)| (x - y).abs())
                         .fold(0.0f32, f32::max);
                     if max_diff > 1e-4 {
@@ -310,7 +343,10 @@ fn main() {
     // Pass list
     println!("## Passing Filters ({}/{})", both_pass, total);
     println!();
-    for r in results.iter().filter(|r| r.4 && r.5 && r.3.is_empty() && r.8.is_none()) {
+    for r in results
+        .iter()
+        .filter(|r| r.4 && r.5 && r.3.is_empty() && r.8.is_none())
+    {
         println!("- {} ({})", r.0, r.1);
     }
 

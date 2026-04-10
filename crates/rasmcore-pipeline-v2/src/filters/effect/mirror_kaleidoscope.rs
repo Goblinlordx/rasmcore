@@ -35,7 +35,11 @@ impl Filter for MirrorKaleidoscope {
                     for x in 0..w {
                         let seg = x / seg_w;
                         let local_x = x % seg_w;
-                        let src_x = if seg.is_multiple_of(2) { local_x } else { seg_w - 1 - local_x };
+                        let src_x = if seg.is_multiple_of(2) {
+                            local_x
+                        } else {
+                            seg_w - 1 - local_x
+                        };
                         let src_x = src_x.min(seg_w - 1);
                         let src_idx = (y * w + src_x) * 4;
                         let dst_idx = (y * w + x) * 4;
@@ -52,7 +56,11 @@ impl Filter for MirrorKaleidoscope {
                 for y in 0..h {
                     let seg = y / seg_h;
                     let local_y = y % seg_h;
-                    let src_y = if seg.is_multiple_of(2) { local_y } else { seg_h - 1 - local_y };
+                    let src_y = if seg.is_multiple_of(2) {
+                        local_y
+                    } else {
+                        seg_h - 1 - local_y
+                    };
                     let src_y = src_y.min(seg_h - 1);
                     for x in 0..w {
                         let src_idx = (src_y * w + x) * 4;
@@ -150,8 +158,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 "#;
 
 impl GpuFilter for MirrorKaleidoscope {
-    fn shader_body(&self) -> &str { MIRROR_KALEIDOSCOPE_WGSL }
-    fn workgroup_size(&self) -> [u32; 3] { [16, 16, 1] }
+    fn shader_body(&self) -> &str {
+        MIRROR_KALEIDOSCOPE_WGSL
+    }
+    fn workgroup_size(&self) -> [u32; 3] {
+        [16, 16, 1]
+    }
     fn params(&self, width: u32, height: u32) -> Vec<u8> {
         let mut buf = gpu_params_wh(width, height);
         gpu_params_push_u32(&mut buf, self.segments);

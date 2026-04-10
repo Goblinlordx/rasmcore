@@ -1,6 +1,6 @@
 //! Liquify distortion filter.
 
-use crate::node::{PipelineError};
+use crate::node::PipelineError;
 use crate::ops::Filter;
 
 use super::super::helpers::{gpu_params_wh, sample_bilinear};
@@ -17,7 +17,13 @@ pub struct Liquify {
     pub center_x: f32,
     #[param(min = 0.0, max = 1.0, step = 0.001, default = 0.5)]
     pub center_y: f32,
-    #[param(min = 1.0, max = 500.0, step = 1.0, default = 100.0, hint = "rc.pixels")]
+    #[param(
+        min = 1.0,
+        max = 500.0,
+        step = 1.0,
+        default = 100.0,
+        hint = "rc.pixels"
+    )]
     pub radius: f32,
     #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
     pub strength: f32,
@@ -61,7 +67,9 @@ impl Filter for Liquify {
                 let dx = xf - cx;
                 let dy = yf - cy;
                 let dist = (dx * dx + dy * dy).sqrt();
-                if dist >= self.radius { continue; }
+                if dist >= self.radius {
+                    continue;
+                }
                 let t = dist / self.radius;
                 let w = (-2.0 * t * t).exp() * self.strength;
                 let sx = xf - self.direction_x * w * self.radius;
@@ -83,8 +91,15 @@ impl Filter for Liquify {
         gpu_params_push_f32(&mut params, self.strength);
         gpu_params_push_f32(&mut params, self.direction_x);
         gpu_params_push_f32(&mut params, self.direction_y);
-        Some(vec![crate::node::GpuShader::new(shader, "main", [16, 16, 1], params)])
+        Some(vec![crate::node::GpuShader::new(
+            shader,
+            "main",
+            [16, 16, 1],
+            params,
+        )])
     }
 
-    fn tile_overlap(&self) -> u32 { 0 }
+    fn tile_overlap(&self) -> u32 {
+        0
+    }
 }

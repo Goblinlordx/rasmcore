@@ -104,9 +104,7 @@ pub fn mat3_compose(a: &Mat3, b: &Mat3) -> Mat3 {
     let mut r = [0.0f64; 9];
     for i in 0..3 {
         for j in 0..3 {
-            r[i * 3 + j] = a[i * 3] * b[j]
-                + a[i * 3 + 1] * b[3 + j]
-                + a[i * 3 + 2] * b[6 + j];
+            r[i * 3 + j] = a[i * 3] * b[j] + a[i * 3 + 1] * b[3 + j] + a[i * 3 + 2] * b[6 + j];
         }
     }
     r
@@ -117,58 +115,106 @@ pub fn mat3_compose(a: &Mat3, b: &Mat3) -> Mat3 {
 
 /// sRGB linear (D65) → XYZ (D65)
 pub const SRGB_TO_XYZ_D65: Mat3 = [
-    0.4123907993, 0.3575843394, 0.1804807884,
-    0.2126390059, 0.7151686788, 0.0721923154,
-    0.0193308187, 0.1191947798, 0.9505321522,
+    0.4123907993,
+    0.3575843394,
+    0.1804807884,
+    0.2126390059,
+    0.7151686788,
+    0.0721923154,
+    0.0193308187,
+    0.1191947798,
+    0.9505321522,
 ];
 
 /// XYZ (D65) → sRGB linear (D65)
 pub const XYZ_D65_TO_SRGB: Mat3 = [
-     3.2409699419, -1.5373831776, -0.4986107603,
-    -0.9692436363,  1.8759675015,  0.0415550574,
-     0.0556300797, -0.2039769589,  1.0569715142,
+    3.2409699419,
+    -1.5373831776,
+    -0.4986107603,
+    -0.9692436363,
+    1.8759675015,
+    0.0415550574,
+    0.0556300797,
+    -0.2039769589,
+    1.0569715142,
 ];
 
 /// Bradford chromatic adaptation: D65 → D60
 pub const BRADFORD_D65_TO_D60: Mat3 = [
-     1.01303,    0.00610531, -0.014971,
-     0.00769823, 0.998165,   -0.00503203,
-    -0.00284131, 0.00468516,  0.924507,
+    1.01303,
+    0.00610531,
+    -0.014971,
+    0.00769823,
+    0.998165,
+    -0.00503203,
+    -0.00284131,
+    0.00468516,
+    0.924507,
 ];
 
 /// Bradford chromatic adaptation: D60 → D65
 pub const BRADFORD_D60_TO_D65: Mat3 = [
-     0.987224,   -0.00611327,  0.0159533,
-    -0.00759836,  1.00186,     0.00533002,
-     0.00307257, -0.00509596,  1.08168,
+    0.987224,
+    -0.00611327,
+    0.0159533,
+    -0.00759836,
+    1.00186,
+    0.00533002,
+    0.00307257,
+    -0.00509596,
+    1.08168,
 ];
 
 /// AP0 (ACES2065-1) → XYZ (D60)
 pub const AP0_TO_XYZ_D60: Mat3 = [
-    0.9525523959, 0.0000000000, 0.0000936786,
-    0.3439664498, 0.7281660966, -0.0721325464,
-    0.0000000000, 0.0000000000, 1.0088251844,
+    0.9525523959,
+    0.0000000000,
+    0.0000936786,
+    0.3439664498,
+    0.7281660966,
+    -0.0721325464,
+    0.0000000000,
+    0.0000000000,
+    1.0088251844,
 ];
 
 /// XYZ (D60) → AP0 (ACES2065-1)
 pub const XYZ_D60_TO_AP0: Mat3 = [
-     1.0498110175, 0.0000000000, -0.0000974845,
-    -0.4959030231, 1.3733130458,  0.0982400361,
-     0.0000000000, 0.0000000000,  0.9912520182,
+    1.0498110175,
+    0.0000000000,
+    -0.0000974845,
+    -0.4959030231,
+    1.3733130458,
+    0.0982400361,
+    0.0000000000,
+    0.0000000000,
+    0.9912520182,
 ];
 
 /// AP1 (ACEScg) → XYZ (D60)
 pub const AP1_TO_XYZ_D60: Mat3 = [
-     0.6624541811, 0.1340042065, 0.1561876870,
-     0.2722287168, 0.6740817658, 0.0536895174,
-    -0.0055746495, 0.0040607335, 1.0103391003,
+    0.6624541811,
+    0.1340042065,
+    0.1561876870,
+    0.2722287168,
+    0.6740817658,
+    0.0536895174,
+    -0.0055746495,
+    0.0040607335,
+    1.0103391003,
 ];
 
 /// XYZ (D60) → AP1 (ACEScg)
 pub const XYZ_D60_TO_AP1: Mat3 = [
-     1.6410233797, -0.3248032942, -0.2364246952,
-    -0.6636628587,  1.6153315917,  0.0167563477,
-     0.0117218943, -0.0082844420,  0.9883948585,
+    1.6410233797,
+    -0.3248032942,
+    -0.2364246952,
+    -0.6636628587,
+    1.6153315917,
+    0.0167563477,
+    0.0117218943,
+    -0.0082844420,
+    0.9883948585,
 ];
 
 // ─── Convenience: Pre-composed Conversion Matrices ────────────────────────────
@@ -177,7 +223,10 @@ pub const XYZ_D60_TO_AP1: Mat3 = [
 pub fn srgb_to_acescg_matrix() -> Mat3 {
     use std::sync::LazyLock;
     static M: LazyLock<Mat3> = LazyLock::new(|| {
-        mat3_compose(&XYZ_D60_TO_AP1, &mat3_compose(&BRADFORD_D65_TO_D60, &SRGB_TO_XYZ_D65))
+        mat3_compose(
+            &XYZ_D60_TO_AP1,
+            &mat3_compose(&BRADFORD_D65_TO_D60, &SRGB_TO_XYZ_D65),
+        )
     });
     *M
 }
@@ -186,7 +235,10 @@ pub fn srgb_to_acescg_matrix() -> Mat3 {
 pub fn acescg_to_srgb_matrix() -> Mat3 {
     use std::sync::LazyLock;
     static M: LazyLock<Mat3> = LazyLock::new(|| {
-        mat3_compose(&XYZ_D65_TO_SRGB, &mat3_compose(&BRADFORD_D60_TO_D65, &AP1_TO_XYZ_D60))
+        mat3_compose(
+            &XYZ_D65_TO_SRGB,
+            &mat3_compose(&BRADFORD_D60_TO_D65, &AP1_TO_XYZ_D60),
+        )
     });
     *M
 }
@@ -355,9 +407,9 @@ const OKLAB_M1: [[f32; 3]; 3] = [
 
 /// M2: cube-rooted LMS → OKLab (Ottosson 2020).
 const OKLAB_M2: [[f32; 3]; 3] = [
-    [ 0.2104542553,  0.7936177850, -0.0040720468],
-    [ 1.9779984951, -2.4285922050,  0.4505937099],
-    [ 0.0259040371,  0.7827717662, -0.8086757660],
+    [0.2104542553, 0.7936177850, -0.0040720468],
+    [1.9779984951, -2.4285922050, 0.4505937099],
+    [0.0259040371, 0.7827717662, -0.8086757660],
 ];
 
 /// M2 inverse: OKLab → cube-rooted LMS.
@@ -369,9 +421,9 @@ const OKLAB_M2_INV: [[f32; 3]; 3] = [
 
 /// M1 inverse: LMS → linear sRGB.
 const OKLAB_M1_INV: [[f32; 3]; 3] = [
-    [ 4.0767416621, -3.3077115913,  0.2309699292],
-    [-1.2684380046,  2.6097574011, -0.3413193965],
-    [-0.0041960863, -0.7034186147,  1.7076147010],
+    [4.0767416621, -3.3077115913, 0.2309699292],
+    [-1.2684380046, 2.6097574011, -0.3413193965],
+    [-0.0041960863, -0.7034186147, 1.7076147010],
 ];
 
 /// Convert linear sRGB to OKLab (L, a, b).
@@ -494,16 +546,28 @@ pub fn xy_to_xyz(x: f32, y: f32) -> [f32; 3] {
 
 /// CAT16 forward matrix (Li et al. 2017, Table 1).
 pub const CAT16: [[f64; 3]; 3] = [
-    [ 0.401288,  0.650173, -0.051461],
-    [-0.250268,  1.204414,  0.045854],
-    [-0.002079,  0.048952,  0.953127],
+    [0.401288, 0.650173, -0.051461],
+    [-0.250268, 1.204414, 0.045854],
+    [-0.002079, 0.048952, 0.953127],
 ];
 
 /// CAT16 inverse matrix (precomputed via Cramer's rule at f64 precision).
 pub const CAT16_INV: [[f64; 3]; 3] = [
-    [ 1.862067855087232715, -1.011254630531684295,  0.149186775444451747],
-    [ 0.387526543236137111,  0.621447441931475275, -0.008973985167612520],
-    [-0.015841498849333856, -0.034122938028515563,  1.049964436877849350],
+    [
+        1.862067855087232715,
+        -1.011254630531684295,
+        0.149186775444451747,
+    ],
+    [
+        0.387526543236137111,
+        0.621447441931475275,
+        -0.008973985167612520,
+    ],
+    [
+        -0.015841498849333856,
+        -0.034122938028515563,
+        1.049964436877849350,
+    ],
 ];
 
 /// Compute the CAT16 chromatic adaptation matrix from source to target illuminant.
@@ -535,9 +599,15 @@ pub fn cat16_adaptation_matrix(source_xy: (f32, f32), target_xy: (f32, f32)) -> 
     let m = mat3x3_mul(&CAT16_INV, &d_cat);
 
     [
-        m[0][0] as f32, m[0][1] as f32, m[0][2] as f32,
-        m[1][0] as f32, m[1][1] as f32, m[1][2] as f32,
-        m[2][0] as f32, m[2][1] as f32, m[2][2] as f32,
+        m[0][0] as f32,
+        m[0][1] as f32,
+        m[0][2] as f32,
+        m[1][0] as f32,
+        m[1][1] as f32,
+        m[1][2] as f32,
+        m[2][0] as f32,
+        m[2][1] as f32,
+        m[2][2] as f32,
     ]
 }
 
@@ -597,7 +667,10 @@ mod tests {
             let v = i as f32 / 255.0;
             let linear = srgb_to_linear(v);
             let back = linear_to_srgb(linear);
-            assert!((v - back).abs() < 1e-5, "roundtrip failed at {v}: got {back}");
+            assert!(
+                (v - back).abs() < 1e-5,
+                "roundtrip failed at {v}: got {back}"
+            );
         }
     }
 
@@ -615,7 +688,10 @@ mod tests {
         for &v in &values {
             let log = linear_to_acescct(v);
             let back = acescct_to_linear(log);
-            assert!((v - back).abs() < 1e-5, "ACEScct roundtrip failed at {v}: got {back}");
+            assert!(
+                (v - back).abs() < 1e-5,
+                "ACEScct roundtrip failed at {v}: got {back}"
+            );
         }
     }
 
@@ -724,7 +800,12 @@ mod tests {
         let back = srgb_rgba8_to_f32_linear(&u8_pixels);
         // u8 quantization limits precision to ~1/255
         for i in 0..3 {
-            assert!((input[i] - back[i]).abs() < 0.005, "ch{i}: {:.4} vs {:.4}", input[i], back[i]);
+            assert!(
+                (input[i] - back[i]).abs() < 0.005,
+                "ch{i}: {:.4} vs {:.4}",
+                input[i],
+                back[i]
+            );
         }
         assert!((input[3] - back[3]).abs() < 0.005); // alpha
     }
@@ -762,8 +843,14 @@ mod tests {
 
     #[test]
     fn oklab_roundtrip_primary_colors() {
-        for (r, g, b) in [(1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0),
-                           (1.0, 1.0, 0.0), (0.0, 1.0, 1.0), (1.0, 0.0, 1.0)] {
+        for (r, g, b) in [
+            (1.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0),
+            (0.0, 0.0, 1.0),
+            (1.0, 1.0, 0.0),
+            (0.0, 1.0, 1.0),
+            (1.0, 0.0, 1.0),
+        ] {
             let (ol, oa, ob) = linear_srgb_to_oklab(r, g, b);
             let (r2, g2, b2) = oklab_to_linear_srgb(ol, oa, ob);
             assert!((r - r2).abs() < 1e-4, "r roundtrip: {r} -> {r2}");
@@ -804,7 +891,10 @@ mod tests {
     fn oklch_neutral_has_zero_chroma() {
         let (l, a, b) = linear_srgb_to_oklab(0.5, 0.5, 0.5);
         let (_, c, _) = oklab_to_oklch(l, a, b);
-        assert!(c < 1e-4, "neutral gray should have near-zero chroma, got {c}");
+        assert!(
+            c < 1e-4,
+            "neutral gray should have near-zero chroma, got {c}"
+        );
     }
 
     // ── CIE Colorimetry Tests ──
@@ -822,7 +912,12 @@ mod tests {
         let m = cat16_adaptation_matrix(d65, d65);
         let id = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
         for i in 0..9 {
-            assert!((m[i] - id[i]).abs() < 1e-5, "identity m[{i}]: {} vs {}", m[i], id[i]);
+            assert!(
+                (m[i] - id[i]).abs() < 1e-5,
+                "identity m[{i}]: {} vs {}",
+                m[i],
+                id[i]
+            );
         }
     }
 
@@ -850,8 +945,11 @@ mod tests {
         for i in 0..3 {
             for j in 0..3 {
                 let expected = if i == j { 1.0 } else { 0.0 };
-                assert!((product[i][j] - expected).abs() < 1e-8,
-                    "CAT16*INV [{i}][{j}]: {} vs {expected}", product[i][j]);
+                assert!(
+                    (product[i][j] - expected).abs() < 1e-8,
+                    "CAT16*INV [{i}][{j}]: {} vs {expected}",
+                    product[i][j]
+                );
             }
         }
     }

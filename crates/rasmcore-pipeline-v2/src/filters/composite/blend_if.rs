@@ -27,7 +27,11 @@ pub struct BlendIf {
 
 impl Filter for BlendIf {
     fn compute(&self, input: &[f32], w: u32, h: u32) -> Result<Vec<f32>, PipelineError> {
-        let info = NodeInfo { width: w, height: h, color_space: crate::color_space::ColorSpace::Linear };
+        let info = NodeInfo {
+            width: w,
+            height: h,
+            color_space: crate::color_space::ColorSpace::Linear,
+        };
         self.compute_with_info(input, &info)
     }
 
@@ -54,7 +58,11 @@ impl Filter for BlendIf {
     }
 
     fn gpu_params(&self, width: u32, height: u32) -> Option<Vec<u8>> {
-        let info = NodeInfo { width, height, color_space: crate::color_space::ColorSpace::Linear };
+        let info = NodeInfo {
+            width,
+            height,
+            color_space: crate::color_space::ColorSpace::Linear,
+        };
         self.gpu_params_with_info(&info)
     }
 
@@ -116,14 +124,24 @@ mod tests {
         // A pixel that's "dark" in Rec.709 but may differ in AP1
         let input = pixel(0.1, 0.1, 0.1, 1.0);
         let f = BlendIf {
-            shadow_threshold: 0.2, shadow_feather: 0.1,
-            highlight_threshold: 1.0, highlight_feather: 0.1,
+            shadow_threshold: 0.2,
+            shadow_feather: 0.1,
+            highlight_threshold: 1.0,
+            highlight_feather: 0.1,
         };
 
-        let info_709 = NodeInfo { width: 1, height: 1, color_space: ColorSpace::Linear };
+        let info_709 = NodeInfo {
+            width: 1,
+            height: 1,
+            color_space: ColorSpace::Linear,
+        };
         let out_709 = f.compute_with_info(&input, &info_709).unwrap();
 
-        let info_ap1 = NodeInfo { width: 1, height: 1, color_space: ColorSpace::AcesCg };
+        let info_ap1 = NodeInfo {
+            width: 1,
+            height: 1,
+            color_space: ColorSpace::AcesCg,
+        };
         let out_ap1 = f.compute_with_info(&input, &info_ap1).unwrap();
 
         // Both should fade the dark pixel (luma ~0.1 < shadow_threshold 0.2)
@@ -135,21 +153,33 @@ mod tests {
     fn blend_if_shadows_fade() {
         let dark = pixel(0.1, 0.1, 0.1, 1.0);
         let f = BlendIf {
-            shadow_threshold: 0.2, shadow_feather: 0.1,
-            highlight_threshold: 1.0, highlight_feather: 0.1,
+            shadow_threshold: 0.2,
+            shadow_feather: 0.1,
+            highlight_threshold: 1.0,
+            highlight_feather: 0.1,
         };
         let out = f.compute(&dark, 1, 1).unwrap();
-        assert!(out[3] < 1.0, "dark pixel should have reduced alpha: {}", out[3]);
+        assert!(
+            out[3] < 1.0,
+            "dark pixel should have reduced alpha: {}",
+            out[3]
+        );
     }
 
     #[test]
     fn blend_if_midtone_preserved() {
         let mid = pixel(0.5, 0.5, 0.5, 1.0);
         let f = BlendIf {
-            shadow_threshold: 0.0, shadow_feather: 0.1,
-            highlight_threshold: 1.0, highlight_feather: 0.1,
+            shadow_threshold: 0.0,
+            shadow_feather: 0.1,
+            highlight_threshold: 1.0,
+            highlight_feather: 0.1,
         };
         let out = f.compute(&mid, 1, 1).unwrap();
-        assert!((out[3] - 1.0).abs() < 1e-6, "midtone should preserve alpha: {}", out[3]);
+        assert!(
+            (out[3] - 1.0).abs() < 1e-6,
+            "midtone should preserve alpha: {}",
+            out[3]
+        );
     }
 }

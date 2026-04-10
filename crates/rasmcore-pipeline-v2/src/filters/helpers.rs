@@ -185,7 +185,12 @@ mod tests {
 
     #[test]
     fn hsl_roundtrip() {
-        for (r, g, b) in [(0.3, 0.5, 0.7), (1.0, 0.0, 0.0), (0.0, 1.0, 0.5), (0.5, 0.5, 0.5)] {
+        for (r, g, b) in [
+            (0.3, 0.5, 0.7),
+            (1.0, 0.0, 0.0),
+            (0.0, 1.0, 0.5),
+            (0.5, 0.5, 0.5),
+        ] {
             let (h, s, l) = rgb_to_hsl(r, g, b);
             let (r2, g2, b2) = hsl_to_rgb(h, s, l);
             assert!((r - r2).abs() < 1e-5, "R mismatch for ({r},{g},{b}): {r2}");
@@ -216,8 +221,7 @@ mod tests {
     fn bilinear_at_pixel_center() {
         // 2x2 image: each pixel has (x*0.5, y*0.5, 0, 1)
         let pixels = vec![
-            0.0, 0.0, 0.0, 1.0,  0.5, 0.0, 0.0, 1.0,
-            0.0, 0.5, 0.0, 1.0,  0.5, 0.5, 0.0, 1.0,
+            0.0, 0.0, 0.0, 1.0, 0.5, 0.0, 0.0, 1.0, 0.0, 0.5, 0.0, 1.0, 0.5, 0.5, 0.0, 1.0,
         ];
         let p = sample_bilinear(&pixels, 2, 2, 0.0, 0.0);
         assert!((p[0] - 0.0).abs() < 1e-6);

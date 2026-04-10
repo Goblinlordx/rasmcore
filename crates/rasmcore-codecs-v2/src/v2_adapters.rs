@@ -9,8 +9,7 @@
 //! via inventory::submit! if you need custom behavior.
 
 use rasmcore_pipeline_v2::color_math::{
-    f32_linear_to_srgb_rgba8,
-    srgb_rgba8_to_f32_linear, srgb_rgb8_to_f32_linear,
+    f32_linear_to_srgb_rgba8, srgb_rgb8_to_f32_linear, srgb_rgba8_to_f32_linear,
 };
 use rasmcore_pipeline_v2::node::PipelineError;
 use rasmcore_pipeline_v2::registry::{DecodedImageV2, ParamMap};
@@ -20,7 +19,12 @@ use rasmcore_pipeline_v2::registry::{DecodedImageV2, ParamMap};
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[derive(rasmcore_macros::V2Encoder)]
-#[codec(name = "png", display_name = "PNG", mime = "image/png", extensions = "png")]
+#[codec(
+    name = "png",
+    display_name = "PNG",
+    mime = "image/png",
+    extensions = "png"
+)]
 pub struct PngEncoderAdapter;
 
 impl PngEncoderAdapter {
@@ -91,7 +95,8 @@ impl PngDecoderAdapter {
             png::ColorType::GrayscaleAlpha => {
                 let mut out = Vec::with_capacity(raw.len() / 2 * 4);
                 for chunk in raw.chunks_exact(2) {
-                    let v = rasmcore_pipeline_v2::color_math::srgb_to_linear(chunk[0] as f32 / 255.0);
+                    let v =
+                        rasmcore_pipeline_v2::color_math::srgb_to_linear(chunk[0] as f32 / 255.0);
                     out.extend_from_slice(&[v, v, v, chunk[1] as f32 / 255.0]);
                 }
                 out
@@ -119,13 +124,15 @@ impl PngDecoderAdapter {
 
 fn quality_from_params(params: &ParamMap) -> Option<u8> {
     let q = params.get_u32("quality");
-    if q > 0 && q <= 100 { Some(q as u8) } else { None }
+    if q > 0 && q <= 100 {
+        Some(q as u8)
+    } else {
+        None
+    }
 }
 
 /// Helper: convert ops::DecodedImage → registry::DecodedImageV2
-fn decoded_to_v2(
-    d: rasmcore_pipeline_v2::ops::DecodedImage,
-) -> DecodedImageV2 {
+fn decoded_to_v2(d: rasmcore_pipeline_v2::ops::DecodedImage) -> DecodedImageV2 {
     DecodedImageV2 {
         pixels: d.pixels,
         width: d.info.width,
@@ -453,10 +460,7 @@ mod tests {
     #[test]
     fn png_roundtrip_via_v2_registry() {
         let pixels = vec![
-            0.5f32, 0.5, 0.5, 1.0,
-            0.5, 0.5, 0.5, 1.0,
-            0.5, 0.5, 0.5, 1.0,
-            0.5, 0.5, 0.5, 1.0,
+            0.5f32, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0,
         ];
         let params = ParamMap::new();
 
@@ -476,7 +480,9 @@ mod tests {
         for i in 0..3 {
             assert!(
                 (decoded.pixels[i] - pixels[i]).abs() < 0.01,
-                "ch{i}: {:.4} vs {:.4}", decoded.pixels[i], pixels[i]
+                "ch{i}: {:.4} vs {:.4}",
+                decoded.pixels[i],
+                pixels[i]
             );
         }
     }
@@ -484,31 +490,45 @@ mod tests {
     #[test]
     fn png_encoder_in_registry() {
         let encoders = rasmcore_pipeline_v2::registered_encoders();
-        assert!(encoders.iter().any(|e| e.name == "png"), "PNG encoder not found");
+        assert!(
+            encoders.iter().any(|e| e.name == "png"),
+            "PNG encoder not found"
+        );
     }
 
     #[test]
     fn png_decoder_in_registry() {
         let decoders = rasmcore_pipeline_v2::registered_decoders();
-        assert!(decoders.iter().any(|d| d.name == "png"), "PNG decoder not found");
+        assert!(
+            decoders.iter().any(|d| d.name == "png"),
+            "PNG decoder not found"
+        );
     }
 
     #[test]
     fn jpeg_encoder_in_registry() {
         let encoders = rasmcore_pipeline_v2::registered_encoders();
-        assert!(encoders.iter().any(|e| e.name == "jpeg"), "JPEG encoder not found");
+        assert!(
+            encoders.iter().any(|e| e.name == "jpeg"),
+            "JPEG encoder not found"
+        );
     }
 
     #[test]
     fn jpeg_decoder_in_registry() {
         let decoders = rasmcore_pipeline_v2::registered_decoders();
-        assert!(decoders.iter().any(|d| d.name == "jpeg"), "JPEG decoder not found");
+        assert!(
+            decoders.iter().any(|d| d.name == "jpeg"),
+            "JPEG decoder not found"
+        );
     }
 
     #[test]
     fn all_srgb_encoders_registered() {
         let encoders = rasmcore_pipeline_v2::registered_encoders();
-        for name in &["png", "jpeg", "webp", "gif", "bmp", "qoi", "ico", "tga", "pnm", "tiff"] {
+        for name in &[
+            "png", "jpeg", "webp", "gif", "bmp", "qoi", "ico", "tga", "pnm", "tiff",
+        ] {
             assert!(
                 encoders.iter().any(|e| e.name == *name),
                 "encoder '{name}' not found in registry"
@@ -531,8 +551,8 @@ mod tests {
     fn all_decoders_registered() {
         let decoders = rasmcore_pipeline_v2::registered_decoders();
         for name in &[
-            "png", "jpeg", "webp", "gif", "bmp", "qoi", "ico", "tga",
-            "tiff", "dds", "pnm", "exr", "hdr", "fits",
+            "png", "jpeg", "webp", "gif", "bmp", "qoi", "ico", "tga", "tiff", "dds", "pnm", "exr",
+            "hdr", "fits",
         ] {
             assert!(
                 decoders.iter().any(|d| d.name == *name),
@@ -597,10 +617,7 @@ mod tests {
     fn jpeg_encode_decode_via_v2_registry() {
         // 2x2 opaque mid-gray pixels in linear space
         let pixels = vec![
-            0.5f32, 0.5, 0.5, 1.0,
-            0.5, 0.5, 0.5, 1.0,
-            0.5, 0.5, 0.5, 1.0,
-            0.5, 0.5, 0.5, 1.0,
+            0.5f32, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0,
         ];
         let params = ParamMap::new();
 

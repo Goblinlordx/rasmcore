@@ -1,11 +1,15 @@
 use crate::node::PipelineError;
 use crate::ops::{Filter, GpuFilter};
 
-use super::{rgb_to_lab, lab_to_rgb, gaussian_blur_1d};
+use super::{gaussian_blur_1d, lab_to_rgb, rgb_to_lab};
 
 /// Lab sharpen — unsharp mask on L channel only (preserves chrominance).
 #[derive(Clone, rasmcore_macros::V2Filter)]
-#[filter(name = "lab_sharpen", category = "color", cost = "O(n * radius) via gaussian_blur")]
+#[filter(
+    name = "lab_sharpen",
+    category = "color",
+    cost = "O(n * radius) via gaussian_blur"
+)]
 pub struct LabSharpen {
     /// Sharpening strength (0-10).
     #[param(min = 0.0, max = 10.0, default = 1.0)]

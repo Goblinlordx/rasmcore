@@ -2,8 +2,8 @@ use crate::fusion::Clut3D;
 use crate::node::PipelineError;
 use crate::ops::Filter;
 
-use crate::filters::helpers::luminance;
 use super::ClutOp;
+use crate::filters::helpers::luminance;
 
 /// Colorize — tint image with a target color using W3C luma blend.
 #[derive(Clone, rasmcore_macros::V2Filter)]

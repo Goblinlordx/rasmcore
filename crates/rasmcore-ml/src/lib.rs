@@ -80,7 +80,10 @@ pub fn model_cache_dir() -> PathBuf {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home).join(".cache").join("rasmcore").join("models")
+    PathBuf::from(home)
+        .join(".cache")
+        .join("rasmcore")
+        .join("models")
 }
 
 /// Pre-defined model definitions.
@@ -102,8 +105,11 @@ pub mod models {
             },
             params: vec![ParamDesc {
                 name: "denoise_strength".into(),
-                min: Some(0.0), max: Some(1.0), step: Some(0.1),
-                default: Some(0.5), hint: Some("Noise reduction strength".into()),
+                min: Some(0.0),
+                max: Some(1.0),
+                step: Some(0.1),
+                default: Some(0.5),
+                hint: Some("Noise reduction strength".into()),
             }],
             download_url: String::new(), // User configures
             size_bytes: 67_108_864,
@@ -120,11 +126,16 @@ pub mod models {
             category: "segmentation".into(),
             output_kind: OutputKind::Mask,
             output_scale: 1,
-            tile_mode: TileMode::FullImage { target_size: (1024, 1024) },
+            tile_mode: TileMode::FullImage {
+                target_size: (1024, 1024),
+            },
             params: vec![ParamDesc {
                 name: "threshold".into(),
-                min: Some(0.0), max: Some(1.0), step: Some(0.05),
-                default: Some(0.5), hint: Some("Mask threshold".into()),
+                min: Some(0.0),
+                max: Some(1.0),
+                step: Some(0.05),
+                default: Some(0.5),
+                hint: Some("Mask threshold".into()),
             }],
             download_url: String::new(),
             size_bytes: 184_549_376,
@@ -141,7 +152,9 @@ pub mod models {
             category: "depth".into(),
             output_kind: OutputKind::Mask,
             output_scale: 1,
-            tile_mode: TileMode::FullImage { target_size: (384, 384) },
+            tile_mode: TileMode::FullImage {
+                target_size: (384, 384),
+            },
             params: vec![],
             download_url: String::new(),
             size_bytes: 52_428_800,

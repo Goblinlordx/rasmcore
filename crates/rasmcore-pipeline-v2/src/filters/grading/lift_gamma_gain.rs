@@ -9,8 +9,8 @@ use super::super::color::ClutOp;
 use crate::filter_node::FilterNode;
 #[allow(unused_imports)]
 use crate::registry::{
-    FilterFactoryRegistration, OperationRegistration, OperationKind,
-    OperationCapabilities, ParamDescriptor, ParamMap, ParamType,
+    FilterFactoryRegistration, OperationCapabilities, OperationKind, OperationRegistration,
+    ParamDescriptor, ParamMap, ParamType,
 };
 
 use super::LIFT_GAMMA_GAIN_PARAMS;

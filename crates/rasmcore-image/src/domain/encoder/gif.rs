@@ -192,7 +192,6 @@ pub fn encode_sequence(
     Ok(buf)
 }
 
-
 // ─── Encoder Registration ──────────────────────────────────────────────────
 
 inventory::submit! {

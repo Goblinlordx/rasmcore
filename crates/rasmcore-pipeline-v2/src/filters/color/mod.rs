@@ -13,51 +13,51 @@
 
 use crate::fusion::Clut3D;
 
-pub mod hue_rotate;
-pub mod saturate_hsl;
-pub mod saturate;
+pub mod aces;
 pub mod channel_mixer;
-pub mod vibrance;
-pub mod sepia;
 pub mod colorize;
+pub mod dither_floyd_steinberg;
+pub mod dither_ordered;
+pub mod gradient_map;
+pub mod hue_rotate;
+pub mod kmeans_quantize;
+pub mod lab_adjust;
+pub mod lab_sharpen;
 pub mod modulate;
 pub mod photo_filter;
-pub mod selective_color;
-pub mod white_balance_temperature;
-pub mod replace_color;
-pub mod lab_adjust;
-pub mod white_balance_gray_world;
-pub mod gradient_map;
 pub mod quantize;
-pub mod kmeans_quantize;
-pub mod dither_ordered;
-pub mod dither_floyd_steinberg;
-pub mod lab_sharpen;
+pub mod replace_color;
+pub mod saturate;
+pub mod saturate_hsl;
+pub mod selective_color;
+pub mod sepia;
 pub mod sparse_color;
-pub mod aces;
+pub mod vibrance;
+pub mod white_balance_gray_world;
+pub mod white_balance_temperature;
 
-pub use hue_rotate::HueRotate;
-pub use saturate_hsl::SaturateHsl;
-pub use saturate::Saturate;
+pub use aces::{AcesCctToCg, AcesCgToCct, AcesIdt, AcesOdt};
 pub use channel_mixer::ChannelMixer;
-pub use vibrance::Vibrance;
-pub use sepia::Sepia;
 pub use colorize::Colorize;
+pub use dither_floyd_steinberg::DitherFloydSteinberg;
+pub use dither_ordered::DitherOrdered;
+pub use gradient_map::GradientMap;
+pub use hue_rotate::HueRotate;
+pub use kmeans_quantize::KmeansQuantize;
+pub use lab_adjust::LabAdjust;
+pub use lab_sharpen::LabSharpen;
 pub use modulate::Modulate;
 pub use photo_filter::PhotoFilter;
-pub use selective_color::SelectiveColor;
-pub use white_balance_temperature::WhiteBalanceTemperature;
-pub use replace_color::ReplaceColor;
-pub use lab_adjust::LabAdjust;
-pub use white_balance_gray_world::WhiteBalanceGrayWorld;
-pub use gradient_map::GradientMap;
 pub use quantize::Quantize;
-pub use kmeans_quantize::KmeansQuantize;
-pub use dither_ordered::DitherOrdered;
-pub use dither_floyd_steinberg::DitherFloydSteinberg;
-pub use lab_sharpen::LabSharpen;
+pub use replace_color::ReplaceColor;
+pub use saturate::Saturate;
+pub use saturate_hsl::SaturateHsl;
+pub use selective_color::SelectiveColor;
+pub use sepia::Sepia;
 pub use sparse_color::SparseColor;
-pub use aces::{AcesIdt, AcesOdt, AcesCctToCg, AcesCgToCct};
+pub use vibrance::Vibrance;
+pub use white_balance_gray_world::WhiteBalanceGrayWorld;
+pub use white_balance_temperature::WhiteBalanceTemperature;
 
 // ─── ClutOp Trait ──────────────────────────────────────────────────────────
 
@@ -112,7 +112,11 @@ pub(crate) fn lab_to_rgb(l: f32, a: f32, b: f32) -> (f32, f32, f32) {
     let rl = 3.2404542 * x - 1.5371385 * y - 0.4985314 * z;
     let gl = -0.969266 * x + 1.8760108 * y + 0.041556 * z;
     let bl = 0.0556434 * x - 0.2040259 * y + 1.0572252 * z;
-    (linear_to_srgb_comp(rl), linear_to_srgb_comp(gl), linear_to_srgb_comp(bl))
+    (
+        linear_to_srgb_comp(rl),
+        linear_to_srgb_comp(gl),
+        linear_to_srgb_comp(bl),
+    )
 }
 
 fn lab_f(t: f32) -> f32 {
@@ -184,7 +188,11 @@ pub(crate) fn median_cut_palette(pixels: &[f32], max_colors: usize) -> Vec<(f32,
         }
         let channel = widest_channel(&bucket);
         let mut sorted = bucket;
-        sorted.sort_by(|a, b| a[channel].partial_cmp(&b[channel]).unwrap_or(std::cmp::Ordering::Equal));
+        sorted.sort_by(|a, b| {
+            a[channel]
+                .partial_cmp(&b[channel])
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         let mid = sorted.len() / 2;
         let (left, right) = sorted.split_at(mid);
         buckets.push(left.to_vec());
@@ -233,7 +241,12 @@ fn widest_channel(colors: &[[f32; 3]]) -> usize {
     }
 }
 
-pub(crate) fn nearest_color(palette: &[(f32, f32, f32)], r: f32, g: f32, b: f32) -> (f32, f32, f32) {
+pub(crate) fn nearest_color(
+    palette: &[(f32, f32, f32)],
+    r: f32,
+    g: f32,
+    b: f32,
+) -> (f32, f32, f32) {
     let mut best = palette[0];
     let mut best_dist = f32::MAX;
     for &(pr, pg, pb) in palette {
@@ -452,8 +465,8 @@ pub(crate) fn gaussian_blur_1d(data: &[f32], w: usize, h: usize, radius: f32) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::filters::helpers::{hsl_to_rgb, rgb_to_hsl};
     use crate::ops::Filter;
-    use crate::filters::helpers::{rgb_to_hsl, hsl_to_rgb};
 
     // ── Color space roundtrip tests ──
 

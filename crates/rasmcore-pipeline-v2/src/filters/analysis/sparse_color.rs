@@ -14,17 +14,28 @@ use super::super::helpers::{gpu_params_wh, gpu_push_f32, gpu_push_u32};
 #[derive(Clone, rasmcore_macros::V2Filter)]
 #[filter(name = "sparse_color", category = "effect")]
 pub struct SparseColor {
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)] pub x1: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)] pub y1: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)] pub r1: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)] pub g1: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)] pub b1: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)] pub x2: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)] pub y2: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)] pub r2: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)] pub g2: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)] pub b2: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)] pub strength: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)]
+    pub x1: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)]
+    pub y1: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)]
+    pub r1: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)]
+    pub g1: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)]
+    pub b1: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)]
+    pub x2: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)]
+    pub y2: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)]
+    pub r2: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.0)]
+    pub g2: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)]
+    pub b2: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.5)]
+    pub strength: f32,
 }
 
 const SPARSE_COLOR_WGSL: &str = r#"
@@ -55,18 +66,20 @@ impl Filter for SparseColor {
             for x in 0..width {
                 let nx = x as f32 / width as f32;
                 let ny = y as f32 / height as f32;
-                let d1 = ((nx-self.x1).powi(2) + (ny-self.y1).powi(2)).sqrt().max(0.001);
-                let d2 = ((nx-self.x2).powi(2) + (ny-self.y2).powi(2)).sqrt().max(0.001);
-                let w1 = 1.0/(d1*d1); let w2 = 1.0/(d2*d2);
+                let d1 = ((nx - self.x1).powi(2) + (ny - self.y1).powi(2))
+                    .sqrt()
+                    .max(0.001);
+                let d2 = ((nx - self.x2).powi(2) + (ny - self.y2).powi(2))
+                    .sqrt()
+                    .max(0.001);
+                let w1 = 1.0 / (d1 * d1);
+                let w2 = 1.0 / (d2 * d2);
                 let total = w1 + w2;
                 let i = ((y * width + x) * 4) as usize;
                 for c in 0..3 {
-                    let colors = [
-                        [self.r1, self.g1, self.b1],
-                        [self.r2, self.g2, self.b2],
-                    ];
+                    let colors = [[self.r1, self.g1, self.b1], [self.r2, self.g2, self.b2]];
                     let interp = (colors[0][c] * w1 + colors[1][c] * w2) / total;
-                    out[i+c] = out[i+c] + self.strength * (interp - out[i+c]);
+                    out[i + c] = out[i + c] + self.strength * (interp - out[i + c]);
                 }
             }
         }
@@ -75,12 +88,25 @@ impl Filter for SparseColor {
 
     fn gpu_shader_passes(&self, _w: u32, _h: u32) -> Option<Vec<GpuShader>> {
         let mut p = gpu_params_wh(_w, _h);
-        gpu_push_f32(&mut p, self.x1); gpu_push_f32(&mut p, self.y1);
-        gpu_push_f32(&mut p, self.r1); gpu_push_f32(&mut p, self.g1); gpu_push_f32(&mut p, self.b1);
-        gpu_push_f32(&mut p, self.x2); gpu_push_f32(&mut p, self.y2);
-        gpu_push_f32(&mut p, self.r2); gpu_push_f32(&mut p, self.g2); gpu_push_f32(&mut p, self.b2);
+        gpu_push_f32(&mut p, self.x1);
+        gpu_push_f32(&mut p, self.y1);
+        gpu_push_f32(&mut p, self.r1);
+        gpu_push_f32(&mut p, self.g1);
+        gpu_push_f32(&mut p, self.b1);
+        gpu_push_f32(&mut p, self.x2);
+        gpu_push_f32(&mut p, self.y2);
+        gpu_push_f32(&mut p, self.r2);
+        gpu_push_f32(&mut p, self.g2);
+        gpu_push_f32(&mut p, self.b2);
         gpu_push_f32(&mut p, self.strength);
-        gpu_push_u32(&mut p, 0); gpu_push_u32(&mut p, 0); gpu_push_u32(&mut p, 0);
-        Some(vec![GpuShader::new(SPARSE_COLOR_WGSL.to_string(), "main", [256, 1, 1], p)])
+        gpu_push_u32(&mut p, 0);
+        gpu_push_u32(&mut p, 0);
+        gpu_push_u32(&mut p, 0);
+        Some(vec![GpuShader::new(
+            SPARSE_COLOR_WGSL.to_string(),
+            "main",
+            [256, 1, 1],
+            p,
+        )])
     }
 }

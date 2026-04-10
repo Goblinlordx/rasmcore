@@ -5,11 +5,11 @@
 //! Produces a `.so` / `.dylib` / `.dll` with a flat C ABI. Every `extern "C"`
 //! function is wrapped in `catch_unwind` so panics never cross the FFI boundary.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::panic;
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use rasmcore_pipeline_v2::graph::Graph;

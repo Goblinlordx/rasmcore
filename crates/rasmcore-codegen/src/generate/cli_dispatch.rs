@@ -183,9 +183,9 @@ pub fn generate(
                 // Config struct reference — construct from CLI params
                 // The struct type is e.g., &SpinBlurParams → SpinBlurParams
                 let struct_name = &ptype[1..]; // strip leading &
-                // Use Default::default() — the CLI will override via individual params
-                // This is a simplification; full CLI config struct support would
-                // parse each field from the HashMap.
+                                               // Use Default::default() — the CLI will override via individual params
+                                               // This is a simplification; full CLI config struct support would
+                                               // parse each field from the HashMap.
                 format!("domain_filters::{struct_name}::default()")
             } else {
                 match ptype.as_str() {

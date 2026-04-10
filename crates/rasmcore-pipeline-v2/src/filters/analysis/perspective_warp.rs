@@ -14,14 +14,22 @@ use super::SAMPLE_BILINEAR_WGSL;
 #[derive(Clone, rasmcore_macros::V2Filter)]
 #[filter(name = "perspective_warp", category = "transform")]
 pub struct PerspectiveWarp {
-    #[param(min = -2.0, max = 2.0, step = 0.001, default = 1.0)] pub h11: f32,
-    #[param(min = -2.0, max = 2.0, step = 0.001, default = 0.0)] pub h12: f32,
-    #[param(min = -1000.0, max = 1000.0, step = 1.0, default = 0.0)] pub h13: f32,
-    #[param(min = -2.0, max = 2.0, step = 0.001, default = 0.0)] pub h21: f32,
-    #[param(min = -2.0, max = 2.0, step = 0.001, default = 1.0)] pub h22: f32,
-    #[param(min = -1000.0, max = 1000.0, step = 1.0, default = 0.0)] pub h23: f32,
-    #[param(min = -0.01, max = 0.01, step = 0.0001, default = 0.0)] pub h31: f32,
-    #[param(min = -0.01, max = 0.01, step = 0.0001, default = 0.0)] pub h32: f32,
+    #[param(min = -2.0, max = 2.0, step = 0.001, default = 1.0)]
+    pub h11: f32,
+    #[param(min = -2.0, max = 2.0, step = 0.001, default = 0.0)]
+    pub h12: f32,
+    #[param(min = -1000.0, max = 1000.0, step = 1.0, default = 0.0)]
+    pub h13: f32,
+    #[param(min = -2.0, max = 2.0, step = 0.001, default = 0.0)]
+    pub h21: f32,
+    #[param(min = -2.0, max = 2.0, step = 0.001, default = 1.0)]
+    pub h22: f32,
+    #[param(min = -1000.0, max = 1000.0, step = 1.0, default = 0.0)]
+    pub h23: f32,
+    #[param(min = -0.01, max = 0.01, step = 0.0001, default = 0.0)]
+    pub h31: f32,
+    #[param(min = -0.01, max = 0.01, step = 0.0001, default = 0.0)]
+    pub h32: f32,
 }
 
 const PERSPECTIVE_WARP_WGSL: &str = r#"
@@ -47,15 +55,20 @@ impl Filter for PerspectiveWarp {
         let mut out = vec![0.0f32; input.len()];
         for y in 0..height {
             for x in 0..width {
-                let xf = x as f32; let yf = y as f32;
+                let xf = x as f32;
+                let yf = y as f32;
                 let w = self.h31 * xf + self.h32 * yf + 1.0;
                 let (sx, sy) = if w.abs() > 0.0001 {
-                    ((self.h11 * xf + self.h12 * yf + self.h13) / w,
-                     (self.h21 * xf + self.h22 * yf + self.h23) / w)
-                } else { (0.0, 0.0) };
+                    (
+                        (self.h11 * xf + self.h12 * yf + self.h13) / w,
+                        (self.h21 * xf + self.h22 * yf + self.h23) / w,
+                    )
+                } else {
+                    (0.0, 0.0)
+                };
                 let px = sample_bilinear(input, width, height, sx, sy);
                 let i = ((y * width + x) * 4) as usize;
-                out[i..i+4].copy_from_slice(&px);
+                out[i..i + 4].copy_from_slice(&px);
             }
         }
         Ok(out)
@@ -64,10 +77,16 @@ impl Filter for PerspectiveWarp {
     fn gpu_shader_passes(&self, _w: u32, _h: u32) -> Option<Vec<GpuShader>> {
         let shader = format!("{SAMPLE_BILINEAR_WGSL}\n{PERSPECTIVE_WARP_WGSL}");
         let mut p = gpu_params_wh(_w, _h);
-        gpu_push_f32(&mut p, self.h11); gpu_push_f32(&mut p, self.h12); gpu_push_f32(&mut p, self.h13);
-        gpu_push_f32(&mut p, self.h21); gpu_push_f32(&mut p, self.h22); gpu_push_f32(&mut p, self.h23);
-        gpu_push_f32(&mut p, self.h31); gpu_push_f32(&mut p, self.h32);
-        gpu_push_u32(&mut p, 0); gpu_push_u32(&mut p, 0);
+        gpu_push_f32(&mut p, self.h11);
+        gpu_push_f32(&mut p, self.h12);
+        gpu_push_f32(&mut p, self.h13);
+        gpu_push_f32(&mut p, self.h21);
+        gpu_push_f32(&mut p, self.h22);
+        gpu_push_f32(&mut p, self.h23);
+        gpu_push_f32(&mut p, self.h31);
+        gpu_push_f32(&mut p, self.h32);
+        gpu_push_u32(&mut p, 0);
+        gpu_push_u32(&mut p, 0);
         Some(vec![GpuShader::new(shader, "main", [256, 1, 1], p)])
     }
 }

@@ -1,7 +1,5 @@
 //! Draw text node — renders text using Font resource.
 
-
-
 // Text rendering
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -32,7 +30,16 @@ impl DrawTextNode {
         size: f32,
         color: [f32; 4],
     ) -> Self {
-        Self { upstream, info, font, text, x, y, size, color }
+        Self {
+            upstream,
+            info,
+            font,
+            text,
+            x,
+            y,
+            size,
+            color,
+        }
     }
 }
 
@@ -64,7 +71,6 @@ impl crate::node::Node for DrawTextNode {
         vec![self.upstream]
     }
 }
-
 
 // Register draw_text as an operation (handled specially by pipeline, not via FilterFactory)
 inventory::submit! {

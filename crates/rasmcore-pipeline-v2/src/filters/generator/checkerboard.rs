@@ -12,13 +12,20 @@ use super::super::helpers::{gpu_params_wh, gpu_push_f32, gpu_push_u32};
 #[derive(Clone, rasmcore_macros::V2Filter)]
 #[filter(name = "checkerboard", category = "generator")]
 pub struct Checkerboard {
-    #[param(min = 2.0, max = 500.0, step = 1.0, default = 32.0)] pub size: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)] pub color1_r: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)] pub color1_g: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)] pub color1_b: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.2)] pub color2_r: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.2)] pub color2_g: f32,
-    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.2)] pub color2_b: f32,
+    #[param(min = 2.0, max = 500.0, step = 1.0, default = 32.0)]
+    pub size: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)]
+    pub color1_r: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)]
+    pub color1_g: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 1.0)]
+    pub color1_b: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.2)]
+    pub color2_r: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.2)]
+    pub color2_g: f32,
+    #[param(min = 0.0, max = 1.0, step = 0.01, default = 0.2)]
+    pub color2_b: f32,
 }
 
 const CHECKERBOARD_WGSL: &str = r#"
@@ -50,11 +57,15 @@ impl Filter for Checkerboard {
                 let cy = (y as f32 / self.size).floor() as u32;
                 let i = ((y * width + x) * 4) as usize;
                 if (cx + cy) % 2 == 0 {
-                    out[i] = self.color1_r; out[i+1] = self.color1_g; out[i+2] = self.color1_b;
+                    out[i] = self.color1_r;
+                    out[i + 1] = self.color1_g;
+                    out[i + 2] = self.color1_b;
                 } else {
-                    out[i] = self.color2_r; out[i+1] = self.color2_g; out[i+2] = self.color2_b;
+                    out[i] = self.color2_r;
+                    out[i + 1] = self.color2_g;
+                    out[i + 2] = self.color2_b;
                 }
-                out[i+3] = 1.0;
+                out[i + 3] = 1.0;
             }
         }
         Ok(out)
@@ -63,9 +74,20 @@ impl Filter for Checkerboard {
     fn gpu_shader_passes(&self, _w: u32, _h: u32) -> Option<Vec<GpuShader>> {
         let mut p = gpu_params_wh(_w, _h);
         gpu_push_f32(&mut p, self.size);
-        gpu_push_f32(&mut p, self.color1_r); gpu_push_f32(&mut p, self.color1_g); gpu_push_f32(&mut p, self.color1_b);
-        gpu_push_f32(&mut p, self.color2_r); gpu_push_f32(&mut p, self.color2_g); gpu_push_f32(&mut p, self.color2_b);
-        gpu_push_u32(&mut p, 0); gpu_push_u32(&mut p, 0); gpu_push_u32(&mut p, 0);
-        Some(vec![GpuShader::new(CHECKERBOARD_WGSL.to_string(), "main", [256, 1, 1], p)])
+        gpu_push_f32(&mut p, self.color1_r);
+        gpu_push_f32(&mut p, self.color1_g);
+        gpu_push_f32(&mut p, self.color1_b);
+        gpu_push_f32(&mut p, self.color2_r);
+        gpu_push_f32(&mut p, self.color2_g);
+        gpu_push_f32(&mut p, self.color2_b);
+        gpu_push_u32(&mut p, 0);
+        gpu_push_u32(&mut p, 0);
+        gpu_push_u32(&mut p, 0);
+        Some(vec![GpuShader::new(
+            CHECKERBOARD_WGSL.to_string(),
+            "main",
+            [256, 1, 1],
+            p,
+        )])
     }
 }

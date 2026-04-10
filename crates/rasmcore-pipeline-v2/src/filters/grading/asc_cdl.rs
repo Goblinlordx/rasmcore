@@ -10,8 +10,8 @@ use super::super::helpers::luminance;
 use crate::filter_node::FilterNode;
 #[allow(unused_imports)]
 use crate::registry::{
-    FilterFactoryRegistration, OperationRegistration, OperationKind,
-    OperationCapabilities, ParamDescriptor, ParamMap, ParamType,
+    FilterFactoryRegistration, OperationCapabilities, OperationKind, OperationRegistration,
+    ParamDescriptor, ParamMap, ParamType,
 };
 
 use super::ASC_CDL_PARAMS;

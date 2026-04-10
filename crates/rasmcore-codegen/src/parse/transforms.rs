@@ -54,8 +54,7 @@ pub fn extract_transforms(
                     if method.sig.ident == "new" {
                         let (params, fallible, multi_input) =
                             extract_constructor_params(&method.sig, enums);
-                        constructors
-                            .insert(struct_name.clone(), (params, fallible, multi_input));
+                        constructors.insert(struct_name.clone(), (params, fallible, multi_input));
                     }
                 }
             }
@@ -66,9 +65,7 @@ pub fn extract_transforms(
     let mut transforms = Vec::new();
     for item in &file.items {
         if let syn::Item::Impl(impl_block) = item {
-            if let Some(mut reg) =
-                extract_transform_reg(impl_block, &constructors)
-            {
+            if let Some(mut reg) = extract_transform_reg(impl_block, &constructors) {
                 reg.node_module = module_name.to_string();
                 transforms.push(reg);
             }
@@ -126,10 +123,8 @@ fn extract_transform_reg(
         let node_type = type_name(&impl_block.self_ty);
 
         // Look up the constructor params
-        let (params, fallible, multi_input) = constructors
-            .get(&node_type)
-            .cloned()
-            .unwrap_or_default();
+        let (params, fallible, multi_input) =
+            constructors.get(&node_type).cloned().unwrap_or_default();
 
         return Some(TransformReg {
             name,
@@ -165,7 +160,10 @@ fn extract_constructor_params(
         if let syn::FnArg::Typed(pat_type) = input {
             let name = quote::quote!(#pat_type).to_string();
             // Skip infrastructure params — count upstream occurrences
-            if name.contains("upstream") || name.contains("fg_upstream") || name.contains("bg_upstream") {
+            if name.contains("upstream")
+                || name.contains("fg_upstream")
+                || name.contains("bg_upstream")
+            {
                 upstream_count += 1;
                 continue;
             }

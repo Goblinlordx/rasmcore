@@ -606,7 +606,10 @@ pub fn derive_config_params(input: TokenStream) -> TokenStream {
                 options_s
                     .split('|')
                     .filter(|p| !p.is_empty())
-                    .filter_map(|p| p.split_once(':').map(|(v, d)| (v.trim().to_string(), d.trim().to_string())))
+                    .filter_map(|p| {
+                        p.split_once(':')
+                            .map(|(v, d)| (v.trim().to_string(), d.trim().to_string()))
+                    })
                     .collect()
             };
             let opt_vals: Vec<&str> = options_pairs.iter().map(|(v, _)| v.as_str()).collect();
@@ -697,7 +700,7 @@ impl syn::parse::Parse for RegisterTransformArgs {
                     return Err(syn::Error::new(
                         ident.span(),
                         format!("unknown attribute `{other}`, expected `name`"),
-                    ))
+                    ));
                 }
             }
 
@@ -747,10 +750,7 @@ pub fn register_transform(attr: TokenStream, item: TokenStream) -> TokenStream {
         String::new()
     };
 
-    let reg_ident = format_ident!(
-        "__RASMCORE_TRANSFORM_{}",
-        node_type_str.to_uppercase()
-    );
+    let reg_ident = format_ident!("__RASMCORE_TRANSFORM_{}", node_type_str.to_uppercase());
 
     let expanded = quote! {
         #input_impl
@@ -979,7 +979,11 @@ pub fn derive_filter(input: TokenStream) -> TokenStream {
                     quote! { true }
                 } else if default_s == "false" {
                     quote! { false }
-                } else if default_s.chars().next().is_some_and(|c| c.is_ascii_digit() || c == '-') {
+                } else if default_s
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_digit() || c == '-')
+                {
                     let v: i64 = default_s.parse().unwrap_or(0);
                     let lit = proc_macro2::Literal::i64_unsuffixed(v);
                     quote! { #lit as #field_type }
@@ -998,7 +1002,10 @@ pub fn derive_filter(input: TokenStream) -> TokenStream {
                 options_s
                     .split('|')
                     .filter(|p| !p.is_empty())
-                    .filter_map(|p| p.split_once(':').map(|(v, d)| (v.trim().to_string(), d.trim().to_string())))
+                    .filter_map(|p| {
+                        p.split_once(':')
+                            .map(|(v, d)| (v.trim().to_string(), d.trim().to_string()))
+                    })
                     .collect()
             };
             let opt_vals: Vec<&str> = options_pairs.iter().map(|(v, _)| v.as_str()).collect();
@@ -1097,7 +1104,9 @@ pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
     let mut cost = String::new();
 
     for attr in &input.attrs {
-        if !attr.path().is_ident("filter") { continue; }
+        if !attr.path().is_ident("filter") {
+            continue;
+        }
         let _ = attr.parse_nested_meta(|meta| {
             let key = meta.path.get_ident().unwrap().to_string();
             let value = meta.value()?;
@@ -1115,20 +1124,29 @@ pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
     }
 
     if filter_name.is_empty() || filter_category.is_empty() {
-        return syn::Error::new(proc_macro2::Span::call_site(),
-            "derive(V2Filter) requires #[filter(name = \"...\", category = \"...\")]")
-            .to_compile_error().into();
+        return syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "derive(V2Filter) requires #[filter(name = \"...\", category = \"...\")]",
+        )
+        .to_compile_error()
+        .into();
     }
 
     let display_name = if display_name_override.is_empty() {
-        filter_name.split('_').map(|w| {
-            let mut c = w.chars();
-            match c.next() {
-                None => String::new(),
-                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-            }
-        }).collect::<Vec<_>>().join(" ")
-    } else { display_name_override };
+        filter_name
+            .split('_')
+            .map(|w| {
+                let mut c = w.chars();
+                match c.next() {
+                    None => String::new(),
+                    Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    } else {
+        display_name_override
+    };
 
     let fields = match &input.fields {
         Fields::Named(f) => f.named.iter().collect::<Vec<_>>(),
@@ -1147,17 +1165,24 @@ pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
         let ftype_str = quote!(#ftype).to_string().replace(' ', "");
 
         // Extract field doc comments for param description
-        let field_doc = field.attrs.iter()
+        let field_doc = field
+            .attrs
+            .iter()
             .filter(|a| a.path().is_ident("doc"))
             .filter_map(|a| {
                 if let syn::Meta::NameValue(nv) = &a.meta
-                    && let syn::Expr::Lit(syn::ExprLit { lit: Lit::Str(s), .. }) = &nv.value
+                    && let syn::Expr::Lit(syn::ExprLit {
+                        lit: Lit::Str(s), ..
+                    }) = &nv.value
                 {
                     return Some(s.value());
                 }
                 None
             })
-            .collect::<Vec<_>>().join("\n").trim().to_string();
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim()
+            .to_string();
 
         let mut min_val = quote! { None };
         let mut max_val = quote! { None };
@@ -1166,34 +1191,88 @@ pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
         let mut hint_val = quote! { None };
 
         for attr in &field.attrs {
-            if !attr.path().is_ident("param") { continue; }
+            if !attr.path().is_ident("param") {
+                continue;
+            }
             let _ = attr.parse_nested_meta(|meta| {
                 let key = meta.path.get_ident().unwrap().to_string();
                 let value = meta.value()?;
                 let lit: Lit = value.parse()?;
                 match key.as_str() {
-                    "min" => { let v: f64 = match &lit { Lit::Float(f) => f.base10_parse().unwrap_or(0.0), Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64, _ => 0.0 }; min_val = quote! { Some(#v) }; }
-                    "max" => { let v: f64 = match &lit { Lit::Float(f) => f.base10_parse().unwrap_or(0.0), Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64, _ => 0.0 }; max_val = quote! { Some(#v) }; }
-                    "step" => { let v: f64 = match &lit { Lit::Float(f) => f.base10_parse().unwrap_or(0.0), Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64, _ => 0.0 }; step_val = quote! { Some(#v) }; }
-                    "default" => { let v: f64 = match &lit { Lit::Float(f) => f.base10_parse().unwrap_or(0.0), Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64, Lit::Bool(b) => if b.value { 1.0 } else { 0.0 }, _ => 0.0 }; default_f64 = Some(v); }
-                    "hint" => { if let Lit::Str(s) = &lit { let h = s.value(); hint_val = quote! { Some(#h) }; } }
+                    "min" => {
+                        let v: f64 = match &lit {
+                            Lit::Float(f) => f.base10_parse().unwrap_or(0.0),
+                            Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64,
+                            _ => 0.0,
+                        };
+                        min_val = quote! { Some(#v) };
+                    }
+                    "max" => {
+                        let v: f64 = match &lit {
+                            Lit::Float(f) => f.base10_parse().unwrap_or(0.0),
+                            Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64,
+                            _ => 0.0,
+                        };
+                        max_val = quote! { Some(#v) };
+                    }
+                    "step" => {
+                        let v: f64 = match &lit {
+                            Lit::Float(f) => f.base10_parse().unwrap_or(0.0),
+                            Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64,
+                            _ => 0.0,
+                        };
+                        step_val = quote! { Some(#v) };
+                    }
+                    "default" => {
+                        let v: f64 = match &lit {
+                            Lit::Float(f) => f.base10_parse().unwrap_or(0.0),
+                            Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64,
+                            Lit::Bool(b) => {
+                                if b.value {
+                                    1.0
+                                } else {
+                                    0.0
+                                }
+                            }
+                            _ => 0.0,
+                        };
+                        default_f64 = Some(v);
+                    }
+                    "hint" => {
+                        if let Lit::Str(s) = &lit {
+                            let h = s.value();
+                            hint_val = quote! { Some(#h) };
+                        }
+                    }
                     _ => {}
                 }
                 Ok(())
             });
         }
 
-        let default_val_token = match default_f64 { Some(v) => quote! { Some(#v) }, None => quote! { None } };
+        let default_val_token = match default_f64 {
+            Some(v) => quote! { Some(#v) },
+            None => quote! { None },
+        };
         let default_expr = match default_f64 {
-            Some(v) if ftype_str == "bool" => { let bv = v != 0.0; quote! { #bv } }
-            Some(v) => { let lit = proc_macro2::Literal::f64_unsuffixed(v); quote! { #lit as #ftype } }
+            Some(v) if ftype_str == "bool" => {
+                let bv = v != 0.0;
+                quote! { #bv }
+            }
+            Some(v) => {
+                let lit = proc_macro2::Literal::f64_unsuffixed(v);
+                quote! { #lit as #ftype }
+            }
             None => quote! { Default::default() },
         };
 
         // Detect resource reference types by checking if the type contains known resource names
         let is_font_ref = ftype_str.contains("Font") && ftype_str.contains("Rc");
-        let is_lut_ref = (ftype_str.contains("Lmt") || ftype_str.contains("Lut")) && ftype_str.contains("Rc");
-        if is_font_ref || is_lut_ref { has_resource_fields = true; }
+        let is_lut_ref =
+            (ftype_str.contains("Lmt") || ftype_str.contains("Lut")) && ftype_str.contains("Rc");
+        if is_font_ref || is_lut_ref {
+            has_resource_fields = true;
+        }
 
         let param_type = if is_font_ref {
             quote! { rasmcore_pipeline_v2::ParamType::FontRef }
@@ -1239,9 +1318,15 @@ pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
     }
 
     let param_count = param_descriptors.len();
-    let params_ident = format_ident!("__V2_PARAMS_{}", filter_name.to_uppercase().replace('-', "_"));
+    let params_ident = format_ident!(
+        "__V2_PARAMS_{}",
+        filter_name.to_uppercase().replace('-', "_")
+    );
     let reg_ident = format_ident!("__V2_REG_{}", filter_name.to_uppercase().replace('-', "_"));
-    let opreg_ident = format_ident!("__V2_OPREG_{}", filter_name.to_uppercase().replace('-', "_"));
+    let opreg_ident = format_ident!(
+        "__V2_OPREG_{}",
+        filter_name.to_uppercase().replace('-', "_")
+    );
 
     let factory_body = if fields.is_empty() {
         quote! { Box::new(rasmcore_pipeline_v2::FilterNode::point_op(upstream, info, #struct_name)) }
@@ -1253,7 +1338,7 @@ pub fn derive_v2_filter(input: TokenStream) -> TokenStream {
     };
 
     let default_impl = if fields.is_empty() || has_resource_fields {
-        quote! {}  // Unit structs or structs with resource refs skip Default
+        quote! {} // Unit structs or structs with resource refs skip Default
     } else {
         quote! {
             impl ::std::default::Default for #struct_name {
@@ -1325,7 +1410,9 @@ pub fn derive_v2_encoder(input: TokenStream) -> TokenStream {
     let mut scene_referred = false;
 
     for attr in &input.attrs {
-        if !attr.path().is_ident("codec") { continue; }
+        if !attr.path().is_ident("codec") {
+            continue;
+        }
         let _ = attr.parse_nested_meta(|meta| {
             let key = meta.path.get_ident().unwrap().to_string();
             if key == "scene_referred" {
@@ -1356,9 +1443,14 @@ pub fn derive_v2_encoder(input: TokenStream) -> TokenStream {
         display_name = codec_name.to_uppercase();
     }
 
-    let extensions: Vec<&str> = extensions_str.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
+    let extensions: Vec<&str> = extensions_str
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
     let ext_count = extensions.len();
-    let ext_tokens: Vec<proc_macro2::TokenStream> = extensions.iter().map(|e| quote! { #e }).collect();
+    let ext_tokens: Vec<proc_macro2::TokenStream> =
+        extensions.iter().map(|e| quote! { #e }).collect();
 
     // Parse param fields (same as V2Filter)
     let fields = match &input.fields {
@@ -1380,17 +1472,52 @@ pub fn derive_v2_encoder(input: TokenStream) -> TokenStream {
         let mut hint_val = quote! { None };
 
         for attr in &field.attrs {
-            if !attr.path().is_ident("param") { continue; }
+            if !attr.path().is_ident("param") {
+                continue;
+            }
             let _ = attr.parse_nested_meta(|meta| {
                 let key = meta.path.get_ident().unwrap().to_string();
                 let value = meta.value()?;
                 let lit: Lit = value.parse()?;
                 match key.as_str() {
-                    "min" => { let v: f64 = match &lit { Lit::Float(f) => f.base10_parse().unwrap_or(0.0), Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64, _ => 0.0 }; min_val = quote! { Some(#v) }; }
-                    "max" => { let v: f64 = match &lit { Lit::Float(f) => f.base10_parse().unwrap_or(0.0), Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64, _ => 0.0 }; max_val = quote! { Some(#v) }; }
-                    "step" => { let v: f64 = match &lit { Lit::Float(f) => f.base10_parse().unwrap_or(0.0), Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64, _ => 0.0 }; step_val = quote! { Some(#v) }; }
-                    "default" => { let v: f64 = match &lit { Lit::Float(f) => f.base10_parse().unwrap_or(0.0), Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64, _ => 0.0 }; default_val = quote! { Some(#v) }; }
-                    "hint" => { if let Lit::Str(s) = &lit { let h = s.value(); hint_val = quote! { Some(#h) }; } }
+                    "min" => {
+                        let v: f64 = match &lit {
+                            Lit::Float(f) => f.base10_parse().unwrap_or(0.0),
+                            Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64,
+                            _ => 0.0,
+                        };
+                        min_val = quote! { Some(#v) };
+                    }
+                    "max" => {
+                        let v: f64 = match &lit {
+                            Lit::Float(f) => f.base10_parse().unwrap_or(0.0),
+                            Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64,
+                            _ => 0.0,
+                        };
+                        max_val = quote! { Some(#v) };
+                    }
+                    "step" => {
+                        let v: f64 = match &lit {
+                            Lit::Float(f) => f.base10_parse().unwrap_or(0.0),
+                            Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64,
+                            _ => 0.0,
+                        };
+                        step_val = quote! { Some(#v) };
+                    }
+                    "default" => {
+                        let v: f64 = match &lit {
+                            Lit::Float(f) => f.base10_parse().unwrap_or(0.0),
+                            Lit::Int(i) => i.base10_parse::<i64>().unwrap_or(0) as f64,
+                            _ => 0.0,
+                        };
+                        default_val = quote! { Some(#v) };
+                    }
+                    "hint" => {
+                        if let Lit::Str(s) = &lit {
+                            let h = s.value();
+                            hint_val = quote! { Some(#h) };
+                        }
+                    }
                     _ => {}
                 }
                 Ok(())
@@ -1469,7 +1596,9 @@ pub fn derive_v2_decoder(input: TokenStream) -> TokenStream {
     let mut dec_doc_path = String::new();
 
     for attr in &input.attrs {
-        if !attr.path().is_ident("codec") { continue; }
+        if !attr.path().is_ident("codec") {
+            continue;
+        }
         let _ = attr.parse_nested_meta(|meta| {
             let key = meta.path.get_ident().unwrap().to_string();
             let value = meta.value()?;
@@ -1486,18 +1615,26 @@ pub fn derive_v2_decoder(input: TokenStream) -> TokenStream {
     }
 
     if codec_name.is_empty() {
-        return syn::Error::new(proc_macro2::Span::call_site(),
-            "derive(V2Decoder) requires #[codec(name = \"...\", extensions = \"...\")]")
-            .to_compile_error().into();
+        return syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "derive(V2Decoder) requires #[codec(name = \"...\", extensions = \"...\")]",
+        )
+        .to_compile_error()
+        .into();
     }
 
     if display_name.is_empty() {
         display_name = codec_name.to_uppercase();
     }
 
-    let extensions: Vec<&str> = extensions_str.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
+    let extensions: Vec<&str> = extensions_str
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
     let ext_count = extensions.len();
-    let ext_tokens: Vec<proc_macro2::TokenStream> = extensions.iter().map(|e| quote! { #e }).collect();
+    let ext_tokens: Vec<proc_macro2::TokenStream> =
+        extensions.iter().map(|e| quote! { #e }).collect();
 
     let ext_ident = format_ident!("__V2_DEC_EXT_{}", codec_name.to_uppercase());
     let reg_ident = format_ident!("__V2_DEC_REG_{}", codec_name.to_uppercase());

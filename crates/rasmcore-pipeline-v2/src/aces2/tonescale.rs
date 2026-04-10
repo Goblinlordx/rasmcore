@@ -7,17 +7,17 @@ use super::constants::*;
 /// Tonescale parameters (computed once per peak luminance).
 #[derive(Debug, Clone)]
 pub struct ToneScaleParams {
-    pub n: f32,              // peak luminance in nits
-    pub n_r: f32,            // 100.0 (normalized white)
-    pub g: f32,              // 1.15 (surround/contrast)
-    pub t_1: f32,            // 0.04 (shadow toe)
-    pub c_t: f32,            // mid-grey output luminance
-    pub s_2: f32,            // w_2 * m_1 * 100
+    pub n: f32,   // peak luminance in nits
+    pub n_r: f32, // 100.0 (normalized white)
+    pub g: f32,   // 1.15 (surround/contrast)
+    pub t_1: f32, // 0.04 (shadow toe)
+    pub c_t: f32, // mid-grey output luminance
+    pub s_2: f32, // w_2 * m_1 * 100
     pub u_2: f32,
     pub m_2: f32,
-    pub forward_limit: f32,  // 8 * r_hit
-    pub inverse_limit: f32,  // n / (u_2 * n_r)
-    pub log_peak: f32,       // log10(n / n_r)
+    pub forward_limit: f32, // 8 * r_hit
+    pub inverse_limit: f32, // n / (u_2 * n_r)
+    pub log_peak: f32,      // log10(n / n_r)
 }
 
 /// Initialize tonescale params from peak luminance (matches OCIO exactly).
@@ -50,8 +50,17 @@ pub fn init_tonescale_params(peak_luminance: f32) -> ToneScaleParams {
     let log_peak = (n / n_r).log10();
 
     ToneScaleParams {
-        n, n_r, g, t_1, c_t, s_2, u_2, m_2,
-        forward_limit, inverse_limit, log_peak,
+        n,
+        n_r,
+        g,
+        t_1,
+        c_t,
+        s_2,
+        u_2,
+        m_2,
+        forward_limit,
+        inverse_limit,
+        log_peak,
     }
 }
 
@@ -101,8 +110,10 @@ mod tests {
         // values from _J_to_Y which divides by F_L_n.
         // For direct testing: 18 nits scene should map to ~10 nits display.
         let y_out = aces_tonescale_fwd(18.0, &pt);
-        assert!(y_out > 8.0 && y_out < 15.0,
-            "18 nits scene should map to ~10 nits display: got {y_out}");
+        assert!(
+            y_out > 8.0 && y_out < 15.0,
+            "18 nits scene should map to ~10 nits display: got {y_out}"
+        );
     }
 
     #[test]
@@ -112,7 +123,10 @@ mod tests {
         // Same input should produce higher output in HDR (more headroom)
         let y_sdr = aces_tonescale_fwd(1.0, &sdr);
         let y_hdr = aces_tonescale_fwd(1.0, &hdr);
-        assert!(y_hdr > y_sdr, "HDR should have more headroom: {y_hdr} vs {y_sdr}");
+        assert!(
+            y_hdr > y_sdr,
+            "HDR should have more headroom: {y_hdr} vs {y_sdr}"
+        );
     }
 
     #[test]
@@ -121,8 +135,10 @@ mod tests {
         for y in [0.001, 0.01, 0.18, 0.5, 1.0, 5.0] {
             let y_ts = aces_tonescale_fwd(y, &pt);
             let y_back = aces_tonescale_inv(y_ts, &pt);
-            assert!((y_back - y).abs() < 0.01,
-                "roundtrip at Y={y}: got {y_back}");
+            assert!(
+                (y_back - y).abs() < 0.01,
+                "roundtrip at Y={y}: got {y_back}"
+            );
         }
     }
 
