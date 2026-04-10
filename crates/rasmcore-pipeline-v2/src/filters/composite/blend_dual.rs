@@ -8,8 +8,61 @@
 //!
 //! Reference: ISO 32000-2:2020 Section 11.3.5 — PDF 2.0 Blend Modes.
 
+use crate::compositor_node::CompositorNode;
 use crate::node::{NodeInfo, PipelineError};
 use crate::ops::Compositor;
+use crate::registry::{CompositorFactoryRegistration, ParamDescriptor, ParamType};
+
+// ─── Static registration ────────────────────────────────────────────────────
+
+inventory::submit! {
+    &BlendDual::REGISTRATION as &'static CompositorFactoryRegistration
+}
+
+impl BlendDual {
+    const PARAMS: &[ParamDescriptor] = &[
+        ParamDescriptor {
+            name: "mode",
+            value_type: ParamType::U32,
+            min: Some(0.0),
+            max: Some(24.0),
+            step: Some(1.0),
+            default: Some(1.0),
+            hint: Some("rc.enum"),
+            description: "Blend mode (0=normal..24=luminosity)",
+            constraints: &[],
+        },
+        ParamDescriptor {
+            name: "opacity",
+            value_type: ParamType::F32,
+            min: Some(0.0),
+            max: Some(1.0),
+            step: Some(0.05),
+            default: Some(1.0),
+            hint: None,
+            description: "Blend opacity (0=bg only, 1=fully blended)",
+            constraints: &[],
+        },
+    ];
+
+    pub const REGISTRATION: CompositorFactoryRegistration = CompositorFactoryRegistration {
+        name: "blend_dual",
+        display_name: "Blend (Dual Input)",
+        category: "composite",
+        params: Self::PARAMS,
+        cost: "O(n)",
+        factory: |upstream_a, upstream_b, info, params| {
+            let mode = params.ints.get("mode").copied().unwrap_or(1) as u32;
+            let opacity = params.floats.get("opacity").copied().unwrap_or(1.0);
+            Box::new(CompositorNode::new(
+                upstream_a,
+                upstream_b,
+                info,
+                BlendDual { mode, opacity },
+            ))
+        },
+    };
+}
 
 use super::{luma, pcg_hash, sat, set_lum, set_sat, soft_light_d};
 

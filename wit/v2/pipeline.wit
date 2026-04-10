@@ -394,6 +394,11 @@ interface pipeline-v2 {
         node-metadata: func(node: node-id) -> result<image-metadata, rasmcore-error>;
         /// Apply a named filter to a source node.
         apply-filter: func(source: node-id, name: string, params: buffer) -> result<node-id, rasmcore-error>;
+        /// Apply a named compositor to two source nodes.
+        ///
+        /// Compositors combine two images (source-a = foreground, source-b = background).
+        /// Both sources must have the same dimensions.
+        apply-compositor: func(source-a: node-id, source-b: node-id, name: string, params: buffer) -> result<node-id, rasmcore-error>;
         /// Apply a named transform.
         apply-transform: func(source: node-id, name: string, params: buffer) -> result<node-id, rasmcore-error>;
         /// Insert a color space conversion.

@@ -10,8 +10,47 @@
 //!
 //! Reference: Porter & Duff, "Compositing Digital Images" (1984), SIGGRAPH.
 
+use crate::compositor_node::CompositorNode;
 use crate::node::PipelineError;
 use crate::ops::Compositor;
+use crate::registry::{CompositorFactoryRegistration, ParamDescriptor, ParamType};
+
+// ─── Static registration ────────────────────────────────────────────────────
+
+inventory::submit! {
+    &PorterDuffOver::REGISTRATION as &'static CompositorFactoryRegistration
+}
+
+impl PorterDuffOver {
+    const PARAMS: &[ParamDescriptor] = &[ParamDescriptor {
+        name: "opacity",
+        value_type: ParamType::F32,
+        min: Some(0.0),
+        max: Some(1.0),
+        step: Some(0.05),
+        default: Some(1.0),
+        hint: None,
+        description: "Foreground opacity multiplier",
+        constraints: &[],
+    }];
+
+    pub const REGISTRATION: CompositorFactoryRegistration = CompositorFactoryRegistration {
+        name: "porter_duff_over",
+        display_name: "Porter-Duff Over",
+        category: "composite",
+        params: Self::PARAMS,
+        cost: "O(n)",
+        factory: |upstream_a, upstream_b, info, params| {
+            let opacity = params.floats.get("opacity").copied().unwrap_or(1.0);
+            Box::new(CompositorNode::new(
+                upstream_a,
+                upstream_b,
+                info,
+                PorterDuffOver { opacity },
+            ))
+        },
+    };
+}
 
 /// Porter-Duff "over" alpha compositing.
 ///

@@ -649,6 +649,45 @@ impl PipelineResource {
         Ok(id)
     }
 
+    pub fn apply_compositor(
+        &self,
+        source_a: u32,
+        source_b: u32,
+        name: &str,
+        params: &ParamMap,
+    ) -> Result<u32, PipelineError> {
+        let info_a = self.graph.borrow().node_info(source_a)?;
+        let info_b = self.graph.borrow().node_info(source_b)?;
+
+        // Both inputs must have the same dimensions
+        if info_a.width != info_b.width || info_a.height != info_b.height {
+            return Err(PipelineError::InvalidParams(format!(
+                "compositor inputs must have the same dimensions: {}x{} vs {}x{}",
+                info_a.width, info_a.height, info_b.width, info_b.height
+            )));
+        }
+
+        // Compute content hash
+        let hash_a = self.graph.borrow().content_hash(source_a);
+        let hash_b = self.graph.borrow().content_hash(source_b);
+        let mut hash_input = hash_a.to_vec();
+        hash_input.extend_from_slice(&hash_b);
+        hash_input.extend_from_slice(&params.to_hash_bytes());
+        let comp_hash = content_hash(&hash_a, name, &hash_input);
+
+        let node =
+            v2::create_compositor_node(name, source_a, source_b, info_a, params)
+                .ok_or_else(|| {
+                    PipelineError::InvalidParams(format!("unknown compositor: {name}"))
+                })?;
+
+        let id = self
+            .graph
+            .borrow_mut()
+            .add_node_with_hash(node, comp_hash);
+        Ok(id)
+    }
+
     pub fn use_lmt(&self, source: u32, data: &[u8]) -> Result<u32, PipelineError> {
         let text = std::str::from_utf8(data)
             .map_err(|_| PipelineError::InvalidParams("LMT data is not valid UTF-8".into()))?;
@@ -1296,6 +1335,18 @@ impl wit::GuestImagePipelineV2 for PipelineResource {
         // For now, use a minimal binary format: [name_len:u8, name_bytes, value:f32] repeated
         let param_map = deserialize_params(&params);
         self.apply_filter(source, &name, &param_map)
+            .map_err(to_wit_error)
+    }
+
+    fn apply_compositor(
+        &self,
+        source_a: u32,
+        source_b: u32,
+        name: String,
+        params: Vec<u8>,
+    ) -> Result<u32, RasmcoreError> {
+        let param_map = deserialize_params(&params);
+        self.apply_compositor(source_a, source_b, &name, &param_map)
             .map_err(to_wit_error)
     }
 

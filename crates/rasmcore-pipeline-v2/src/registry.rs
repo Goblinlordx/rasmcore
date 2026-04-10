@@ -437,6 +437,64 @@ pub fn registered_filter_registrations() -> Vec<&'static FilterFactoryRegistrati
         .collect()
 }
 
+// ─── Compositor Factory Registration ─────────────────────────────────────────
+
+/// Factory function that constructs a compositor node from dynamic parameters.
+///
+/// Returns a boxed Node (CompositorNode wrapping the concrete compositor).
+pub type CompositorFactory =
+    fn(upstream_a: u32, upstream_b: u32, info: NodeInfo, params: &ParamMap) -> Box<dyn crate::node::Node>;
+
+/// Registration entry for a dynamically-constructible compositor.
+pub struct CompositorFactoryRegistration {
+    /// Unique compositor name (e.g., "porter_duff_over", "blend_dual").
+    pub name: &'static str,
+    /// Human-readable display name. Empty = auto-generate from name.
+    pub display_name: &'static str,
+    /// Category for grouping. Empty = "composite".
+    pub category: &'static str,
+    /// Parameter descriptors for SDK/UI generation.
+    pub params: &'static [ParamDescriptor],
+    /// Algorithmic cost relative to pixel count.
+    pub cost: &'static str,
+    /// Factory function that constructs the compositor from dynamic params.
+    pub factory: CompositorFactory,
+}
+
+inventory::collect!(&'static CompositorFactoryRegistration);
+
+/// Construct a compositor node by name with dynamic parameters.
+pub fn create_compositor_node(
+    name: &str,
+    upstream_a: u32,
+    upstream_b: u32,
+    info: NodeInfo,
+    params: &ParamMap,
+) -> Option<Box<dyn crate::node::Node>> {
+    inventory::iter::<&'static CompositorFactoryRegistration>
+        .into_iter()
+        .copied()
+        .find(|r| r.name == name)
+        .map(|r| (r.factory)(upstream_a, upstream_b, info, params))
+}
+
+/// List all registered compositor factories.
+pub fn registered_compositor_factories() -> Vec<&'static str> {
+    inventory::iter::<&'static CompositorFactoryRegistration>
+        .into_iter()
+        .copied()
+        .map(|r| r.name)
+        .collect()
+}
+
+/// List all registered compositor factory registrations (full metadata).
+pub fn registered_compositor_registrations() -> Vec<&'static CompositorFactoryRegistration> {
+    inventory::iter::<&'static CompositorFactoryRegistration>
+        .into_iter()
+        .copied()
+        .collect()
+}
+
 // ─── Encoder Factory Registration ────────────────────────────────────────────
 
 /// Encode function: takes f32 RGBA pixels + dimensions + params → encoded bytes.

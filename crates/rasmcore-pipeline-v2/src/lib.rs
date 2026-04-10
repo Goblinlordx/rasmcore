@@ -72,13 +72,14 @@ pub use rect::{Overlap, Rect, extract_tile, place_tile, tiles};
 
 // Re-export registration system
 pub use registry::{
-    ContextRef, DecodedImageV2, DecoderFactory, DecoderFactoryRegistration, EncoderFactory,
-    EncoderFactoryRegistration, FilterFactory, FilterFactoryRegistration, OperationCapabilities,
-    OperationKind, OperationRegistration, ParamConstraint, ParamDescriptor, ParamMap, ParamType,
-    TypedRef, create_filter_node, decode_via_registry, decode_with_hint_via_registry,
-    encode_via_registry, find_operation, is_scene_referred_format, operations_by_category,
-    operations_by_kind, param_descriptors, registered_decoders, registered_encoders,
-    registered_filter_factories, registered_operations,
+    CompositorFactory, CompositorFactoryRegistration, ContextRef, DecodedImageV2, DecoderFactory,
+    DecoderFactoryRegistration, EncoderFactory, EncoderFactoryRegistration, FilterFactory,
+    FilterFactoryRegistration, OperationCapabilities, OperationKind, OperationRegistration,
+    ParamConstraint, ParamDescriptor, ParamMap, ParamType, TypedRef, create_compositor_node,
+    create_filter_node, decode_via_registry, decode_with_hint_via_registry, encode_via_registry,
+    find_operation, is_scene_referred_format, operations_by_category, operations_by_kind,
+    param_descriptors, registered_compositor_factories, registered_compositor_registrations,
+    registered_decoders, registered_encoders, registered_filter_factories, registered_operations,
 };
 
 // Re-export operation traits
