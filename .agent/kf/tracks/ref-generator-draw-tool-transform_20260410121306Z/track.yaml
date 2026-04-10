@@ -1,0 +1,49 @@
+id: ref-generator-draw-tool-transform_20260410121306Z
+title: Reference implementations — generators, draw, tools, transforms (29 filters)
+type: feature
+status: pending
+created: '2026-04-10'
+updated: '2026-04-10'
+spec:
+  summary: 'Reference functions for: solid_color, gradient_linear/radial, checkerboard, perlin/simplex/fractal/cloud_noise,
+    plasma, pattern_fill, draw_line/rect/circle/ellipse/arc/polygon, solid_fill, flood_fill, clone_stamp, smudge, sponge,
+    healing_brush, red_eye_remove, ca_remove, perspective_correct/warp, seam_carve, smart_crop, threshold_binary, triangle_threshold'
+  context: ''
+  codebase_analysis: ''
+  acceptance_criteria: []
+  out_of_scope: ''
+  technical_notes: ''
+plan: []
+extra: {}
+plan:
+  - phase: Generator refs
+    tasks:
+      - text: "Implement solid_color, gradient_linear, gradient_radial, checkerboard refs"
+        done: false
+      - text: "Implement perlin_noise, simplex_noise, fractal_noise, cloud_noise, plasma refs"
+        done: false
+      - text: "Implement pattern_fill reference"
+        done: false
+  - phase: Draw refs
+    tasks:
+      - text: "Implement draw_line, draw_rect, draw_circle, draw_ellipse, draw_arc, draw_polygon, solid_fill"
+        done: false
+  - phase: Tool refs
+    tasks:
+      - text: "Implement flood_fill, clone_stamp, smudge, sponge references"
+        done: false
+      - text: "Implement healing_brush, red_eye_remove, ca_remove references"
+        done: false
+  - phase: Transform and remaining adjustment refs
+    tasks:
+      - text: "Implement perspective_correct, perspective_warp references"
+        done: false
+      - text: "Implement seam_carve_width, seam_carve_height, smart_crop references"
+        done: false
+      - text: "Implement threshold_binary, triangle_threshold references"
+        done: false
+  - phase: Verification
+    tasks:
+      - text: "All 29 reference self-tests pass"
+        done: false
+extra: {}

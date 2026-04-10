@@ -1,0 +1,43 @@
+id: ref-color-ops-wave2_20260410121300Z
+title: Reference implementations — color ops wave 2 (20 filters)
+type: feature
+status: pending
+created: '2026-04-10'
+updated: '2026-04-10'
+spec:
+  summary: 'Reference functions for: WB temp/gray-world, colorize, vibrance, saturate_hsl, modulate, photo_filter, selective_color,
+    lab_adjust, lab_sharpen, match_color, replace_color, ACES IDT/ODT/CSC, dither_ordered, dither_floyd_steinberg, quantize,
+    kmeans_quantize'
+  context: ''
+  codebase_analysis: ''
+  acceptance_criteria: []
+  out_of_scope: ''
+  technical_notes: ''
+plan: []
+extra: {}
+plan:
+  - phase: Color adjustment refs
+    tasks:
+      - text: "Implement white_balance_temperature reference (CIE CAT16)"
+        done: false
+      - text: "Implement white_balance_gray_world reference (channel mean equalization)"
+        done: false
+      - text: "Implement colorize, vibrance, saturate_hsl, modulate references"
+        done: false
+      - text: "Implement photo_filter, selective_color, replace_color references"
+        done: false
+  - phase: Lab and ACES refs
+    tasks:
+      - text: "Implement lab_adjust, lab_sharpen, match_color references"
+        done: false
+      - text: "Implement aces_idt, aces_odt, aces_cct_to_cg, aces_cg_to_cct references"
+        done: false
+  - phase: Dither and quantize refs
+    tasks:
+      - text: "Implement dither_ordered, dither_floyd_steinberg, quantize, kmeans_quantize references"
+        done: false
+  - phase: Verification
+    tasks:
+      - text: "All 20 reference self-tests pass"
+        done: false
+extra: {}

@@ -1,0 +1,40 @@
+id: ref-enhancement-wave2_20260410121302Z
+title: Reference implementations — enhancement wave 2 (12 filters)
+type: feature
+status: pending
+created: '2026-04-10'
+updated: '2026-04-10'
+spec:
+  summary: 'Reference functions for: vignette, vignette_powerlaw, shadow_highlight, clarity, dehaze, nlm_denoise, retinex_ssr,
+    retinex_msr, retinex_msrcr, frequency_high, frequency_low, pyramid_detail_remap'
+  context: ''
+  codebase_analysis: ''
+  acceptance_criteria: []
+  out_of_scope: ''
+  technical_notes: ''
+plan: []
+extra: {}
+plan:
+  - phase: Vignette and tone refs
+    tasks:
+      - text: "Implement vignette (gaussian), vignette_powerlaw references"
+        done: false
+      - text: "Implement shadow_highlight reference (tone-selective adjustment)"
+        done: false
+      - text: "Implement clarity reference (midtone contrast via unsharp mask)"
+        done: false
+  - phase: Advanced enhancement refs
+    tasks:
+      - text: "Implement dehaze reference (dark channel prior)"
+        done: false
+      - text: "Implement nlm_denoise reference (non-local means)"
+        done: false
+      - text: "Implement retinex_ssr, retinex_msr, retinex_msrcr references"
+        done: false
+      - text: "Implement frequency_high, frequency_low, pyramid_detail_remap references"
+        done: false
+  - phase: Verification
+    tasks:
+      - text: "All 12 reference self-tests pass"
+        done: false
+extra: {}

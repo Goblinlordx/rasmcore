@@ -1,0 +1,38 @@
+id: ref-spatial-wave2_20260410121301Z
+title: Reference implementations — spatial ops wave 2 (9 filters)
+type: feature
+status: pending
+created: '2026-04-10'
+updated: '2026-04-10'
+spec:
+  summary: 'Reference functions for: motion_blur, zoom_blur, spin_blur, lens_blur, bokeh_blur, tilt_shift, adaptive_threshold,
+    scharr, smart_sharpen'
+  context: ''
+  codebase_analysis: ''
+  acceptance_criteria: []
+  out_of_scope: ''
+  technical_notes: ''
+plan: []
+extra: {}
+plan:
+  - phase: Directional blur refs
+    tasks:
+      - text: "Implement motion_blur, zoom_blur, spin_blur references"
+        done: false
+  - phase: Advanced blur refs
+    tasks:
+      - text: "Implement lens_blur (disc kernel), bokeh_blur (hexagonal kernel) references"
+        done: false
+      - text: "Implement tilt_shift reference (depth-dependent blur)"
+        done: false
+  - phase: Threshold and edge refs
+    tasks:
+      - text: "Implement adaptive_threshold, scharr references"
+        done: false
+      - text: "Implement smart_sharpen reference (edge-aware unsharp mask)"
+        done: false
+  - phase: Verification
+    tasks:
+      - text: "All 9 reference self-tests pass"
+        done: false
+extra: {}

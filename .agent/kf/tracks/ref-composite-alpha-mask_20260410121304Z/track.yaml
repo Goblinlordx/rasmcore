@@ -1,0 +1,40 @@
+id: ref-composite-alpha-mask_20260410121304Z
+title: Reference implementations — composite, alpha, mask ops (12 filters)
+type: feature
+status: pending
+created: '2026-04-10'
+updated: '2026-04-10'
+spec:
+  summary: 'Reference functions for: blend (normal+multiply+screen+overlay+etc), blend_if, add_alpha, remove_alpha, flatten,
+    mask_apply, mask_combine, feather, gradient_mask, luminance_range, color_range, masked_blend'
+  context: ''
+  codebase_analysis: ''
+  acceptance_criteria: []
+  out_of_scope: ''
+  technical_notes: ''
+plan: []
+extra: {}
+plan:
+  - phase: Composite refs
+    tasks:
+      - text: "Implement blend reference (all standard blend modes from W3C spec)"
+        done: false
+      - text: "Implement blend_if reference (Photoshop-style conditional blend)"
+        done: false
+  - phase: Alpha refs
+    tasks:
+      - text: "Implement add_alpha, remove_alpha, flatten references"
+        done: false
+  - phase: Mask refs
+    tasks:
+      - text: "Implement mask_apply, mask_combine, masked_blend references"
+        done: false
+      - text: "Implement gradient_mask, luminance_range, color_range references"
+        done: false
+      - text: "Implement feather reference (gaussian blur on mask channel)"
+        done: false
+  - phase: Verification
+    tasks:
+      - text: "All 12 reference self-tests pass"
+        done: false
+extra: {}
