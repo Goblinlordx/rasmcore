@@ -92,21 +92,8 @@ async function doRender(data) {
     const f32 = pixels instanceof Float32Array ? pixels : new Float32Array(pixels);
     const len = f32.length;
     const u8 = new Uint8ClampedArray(len);
-    // Pipeline outputs f32 linear — apply sRGB gamma before quantizing to u8.
-    // Without this, the output looks darker because linear values are interpreted as sRGB.
-    for (let i = 0; i < len; i++) {
-      if ((i & 3) === 3) {
-        // Alpha channel — no gamma, straight linear
-        u8[i] = f32[i] * 255 + 0.5;
-      } else {
-        // RGB — apply IEC 61966-2-1 sRGB transfer function
-        const v = f32[i];
-        const srgb = v <= 0.0031308
-          ? v * 12.92
-          : 1.055 * Math.pow(v, 1.0 / 2.4) - 0.055;
-        u8[i] = Math.max(0, Math.min(255, srgb * 255 + 0.5));
-      }
-    }
+    // render() returns sRGB-space f32 (OT applied by pipeline) — quantize directly.
+    for (let i = 0; i < len; i++) u8[i] = f32[i] * 255 + 0.5;
 
     const totalMs = Math.round(performance.now() - t0);
     console.log(`[playground-worker] ${filterName}: ${totalMs}ms ${info.width}x${info.height}`);
