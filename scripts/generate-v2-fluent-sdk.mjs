@@ -352,7 +352,7 @@ ts += `  // ─── Stroke Drawing ──────────────�
 
 ts += `  // ─── Discovery ──────────────────────────────────────────────────────────
 
-  /** List all available operations (auto-loads WASM module). */`;
+  /** List all available operations (auto-loads WASM module). */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   static listOperations(): any[] {
     const { pipelineV2 } = require('../v2-generated/rasmcore-v2-image.js');
