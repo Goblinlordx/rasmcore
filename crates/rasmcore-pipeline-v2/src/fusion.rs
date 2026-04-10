@@ -787,13 +787,18 @@ impl Node for FusedClutNode {
 pub fn optimize(graph: &mut Graph) {
     // Note: the caller (request_full, gpu_plan) emits the trace event.
     // Don't emit here to avoid double-counting.
-    insert_preferred_csc_nodes(graph);
+    //
+    // CSC wrapping for preferred_color_space is NOT done here — it's done
+    // at graph construction time (apply_filter) where the caller gets back
+    // the correct final node ID. The optimizer can't change node IDs that
+    // callers already hold.
     flatten_lmt_chains(graph);
     fuse_analytical_chains(graph);
     fuse_affine_chains(graph);
     fuse_clut_chains(graph);
 }
 
+#[allow(dead_code)]
 /// Insert CSC nodes around filters that declare a preferred color space.
 ///
 /// When color management is enabled and the working space differs from a

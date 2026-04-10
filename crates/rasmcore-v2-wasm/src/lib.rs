@@ -560,13 +560,34 @@ impl PipelineResource {
             }
         }
 
-        // Add filter node to graph. CSC wrapping (preferred_color_space) is
-        // handled by the fusion optimizer's insert_preferred_csc_nodes() pass —
-        // not here. Doing it here would double-wrap since the optimizer runs on
-        // every request_full().
+        // Create the filter node
         let node = create_filter_node(name, source, info.clone(), &scaled_params).ok_or_else(|| {
             PipelineError::InvalidParams(format!("unknown filter: {name}"))
         })?;
+
+        // If the filter declares a preferred color space different from its
+        // upstream, wrap it with CSC nodes: upstream_cs → preferred → filter → preferred → upstream_cs.
+        // This must happen here (not in the fusion optimizer) because the caller
+        // holds the returned node ID — the optimizer can't change that.
+        let upstream_cs = info.color_space;
+        if let Some(preferred) = node.preferred_color_space() {
+            if preferred != upstream_cs && upstream_cs != ColorSpace::Unknown {
+                let csc_to = v2::ColorConvertNode::new(source, info.clone(), upstream_cs, preferred);
+                let csc_to_id = self.graph.borrow_mut().add_node(Box::new(csc_to));
+
+                let converted_info = NodeInfo { color_space: preferred, ..info };
+                let filter_node = create_filter_node(name, csc_to_id, converted_info.clone(), &scaled_params)
+                    .expect("filter creation already validated");
+                let filter_id = self.graph.borrow_mut().add_node_with_hash(filter_node, filter_hash);
+
+                let filter_out_info = self.graph.borrow().node_info(filter_id)?;
+                let csc_back = v2::ColorConvertNode::new(filter_id, filter_out_info, preferred, upstream_cs);
+                let csc_back_id = self.graph.borrow_mut().add_node(Box::new(csc_back));
+
+                return Ok(csc_back_id);
+            }
+        }
+
         let id = self.graph.borrow_mut().add_node_with_hash(node, filter_hash);
         Ok(id)
     }
