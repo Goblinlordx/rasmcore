@@ -41,6 +41,7 @@ pub mod cdl;
 pub mod color_convert;
 pub mod color_math;
 pub mod color_transform;
+pub mod compositor_node;
 pub mod filter_node;
 pub mod filters;
 pub mod font;
@@ -90,6 +91,7 @@ pub use ops::{
 // Re-export node wrappers
 #[allow(deprecated)]
 pub use filter_node::{FilterNode, GpuFilterNode, IO_F32, compose_shader};
+pub use compositor_node::{CompositorNode, IO_F32_DUAL, compose_dual_shader};
 
 // Re-export LMT types
 pub use lmt::{Lmt, LmtNode, analytical_cdl, analytical_uniform, parse_cube};
