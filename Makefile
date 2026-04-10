@@ -90,10 +90,9 @@ web-ui-check:
 
 # ─── SDK ─────────────────────────────────────────────────────────────────────
 
-## Generate V2 SDK (WASM component + jco transpile + fluent SDK)
+## Generate V2 SDK (WASM component + jco transpile + fluent SDK + package assembly)
 sdk:
-	./scripts/generate-v2-sdk.sh
-	node scripts/generate-v2-fluent-sdk.mjs
+	./scripts/build-sdk.sh
 
 # ─── All ─────────────────────────────────────────────────────────────────────
 
