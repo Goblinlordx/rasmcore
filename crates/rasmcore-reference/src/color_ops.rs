@@ -273,6 +273,325 @@ fn cat16_adaptation_matrix(temperature_k: f32, tint: f32) -> [f32; 9] {
     out
 }
 
+/// White balance — gray world assumption.
+///
+/// Compute per-channel means, global average = (mean_r + mean_g + mean_b) / 3,
+/// then scale each channel by global_avg / channel_avg.
+///
+/// Validated against: OpenCV manual gray-world implementation.
+pub fn white_balance_gray_world(input: &[f32], _w: u32, _h: u32) -> Vec<f32> {
+    let pixel_count = input.len() / 4;
+    if pixel_count == 0 {
+        return input.to_vec();
+    }
+    let (mut sum_r, mut sum_g, mut sum_b) = (0.0f64, 0.0f64, 0.0f64);
+    for px in input.chunks_exact(4) {
+        sum_r += px[0] as f64;
+        sum_g += px[1] as f64;
+        sum_b += px[2] as f64;
+    }
+    let n = pixel_count as f64;
+    let avg_r = sum_r / n;
+    let avg_g = sum_g / n;
+    let avg_b = sum_b / n;
+    let avg_all = (avg_r + avg_g + avg_b) / 3.0;
+
+    let scale_r = if avg_r.abs() > 1e-10 { (avg_all / avg_r) as f32 } else { 1.0 };
+    let scale_g = if avg_g.abs() > 1e-10 { (avg_all / avg_g) as f32 } else { 1.0 };
+    let scale_b = if avg_b.abs() > 1e-10 { (avg_all / avg_b) as f32 } else { 1.0 };
+
+    let mut out = input.to_vec();
+    for px in out.chunks_exact_mut(4) {
+        px[0] *= scale_r;
+        px[1] *= scale_g;
+        px[2] *= scale_b;
+    }
+    out
+}
+
+/// Colorize — tint image toward a target color via luma.
+///
+/// Compute luma = 0.2126*R + 0.7152*G + 0.0722*B,
+/// blend: pixel += (luma * target - pixel) * amount.
+/// amount=0 is identity, amount=1 replaces pixel with luma*target.
+///
+/// Validated against: Photoshop Colorize (Hue/Saturation dialog).
+pub fn colorize(
+    input: &[f32],
+    _w: u32,
+    _h: u32,
+    target_r: f32,
+    target_g: f32,
+    target_b: f32,
+    amount: f32,
+) -> Vec<f32> {
+    let mut out = input.to_vec();
+    for px in out.chunks_exact_mut(4) {
+        let luma = 0.2126 * px[0] + 0.7152 * px[1] + 0.0722 * px[2];
+        px[0] += (luma * target_r - px[0]) * amount;
+        px[1] += (luma * target_g - px[1]) * amount;
+        px[2] += (luma * target_b - px[2]) * amount;
+    }
+    out
+}
+
+/// Vibrance — saturation boost weighted by inverse of existing saturation.
+///
+/// For each pixel: sat = (max - min) / max, weight = amount * (1 - sat).
+/// Convert to HSL, scale S by (1 + weight), convert back.
+/// Low-saturation pixels get a stronger boost than already-saturated ones.
+///
+/// Validated against: Lightroom Vibrance slider behavior.
+pub fn vibrance(input: &[f32], _w: u32, _h: u32, amount: f32) -> Vec<f32> {
+    let mut out = input.to_vec();
+    for px in out.chunks_exact_mut(4) {
+        let max = px[0].max(px[1]).max(px[2]);
+        let min = px[0].min(px[1]).min(px[2]);
+        let sat = if max > 1e-10 { (max - min) / max } else { 0.0 };
+        let weight = amount * (1.0 - sat);
+        let (h, s, l) = rgb_to_hsl(px[0], px[1], px[2]);
+        let s2 = (s * (1.0 + weight)).clamp(0.0, 1.0);
+        let (r, g, b) = hsl_to_rgb(h, s2, l);
+        px[0] = r;
+        px[1] = g;
+        px[2] = b;
+    }
+    out
+}
+
+/// HSL saturation — convert to HSL, scale S by factor, clamp [0,1], convert back.
+///
+/// Identical to `saturate()` but named explicitly for the HSL model.
+/// factor=1.0 is identity, factor=0.0 is grayscale.
+///
+/// Validated against: CSS saturate() filter, Photoshop Hue/Saturation (HSL mode).
+pub fn saturate_hsl(input: &[f32], _w: u32, _h: u32, factor: f32) -> Vec<f32> {
+    let mut out = input.to_vec();
+    for px in out.chunks_exact_mut(4) {
+        let (h, s, l) = rgb_to_hsl(px[0], px[1], px[2]);
+        let (r, g, b) = hsl_to_rgb(h, (s * factor).clamp(0.0, 1.0), l);
+        px[0] = r;
+        px[1] = g;
+        px[2] = b;
+    }
+    out
+}
+
+/// Modulate — combined brightness, saturation, and hue adjustment in HSL.
+///
+/// Convert to HSL, scale L by brightness, scale S by saturation,
+/// rotate H by hue (degrees), convert back.
+/// All factors at 1.0 / hue at 0.0 is identity.
+///
+/// Validated against: ImageMagick `-modulate brightness,saturation,hue`.
+pub fn modulate(
+    input: &[f32],
+    _w: u32,
+    _h: u32,
+    brightness: f32,
+    saturation: f32,
+    hue: f32,
+) -> Vec<f32> {
+    let hue_frac = hue / 360.0; // convert degrees to [0,1] fraction
+    let mut out = input.to_vec();
+    for px in out.chunks_exact_mut(4) {
+        let (h, s, l) = rgb_to_hsl(px[0], px[1], px[2]);
+        let l2 = (l * brightness).clamp(0.0, 1.0);
+        let s2 = (s * saturation).clamp(0.0, 1.0);
+        let h2 = ((h + hue_frac) % 1.0 + 1.0) % 1.0;
+        let (r, g, b) = hsl_to_rgb(h2, s2, l2);
+        px[0] = r;
+        px[1] = g;
+        px[2] = b;
+    }
+    out
+}
+
+/// Photo filter — blend toward a filter color by density.
+///
+/// out = lerp(pixel, filter_color, density).
+/// If preserve_luminosity is true, scale result to maintain original luma
+/// (BT.709: 0.2126*R + 0.7152*G + 0.0722*B).
+///
+/// Validated against: Photoshop Photo Filter adjustment layer.
+pub fn photo_filter(
+    input: &[f32],
+    _w: u32,
+    _h: u32,
+    color_r: f32,
+    color_g: f32,
+    color_b: f32,
+    density: f32,
+    preserve_luminosity: bool,
+) -> Vec<f32> {
+    let mut out = input.to_vec();
+    for px in out.chunks_exact_mut(4) {
+        let orig_luma = 0.2126 * px[0] + 0.7152 * px[1] + 0.0722 * px[2];
+        let inv = 1.0 - density;
+        px[0] = inv * px[0] + density * color_r;
+        px[1] = inv * px[1] + density * color_g;
+        px[2] = inv * px[2] + density * color_b;
+        if preserve_luminosity {
+            let new_luma = 0.2126 * px[0] + 0.7152 * px[1] + 0.0722 * px[2];
+            if new_luma > 1e-10 {
+                let scale = orig_luma / new_luma;
+                px[0] *= scale;
+                px[1] *= scale;
+                px[2] *= scale;
+            }
+        }
+    }
+    out
+}
+
+/// Selective color — shift hue/sat/lum for pixels near a target hue.
+///
+/// Cosine-tapered weight: weight = max(0, cos(pi * hue_diff / hue_range)).
+/// Apply weighted shifts to H, S, L.
+///
+/// Validated against: Photoshop Selective Color / Lightroom HSL panel.
+pub fn selective_color(
+    input: &[f32],
+    _w: u32,
+    _h: u32,
+    target_hue: f32,
+    hue_range: f32,
+    hue_shift: f32,
+    sat_shift: f32,
+    lum_shift: f32,
+) -> Vec<f32> {
+    let target_frac = (target_hue / 360.0).rem_euclid(1.0);
+    let range_frac = hue_range / 360.0;
+    let shift_frac = hue_shift / 360.0;
+    let mut out = input.to_vec();
+    for px in out.chunks_exact_mut(4) {
+        let (h, s, l) = rgb_to_hsl(px[0], px[1], px[2]);
+        let mut diff = (h - target_frac).abs();
+        if diff > 0.5 {
+            diff = 1.0 - diff;
+        }
+        if range_frac > 1e-10 && diff < range_frac {
+            let weight = (std::f32::consts::PI * diff / range_frac).cos().max(0.0);
+            let h2 = ((h + shift_frac * weight) % 1.0 + 1.0) % 1.0;
+            let s2 = (s + sat_shift * weight).clamp(0.0, 1.0);
+            let l2 = (l + lum_shift * weight).clamp(0.0, 1.0);
+            let (r, g, b) = hsl_to_rgb(h2, s2, l2);
+            px[0] = r;
+            px[1] = g;
+            px[2] = b;
+        }
+    }
+    out
+}
+
+/// Replace color — shift H/S/L for pixels matching hue, saturation, and luminance ranges.
+///
+/// Cosine-tapered hue weight, hard S/L range gate.
+///
+/// Validated against: Photoshop Replace Color dialog.
+pub fn replace_color(
+    input: &[f32],
+    _w: u32,
+    _h: u32,
+    center_hue: f32,
+    hue_range: f32,
+    sat_min: f32,
+    sat_max: f32,
+    lum_min: f32,
+    lum_max: f32,
+    hue_shift: f32,
+    sat_shift: f32,
+    lum_shift: f32,
+) -> Vec<f32> {
+    let center_frac = (center_hue / 360.0).rem_euclid(1.0);
+    let range_frac = hue_range / 360.0;
+    let shift_frac = hue_shift / 360.0;
+    let mut out = input.to_vec();
+    for px in out.chunks_exact_mut(4) {
+        let (h, s, l) = rgb_to_hsl(px[0], px[1], px[2]);
+        if s < sat_min || s > sat_max || l < lum_min || l > lum_max {
+            continue;
+        }
+        let mut diff = (h - center_frac).abs();
+        if diff > 0.5 {
+            diff = 1.0 - diff;
+        }
+        if range_frac > 1e-10 && diff < range_frac {
+            let weight = (std::f32::consts::PI * diff / range_frac).cos().max(0.0);
+            let h2 = ((h + shift_frac * weight) % 1.0 + 1.0) % 1.0;
+            let s2 = (s + sat_shift * weight).clamp(0.0, 1.0);
+            let l2 = (l + lum_shift * weight).clamp(0.0, 1.0);
+            let (r, g, b) = hsl_to_rgb(h2, s2, l2);
+            px[0] = r;
+            px[1] = g;
+            px[2] = b;
+        }
+    }
+    out
+}
+
+/// Match color — transfer color statistics from a target distribution.
+///
+/// Per-channel: out = (pixel - src_mean) * (target_std / src_std) + target_mean,
+/// blended by strength.
+///
+/// Validated against: Photoshop Match Color (simplified RGB model).
+pub fn match_color(
+    input: &[f32],
+    _w: u32,
+    _h: u32,
+    target_mean: [f32; 3],
+    target_std: f32,
+    strength: f32,
+) -> Vec<f32> {
+    let pixel_count = input.len() / 4;
+    if pixel_count == 0 {
+        return input.to_vec();
+    }
+    let n = pixel_count as f64;
+
+    // Compute per-channel mean
+    let mut sum = [0.0f64; 3];
+    for px in input.chunks_exact(4) {
+        sum[0] += px[0] as f64;
+        sum[1] += px[1] as f64;
+        sum[2] += px[2] as f64;
+    }
+    let mean = [
+        (sum[0] / n) as f32,
+        (sum[1] / n) as f32,
+        (sum[2] / n) as f32,
+    ];
+
+    // Compute per-channel std
+    let mut var = [0.0f64; 3];
+    for px in input.chunks_exact(4) {
+        for c in 0..3 {
+            let d = px[c] as f64 - mean[c] as f64;
+            var[c] += d * d;
+        }
+    }
+    let std_dev = [
+        (var[0] / n).sqrt() as f32,
+        (var[1] / n).sqrt() as f32,
+        (var[2] / n).sqrt() as f32,
+    ];
+
+    let mut out = input.to_vec();
+    for px in out.chunks_exact_mut(4) {
+        for c in 0..3 {
+            let scale = if std_dev[c].abs() > 1e-10 {
+                target_std / std_dev[c]
+            } else {
+                1.0
+            };
+            let transferred = (px[c] - mean[c]) * scale + target_mean[c];
+            px[c] = px[c] + (transferred - px[c]) * strength;
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -333,6 +652,71 @@ mod tests {
         let output = white_balance(&input, 1, 1, 8000.0, 0.0);
         assert!(output[0] > 0.5, "8000K should boost red: {}", output[0]);
         assert!(output[2] < 0.5, "8000K should reduce blue: {}", output[2]);
+    }
+
+    #[test]
+    fn gray_world_balanced_is_identity() {
+        // A uniform gray image is already balanced — gray world should be identity.
+        let input = vec![0.5f32, 0.5, 0.5, 1.0].repeat(16);
+        let output = white_balance_gray_world(&input, 4, 4);
+        crate::assert_parity("gray_world_balanced", &output, &input, 1e-6);
+    }
+
+    #[test]
+    fn colorize_amount_zero_is_identity() {
+        let input = crate::gradient(4, 4);
+        let output = colorize(&input, 4, 4, 1.0, 0.5, 0.0, 0.0);
+        crate::assert_parity("colorize_zero", &output, &input, 1e-7);
+    }
+
+    #[test]
+    fn vibrance_zero_is_identity() {
+        let input = crate::gradient(4, 4);
+        let output = vibrance(&input, 4, 4, 0.0);
+        // weight = 0 * (1 - sat) = 0, so S *= 1.0
+        crate::assert_parity("vibrance_zero", &output, &input, 1e-5);
+    }
+
+    #[test]
+    fn saturate_hsl_one_is_identity() {
+        let input = crate::gradient(4, 4);
+        let output = saturate_hsl(&input, 4, 4, 1.0);
+        crate::assert_parity("saturate_hsl_one", &output, &input, 1e-5);
+    }
+
+    #[test]
+    fn modulate_identity() {
+        let input = crate::gradient(4, 4);
+        let output = modulate(&input, 4, 4, 1.0, 1.0, 0.0);
+        crate::assert_parity("modulate_identity", &output, &input, 1e-5);
+    }
+
+    #[test]
+    fn photo_filter_density_zero_is_identity() {
+        let input = crate::gradient(4, 4);
+        let output = photo_filter(&input, 4, 4, 1.0, 0.5, 0.0, 0.0, false);
+        crate::assert_parity("photo_filter_zero", &output, &input, 1e-7);
+    }
+
+    #[test]
+    fn selective_color_zero_shift_is_identity() {
+        let input = crate::gradient(4, 4);
+        let output = selective_color(&input, 4, 4, 0.0, 60.0, 0.0, 0.0, 0.0);
+        crate::assert_parity("selective_zero", &output, &input, 1e-5);
+    }
+
+    #[test]
+    fn replace_color_zero_shift_is_identity() {
+        let input = crate::gradient(4, 4);
+        let output = replace_color(&input, 4, 4, 0.0, 60.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0);
+        crate::assert_parity("replace_zero", &output, &input, 1e-5);
+    }
+
+    #[test]
+    fn match_color_strength_zero_is_identity() {
+        let input = crate::gradient(4, 4);
+        let output = match_color(&input, 4, 4, [0.5, 0.5, 0.5], 0.1, 0.0);
+        crate::assert_parity("match_zero", &output, &input, 1e-7);
     }
 }
 

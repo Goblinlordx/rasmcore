@@ -20,6 +20,7 @@
 //! ```
 
 pub mod color_ops;
+pub mod color_ops2;
 pub mod point_ops;
 
 // ─── Procedural Test Input Generators ───────────────────────────────────────
