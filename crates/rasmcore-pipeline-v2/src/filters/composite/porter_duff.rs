@@ -23,6 +23,17 @@ pub struct PorterDuffOver {
     pub opacity: f32,
 }
 
+impl PorterDuffOver {
+    fn gpu_params_data(&self, width: u32, height: u32) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(16);
+        buf.extend_from_slice(&width.to_le_bytes());
+        buf.extend_from_slice(&height.to_le_bytes());
+        buf.extend_from_slice(&self.opacity.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes()); // padding
+        buf
+    }
+}
+
 impl Compositor for PorterDuffOver {
     fn compute(
         &self,
@@ -55,6 +66,14 @@ impl Compositor for PorterDuffOver {
         }
 
         Ok(out)
+    }
+
+    fn gpu_shader_body(&self) -> Option<&'static str> {
+        Some(include_str!("../../shaders/porter_duff.wgsl"))
+    }
+
+    fn gpu_params(&self, width: u32, height: u32) -> Option<Vec<u8>> {
+        Some(self.gpu_params_data(width, height))
     }
 }
 

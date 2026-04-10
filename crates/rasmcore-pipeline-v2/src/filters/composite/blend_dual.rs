@@ -30,6 +30,22 @@ pub struct BlendDual {
     pub opacity: f32,
 }
 
+impl BlendDual {
+    fn gpu_params_data(&self, info: &NodeInfo) -> Vec<u8> {
+        let coeffs = info.color_space.luma_coefficients();
+        let mut buf = Vec::with_capacity(32);
+        buf.extend_from_slice(&info.width.to_le_bytes());
+        buf.extend_from_slice(&info.height.to_le_bytes());
+        buf.extend_from_slice(&self.opacity.to_le_bytes());
+        buf.extend_from_slice(&self.mode.to_le_bytes());
+        buf.extend_from_slice(&coeffs[0].to_le_bytes());
+        buf.extend_from_slice(&coeffs[1].to_le_bytes());
+        buf.extend_from_slice(&coeffs[2].to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes()); // padding
+        buf
+    }
+}
+
 impl Compositor for BlendDual {
     fn compute(
         &self,
@@ -230,6 +246,23 @@ impl Compositor for BlendDual {
         }
 
         Ok(out)
+    }
+
+    fn gpu_shader_body(&self) -> Option<&'static str> {
+        Some(include_str!("../../shaders/blend_dual.wgsl"))
+    }
+
+    fn gpu_params(&self, width: u32, height: u32) -> Option<Vec<u8>> {
+        let info = NodeInfo {
+            width,
+            height,
+            color_space: crate::color_space::ColorSpace::Linear,
+        };
+        Some(self.gpu_params_data(&info))
+    }
+
+    fn gpu_params_with_info(&self, info: &NodeInfo) -> Option<Vec<u8>> {
+        Some(self.gpu_params_data(info))
     }
 }
 
