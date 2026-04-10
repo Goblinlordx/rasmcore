@@ -78,11 +78,8 @@ echo "=== [3/6] Vendoring preview2-shim ==="
 mkdir -p "$DIST/shim"
 
 if [ -d "$SHIM_SRC" ]; then
-  cp "$SHIM_SRC/cli.js"        "$DIST/shim/"
-  cp "$SHIM_SRC/clocks.js"     "$DIST/shim/"
-  cp "$SHIM_SRC/filesystem.js" "$DIST/shim/"
-  cp "$SHIM_SRC/io.js"         "$DIST/shim/"
-  cp "$SHIM_SRC/random.js"     "$DIST/shim/"
+  # Copy all browser shim files — modules import from each other internally
+  cp "$SHIM_SRC/"*.js "$DIST/shim/"
 else
   echo "WARNING: preview2-shim not found at $SHIM_SRC"
   echo "Run: npm install @bytecodealliance/preview2-shim"
