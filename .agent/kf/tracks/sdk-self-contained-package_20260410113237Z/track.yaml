@@ -1,0 +1,124 @@
+id: sdk-self-contained-package_20260410113237Z
+title: "Self-contained SDK package — build once, import anywhere"
+type: refactor
+status: pending
+created: 2026-04-10
+updated: 2026-04-10
+spec:
+  summary: |
+    Restructure SDK build to produce a single self-contained npm package that
+    bundles WASM binary, jco bindings, fluent Pipeline API, preview2-shim, and
+    helper libs. Consumers just import — no separate jco step, no path hacks.
+  context: |
+    The current SDK has three fundamental problems making it unusable for
+    external consumers:
+
+    1. No self-contained package. @rasmcore/image (sdks/typescript/) is a thin
+       runtime wrapper requiring consumers to separately obtain jco-transpiled
+       WASM, preview2-shim, and fluent SDK. No single importable artifact.
+
+    2. Build artifacts scattered across 4+ locations (sdk/typescript/v2-generated/,
+       sdk/typescript/v2-fluent/, sdk/v2/lib/, target/...wasm) with fragile
+       copy+sed scripts stitching them into web-ui/sdk/v2/ and docs/site/public/sdk/v2/.
+
+    3. Path rewriting is brittle. build-v2-webui.sh rewrites import paths via sed.
+       Makefile rewrites preview2-shim imports via sed. Any directory change breaks
+       everything.
+
+    The docs site initially failed because the Makefile copied jco output but not
+    the TypeScript lib files (gpu-handler, render-target) that docs imports.
+  codebase_analysis: |
+    Key files in current build pipeline:
+    - scripts/generate-v2-sdk.sh — jco transpile with 17 -M mappings pointing to ./preview2-shim/
+    - scripts/generate-v2-fluent-sdk.mjs — generates Pipeline class from registry dump
+    - scripts/build-v2-webui.sh — copies + sed-rewrites paths for web-ui consumption
+    - Makefile — orchestrates sdk/docs/web-ui builds with sentinel files
+    - sdks/typescript/ — v1 SDK (@rasmcore/image) with RcImage runtime, never compiled (no dist/)
+    - sdk/typescript/v2-generated/ — jco output, gitignored
+    - sdk/typescript/v2-fluent/ — fluent SDK, gitignored
+    - sdk/v2/lib/ — hand-written helpers (gpu-handler.ts, render-target.ts, ml-provider.ts)
+    - web-ui/sdk/v2/ — assembled copy consumed by Vite (@sdk alias)
+    - docs/site/public/sdk/v2/ — assembled copy consumed by Next.js docs
+
+    Consumer currently needs: cargo + cargo-component + jco + preview2-shim + manual
+    path configuration. Goal: npm install (or copy) one directory and import.
+  acceptance_criteria:
+    - make sdk produces sdk/dist/ containing package.json, WASM binary, jco bindings, fluent Pipeline, RcImage runtime, preview2-shim, and lib/ helpers
+    - sdk/dist/package.json has correct exports map for main, pipeline, runtime subpaths
+    - No sed-based import path rewriting in any build script
+    - jco transpile -M mappings point directly to final shim/ paths within the package
+    - web-ui builds cleanly by copying sdk/dist/ (single cp -r, no transforms)
+    - docs site builds cleanly by copying sdk/dist/ (single cp -r, no transforms)
+    - A consumer can copy sdk/dist/ to their project, import Pipeline or RcImage, and use without additional setup
+  out_of_scope: |
+    - npm publish automation (future track)
+    - CI/CD pipeline changes
+    - WASM binary size optimization
+    - Changing the WIT interface or pipeline API
+    - Native SDK (Rust/Go/Python) packaging
+  technical_notes: |
+    Target package structure:
+      sdk/dist/
+      ├── package.json          (exports map, type: module)
+      ├── rasmcore.js           (main entry re-exporting Pipeline + RcImage)
+      ├── rasmcore.d.ts
+      ├── pipeline.js           (fluent Pipeline, auto-generated)
+      ├── pipeline.d.ts
+      ├── runtime.js            (RcImage dynamic runtime)
+      ├── runtime.d.ts
+      ├── wasm/                 (jco bindings + WASM binary)
+      ├── shim/                 (vendored preview2-shim)
+      └── lib/                  (gpu-handler, render-target, ml-provider)
+
+    jco transpile mappings change from ./preview2-shim/ to ../shim/ (relative
+    to wasm/ subdirectory). This eliminates the Makefile sed rewrite.
+
+    The fluent SDK generator (generate-v2-fluent-sdk.mjs) needs its import
+    path template updated from ../v2-generated/interfaces/ to the final
+    package-internal path.
+
+    For web-ui: cp -r sdk/dist/ web-ui/sdk/ + update Vite alias.
+    For docs: cp -r sdk/dist/ docs/site/public/sdk/ + update imports.
+    For npm: npm publish sdk/dist/ (future track).
+plan:
+  - phase: "Package structure"
+    tasks:
+      - text: "Design sdk/dist/package.json with exports map covering main, pipeline, runtime, and wasm subpaths"
+        done: false
+      - text: "Create unified build script scripts/build-sdk.sh: cargo component build -> jco transpile -> fluent codegen -> preview2-shim vendor -> lib/ compile -> assemble into sdk/dist/"
+        done: false
+      - text: "Configure jco transpile -M mappings to use ../shim/ paths (eliminating post-hoc sed rewriting)"
+        done: false
+      - text: "Update generate-v2-fluent-sdk.mjs output import paths to target package-internal structure"
+        done: false
+  - phase: "Build integration"
+    tasks:
+      - text: "Update Makefile sdk target to call the new unified build script"
+        done: false
+      - text: "Update build-v2-webui.sh to copy sdk/dist/ into web-ui/sdk/ (single copy, no sed)"
+        done: false
+      - text: "Update Makefile DOCS_SDK target to copy from sdk/dist/ (including lib/ and shim/)"
+        done: false
+      - text: "Remove old scattered output directories (sdk/typescript/v2-generated/, sdk/typescript/v2-fluent/) from build flow"
+        done: false
+  - phase: "Consumer update"
+    tasks:
+      - text: "Update web-ui/ imports to reference new SDK paths from sdk/dist/"
+        done: false
+      - text: "Update web-ui/vite.config.ts alias to point at the new package location"
+        done: false
+      - text: "Update docs/site/ imports and wasm-loader to use new SDK paths"
+        done: false
+      - text: "Update docs/site/ Makefile targets for new copy source"
+        done: false
+      - text: "Migrate sdks/typescript/src/runtime.ts (RcImage) into the new package as alternative entry point"
+        done: false
+  - phase: "Verification"
+    tasks:
+      - text: "Smoke test: make sdk produces self-contained sdk/dist/ with all files, correct imports, no broken references"
+        done: false
+      - text: "Smoke test: make web-ui builds cleanly using new SDK — dev server loads and processes an image"
+        done: false
+      - text: "Smoke test: make docs builds cleanly — docs site playground can instantiate SDK"
+        done: false
+extra: {}
