@@ -12,29 +12,27 @@ spec:
   acceptance_criteria: []
   out_of_scope: ''
   technical_notes: ''
-plan: []
-extra: {}
 plan:
-  - phase: Vignette and tone refs
-    tasks:
-      - text: "Implement vignette (gaussian), vignette_powerlaw references"
-        done: false
-      - text: "Implement shadow_highlight reference (tone-selective adjustment)"
-        done: false
-      - text: "Implement clarity reference (midtone contrast via unsharp mask)"
-        done: false
-  - phase: Advanced enhancement refs
-    tasks:
-      - text: "Implement dehaze reference (dark channel prior)"
-        done: false
-      - text: "Implement nlm_denoise reference (non-local means)"
-        done: false
-      - text: "Implement retinex_ssr, retinex_msr, retinex_msrcr references"
-        done: false
-      - text: "Implement frequency_high, frequency_low, pyramid_detail_remap references"
-        done: false
-  - phase: Verification
-    tasks:
-      - text: "All 12 reference self-tests pass"
-        done: false
+- phase: Vignette and tone refs
+  tasks:
+  - text: Implement vignette (gaussian), vignette_powerlaw references
+    done: true
+  - text: Implement shadow_highlight reference (tone-selective adjustment)
+    done: true
+  - text: Implement clarity reference (midtone contrast via unsharp mask)
+    done: true
+- phase: Advanced enhancement refs
+  tasks:
+  - text: Implement dehaze reference (dark channel prior)
+    done: true
+  - text: Implement nlm_denoise reference (non-local means)
+    done: true
+  - text: Implement retinex_ssr, retinex_msr, retinex_msrcr references
+    done: true
+  - text: Implement frequency_high, frequency_low, pyramid_detail_remap references
+    done: true
+- phase: Verification
+  tasks:
+  - text: All 12 reference self-tests pass
+    done: true
 extra: {}
