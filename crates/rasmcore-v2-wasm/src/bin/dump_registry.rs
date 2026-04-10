@@ -37,6 +37,7 @@ fn json_escape(s: &str) -> String {
 
 fn main() {
     let filters = v2::registry::registered_filter_registrations();
+    let compositors = v2::registry::registered_compositor_registrations();
     let encoders = v2::registered_encoders();
     let decoders = v2::registered_decoders();
 
@@ -54,6 +55,36 @@ fn main() {
             json_escape(f.cost)
         );
         for (j, p) in f.params.iter().enumerate() {
+            if j > 0 {
+                print!(",");
+            }
+            print!(
+                "{{\"name\":\"{}\",\"type\":\"{}\",\"min\":{},\"max\":{},\"step\":{},\"default\":{},\"hint\":{},\"description\":\"{}\"}}",
+                p.name,
+                param_type_str(p.value_type),
+                opt_f64(p.min),
+                opt_f64(p.max),
+                opt_f64(p.step),
+                opt_f64(p.default),
+                opt_str(p.hint),
+                json_escape(p.description)
+            );
+        }
+        print!("]}}");
+    }
+    print!("],\"compositors\":[");
+    for (i, c) in compositors.iter().enumerate() {
+        if i > 0 {
+            print!(",");
+        }
+        print!(
+            "{{\"name\":\"{}\",\"displayName\":\"{}\",\"category\":\"{}\",\"cost\":\"{}\",\"params\":[",
+            c.name,
+            c.display_name,
+            c.category,
+            json_escape(c.cost)
+        );
+        for (j, p) in c.params.iter().enumerate() {
             if j > 0 {
                 print!(",");
             }

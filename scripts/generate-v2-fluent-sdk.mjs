@@ -38,10 +38,11 @@ execSync('cargo run --bin dump_registry -p rasmcore-v2-wasm 2>/dev/null > ' + re
 const registry = JSON.parse(readFileSync(registryJson, 'utf8'));
 
 const filters = registry.filters;
+const compositors = registry.compositors || [];
 const encoders = registry.encoders;
 const decoders = registry.decoders;
 
-console.log(`Discovered: ${filters.length} filters, ${encoders.length} encoders, ${decoders.length} decoders`);
+console.log(`Discovered: ${filters.length} filters, ${compositors.length} compositors, ${encoders.length} encoders, ${decoders.length} decoders`);
 
 // ─── Generate TypeScript ────────────────────────────────────────────────────
 
@@ -300,6 +301,31 @@ for (const op of filters) {
     ts += `    const node = this._pipe.applyFilter(this._node, '${op.name}', serialize(config));\n`;
   } else {
     ts += `    const node = this._pipe.applyFilter(this._node, '${op.name}', new Uint8Array(0));\n`;
+  }
+  ts += `    return new Pipeline(this._pipe, node);\n`;
+  ts += `  }\n\n`;
+}
+
+// Generate compositor methods
+ts += `  // ─── Compositor methods (generated) ─────────────────────────────────────
+
+`;
+
+for (const op of compositors) {
+  const method = snakeToCamel(op.name);
+  const configType = op.params.length > 0 ? `${snakeToPascal(op.name)}Config` : null;
+  const paramSig = configType ? `other: Pipeline, config: ${configType}` : 'other: Pipeline';
+  const serializeBody = generateSerializeParams(op);
+
+  ts += `  /** ${op.displayName} — composites another pipeline node over this one. */\n`;
+  ts += `  ${method}(${paramSig}): Pipeline {\n`;
+  if (configType) {
+    ts += `    const serialize = (config: ${configType}): Uint8Array => {\n`;
+    ts += `  ${serializeBody}\n`;
+    ts += `    };\n`;
+    ts += `    const node = this._pipe.applyCompositor(other._node, this._node, '${op.name}', serialize(config));\n`;
+  } else {
+    ts += `    const node = this._pipe.applyCompositor(other._node, this._node, '${op.name}', new Uint8Array(0));\n`;
   }
   ts += `    return new Pipeline(this._pipe, node);\n`;
   ts += `  }\n\n`;

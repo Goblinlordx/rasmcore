@@ -213,6 +213,38 @@ func generateGo(m *Manifest) string {
 		ops = append(ops, entry{mp.Name, mp.Params})
 	}
 
+	// Compositor methods (dual-input: takes another Chain as foreground)
+	for _, c := range m.Compositors {
+		methodName := snakeToPascal(c.Name)
+		if len(c.Params) == 0 {
+			fmt.Fprintf(&b, "// %s composites the foreground chain over this chain.\n", methodName)
+			fmt.Fprintf(&b, "func (c *Chain) %s(fg *Chain) *Chain {\n", methodName)
+			fmt.Fprintf(&b, "\treturn c.addCompositor(\"%s\", fg)\n", c.Name)
+			fmt.Fprintf(&b, "}\n\n")
+		} else {
+			var paramSig []string
+			var paramArgs []string
+			paramSig = append(paramSig, "fg *Chain")
+			for _, p := range c.Params {
+				goType := rustTypeToGo(p.Type)
+				goName := safeGoName(snakeToCamel(p.Name))
+				paramSig = append(paramSig, fmt.Sprintf("%s %s", goName, goType))
+				switch goType {
+				case "float32":
+					paramArgs = append(paramArgs, goName)
+				case "bool":
+					paramArgs = append(paramArgs, fmt.Sprintf("boolToFloat(%s)", goName))
+				default:
+					paramArgs = append(paramArgs, fmt.Sprintf("float32(%s)", goName))
+				}
+			}
+			fmt.Fprintf(&b, "// %s composites the foreground chain over this chain.\n", methodName)
+			fmt.Fprintf(&b, "func (c *Chain) %s(%s) *Chain {\n", methodName, strings.Join(paramSig, ", "))
+			fmt.Fprintf(&b, "\treturn c.addCompositor(\"%s\", fg, %s)\n", c.Name, strings.Join(paramArgs, ", "))
+			fmt.Fprintf(&b, "}\n\n")
+		}
+	}
+
 	for _, op := range ops {
 		methodName := snakeToPascal(op.name)
 
@@ -300,6 +332,27 @@ func generatePython(m *Manifest) string {
 	}
 	for _, mp := range m.Mappers {
 		ops = append(ops, entry{mp.Name, mp.Params})
+	}
+
+	// Compositor methods (dual-input: takes another Chain as foreground)
+	for _, c := range m.Compositors {
+		if len(c.Params) == 0 {
+			fmt.Fprintf(&b, "    def %s(self, fg: 'Chain') -> 'Chain':\n", c.Name)
+			fmt.Fprintf(&b, "        \"\"\"Composite fg over this chain using %s.\"\"\"\n", c.Name)
+			fmt.Fprintf(&b, "        return self._add_compositor('%s', fg)\n\n", c.Name)
+		} else {
+			var paramSig []string
+			var paramArgs []string
+			paramSig = append(paramSig, "fg: 'Chain'")
+			for _, p := range c.Params {
+				pyType := rustTypeToPython(p.Type)
+				paramSig = append(paramSig, fmt.Sprintf("%s: %s", p.Name, pyType))
+				paramArgs = append(paramArgs, p.Name)
+			}
+			fmt.Fprintf(&b, "    def %s(self, %s) -> 'Chain':\n", c.Name, strings.Join(paramSig, ", "))
+			fmt.Fprintf(&b, "        \"\"\"Composite fg over this chain using %s.\"\"\"\n", c.Name)
+			fmt.Fprintf(&b, "        return self._add_compositor('%s', fg, %s)\n\n", c.Name, strings.Join(paramArgs, ", "))
+		}
 	}
 
 	for _, op := range ops {
