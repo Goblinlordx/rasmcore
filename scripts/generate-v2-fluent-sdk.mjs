@@ -19,7 +19,17 @@ import { execSync } from 'child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(__dirname, '..');
-const outDir = join(projectRoot, 'sdk', 'typescript', 'v2-fluent');
+
+// SDK_DIST env var: when set by build-sdk.sh, output directly to sdk/dist/.
+// Otherwise, fall back to legacy location for backward compatibility.
+const sdkDist = process.env.SDK_DIST;
+const outDir = sdkDist || join(projectRoot, 'sdk', 'typescript', 'v2-fluent');
+
+// Import paths differ based on output location:
+// - sdk/dist/pipeline.ts imports from ./wasm/interfaces/
+// - legacy sdk/typescript/v2-fluent/ imports from ../v2-generated/interfaces/
+const interfacesImportPrefix = sdkDist ? './wasm/interfaces' : '../v2-generated/interfaces';
+const wasmModuleImport = sdkDist ? './wasm/rasmcore-v2-image.js' : '../v2-generated/rasmcore-v2-image.js';
 
 // Get operation metadata from native Rust binary (not WASM — inventory links natively)
 const registryJson = join('/tmp', 'v2_registry.json');
@@ -94,7 +104,7 @@ let ts = `// Auto-generated V2 fluent SDK — do not edit.
 // Generated from ${filters.length} filters, ${encoders.length} encoders, ${decoders.length} decoders.
 // Regenerate: node scripts/generate-v2-fluent-sdk.mjs
 
-import type { ImagePipelineV2 as RawPipeline } from '../v2-generated/interfaces/rasmcore-v2-image-pipeline-v2.js';
+import type { ImagePipelineV2 as RawPipeline } from '${interfacesImportPrefix}/rasmcore-v2-image-pipeline-v2.js';
 
 // ─── Param serialization helpers ────────────────────────────────────────────
 
@@ -183,7 +193,7 @@ export class Pipeline {
 
   /** Create a pipeline from raw image bytes (auto-loads WASM module). */
   static open(data: Uint8Array, config?: ReadConfig): Pipeline {
-    const { pipelineV2 } = require('../v2-generated/rasmcore-v2-image.js');
+    const { pipelineV2 } = require('${wasmModuleImport}');
     const pipe = new pipelineV2.ImagePipelineV2();
     const readConfig = config ? { formatHint: config.hint } : undefined;
     const node = pipe.read(data, readConfig);
@@ -355,7 +365,7 @@ ts += `  // ─── Discovery ────────────────
   /** List all available operations (auto-loads WASM module). */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   static listOperations(): any[] {
-    const { pipelineV2 } = require('../v2-generated/rasmcore-v2-image.js');
+    const { pipelineV2 } = require('${wasmModuleImport}');
     const pipe = new pipelineV2.ImagePipelineV2();
     return pipe.listOperations();
   }
@@ -419,7 +429,7 @@ export class StrokeInput {
 
   /** Create a new stroke with the given brush configuration. */
   static create(config: BrushConfig): StrokeInput {
-    const { pipelineV2 } = require('../v2-generated/rasmcore-v2-image.js');
+    const { pipelineV2 } = require('${wasmModuleImport}');
     const stroke = new pipelineV2.StrokeInput({
       diameter: config.diameter,
       spacing: config.spacing ?? 0.15,
@@ -478,7 +488,12 @@ if (existsSync(extensionsDir)) {
     .filter(f => f.endsWith('.ts'))
     .sort();
   for (const extFile of extFiles) {
-    const extContent = readFileSync(join(extensionsDir, extFile), 'utf8');
+    let extContent = readFileSync(join(extensionsDir, extFile), 'utf8');
+    // When outputting to sdk/dist/, rewrite extension import paths:
+    // ../lib/ → ./lib/ (extensions are inlined into pipeline.ts at sdk/dist/ root)
+    if (sdkDist) {
+      extContent = extContent.replace(/from\s+['"]\.\.\/lib\//g, "from './lib/");
+    }
     ts += `\n// ─── Extension: ${extFile} ────────────────────────────────────────\n`;
     ts += extContent;
     ts += '\n';
@@ -489,9 +504,13 @@ if (existsSync(extensionsDir)) {
 // ─── Write output ───────────────────────────────────────────────────────────
 
 mkdirSync(outDir, { recursive: true });
-writeFileSync(join(outDir, 'index.ts'), ts);
 
-console.log(`\nGenerated: ${join(outDir, 'index.ts')}`);
+// When outputting to sdk/dist/, name the file pipeline.ts (package entry point).
+// Otherwise, use index.ts (legacy location).
+const outFile = sdkDist ? 'pipeline.ts' : 'index.ts';
+writeFileSync(join(outDir, outFile), ts);
+
+console.log(`\nGenerated: ${join(outDir, outFile)}`);
 console.log(`  ${filters.length} filter methods`);
 console.log(`  ${encoderFormats.length} typed write methods`);
 console.log(`  ${filters.filter(f => f.params.length > 0).length} config interfaces`);
