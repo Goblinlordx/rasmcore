@@ -10,11 +10,12 @@ interface PlaygroundProps {
   params: ParamDescriptor[];
   referenceImageUrl: string;
   staticAfterUrl?: string;
+  showcaseParams?: Record<string, number | boolean>;
 }
 
 type Status = 'idle' | 'loading-wasm' | 'rendering' | 'ready' | 'error';
 
-export function Playground({ filterName, params, referenceImageUrl, staticAfterUrl }: PlaygroundProps) {
+export function Playground({ filterName, params, referenceImageUrl, staticAfterUrl, showcaseParams }: PlaygroundProps) {
   const [status, setStatus] = useState<Status>('idle');
   const [error, setError] = useState<string>('');
   const [hasResult, setHasResult] = useState(!!staticAfterUrl);
@@ -22,6 +23,11 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
   const [values, setValues] = useState<Record<string, number | boolean>>(() => {
     const initial: Record<string, number | boolean> = {};
     for (const p of params) {
+      // Use showcase params (matches prerendered image) if available
+      if (showcaseParams && p.name in showcaseParams) {
+        initial[p.name] = showcaseParams[p.name];
+        continue;
+      }
       if (p.type === 'bool') {
         initial[p.name] = (p.default ?? 0) > 0.5;
       } else {

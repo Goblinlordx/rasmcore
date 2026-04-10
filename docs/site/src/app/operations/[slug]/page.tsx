@@ -27,6 +27,16 @@ export default async function OperationPage({ params }: { params: Promise<{ slug
   const examplesDir = join(process.cwd(), 'public', 'assets', 'examples');
   const hasExample = existsSync(join(examplesDir, `${op.name}-after.png`));
 
+  // Load showcase params (matches prerendered image) so UI defaults = prerender values
+  let showcaseParams: Record<string, number | boolean> | undefined;
+  try {
+    const showcasePath = join(examplesDir, 'showcase-params.json');
+    if (existsSync(showcasePath)) {
+      const all = JSON.parse(require('fs').readFileSync(showcasePath, 'utf8'));
+      showcaseParams = all[op.name];
+    }
+  } catch { /* ignore */ }
+
   return (
     <>
       <div className="breadcrumb">
@@ -40,6 +50,7 @@ export default async function OperationPage({ params }: { params: Promise<{ slug
         params={op.params}
         referenceImageUrl="/assets/examples/reference.png"
         staticAfterUrl={hasExample ? `/assets/examples/${op.name}-after.png` : undefined}
+        showcaseParams={showcaseParams}
       />
 
       {adocHtml && (

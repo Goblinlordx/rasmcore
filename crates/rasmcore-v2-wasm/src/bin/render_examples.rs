@@ -209,6 +209,30 @@ fn main() {
         }
     }
 
+    // Write showcase-params.json so the docs playground uses the same values
+    // as the prerendered images. Maps filter_name → { param_name: value }.
+    let mut showcase_json = String::from("{\n");
+    for (i, f) in filters.iter().enumerate() {
+        let params = showcase_params(f.name, f.params);
+        showcase_json.push_str(&format!("  \"{}\": {{", f.name));
+        let mut entries = Vec::new();
+        for (k, v) in &params.floats {
+            entries.push(format!("\"{k}\": {v}"));
+        }
+        for (k, v) in &params.ints {
+            entries.push(format!("\"{k}\": {v}"));
+        }
+        for (k, v) in &params.bools {
+            entries.push(format!("\"{k}\": {}", if *v { "true" } else { "false" }));
+        }
+        showcase_json.push_str(&entries.join(", "));
+        showcase_json.push('}');
+        if i + 1 < filters.len() { showcase_json.push(','); }
+        showcase_json.push('\n');
+    }
+    showcase_json.push('}');
+    fs::write(out.join("showcase-params.json"), &showcase_json).unwrap();
+
     println!("Rendered: {ok} examples, skipped: {fail}");
     println!("Output: {}", out.display());
 }
