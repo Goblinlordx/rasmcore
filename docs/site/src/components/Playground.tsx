@@ -138,9 +138,13 @@ export function Playground({ filterName, params, referenceImageUrl, staticAfterU
     });
   }, [filterName, loadRefImage, referenceImageUrl, params]);
 
+  const renderTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onParamChange = useCallback((newValues: Record<string, number | boolean>) => {
     setValues(newValues);
-    doRender(newValues);
+    // Debounce: only render after slider stops moving for 80ms.
+    // Previous pending render is cancelled — only the latest values run.
+    if (renderTimeoutRef.current) clearTimeout(renderTimeoutRef.current);
+    renderTimeoutRef.current = setTimeout(() => doRender(newValues), 80);
   }, [doRender]);
 
   const [activated, setActivated] = useState(false);
