@@ -43,5 +43,6 @@ inventory::submit! {
         extensions: &["fits", "fit"],
         fn_name: "encode_fits",
         encode_fn: None,
+        preferred_output_cs: crate::domain::encoder::EncoderColorSpace::Linear,
     }
 }

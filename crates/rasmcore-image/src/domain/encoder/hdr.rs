@@ -112,6 +112,7 @@ inventory::submit! {
         extensions: &["hdr"],
         fn_name: "encode_hdr",
         encode_fn: None,
+        preferred_output_cs: crate::domain::encoder::EncoderColorSpace::Linear,
     }
 }
 

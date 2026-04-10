@@ -63,6 +63,7 @@ inventory::submit! {
         extensions: &["webp"],
         fn_name: "encode_webp",
         encode_fn: None,
+        preferred_output_cs: crate::domain::encoder::EncoderColorSpace::Srgb,
     }
 }
 

@@ -553,6 +553,7 @@ inventory::submit! {
         extensions: &["png"],
         fn_name: "encode_png",
         encode_fn: Some(|pixels, info| encode(pixels, info, &PngEncodeConfig::default())),
+        preferred_output_cs: crate::domain::encoder::EncoderColorSpace::Srgb,
     }
 }
 

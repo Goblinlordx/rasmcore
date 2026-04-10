@@ -19,5 +19,6 @@ inventory::submit! {
         extensions: &["tga"],
         fn_name: "encode_tga",
         encode_fn: None,
+        preferred_output_cs: crate::domain::encoder::EncoderColorSpace::Srgb,
     }
 }

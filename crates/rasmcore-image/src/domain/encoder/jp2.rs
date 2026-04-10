@@ -187,6 +187,7 @@ inventory::submit! {
         extensions: &["jp2", "j2k"],
         fn_name: "encode_jp2",
         encode_fn: None,
+        preferred_output_cs: crate::domain::encoder::EncoderColorSpace::Srgb,
     }
 }
 

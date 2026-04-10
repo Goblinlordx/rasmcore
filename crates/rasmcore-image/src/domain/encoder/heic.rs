@@ -203,6 +203,7 @@ inventory::submit! {
         extensions: &["heic", "heif"],
         fn_name: "encode_heic",
         encode_fn: None,
+        preferred_output_cs: crate::domain::encoder::EncoderColorSpace::Srgb,
     }
 }
 

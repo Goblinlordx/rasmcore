@@ -231,6 +231,7 @@ inventory::submit! {
         extensions: &["tiff", "tif"],
         fn_name: "encode_tiff",
         encode_fn: None,
+        preferred_output_cs: crate::domain::encoder::EncoderColorSpace::Srgb,
     }
 }
 

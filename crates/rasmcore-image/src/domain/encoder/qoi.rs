@@ -21,5 +21,6 @@ inventory::submit! {
         extensions: &["qoi"],
         fn_name: "encode_qoi",
         encode_fn: None,
+        preferred_output_cs: crate::domain::encoder::EncoderColorSpace::Srgb,
     }
 }

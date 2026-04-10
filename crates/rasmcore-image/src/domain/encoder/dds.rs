@@ -129,6 +129,7 @@ inventory::submit! {
         extensions: &["dds"],
         fn_name: "encode_dds",
         encode_fn: None,
+        preferred_output_cs: crate::domain::encoder::EncoderColorSpace::Srgb,
     }
 }
 

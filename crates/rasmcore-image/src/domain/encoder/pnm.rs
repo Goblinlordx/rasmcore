@@ -19,5 +19,6 @@ inventory::submit! {
         extensions: &["pnm", "ppm", "pgm", "pbm"],
         fn_name: "encode_pnm",
         encode_fn: None,
+        preferred_output_cs: crate::domain::encoder::EncoderColorSpace::Srgb,
     }
 }

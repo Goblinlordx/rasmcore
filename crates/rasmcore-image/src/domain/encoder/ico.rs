@@ -76,6 +76,7 @@ inventory::submit! {
         extensions: &["ico"],
         fn_name: "encode_ico",
         encode_fn: None,
+        preferred_output_cs: crate::domain::encoder::EncoderColorSpace::Srgb,
     }
 }
 

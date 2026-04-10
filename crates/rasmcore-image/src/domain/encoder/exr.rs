@@ -115,6 +115,7 @@ inventory::submit! {
         extensions: &["exr"],
         fn_name: "encode_exr",
         encode_fn: None,
+        preferred_output_cs: crate::domain::encoder::EncoderColorSpace::Linear,
     }
 }
 

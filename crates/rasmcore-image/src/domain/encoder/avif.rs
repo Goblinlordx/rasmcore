@@ -46,6 +46,7 @@ inventory::submit! {
         extensions: &["avif"],
         fn_name: "encode_avif",
         encode_fn: None,
+        preferred_output_cs: crate::domain::encoder::EncoderColorSpace::Srgb,
     }
 }
 
