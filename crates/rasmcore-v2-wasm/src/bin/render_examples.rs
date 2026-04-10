@@ -122,7 +122,14 @@ fn showcase_params(name: &str, params: &[v2::ParamDescriptor]) -> ParamMap {
             // Effect — obvious visual change
             ("film_grain", "amount") => 0.15,
             ("film_grain_grading", "amount") => 0.15,
-            ("chromatic_aberration", "amount") => 5.0,
+            ("chromatic_aberration", "strength") => 5.0,
+            // Chromatic split: stagger R/G/B offsets so it looks like fringing, not a uniform shift
+            ("chromatic_split", "red_dx") => 8.0,
+            ("chromatic_split", "red_dy") => 2.0,
+            ("chromatic_split", "green_dx") => 0.0,
+            ("chromatic_split", "green_dy") => 0.0,
+            ("chromatic_split", "blue_dx") => -6.0,
+            ("chromatic_split", "blue_dy") => -3.0,
             ("pixelate", "size") => 8.0,
             ("emboss", "strength") => 1.0,
             ("oil_paint", "radius") => 3.0,
