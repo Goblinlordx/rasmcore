@@ -17,7 +17,7 @@ let queued = null;
 
 async function initWasm() {
   try {
-    const sdk = await import(/* webpackIgnore: true */ '/sdk/v2/rasmcore-v2-image.js');
+    const sdk = await import(/* webpackIgnore: true */ '/sdk/wasm/rasmcore-v2-image.js');
     PipelineClass = sdk.pipelineV2.ImagePipelineV2;
     sourceClass = sdk.pipelineV2.Source;
     self.postMessage({ type: 'ready' });

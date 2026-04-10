@@ -5,7 +5,7 @@
  * canvas rendering. No f32→u8 quantize loop — GPU blits directly to canvas.
  */
 
-import { GpuHandlerV2 } from '../../../../sdk/v2/lib/gpu-handler';
+import { GpuHandlerV2 } from '../../../../sdk/dist/lib/gpu-handler';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let loadPromise: Promise<any> | null = null;
@@ -35,7 +35,7 @@ export async function loadWasm(): Promise<any> {
     loadPromise = (async () => {
       try {
         // @ts-expect-error — runtime-only import from public directory
-        const sdk = await import(/* webpackIgnore: true */ '/sdk/v2/rasmcore-v2-image.js');
+        const sdk = await import(/* webpackIgnore: true */ '/sdk/wasm/rasmcore-v2-image.js');
         pipelineClass = sdk.pipelineV2.ImagePipelineV2;
         sourceClass = sdk.pipelineV2.Source;
         return pipelineClass;

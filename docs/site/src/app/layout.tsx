@@ -18,11 +18,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <head>
         <script type="importmap" dangerouslySetInnerHTML={{ __html: JSON.stringify({
           imports: {
-            "@bytecodealliance/preview2-shim/cli": "/sdk/v2/preview2-shim/cli.js",
-            "@bytecodealliance/preview2-shim/clocks": "/sdk/v2/preview2-shim/clocks.js",
-            "@bytecodealliance/preview2-shim/filesystem": "/sdk/v2/preview2-shim/filesystem.js",
-            "@bytecodealliance/preview2-shim/io": "/sdk/v2/preview2-shim/io.js",
-            "@bytecodealliance/preview2-shim/random": "/sdk/v2/preview2-shim/random.js",
+            "@bytecodealliance/preview2-shim/cli": "/sdk/shim/cli.js",
+            "@bytecodealliance/preview2-shim/clocks": "/sdk/shim/clocks.js",
+            "@bytecodealliance/preview2-shim/filesystem": "/sdk/shim/filesystem.js",
+            "@bytecodealliance/preview2-shim/io": "/sdk/shim/io.js",
+            "@bytecodealliance/preview2-shim/random": "/sdk/shim/random.js",
           }
         })}} />
       </head>
