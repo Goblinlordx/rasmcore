@@ -21,6 +21,7 @@
 
 pub mod color_ops;
 pub mod color_ops2;
+pub mod composite_ops;
 pub mod distortion_ops;
 pub mod effect_ops;
 pub mod enhancement_ops2;
