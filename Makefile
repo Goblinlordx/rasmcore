@@ -11,7 +11,7 @@ DOCS_SITE         := docs/site
 DOCS_NODE_MODULES := $(DOCS_SITE)/node_modules/.package-lock.json
 DOCS_REGISTRY     := /tmp/v2_registry_docs.json
 DOCS_EXAMPLES     := /tmp/docs-examples/reference.png
-DOCS_SDK          := $(DOCS_SITE)/public/sdk/v2/rasmcore-v2-image.js
+DOCS_SDK          := $(DOCS_SITE)/public/sdk/wasm/rasmcore-v2-image.js
 DOCS_OUT          := docs/out/index.html
 
 # ─── Docs ────────────────────────────────────────────────────────────────────
@@ -32,17 +32,11 @@ $(DOCS_REGISTRY): $(V2_SOURCES)
 $(DOCS_EXAMPLES): $(V2_SOURCES)
 	cargo run --bin render_examples -p rasmcore-v2-wasm --release
 
-## Copy SDK for live playground
-$(DOCS_SDK): sdk/typescript/v2-generated/rasmcore-v2-image.js $(DOCS_NODE_MODULES)
-	mkdir -p $(DOCS_SITE)/public/sdk/v2
-	cp sdk/typescript/v2-generated/rasmcore-v2-image.js $(DOCS_SITE)/public/sdk/v2/
-	cp sdk/typescript/v2-generated/rasmcore-v2-image.d.ts $(DOCS_SITE)/public/sdk/v2/ 2>/dev/null || true
-	cp sdk/typescript/v2-generated/*.wasm $(DOCS_SITE)/public/sdk/v2/
-	cp -r sdk/typescript/v2-generated/interfaces $(DOCS_SITE)/public/sdk/v2/ 2>/dev/null || true
-	mkdir -p $(DOCS_SITE)/public/sdk/v2/preview2-shim
-	cp $(DOCS_SITE)/node_modules/@bytecodealliance/preview2-shim/lib/browser/*.js $(DOCS_SITE)/public/sdk/v2/preview2-shim/ 2>/dev/null || true
-	@# Rewrite bare @bytecodealliance/preview2-shim/* to absolute paths with .js extension
-	sed -i '' "s|from '@bytecodealliance/preview2-shim/\([a-z]*\)'|from '/sdk/v2/preview2-shim/\1.js'|g" $(DOCS_SITE)/public/sdk/v2/rasmcore-v2-image.js
+## Copy SDK for live playground — single copy from sdk/dist/, no sed rewrites
+$(DOCS_SDK): sdk/dist/wasm/rasmcore-v2-image.js
+	rm -rf $(DOCS_SITE)/public/sdk
+	mkdir -p $(DOCS_SITE)/public/sdk
+	cp -r sdk/dist/* $(DOCS_SITE)/public/sdk/
 
 ## Copy example images to public
 .PHONY: docs-copy-examples
