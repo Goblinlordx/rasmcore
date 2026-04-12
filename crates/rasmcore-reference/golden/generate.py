@@ -1030,6 +1030,274 @@ def golden_high_pass(radius: float) -> dict:
     }
 
 
+# ─── Enhancement / grading golden generators ─────────────────────────────────
+# Uses SPATIAL_INPUT_LINEAR (64x64) for spatial ops.
+
+
+def golden_equalize() -> dict:
+    """Histogram equalization via per-channel CDF remapping.
+
+    Pipeline quantizes to 256 bins, computes CDF, remaps.
+    We replicate with numpy histogram + CDF — same algorithm as
+    cv2.equalizeHist but on f32 data quantized to 256 bins.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+    npixels = h * w
+    output = img.copy()
+
+    for c in range(3):
+        channel = img[:, :, c]
+        # Quantize to 256 bins (matching pipeline: floor(clamp(v,0,inf)*255), min 255)
+        bins = np.clip((channel * 255.0).astype(np.int32), 0, 255)
+        hist = np.bincount(bins.ravel(), minlength=256).astype(np.uint32)
+
+        # Build CDF
+        cdf = np.cumsum(hist).astype(np.uint32)
+        cdf_min = cdf[cdf > 0].min() if np.any(cdf > 0) else 0
+        denom = npixels - int(cdf_min)
+
+        if denom > 0:
+            # Remap each pixel by its bin's CDF value
+            lut = (cdf.astype(np.float32) - float(cdf_min)) / float(denom)
+            output[:, :, c] = lut[bins]
+
+    return {
+        "filter": "equalize",
+        "params": {},
+        "tool": "numpy (CDF histogram equalization, 256-bin)",
+        "tool_version": np.__version__,
+        "note": "Per-channel 256-bin CDF equalization matching pipeline quantize+remap",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_normalize(black_clip: float, white_clip: float) -> dict:
+    """Normalize — linear contrast stretch with percentile clipping.
+
+    Pipeline: build 256-bin histogram per channel, find black/white percentile
+    clip points, linearly remap: out = (in - black) / (white - black).
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+    npixels = h * w
+    output = img.copy()
+
+    for c in range(3):
+        channel = img[:, :, c]
+        bins = np.clip((channel * 255.0).astype(np.int32), 0, 255)
+        hist = np.bincount(bins.ravel(), minlength=256).astype(np.uint32)
+
+        # Find black point: first bin where cumulative >= black_clip * npixels
+        black_threshold = int(npixels * black_clip)
+        accum = 0
+        black_bin = 0
+        for i in range(256):
+            accum += int(hist[i])
+            if accum >= black_threshold:
+                black_bin = i
+                break
+
+        # Find white point: first bin from top where cumulative >= white_clip * npixels
+        white_threshold = int(npixels * white_clip)
+        accum = 0
+        white_bin = 255
+        for i in range(255, -1, -1):
+            accum += int(hist[i])
+            if accum >= white_threshold:
+                white_bin = i
+                break
+
+        black = black_bin / 255.0
+        white = white_bin / 255.0
+        rng = white - black
+
+        if rng > 1e-10:
+            output[:, :, c] = (output[:, :, c] - black) / rng
+
+    return {
+        "filter": "normalize",
+        "params": {"black_clip": black_clip, "white_clip": white_clip},
+        "tool": "numpy (256-bin histogram percentile stretch)",
+        "tool_version": np.__version__,
+        "note": "Per-channel histogram, find clip percentiles, linear remap (no clamp)",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_vignette(sigma: float, x_inset: int, y_inset: int) -> dict:
+    """Gaussian vignette — elliptical binary mask blurred with Gaussian.
+
+    Pipeline algorithm:
+    1. Build binary elliptical mask: 1.0 inside ellipse, 0.0 outside.
+       Ellipse center = (w/2, h/2), radii rx = w/2 - x_inset, ry = h/2 - y_inset.
+       Pixel is inside if ((x-cx)/rx)^2 + ((y-cy)/ry)^2 <= 1.
+    2. Blur the mask with GaussianBlur(sigma).
+    3. Multiply RGB by mask.
+
+    We use OpenCV GaussianBlur for the blur step (independent implementation).
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+
+    cx = w / 2.0
+    cy = h / 2.0
+    rx = max(cx - x_inset, 1.0)
+    ry = max(cy - y_inset, 1.0)
+
+    # Build binary elliptical mask
+    mask = np.zeros((h, w), dtype=np.float32)
+    for y_px in range(h):
+        for x_px in range(w):
+            dx = (x_px - cx) / rx
+            dy = (y_px - cy) / ry
+            if dx * dx + dy * dy <= 1.0:
+                mask[y_px, x_px] = 1.0
+
+    # Blur the mask
+    if sigma > 0.0:
+        ksize = int(round(sigma * 10.0 + 1.0)) | 1
+        ksize = max(ksize, 3)
+        mask = cv2.GaussianBlur(mask, (ksize, ksize), sigma, borderType=cv2.BORDER_REFLECT_101)
+
+    # Multiply RGB by mask
+    output = img.copy()
+    for c in range(3):
+        output[:, :, c] *= mask
+
+    return {
+        "filter": "vignette",
+        "params": {"sigma": sigma, "x_inset": x_inset, "y_inset": y_inset},
+        "tool": f"numpy (elliptical mask) + cv2.GaussianBlur (sigma={sigma})",
+        "tool_version": cv2.__version__,
+        "note": "Binary elliptical mask blurred with OpenCV GaussianBlur, then RGB *= mask",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_vignette_powerlaw(strength: float, falloff: float) -> dict:
+    """Power-law vignette — radial darkening.
+
+    Pipeline formula: factor = max(0, 1 - strength * (dist / max_dist) ^ falloff)
+    where dist = sqrt((x - cx)^2 + (y - cy)^2), max_dist = sqrt(cx^2 + cy^2).
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+
+    cx = w / 2.0
+    cy = h / 2.0
+    max_dist = np.sqrt(cx * cx + cy * cy)
+    if max_dist < 1e-10:
+        return {
+            "filter": "vignette_powerlaw",
+            "params": {"strength": strength, "falloff": falloff},
+            "tool": "numpy",
+            "tool_version": np.__version__,
+            "output": pixels_to_list(img),
+        }
+    inv_max = 1.0 / max_dist
+
+    output = img.copy()
+    for y_px in range(h):
+        for x_px in range(w):
+            dx = x_px - cx
+            dy = y_px - cy
+            dist = np.sqrt(dx * dx + dy * dy) * inv_max
+            factor = max(0.0, 1.0 - strength * (dist ** falloff))
+            for c in range(3):
+                output[y_px, x_px, c] *= factor
+
+    return {
+        "filter": "vignette_powerlaw",
+        "params": {"strength": strength, "falloff": falloff},
+        "tool": "numpy (radial power-law falloff)",
+        "tool_version": np.__version__,
+        "note": "factor = max(0, 1 - strength * (dist/max_dist)^falloff), RGB *= factor",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_tonemap_reinhard() -> dict:
+    """Reinhard global tone mapping: out = v / (1 + v) per channel.
+
+    No parameters — applies to each RGB channel independently.
+    Maps [0, inf) to [0, 1).
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float64)
+    output = (img / (1.0 + img)).astype(np.float32)
+
+    return {
+        "filter": "tonemap_reinhard",
+        "params": {},
+        "tool": "numpy (v / (1 + v))",
+        "tool_version": np.__version__,
+        "note": "Reinhard global tone map: v / (1 + v) per channel, no parameters",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_frequency_high(sigma: float) -> dict:
+    """High-pass frequency layer via cv2.GaussianBlur.
+
+    Pipeline formula: out = (in - blur(in, sigma)) + 0.5
+    Alpha is preserved (not shifted). Uses OpenCV for the blur step.
+    """
+    s = sigma
+    ksize = int(round(s * 10.0 + 1.0)) | 1
+    ksize = max(ksize, 3)
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    blurred = cv2.GaussianBlur(img, (ksize, ksize), s, borderType=cv2.BORDER_REFLECT_101)
+    output = (img - blurred + 0.5).astype(np.float32)
+
+    return {
+        "filter": "frequency_high",
+        "params": {"sigma": sigma},
+        "tool": f"cv2.GaussianBlur high pass (ksize={ksize}, sigma={s:.4f})",
+        "tool_version": cv2.__version__,
+        "note": "OpenCV GaussianBlur for blur, then in - blur + 0.5, f32 linear",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_frequency_low(sigma: float) -> dict:
+    """Low-pass frequency layer via cv2.GaussianBlur.
+
+    Pipeline formula: out = blur(in, sigma). Same as gaussian_blur.
+    """
+    s = sigma
+    ksize = int(round(s * 10.0 + 1.0)) | 1
+    ksize = max(ksize, 3)
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    output = cv2.GaussianBlur(img, (ksize, ksize), s, borderType=cv2.BORDER_REFLECT_101)
+
+    return {
+        "filter": "frequency_low",
+        "params": {"sigma": sigma},
+        "tool": f"cv2.GaussianBlur (ksize={ksize}, sigma={s:.4f})",
+        "tool_version": cv2.__version__,
+        "note": "OpenCV C++ GaussianBlur low pass, per-channel, BORDER_REFLECT_101, f32 linear",
+        "output": pixels_to_list(output),
+    }
+
+
+# TODO: The following enhancement/grading filters need more investigation before
+# golden generators can be written. They have complex algorithms without clean
+# single-function external references:
+#   - NLM (non-local means): cv2.fastNlMeansDenoisingColored operates in u8 space,
+#     need to verify pipeline's f32 linear-space NLM matches after round-trip.
+#   - dehaze: no standard OpenCV function; Dark Channel Prior (He et al. 2009) has
+#     multiple implementation-specific choices (patch size, transmission clamp, etc.)
+#   - retinex: multiple variants (SSR, MSR, MSRCR); pipeline impl needs spec audit.
+#   - CLAHE: cv2.createCLAHE exists but operates on u8; pipeline's f32 CLAHE may
+#     differ in bin quantization and tile boundary interpolation.
+#   - clarity: Photoshop-style local contrast; no standard external reference.
+#   - shadow_highlight: Adobe-style shadow/highlight recovery; implementation-specific.
+#   - pyramid_detail_remap: Laplacian pyramid detail manipulation; no standard ref.
+#   - tonemap_filmic: ACES Narkowicz approximation — could add but has 5 params.
+#   - tonemap_drago: logarithmic tone map with bias — could add but needs param matching.
+#   - film_grain_grading: procedural noise; output depends on RNG seed.
+
+
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 def main():
@@ -1127,6 +1395,20 @@ def main():
     spatial["filters"]["bilateral_5_0.1_10"] = golden_bilateral(5, 0.1, 10.0)
     spatial["filters"]["sharpen_1_1.5"] = golden_sharpen(1.0, 1.5)
     spatial["filters"]["high_pass_3"] = golden_high_pass(3.0)
+
+    # Enhancement / grading filters (spatial-sized input)
+    spatial["filters"]["equalize"] = golden_equalize()
+    spatial["filters"]["normalize_0.02_0.01"] = golden_normalize(0.02, 0.01)
+    spatial["filters"]["normalize_0.05_0.05"] = golden_normalize(0.05, 0.05)
+    spatial["filters"]["vignette_10_0_0"] = golden_vignette(10.0, 0, 0)
+    spatial["filters"]["vignette_5_8_8"] = golden_vignette(5.0, 8, 8)
+    spatial["filters"]["vignette_powerlaw_0.5_2.0"] = golden_vignette_powerlaw(0.5, 2.0)
+    spatial["filters"]["vignette_powerlaw_0.8_3.0"] = golden_vignette_powerlaw(0.8, 3.0)
+    spatial["filters"]["tonemap_reinhard"] = golden_tonemap_reinhard()
+    spatial["filters"]["frequency_high_3"] = golden_frequency_high(3.0)
+    spatial["filters"]["frequency_high_1"] = golden_frequency_high(1.0)
+    spatial["filters"]["frequency_low_3"] = golden_frequency_low(3.0)
+    spatial["filters"]["frequency_low_1"] = golden_frequency_low(1.0)
 
     # Write spatial output
     spatial_file = out_dir / "spatial.json"

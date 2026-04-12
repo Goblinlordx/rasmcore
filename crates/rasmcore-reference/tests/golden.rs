@@ -313,6 +313,15 @@ fn run_spatial_reference(_filter_key: &str, entry: &GoldenEntry, input: &[f32], 
         "bilateral" => refimpl::spatial_ops::bilateral(input, w, h, f("sigma_space"), f("sigma_color")),
         "sharpen" => refimpl::spatial_ops::sharpen(input, w, h, f("amount")),
         "high_pass" => refimpl::spatial_ops::high_pass(input, w, h, u("radius")),
+        // Enhancement
+        "equalize" => refimpl::enhancement_ops::equalize(input, w, h),
+        "normalize" => refimpl::enhancement_ops::normalize(input, w, h),
+        "vignette" => refimpl::enhancement_ops2::vignette(input, w, h, f("sigma"), f("x_inset"), f("y_inset")),
+        "vignette_powerlaw" => refimpl::enhancement_ops2::vignette_powerlaw(input, w, h, f("strength"), f("falloff")),
+        "frequency_high" => refimpl::enhancement_ops2::frequency_high(input, w, h, f("sigma")),
+        "frequency_low" => refimpl::enhancement_ops2::frequency_low(input, w, h, f("sigma")),
+        // Grading
+        "tonemap_reinhard" => refimpl::grading_ops2::tonemap_reinhard(input, w, h, 1.0),
         _ => return None,
     })
 }
@@ -322,9 +331,16 @@ fn run_spatial_reference(_filter_key: &str, entry: &GoldenEntry, input: &[f32], 
 fn spatial_tolerance_for(filter_name: &str) -> f32 {
     match filter_name {
         // Bilateral: CIE-Lab L2 distance (Tomasi & Manduchi 1998 / MATLAB model).
-        // Pipeline, reference, and golden all use same algorithm. Tight tolerance.
         "bilateral" => 0.001,
-        // All other spatial ops: matching border mode + kernel = tight tolerance
+        // Equalize: histogram bin quantization (f32→256 bins→f32) causes small diffs
+        "equalize" => 0.01,
+        // Vignette: exact formula match, tight tolerance
+        "vignette" | "vignette_powerlaw" => 0.001,
+        // Frequency split: depends on gaussian blur precision
+        "frequency_high" | "frequency_low" => 0.001,
+        // Tonemap: simple formula, tight
+        "tonemap_reinhard" => 0.001,
+        // All other spatial ops
         _ => 0.001,
     }
 }
