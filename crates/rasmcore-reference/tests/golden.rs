@@ -321,15 +321,13 @@ fn run_spatial_reference(_filter_key: &str, entry: &GoldenEntry, input: &[f32], 
 /// inherently more FP accumulation variance than point ops.
 fn spatial_tolerance_for(filter_name: &str) -> f32 {
     match filter_name {
-        // Bilateral: different window computation between OpenCV and our impl.
-        "bilateral" => 0.1,
-        // Sobel: very close — OpenCV uses optimized coefficients.
-        "sobel" => 0.005,
-        // Gaussian/box/sharpen/high_pass: separable border handling differs from
-        // OpenCV's 2D convolution at image edges. On 64x64 test image with typical
-        // radii, ~20% of pixels are border pixels. Diff is 0.02-0.04.
-        // Professional tools (Resolve, Nuke) work on 4K+ where this is invisible.
-        _ => 0.05,
+        // Bilateral: OpenCV's bilateral uses different window computation
+        // and range weighting normalization than our implementation.
+        // This is an inherent algorithm difference, not a bug.
+        // TODO: investigate if we should adopt OpenCV's exact bilateral.
+        "bilateral" => 0.05,
+        // All other spatial ops: matching border mode + kernel = tight tolerance
+        _ => 0.001,
     }
 }
 
@@ -418,3 +416,4 @@ fn golden_spatial_pipeline_validation() {
     eprintln!("\nSpatial pipeline vs golden: {passed} pass, {failed} fail, {skipped} skip");
     assert_eq!(failed, 0, "{failed} spatial pipeline filters don't match golden data");
 }
+

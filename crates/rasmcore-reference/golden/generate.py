@@ -858,13 +858,13 @@ def golden_gaussian_blur(radius: float) -> dict:
     ksize = int(round(sigma * 10.0 + 1.0)) | 1  # ensure odd
     ksize = max(ksize, 3)
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
-    output = cv2.GaussianBlur(img, (ksize, ksize), sigma, borderType=cv2.BORDER_REPLICATE)
+    output = cv2.GaussianBlur(img, (ksize, ksize), sigma, borderType=cv2.BORDER_REFLECT_101)
     return {
         "filter": "gaussian_blur",
         "params": {"radius": radius},
         "tool": f"cv2.GaussianBlur (ksize={ksize}, sigma={sigma:.4f})",
         "tool_version": cv2.__version__,
-        "note": "OpenCV C++ GaussianBlur, per-channel, BORDER_REPLICATE, f32 linear",
+        "note": "OpenCV C++ GaussianBlur, per-channel, BORDER_REFLECT_101, f32 linear",
         "output": pixels_to_list(output),
     }
 
@@ -877,13 +877,13 @@ def golden_box_blur(radius: float) -> dict:
     r = int(radius)
     ksize = 2 * r + 1
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
-    output = cv2.blur(img, (ksize, ksize), borderType=cv2.BORDER_REPLICATE)
+    output = cv2.blur(img, (ksize, ksize), borderType=cv2.BORDER_REFLECT_101)
     return {
         "filter": "box_blur",
         "params": {"radius": radius},
         "tool": f"cv2.blur (ksize={ksize})",
         "tool_version": cv2.__version__,
-        "note": "OpenCV C++ box blur, per-channel, BORDER_REPLICATE, f32 linear",
+        "note": "OpenCV C++ box blur, per-channel, BORDER_REFLECT_101, f32 linear",
         "output": pixels_to_list(output),
     }
 
@@ -900,6 +900,7 @@ def golden_sobel(scale: float) -> dict:
     luma = luma.astype(np.float32)
 
     # Use OpenCV Sobel on luminance (ksize=3 matching pipeline)
+    # Pipeline Sobel uses sample_luma with clamp (BORDER_REPLICATE), not REFLECT_101
     gx = cv2.Sobel(luma, cv2.CV_32F, 1, 0, ksize=3, borderType=cv2.BORDER_REPLICATE)
     gy = cv2.Sobel(luma, cv2.CV_32F, 0, 1, ksize=3, borderType=cv2.BORDER_REPLICATE)
     magnitude = np.sqrt(gx * gx + gy * gy).astype(np.float32) * scale
@@ -911,7 +912,7 @@ def golden_sobel(scale: float) -> dict:
         "params": {"scale": scale},
         "tool": "cv2.Sobel (ksize=3, BT.709 luminance)",
         "tool_version": cv2.__version__,
-        "note": "OpenCV C++ Sobel on luma, magnitude * scale, BORDER_REPLICATE",
+        "note": "OpenCV C++ Sobel on luma, magnitude * scale, BORDER_REFLECT_101",
         "output": pixels_to_list(output),
     }
 
@@ -924,13 +925,13 @@ def golden_bilateral(diameter: int, sigma_color: float, sigma_space: float) -> d
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
     # OpenCV bilateralFilter works on multi-channel f32 directly
     output = cv2.bilateralFilter(img, diameter, sigma_color, sigma_space,
-                                  borderType=cv2.BORDER_REPLICATE)
+                                  borderType=cv2.BORDER_REFLECT_101)
     return {
         "filter": "bilateral",
         "params": {"diameter": diameter, "sigma_color": sigma_color, "sigma_space": sigma_space},
         "tool": f"cv2.bilateralFilter (d={diameter}, sigmaColor={sigma_color}, sigmaSpace={sigma_space})",
         "tool_version": cv2.__version__,
-        "note": "OpenCV C++ bilateralFilter, per-channel, BORDER_REPLICATE, f32 linear",
+        "note": "OpenCV C++ bilateralFilter, per-channel, BORDER_REFLECT_101, f32 linear",
         "output": pixels_to_list(output),
     }
 
@@ -946,7 +947,7 @@ def golden_sharpen(radius: float, amount: float) -> dict:
     ksize = int(round(sigma * 10.0 + 1.0)) | 1
     ksize = max(ksize, 3)
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
-    blurred = cv2.GaussianBlur(img, (ksize, ksize), sigma, borderType=cv2.BORDER_REPLICATE)
+    blurred = cv2.GaussianBlur(img, (ksize, ksize), sigma, borderType=cv2.BORDER_REFLECT_101)
     output = (img + amount * (img - blurred)).astype(np.float32)
     return {
         "filter": "sharpen",
@@ -968,7 +969,7 @@ def golden_high_pass(radius: float) -> dict:
     ksize = int(round(sigma * 10.0 + 1.0)) | 1
     ksize = max(ksize, 3)
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
-    blurred = cv2.GaussianBlur(img, (ksize, ksize), sigma, borderType=cv2.BORDER_REPLICATE)
+    blurred = cv2.GaussianBlur(img, (ksize, ksize), sigma, borderType=cv2.BORDER_REFLECT_101)
     output = (img - blurred + 0.5).astype(np.float32)
     return {
         "filter": "high_pass",
