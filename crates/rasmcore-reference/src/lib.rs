@@ -25,6 +25,8 @@ pub mod composite_ops;
 pub mod distortion_ops;
 pub mod effect_ops;
 pub mod enhancement_ops2;
+pub mod evaluate_ops;
+pub mod grading_ops2;
 pub mod point_ops;
 pub mod spatial_ops2;
 
