@@ -20,6 +20,7 @@ from pathlib import Path
 
 import numpy as np
 import cv2
+import colour
 from PIL import Image, ImageEnhance, ImageFilter
 
 # ─── Canonical test input ────────────────────────────────────────────────────
@@ -81,6 +82,7 @@ def tool_info() -> dict:
         "opencv": cv2.__version__,
         "numpy": np.__version__,
         "pillow": Image.__version__,
+        "colour_science": colour.__version__,
         "imagemagick": im_version,
     }
 
@@ -340,6 +342,480 @@ def golden_evaluate_min(threshold: float) -> dict:
     }
 
 
+# ─── HSL helpers (independent implementation) ──────────────────────────────
+# These are a clean-room HSL implementation using the standard algorithm
+# from CSS Color Level 4 / W3C, NOT copied from our pipeline.
+
+def rgb_to_hsl_pixel(r: float, g: float, b: float) -> tuple:
+    """Convert a single linear RGB pixel to HSL. H in [0,360], S/L in [0,1]."""
+    cmax = max(r, g, b)
+    cmin = min(r, g, b)
+    delta = cmax - cmin
+    l = (cmax + cmin) / 2.0
+
+    if delta < 1e-10:
+        h = 0.0
+        s = 0.0
+    else:
+        if l < 0.5:
+            s = delta / (cmax + cmin)
+        else:
+            s = delta / (2.0 - cmax - cmin)
+
+        if cmax == r:
+            h = ((g - b) / delta) % 6.0
+        elif cmax == g:
+            h = (b - r) / delta + 2.0
+        else:
+            h = (r - g) / delta + 4.0
+        h *= 60.0
+        if h < 0:
+            h += 360.0
+
+    return (h, s, l)
+
+
+def hsl_to_rgb_pixel(h: float, s: float, l: float) -> tuple:
+    """Convert HSL to linear RGB. H in [0,360], S/L in [0,1]."""
+    if s < 1e-10:
+        return (l, l, l)
+
+    if l < 0.5:
+        q = l * (1.0 + s)
+    else:
+        q = l + s - l * s
+    p = 2.0 * l - q
+
+    h_norm = h / 360.0
+
+    def hue_to_rgb(p, q, t):
+        if t < 0:
+            t += 1.0
+        if t > 1:
+            t -= 1.0
+        if t < 1.0 / 6.0:
+            return p + (q - p) * 6.0 * t
+        if t < 0.5:
+            return q
+        if t < 2.0 / 3.0:
+            return p + (q - p) * (2.0 / 3.0 - t) * 6.0
+        return p
+
+    r = hue_to_rgb(p, q, h_norm + 1.0 / 3.0)
+    g = hue_to_rgb(p, q, h_norm)
+    b = hue_to_rgb(p, q, h_norm - 1.0 / 3.0)
+    return (r, g, b)
+
+
+def apply_hsl_transform(img: np.ndarray, fn) -> np.ndarray:
+    """Apply a per-pixel HSL transform function to an HxWx3 linear f32 image.
+    fn(h, s, l) -> (h, s, l)"""
+    out = img.copy()
+    h, w = img.shape[:2]
+    for y in range(h):
+        for x in range(w):
+            r, g, b = float(img[y, x, 0]), float(img[y, x, 1]), float(img[y, x, 2])
+            hue, sat, lit = rgb_to_hsl_pixel(r, g, b)
+            hue, sat, lit = fn(hue, sat, lit)
+            nr, ng, nb = hsl_to_rgb_pixel(hue, sat, lit)
+            out[y, x, 0] = nr
+            out[y, x, 1] = ng
+            out[y, x, 2] = nb
+    return out.astype(np.float32)
+
+
+# ─── Color filter golden generators ────────────────────────────────────────
+
+def golden_hue_rotate(degrees: float) -> dict:
+    """Hue rotation in HSL space."""
+    def xform(h, s, l):
+        h = (h + degrees) % 360.0
+        return (h, s, l)
+
+    output = apply_hsl_transform(INPUT_LINEAR, xform)
+    return {
+        "filter": "hue_rotate",
+        "params": {"degrees": degrees},
+        "tool": "independent HSL (W3C algorithm)",
+        "tool_version": "manual",
+        "note": "RGB->HSL, rotate H by degrees, HSL->RGB. Independent impl, not pipeline code.",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_saturate_hsl(factor: float) -> dict:
+    """HSL saturation scaling."""
+    def xform(h, s, l):
+        s = min(max(s * factor, 0.0), 1.0)
+        return (h, s, l)
+
+    output = apply_hsl_transform(INPUT_LINEAR, xform)
+    return {
+        "filter": "saturate_hsl",
+        "params": {"factor": factor},
+        "tool": "independent HSL (W3C algorithm)",
+        "tool_version": "manual",
+        "note": "RGB->HSL, scale S by factor, clamp [0,1], HSL->RGB",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_colorize(target_r: float, target_g: float, target_b: float, amount: float) -> dict:
+    """Colorize via luma blend: pixel += (luma * target - pixel) * amount."""
+    # BT.709 luma coefficients
+    luma = INPUT_LINEAR[:, :, 0] * 0.2126 + INPUT_LINEAR[:, :, 1] * 0.7152 + INPUT_LINEAR[:, :, 2] * 0.0722
+    target = np.array([target_r, target_g, target_b], dtype=np.float32)
+    output = INPUT_LINEAR.copy()
+    for c in range(3):
+        tinted = luma * target[c]
+        output[:, :, c] = output[:, :, c] + (tinted - output[:, :, c]) * amount
+    return {
+        "filter": "colorize",
+        "params": {"target_r": target_r, "target_g": target_g, "target_b": target_b, "amount": amount},
+        "tool": "numpy (BT.709 luma blend)",
+        "tool_version": np.__version__,
+        "note": "pixel += (luma * target - pixel) * amount, BT.709 luma",
+        "output": pixels_to_list(output.astype(np.float32)),
+    }
+
+
+def golden_vibrance(amount: float) -> dict:
+    """Vibrance: boost saturation of less-saturated pixels more."""
+    amt = amount / 100.0
+
+    def xform(h, s, l):
+        r, g, b = hsl_to_rgb_pixel(h, s, l)
+        mx = max(r, g, b)
+        mn = min(r, g, b)
+        if mx < 1e-10:
+            return (h, s, l)
+        sat = (mx - mn) / mx
+        scale = amt * (1.0 - sat)
+        new_s = min(max(s * (1.0 + scale), 0.0), 1.0)
+        return (h, new_s, l)
+
+    output = apply_hsl_transform(INPUT_LINEAR, xform)
+    return {
+        "filter": "vibrance",
+        "params": {"amount": amount},
+        "tool": "independent HSL + HSV sat measure",
+        "tool_version": "manual",
+        "note": "amt=amount/100, sat=(max-min)/max, scale=amt*(1-sat), S*=(1+scale)",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_modulate(brightness: float, saturation: float, hue: float) -> dict:
+    """Modulate: scale L by brightness, scale S by saturation, rotate H by hue degrees."""
+    def xform(h, s, l):
+        l = min(max(l * brightness, 0.0), 1.0)
+        s = min(max(s * saturation, 0.0), 1.0)
+        h = (h + hue) % 360.0
+        return (h, s, l)
+
+    output = apply_hsl_transform(INPUT_LINEAR, xform)
+    return {
+        "filter": "modulate",
+        "params": {"brightness": brightness, "saturation": saturation, "hue": hue},
+        "tool": "independent HSL (W3C algorithm)",
+        "tool_version": "manual",
+        "note": "HSL modulate: L*=brightness, S*=saturation, H+=hue",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_photo_filter(color_r: float, color_g: float, color_b: float,
+                         density: float, preserve_luminosity: bool) -> dict:
+    """Photo filter: blend toward color by density, optionally preserve luminance."""
+    color = np.array([color_r, color_g, color_b], dtype=np.float64)
+    output = INPUT_LINEAR.astype(np.float64).copy()
+
+    # Blend toward the filter color
+    for c in range(3):
+        output[:, :, c] = output[:, :, c] * (1.0 - density) + color[c] * density
+
+    if preserve_luminosity:
+        # Restore original BT.709 luminance
+        luma_orig = (INPUT_LINEAR[:, :, 0].astype(np.float64) * 0.2126 +
+                     INPUT_LINEAR[:, :, 1].astype(np.float64) * 0.7152 +
+                     INPUT_LINEAR[:, :, 2].astype(np.float64) * 0.0722)
+        luma_new = (output[:, :, 0] * 0.2126 +
+                    output[:, :, 1] * 0.7152 +
+                    output[:, :, 2] * 0.0722)
+        # Scale to restore luminance
+        scale = np.where(luma_new > 1e-10, luma_orig / luma_new, 1.0)
+        for c in range(3):
+            output[:, :, c] *= scale
+
+    return {
+        "filter": "photo_filter",
+        "params": {"color_r": color_r, "color_g": color_g, "color_b": color_b,
+                    "density": density, "preserve_luminosity": preserve_luminosity},
+        "tool": "numpy (linear blend + luminance restore)",
+        "tool_version": np.__version__,
+        "note": "Blend toward color by density; if preserve_luminosity, scale to match BT.709 luma",
+        "output": pixels_to_list(output.astype(np.float32)),
+    }
+
+
+def golden_selective_color(target_hue: float, hue_range: float,
+                           hue_shift: float, saturation: float, lightness: float) -> dict:
+    """Selective color: adjust pixels near target_hue with cosine falloff."""
+    import math
+
+    def xform(h, s, l):
+        # Angular distance
+        diff = abs(h - target_hue)
+        if diff > 180.0:
+            diff = 360.0 - diff
+        if diff > hue_range:
+            return (h, s, l)
+        # Cosine falloff within range
+        falloff = 0.5 * (1.0 + math.cos(math.pi * diff / hue_range))
+        h = (h + hue_shift * falloff) % 360.0
+        s = min(max(s + saturation * falloff, 0.0), 1.0)
+        l = min(max(l + lightness * falloff, 0.0), 1.0)
+        return (h, s, l)
+
+    output = apply_hsl_transform(INPUT_LINEAR, xform)
+    return {
+        "filter": "selective_color",
+        "params": {"target_hue": target_hue, "hue_range": hue_range,
+                    "hue_shift": hue_shift, "saturation": saturation, "lightness": lightness},
+        "tool": "independent HSL + cosine falloff",
+        "tool_version": "manual",
+        "note": "Cosine falloff within hue_range of target_hue, shifts H/S/L",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_replace_color(center_hue: float, hue_range: float,
+                          sat_min: float, sat_max: float,
+                          lum_min: float, lum_max: float,
+                          hue_shift: float, sat_shift: float, lum_shift: float) -> dict:
+    """Replace color: selective_color with S/L range gating."""
+    import math
+
+    def xform(h, s, l):
+        # Hue distance
+        diff = abs(h - center_hue)
+        if diff > 180.0:
+            diff = 360.0 - diff
+        if diff > hue_range:
+            return (h, s, l)
+        # S/L range gate
+        if s < sat_min or s > sat_max:
+            return (h, s, l)
+        if l < lum_min or l > lum_max:
+            return (h, s, l)
+        # Cosine falloff
+        falloff = 0.5 * (1.0 + math.cos(math.pi * diff / hue_range))
+        h = (h + hue_shift * falloff) % 360.0
+        s = min(max(s + sat_shift * falloff, 0.0), 1.0)
+        l = min(max(l + lum_shift * falloff, 0.0), 1.0)
+        return (h, s, l)
+
+    output = apply_hsl_transform(INPUT_LINEAR, xform)
+    return {
+        "filter": "replace_color",
+        "params": {"center_hue": center_hue, "hue_range": hue_range,
+                    "sat_min": sat_min, "sat_max": sat_max,
+                    "lum_min": lum_min, "lum_max": lum_max,
+                    "hue_shift": hue_shift, "sat_shift": sat_shift, "lum_shift": lum_shift},
+        "tool": "independent HSL + cosine falloff + range gating",
+        "tool_version": "manual",
+        "note": "Like selective_color but with S/L range gating",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_white_balance_gray_world() -> dict:
+    """Gray world white balance: scale each channel so its mean matches the global mean."""
+    mean_r = float(np.mean(INPUT_LINEAR[:, :, 0]))
+    mean_g = float(np.mean(INPUT_LINEAR[:, :, 1]))
+    mean_b = float(np.mean(INPUT_LINEAR[:, :, 2]))
+    avg_all = (mean_r + mean_g + mean_b) / 3.0
+
+    output = INPUT_LINEAR.copy()
+    output[:, :, 0] *= avg_all / max(mean_r, 1e-10)
+    output[:, :, 1] *= avg_all / max(mean_g, 1e-10)
+    output[:, :, 2] *= avg_all / max(mean_b, 1e-10)
+
+    return {
+        "filter": "white_balance_gray_world",
+        "params": {},
+        "tool": "numpy (channel mean equalization)",
+        "tool_version": np.__version__,
+        "note": "scale = avg_all / avg_channel per channel",
+        "output": pixels_to_list(output.astype(np.float32)),
+    }
+
+
+def golden_white_balance_temperature(temperature: float, tint: float) -> dict:
+    """White balance via colour-science chromatic adaptation (CAT16 / Von Kries).
+
+    This uses the authoritative external colour-science library implementation,
+    NOT our pipeline code. The colour library's chromatic_adaptation_VonKries
+    with CAT16 is the reference.
+    """
+    # Source illuminant: D65 (our assumed input white point)
+    source_XYZ = colour.temperature.CCT_to_xy_CIE_D(6500.0)
+    source_white = colour.xy_to_XYZ(source_XYZ)
+
+    # Target illuminant from requested temperature
+    target_xy = colour.temperature.CCT_to_xy_CIE_D(temperature)
+    target_white = colour.xy_to_XYZ(target_xy)
+
+    # Apply tint as green-magenta shift on the target white XYZ
+    # Tint adjusts the Y/green axis — scale Y relative to X,Z
+    tint_factor = 1.0 + tint / 100.0
+    target_white[1] *= tint_factor
+
+    output = INPUT_LINEAR.astype(np.float64).copy()
+    h, w = output.shape[:2]
+
+    for y in range(h):
+        for x in range(w):
+            rgb = output[y, x, :3]
+            # Linear sRGB -> XYZ (sRGB to XYZ matrix, D65)
+            xyz = colour.sRGB_to_XYZ(rgb, apply_cctf_decoding=False)
+            # Chromatic adaptation
+            xyz_adapted = colour.adaptation.chromatic_adaptation_VonKries(
+                xyz, source_white, target_white, transform="CAT16"
+            )
+            # XYZ -> Linear sRGB
+            rgb_out = colour.XYZ_to_sRGB(xyz_adapted, apply_cctf_encoding=False)
+            output[y, x, :3] = rgb_out
+
+    return {
+        "filter": "white_balance_temperature",
+        "params": {"temperature": temperature, "tint": tint},
+        "tool": "colour-science (chromatic_adaptation_VonKries, CAT16)",
+        "tool_version": colour.__version__,
+        "note": "D65 source -> target CCT via colour.adaptation.chromatic_adaptation_VonKries with CAT16",
+        "output": pixels_to_list(output.astype(np.float32)),
+    }
+
+
+def golden_lab_adjust(a_offset: float, b_offset: float) -> dict:
+    """Lab channel adjustment using colour-science for Lab conversion.
+
+    Uses colour.XYZ_to_Lab and colour.Lab_to_XYZ — the authoritative external
+    implementation, NOT our pipeline formulas.
+    """
+    # D65 illuminant (standard for sRGB)
+    illuminant = colour.CCS_ILLUMINANTS["CIE 1931 2 Degree Standard Observer"]["D65"]
+
+    output = INPUT_LINEAR.astype(np.float64).copy()
+    h, w = output.shape[:2]
+
+    for y in range(h):
+        for x in range(w):
+            rgb = output[y, x, :3]
+            # Linear sRGB -> XYZ
+            xyz = colour.sRGB_to_XYZ(rgb, apply_cctf_decoding=False)
+            # XYZ -> Lab
+            lab = colour.XYZ_to_Lab(xyz, illuminant)
+            # Shift a and b
+            lab[1] += a_offset
+            lab[2] += b_offset
+            # Lab -> XYZ
+            xyz_out = colour.Lab_to_XYZ(lab, illuminant)
+            # XYZ -> Linear sRGB
+            rgb_out = colour.XYZ_to_sRGB(xyz_out, apply_cctf_encoding=False)
+            output[y, x, :3] = rgb_out
+
+    return {
+        "filter": "lab_adjust",
+        "params": {"a_offset": a_offset, "b_offset": b_offset},
+        "tool": "colour-science (XYZ_to_Lab / Lab_to_XYZ)",
+        "tool_version": colour.__version__,
+        "note": "sRGB->XYZ->Lab, shift a/b, Lab->XYZ->sRGB via colour-science",
+        "output": pixels_to_list(output.astype(np.float32)),
+    }
+
+
+def golden_aces_cct_to_cg() -> dict:
+    """ACEScct to ACEScg log transfer function.
+
+    Standard ACES formula:
+        if v <= 0.155251141552511: (v - 0.0729055341958355) / 10.5402377416545
+        else: 2^(v * 17.52 - 9.72)
+    """
+    def cct_to_cg(v):
+        if v <= 0.155251141552511:
+            return (v - 0.0729055341958355) / 10.5402377416545
+        else:
+            return 2.0 ** (v * 17.52 - 9.72)
+
+    vectorized = np.vectorize(cct_to_cg)
+    output = vectorized(INPUT_LINEAR.astype(np.float64)).astype(np.float32)
+
+    return {
+        "filter": "aces_cct_to_cg",
+        "params": {},
+        "tool": "numpy (ACES S-2016-001 spec formula)",
+        "tool_version": np.__version__,
+        "note": "ACEScct -> ACEScg log transfer per ACES S-2016-001",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_aces_cg_to_cct() -> dict:
+    """ACEScg to ACEScct log transfer function (inverse).
+
+    Standard ACES formula:
+        if v <= 0.0078125: 10.5402377416545 * v + 0.0729055341958355
+        else: (log2(v) + 9.72) / 17.52
+    """
+    import math
+
+    def cg_to_cct(v):
+        if v <= 0.0078125:
+            return 10.5402377416545 * v + 0.0729055341958355
+        else:
+            return (math.log2(max(v, 1e-20)) + 9.72) / 17.52
+
+    vectorized = np.vectorize(cg_to_cct)
+    output = vectorized(INPUT_LINEAR.astype(np.float64)).astype(np.float32)
+
+    return {
+        "filter": "aces_cg_to_cct",
+        "params": {},
+        "tool": "numpy (ACES S-2016-001 spec formula)",
+        "tool_version": np.__version__,
+        "note": "ACEScg -> ACEScct inverse log transfer per ACES S-2016-001",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_quantize(levels: int) -> dict:
+    """Uniform quantization: min(floor(v * levels), levels - 1) / (levels - 1).
+
+    Uses floor, NOT round — matches pipeline behavior.
+    """
+    n = float(levels)
+    inv = 1.0 / max(n - 1.0, 1.0)
+    output = (np.minimum(np.floor(INPUT_LINEAR * n), n - 1.0) * inv).astype(np.float32)
+    return {
+        "filter": "quantize",
+        "params": {"levels": levels},
+        "tool": "numpy (floor quantize)",
+        "tool_version": np.__version__,
+        "note": "min(floor(v * levels), levels - 1) / (levels - 1) — floor, not round",
+        "output": pixels_to_list(output),
+    }
+
+
+# NOTE: dither_ordered, dither_floyd_steinberg, and kmeans_quantize are
+# intentionally omitted. These depend on palette computation and diffusion
+# patterns that are implementation-specific. They need a different validation
+# approach: statistical properties (error distribution, palette coverage,
+# entropy) rather than exact pixel match.
+
+# NOTE: match_color is skipped — not found in the pipeline filter registry.
+
+
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 def main():
@@ -379,6 +855,32 @@ def main():
     golden["filters"]["evaluate_log_1.0"] = golden_evaluate_log(scale=1.0)
     golden["filters"]["evaluate_max_0.3"] = golden_evaluate_max(threshold=0.3)
     golden["filters"]["evaluate_min_0.5"] = golden_evaluate_min(threshold=0.5)
+
+    # Color filters
+    golden["filters"]["hue_rotate_90"] = golden_hue_rotate(90.0)
+    golden["filters"]["hue_rotate_180"] = golden_hue_rotate(180.0)
+    golden["filters"]["saturate_hsl_1.5"] = golden_saturate_hsl(1.5)
+    golden["filters"]["saturate_hsl_0.5"] = golden_saturate_hsl(0.5)
+    golden["filters"]["colorize_warm"] = golden_colorize(0.8, 0.4, 0.2, 0.6)
+    golden["filters"]["vibrance_50"] = golden_vibrance(50.0)
+    golden["filters"]["vibrance_-30"] = golden_vibrance(-30.0)
+    golden["filters"]["modulate_1.2_1.5_45"] = golden_modulate(1.2, 1.5, 45.0)
+    golden["filters"]["photo_filter_warming_preserve"] = golden_photo_filter(
+        0.9, 0.6, 0.2, 0.4, True)
+    golden["filters"]["photo_filter_cooling_no_preserve"] = golden_photo_filter(
+        0.2, 0.4, 0.9, 0.5, False)
+    golden["filters"]["selective_color_red_shift"] = golden_selective_color(
+        0.0, 30.0, 20.0, 0.1, 0.0)
+    golden["filters"]["replace_color_blue_to_green"] = golden_replace_color(
+        240.0, 40.0, 0.1, 1.0, 0.0, 1.0, -120.0, 0.0, 0.0)
+    golden["filters"]["white_balance_gray_world"] = golden_white_balance_gray_world()
+    golden["filters"]["white_balance_temp_5000"] = golden_white_balance_temperature(5000.0, 0.0)
+    golden["filters"]["white_balance_temp_7500_tint"] = golden_white_balance_temperature(7500.0, 10.0)
+    golden["filters"]["lab_adjust_a10_b-5"] = golden_lab_adjust(10.0, -5.0)
+    golden["filters"]["aces_cct_to_cg"] = golden_aces_cct_to_cg()
+    golden["filters"]["aces_cg_to_cct"] = golden_aces_cg_to_cct()
+    golden["filters"]["quantize_4"] = golden_quantize(4)
+    golden["filters"]["quantize_16"] = golden_quantize(16)
 
     # Write output
     out_file = out_dir / "pointops.json"

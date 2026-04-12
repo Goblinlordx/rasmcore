@@ -160,6 +160,25 @@ fn run_reference(_filter_key: &str, entry: &GoldenEntry, input: &[f32], w: u32, 
         "evaluate_log" => refimpl::evaluate_ops::evaluate_log(input, w, h, f("scale")),
         "evaluate_max" => refimpl::evaluate_ops::evaluate_max(input, w, h, f("threshold")),
         "evaluate_min" => refimpl::evaluate_ops::evaluate_min(input, w, h, f("threshold")),
+        // Color ops
+        "hue_rotate" => refimpl::color_ops::hue_rotate(input, w, h, f("degrees")),
+        "saturate_hsl" => refimpl::color_ops::saturate_hsl(input, w, h, f("factor")),
+        "colorize" => refimpl::color_ops::colorize(input, w, h, f("target_r"), f("target_g"), f("target_b"), f("amount")),
+        "vibrance" => refimpl::color_ops::vibrance(input, w, h, f("amount")),
+        "modulate" => refimpl::color_ops::modulate(input, w, h, f("brightness"), f("saturation"), f("hue")),
+        "photo_filter" => {
+            let preserve = entry.params.get("preserve_luminosity")
+                .and_then(|v| v.as_bool()).unwrap_or(false);
+            refimpl::color_ops::photo_filter(input, w, h, f("color_r"), f("color_g"), f("color_b"), f("density"), preserve)
+        },
+        "selective_color" => refimpl::color_ops::selective_color(input, w, h, f("target_hue"), f("hue_range"), f("hue_shift"), f("sat_shift"), f("lum_shift")),
+        "replace_color" => refimpl::color_ops::replace_color(input, w, h, f("center_hue"), f("hue_range"), f("sat_min"), f("sat_max"), f("lum_min"), f("lum_max"), f("hue_shift"), f("sat_shift"), f("lum_shift")),
+        "white_balance_gray_world" => refimpl::color_ops::white_balance_gray_world(input, w, h),
+        "white_balance_temperature" => refimpl::color_ops::white_balance(input, w, h, f("temperature"), f("tint")),
+        "lab_adjust" => refimpl::color_ops2::lab_adjust(input, w, h, f("a_offset"), f("b_offset")),
+        "aces_cct_to_cg" => refimpl::color_ops2::aces_cct_to_cg(input, w, h),
+        "aces_cg_to_cct" => refimpl::color_ops2::aces_cg_to_cct(input, w, h),
+        "quantize" => refimpl::color_ops2::quantize(input, w, h, f("levels") as u32),
         _ => return None,
     })
 }
