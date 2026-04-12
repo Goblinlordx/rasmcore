@@ -321,12 +321,9 @@ fn run_spatial_reference(_filter_key: &str, entry: &GoldenEntry, input: &[f32], 
 /// inherently more FP accumulation variance than point ops.
 fn spatial_tolerance_for(filter_name: &str) -> f32 {
     match filter_name {
-        // Bilateral: no authoritative pixel-exact reference exists. scikit-image,
-        // OpenCV, and our pipeline all use different normalization and window
-        // details despite the same core algorithm (Tomasi & Manduchi 1998).
-        // Validated by property tests (solid gray=identity, edge preservation)
-        // rather than pixel-exact external tool matching.
-        "bilateral" => 0.1,
+        // Bilateral: CIE-Lab L2 distance (Tomasi & Manduchi 1998 / MATLAB model).
+        // Pipeline, reference, and golden all use same algorithm. Tight tolerance.
+        "bilateral" => 0.001,
         // All other spatial ops: matching border mode + kernel = tight tolerance
         _ => 0.001,
     }

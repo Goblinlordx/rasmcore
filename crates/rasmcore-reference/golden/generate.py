@@ -918,33 +918,70 @@ def golden_sobel(scale: float) -> dict:
 
 
 def golden_bilateral(diameter: int, sigma_color: float, sigma_space: float) -> dict:
-    """Bilateral filter via scikit-image denoise_bilateral (Cython implementation).
+    """Bilateral filter with CIE-Lab L2 Euclidean color distance.
 
-    Uses combined multichannel color distance — matches Photoshop/Resolve model
-    and our pipeline. NOT OpenCV's per-channel approach.
+    Matches Tomasi & Manduchi 1998 recommendation and MATLAB's imbilatfilt:
+    - Color similarity computed as L2 Euclidean distance in CIE-Lab space
+    - Perceptually uniform: similar-looking colors get similar weights
+    - Smoothing applied in input space (linear RGB), only edge detection uses Lab
+    - BORDER_REFLECT_101 matching pipeline
 
-    scikit-image is an independent Cython/C implementation of the bilateral
-    filter with multichannel color distance weighting.
+    Uses colour-science for the Lab conversion (authoritative CIE implementation).
     """
-    from skimage.restoration import denoise_bilateral
-    import skimage
+    import math
 
-    img = SPATIAL_INPUT_LINEAR.astype(np.float64)  # skimage prefers f64
-    output = denoise_bilateral(
-        img,
-        sigma_color=sigma_color,
-        sigma_spatial=sigma_space,
-        win_size=diameter,
-        channel_axis=-1,
-    ).astype(np.float32)
+    img = SPATIAL_INPUT_LINEAR.astype(np.float64)
+    h, w = img.shape[:2]
+    r = diameter // 2
+    sc2 = -0.5 / (sigma_color ** 2)
+    ss2 = -0.5 / (sigma_space ** 2)
+
+    def reflect_101(v, s):
+        if v < 0: return min(-v, s - 1)
+        if v >= s: return max(2 * s - v - 2, 0)
+        return v
+
+    # Pre-compute Lab for all pixels using colour-science
+    # colour.XYZ_to_Lab operates on the whole array at once
+    xyz = colour.sRGB_to_XYZ(img, apply_cctf_decoding=False)  # linear RGB → XYZ
+    lab = colour.XYZ_to_Lab(xyz)  # XYZ → CIE Lab (D65)
+
+    output = np.zeros_like(img)
+    for y in range(h):
+        for x in range(w):
+            ci_lab = lab[y, x]
+            sums = np.zeros(3, dtype=np.float64)
+            wt = 0.0
+            for dy in range(-r, r + 1):
+                for dx in range(-r, r + 1):
+                    sx = reflect_101(x + dx, w)
+                    sy = reflect_101(y + dy, h)
+
+                    # Spatial weight
+                    ws = math.exp(float(dx * dx + dy * dy) * ss2)
+
+                    # Color weight: L2 Euclidean in CIE-Lab (perceptual)
+                    px_lab = lab[sy, sx]
+                    dl = px_lab[0] - ci_lab[0]
+                    da = px_lab[1] - ci_lab[1]
+                    db = px_lab[2] - ci_lab[2]
+                    color_dist2 = dl * dl + da * da + db * db
+                    wc = math.exp(float(color_dist2) * sc2)
+
+                    weight = ws * wc
+                    sums += img[sy, sx] * weight
+                    wt += weight
+
+            if wt > 1e-10:
+                output[y, x] = sums / wt
 
     return {
         "filter": "bilateral",
         "params": {"diameter": diameter, "sigma_color": sigma_color, "sigma_space": sigma_space},
-        "tool": f"skimage.restoration.denoise_bilateral (win_size={diameter}, sigma_color={sigma_color}, sigma_spatial={sigma_space})",
-        "tool_version": skimage.__version__,
-        "note": "scikit-image Cython bilateral, combined multichannel color distance (Photoshop/Resolve model)",
-        "output": pixels_to_list(output),
+        "tool": "colour-science Lab + numpy bilateral (Tomasi & Manduchi 1998, MATLAB model)",
+        "tool_version": f"colour {colour.__version__}, numpy {np.__version__}",
+        "note": "CIE-Lab L2 Euclidean color distance, smoothing in linear RGB, BORDER_REFLECT_101",
+        "output": pixels_to_list(output.astype(np.float32)),
     }
 
 

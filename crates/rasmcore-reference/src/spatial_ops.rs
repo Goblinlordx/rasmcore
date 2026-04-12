@@ -279,16 +279,32 @@ pub fn high_pass(input: &[f32], w: u32, h: u32, radius: u32) -> Vec<f32> {
     out
 }
 
-/// Bilateral filter — edge-preserving smoothing.
+/// Convert linear RGB to CIE Lab (D65) for perceptual color distance.
+fn linear_rgb_to_lab(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
+    let x = 0.4124564 * r + 0.3575761 * g + 0.1804375 * b;
+    let y = 0.2126729 * r + 0.7151522 * g + 0.0721750 * b;
+    let z = 0.0193339 * r + 0.119192 * g + 0.9503041 * b;
+    const XN: f32 = 0.95047;
+    const YN: f32 = 1.0;
+    const ZN: f32 = 1.08883;
+    const DELTA: f32 = 6.0 / 29.0;
+    const DELTA3: f32 = DELTA * DELTA * DELTA;
+    let lab_f = |t: f32| -> f32 {
+        if t > DELTA3 { t.cbrt() } else { t / (3.0 * DELTA * DELTA) + 4.0 / 29.0 }
+    };
+    let fx = lab_f(x / XN);
+    let fy = lab_f(y / YN);
+    let fz = lab_f(z / ZN);
+    (116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz))
+}
+
+/// Bilateral filter — edge-preserving smoothing with CIE-Lab color distance.
 ///
-/// For each pixel p, weighted average over window:
-///   `weight(q) = exp(-||p-q||^2 / (2*sigma_spatial^2)) * exp(-|I(p)-I(q)|^2 / (2*sigma_range^2))`
-///   `out(p) = sum(weight(q) * I(q)) / sum(weight(q))`
+/// Matches Tomasi & Manduchi 1998 recommendation and MATLAB's imbilatfilt:
+/// color similarity computed as L2 Euclidean distance in CIE-Lab space
+/// (perceptually uniform). Smoothing applied in input color space (linear RGB).
 ///
-/// Per-channel range weight, per-channel output.
-/// Window radius = `ceil(2 * sigma_spatial)`.
-///
-/// Validated against: OpenCV `bilateralFilter` with `BORDER_REPLICATE`
+/// Validated against: colour-science Lab + numpy bilateral (golden data).
 pub fn bilateral(input: &[f32], w: u32, h: u32, sigma_spatial: f32, sigma_range: f32) -> Vec<f32> {
     let wi = w as i32;
     let hi = h as i32;
@@ -296,38 +312,56 @@ pub fn bilateral(input: &[f32], w: u32, h: u32, sigma_spatial: f32, sigma_range:
     let spatial_coeff = -0.5 / (sigma_spatial * sigma_spatial);
     let range_coeff = -0.5 / (sigma_range * sigma_range);
 
+    // Pre-compute Lab for all pixels
+    let n = (w * h) as usize;
+    let mut lab = Vec::with_capacity(n * 3);
+    for i in 0..n {
+        let idx = i * 4;
+        let (l, a, b) = linear_rgb_to_lab(input[idx], input[idx + 1], input[idx + 2]);
+        lab.push(l);
+        lab.push(a);
+        lab.push(b);
+    }
+
     let mut out = input.to_vec();
 
     for y in 0..hi {
         for x in 0..wi {
             let ci = (y * wi + x) as usize * 4;
-            let center = [input[ci], input[ci + 1], input[ci + 2]];
+            let cli = (y * wi + x) as usize * 3;
 
             let mut sum = [0.0f32; 3];
-            let mut wt = [0.0f32; 3];
+            let mut weight_sum = 0.0f32;
 
             for ky in -radius..=radius {
                 for kx in -radius..=radius {
                     let sx = reflect_101(x + kx, wi);
                     let sy = reflect_101(y + ky, hi);
                     let si = (sy * wi + sx) as usize * 4;
+                    let sli = (sy * wi + sx) as usize * 3;
 
                     let dist_sq = (kx * kx + ky * ky) as f32;
                     let spatial_w = (dist_sq * spatial_coeff).exp();
 
-                    for c in 0..3 {
-                        let diff = input[si + c] - center[c];
-                        let range_w = (diff * diff * range_coeff).exp();
-                        let w = spatial_w * range_w;
-                        sum[c] += input[si + c] * w;
-                        wt[c] += w;
-                    }
+                    // CIE-Lab L2 color distance
+                    let dl = lab[sli] - lab[cli];
+                    let da = lab[sli + 1] - lab[cli + 1];
+                    let db = lab[sli + 2] - lab[cli + 2];
+                    let color_dist2 = dl * dl + da * da + db * db;
+                    let range_w = (color_dist2 * range_coeff).exp();
+
+                    let w = spatial_w * range_w;
+                    sum[0] += input[si] * w;
+                    sum[1] += input[si + 1] * w;
+                    sum[2] += input[si + 2] * w;
+                    weight_sum += w;
                 }
             }
 
-            for c in 0..3 {
-                out[ci + c] = sum[c] / wt[c];
-            }
+            let inv = if weight_sum > 1e-10 { 1.0 / weight_sum } else { 0.0 };
+            out[ci] = sum[0] * inv;
+            out[ci + 1] = sum[1] * inv;
+            out[ci + 2] = sum[2] * inv;
             // alpha unchanged
         }
     }
