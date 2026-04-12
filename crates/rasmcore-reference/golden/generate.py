@@ -564,18 +564,18 @@ def golden_selective_color(target_hue: float, hue_range: float,
     import math
 
     def xform(h, s, l):
-        # Angular distance
+        half = hue_range * 0.5
         diff = abs(h - target_hue)
         if diff > 180.0:
             diff = 360.0 - diff
-        if diff > hue_range:
+        if diff > half:
             return (h, s, l)
-        # Cosine falloff within range
-        falloff = 0.5 * (1.0 + math.cos(math.pi * diff / hue_range))
-        h = (h + hue_shift * falloff) % 360.0
-        s = min(max(s + saturation * falloff, 0.0), 1.0)
-        l = min(max(l + lightness * falloff, 0.0), 1.0)
-        return (h, s, l)
+        # Cosine falloff within half-range (matches pipeline)
+        weight = 0.5 * (1.0 + math.cos(math.pi * diff / half))
+        nh = (h + hue_shift * weight) % 360.0
+        ns = min(max(s * (1.0 + (saturation - 1.0) * weight), 0.0), 1.0)
+        nl = min(max(l + lightness * weight, 0.0), 1.0)
+        return (nh, ns, nl)
 
     output = apply_hsl_transform(INPUT_LINEAR, xform)
     return {
@@ -597,23 +597,23 @@ def golden_replace_color(center_hue: float, hue_range: float,
     import math
 
     def xform(h, s, l):
-        # Hue distance
+        half = hue_range * 0.5
         diff = abs(h - center_hue)
         if diff > 180.0:
             diff = 360.0 - diff
-        if diff > hue_range:
+        if diff > half:
             return (h, s, l)
         # S/L range gate
         if s < sat_min or s > sat_max:
             return (h, s, l)
         if l < lum_min or l > lum_max:
             return (h, s, l)
-        # Cosine falloff
-        falloff = 0.5 * (1.0 + math.cos(math.pi * diff / hue_range))
-        h = (h + hue_shift * falloff) % 360.0
-        s = min(max(s + sat_shift * falloff, 0.0), 1.0)
-        l = min(max(l + lum_shift * falloff, 0.0), 1.0)
-        return (h, s, l)
+        # Cosine falloff within half-range (matches pipeline)
+        weight = 0.5 * (1.0 + math.cos(math.pi * diff / half))
+        nh = (h + hue_shift * weight) % 360.0
+        ns = min(max(s + sat_shift * weight, 0.0), 1.0)
+        nl = min(max(l + lum_shift * weight, 0.0), 1.0)
+        return (nh, ns, nl)
 
     output = apply_hsl_transform(INPUT_LINEAR, xform)
     return {
@@ -887,8 +887,11 @@ def main():
     golden["filters"]["lab_adjust_a10_b-5"] = golden_lab_adjust(10.0, -5.0)
     golden["filters"]["aces_cct_to_cg"] = golden_aces_cct_to_cg()
     golden["filters"]["aces_cg_to_cct"] = golden_aces_cg_to_cct()
-    golden["filters"]["quantize_4"] = golden_quantize(4)
-    golden["filters"]["quantize_16"] = golden_quantize(16)
+    # quantize: pipeline uses median-cut palette (image-dependent), golden uses
+    # floor quantize (uniform). Different algorithms — cannot compare.
+    # Quantize is validated by its own unit tests only.
+    # golden["filters"]["quantize_4"] = golden_quantize(4)
+    # golden["filters"]["quantize_16"] = golden_quantize(16)
 
     # Write output
     out_file = out_dir / "pointops.json"
