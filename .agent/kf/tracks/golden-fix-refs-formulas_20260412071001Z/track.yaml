@@ -3,64 +3,55 @@ title: Fix reference implementations — vibrance, selective_color, replace_colo
 type: bug
 status: pending
 created: 2026-04-12
-updated: 2026-04-12
+updated: '2026-04-12'
 spec:
-  summary: |
-    Fix reference functions that don't match golden data: vibrance (wrong HSV
+  summary: 'Fix reference functions that don''t match golden data: vibrance (wrong HSV
+
     formula), selective_color/replace_color (HSL convention mismatch), quantize
+
     (wrong algorithm). Also align golden HSL helpers with pipeline convention.
-  context: |
-    Golden validation found these reference/golden mismatches:
 
-    1. vibrance: pipeline passes golden but reference doesn't (diff=0.21).
-       Reference uses wrong HSV saturation measure.
-
-    2. selective_color: both pipeline (0.45) and reference (0.04) fail.
-       The golden HSL helpers differ from pipeline's HSL helpers. The golden
-       generator's independent HSL implementation has different edge handling.
-
-    3. replace_color: same root cause as selective_color (HSL differences).
-
-    4. quantize: pipeline uses median-cut palette, golden uses floor quantize.
-       These are fundamentally different algorithms. Need either:
-       a) An independent median-cut reference (PIL.Image.quantize), or
-       b) Accept that quantize is validated by its own unit tests only.
-
-    5. aces_cct_to_cg / aces_cg_to_cct: f32 vs f64 precision in log/exp
-       transfer (diff=0.00003-0.0017). Accept with 1e-3 tolerance for
-       ACES transfer functions.
+    '
+  context: "Golden validation found these reference/golden mismatches:\n\n1. vibrance: pipeline passes golden but reference\
+    \ doesn't (diff=0.21).\n   Reference uses wrong HSV saturation measure.\n\n2. selective_color: both pipeline (0.45) and\
+    \ reference (0.04) fail.\n   The golden HSL helpers differ from pipeline's HSL helpers. The golden\n   generator's independent\
+    \ HSL implementation has different edge handling.\n\n3. replace_color: same root cause as selective_color (HSL differences).\n\
+    \n4. quantize: pipeline uses median-cut palette, golden uses floor quantize.\n   These are fundamentally different algorithms.\
+    \ Need either:\n   a) An independent median-cut reference (PIL.Image.quantize), or\n   b) Accept that quantize is validated\
+    \ by its own unit tests only.\n\n5. aces_cct_to_cg / aces_cg_to_cct: f32 vs f64 precision in log/exp\n   transfer (diff=0.00003-0.0017).\
+    \ Accept with 1e-3 tolerance for\n   ACES transfer functions.\n"
   acceptance_criteria:
-    - vibrance reference matches golden (fix reference formula)
-    - selective_color golden matches pipeline (fix golden HSL helpers)
-    - replace_color golden matches pipeline (same fix)
-    - quantize either has independent median-cut reference or is documented as self-validated
-    - ACES tolerance set to 1e-3 for transfer function precision
-    - All golden tests pass (0 failures)
+  - vibrance reference matches golden (fix reference formula)
+  - selective_color golden matches pipeline (fix golden HSL helpers)
+  - replace_color golden matches pipeline (same fix)
+  - quantize either has independent median-cut reference or is documented as self-validated
+  - ACES tolerance set to 1e-3 for transfer function precision
+  - All golden tests pass (0 failures)
 plan:
-  - phase: Fix vibrance reference
-    tasks:
-      - text: "Compare reference vibrance HSV sat formula against pipeline step by step"
-        done: false
-      - text: "Fix reference to match pipeline (pipeline matches golden)"
-        done: false
-  - phase: Fix golden HSL helpers
-    tasks:
-      - text: "Compare golden rgb_to_hsl_pixel against pipeline's rgb_to_hsl (H range, edge handling)"
-        done: false
-      - text: "Fix golden HSL helpers to match pipeline convention exactly"
-        done: false
-      - text: "Regenerate golden data for selective_color and replace_color"
-        done: false
-  - phase: Resolve quantize and ACES
-    tasks:
-      - text: "Use PIL.Image.quantize as independent median-cut reference, or document self-validation"
-        done: false
-      - text: "Set ACES cct/cg tolerance to 1e-3 in golden test harness"
-        done: false
-  - phase: Verification
-    tasks:
-      - text: "All golden tests pass (0 failures in golden_reference_validation)"
-        done: false
-      - text: "All golden tests pass (0 failures in golden_pipeline_validation)"
-        done: false
+- phase: Fix vibrance reference
+  tasks:
+  - text: Compare reference vibrance HSV sat formula against pipeline step by step
+    done: true
+  - text: Fix reference to match pipeline (pipeline matches golden)
+    done: true
+- phase: Fix golden HSL helpers
+  tasks:
+  - text: Compare golden rgb_to_hsl_pixel against pipeline's rgb_to_hsl (H range, edge handling)
+    done: true
+  - text: Fix golden HSL helpers to match pipeline convention exactly
+    done: true
+  - text: Regenerate golden data for selective_color and replace_color
+    done: true
+- phase: Resolve quantize and ACES
+  tasks:
+  - text: Use PIL.Image.quantize as independent median-cut reference, or document self-validation
+    done: true
+  - text: Set ACES cct/cg tolerance to 1e-3 in golden test harness
+    done: true
+- phase: Verification
+  tasks:
+  - text: All golden tests pass (0 failures in golden_reference_validation)
+    done: true
+  - text: All golden tests pass (0 failures in golden_pipeline_validation)
+    done: true
 extra: {}
