@@ -8,60 +8,150 @@
 
 /// Gaussian blur — full 2D kernel convolution (NOT separable).
 ///
-/// Builds an NxN kernel from `exp(-0.5*(dx²+dy²)/σ²)` where `σ = radius/3.0`
-/// and `N = 2*radius+1`. Edge pixels are clamped (repeat nearest).
+/// Separable Gaussian blur matching pipeline convention.
 ///
-/// For `radius=0`, returns a copy of the input (identity).
+/// sigma = radius (directly), ksize = round(sigma * 10 + 1) | 1.
+/// Uses separable H+V passes with BORDER_REFLECT_101.
 ///
-/// Validated against: ImageMagick 7.1.1 `-gaussian-blur {radius}x{sigma}`
+/// Validated against: OpenCV cv2.GaussianBlur with BORDER_REFLECT_101.
 pub fn gaussian_blur(input: &[f32], w: u32, h: u32, radius: u32) -> Vec<f32> {
     if radius == 0 {
         return input.to_vec();
     }
-    let sigma = radius as f32 / 3.0;
-    let size = (2 * radius + 1) as usize;
-    let r = radius as i32;
+    let sigma = radius as f32;
+    let ksize = ((sigma * 10.0 + 1.0).round() as usize) | 1;
+    let ksize = ksize.max(3);
 
-    // Build 2D kernel
-    let mut kernel = vec![0.0f32; size * size];
+    // Build 1D kernel
+    let center = ksize / 2;
+    let mut kernel = Vec::with_capacity(ksize);
     let mut sum = 0.0f32;
-    for ky in 0..size {
-        for kx in 0..size {
-            let dx = kx as f32 - radius as f32;
-            let dy = ky as f32 - radius as f32;
-            let val = (-0.5 * (dx * dx + dy * dy) / (sigma * sigma)).exp();
-            kernel[ky * size + kx] = val;
-            sum += val;
+    for i in 0..ksize {
+        let x = i as f32 - center as f32;
+        let v = (-0.5 * (x / sigma).powi(2)).exp();
+        kernel.push(v);
+        sum += v;
+    }
+    let inv = 1.0 / sum;
+    for v in &mut kernel { *v *= inv; }
+
+    let w = w as i32;
+    let h = h as i32;
+    let r = center as i32;
+
+    // H pass
+    let mut tmp = input.to_vec();
+    for y in 0..h {
+        for x in 0..w {
+            let mut acc = [0.0f32; 3];
+            for (ki, &kw) in kernel.iter().enumerate() {
+                let sx = reflect_101(x + ki as i32 - r, w);
+                let si = (y * w + sx) as usize * 4;
+                acc[0] += input[si] * kw;
+                acc[1] += input[si + 1] * kw;
+                acc[2] += input[si + 2] * kw;
+            }
+            let di = (y * w + x) as usize * 4;
+            tmp[di] = acc[0];
+            tmp[di + 1] = acc[1];
+            tmp[di + 2] = acc[2];
         }
     }
-    // Normalize
-    for v in kernel.iter_mut() {
-        *v /= sum;
+
+    // V pass
+    let mut out = tmp.clone();
+    for y in 0..h {
+        for x in 0..w {
+            let mut acc = [0.0f32; 3];
+            for (ki, &kw) in kernel.iter().enumerate() {
+                let sy = reflect_101(y + ki as i32 - r, h);
+                let si = (sy * w + x) as usize * 4;
+                acc[0] += tmp[si] * kw;
+                acc[1] += tmp[si + 1] * kw;
+                acc[2] += tmp[si + 2] * kw;
+            }
+            let di = (y * w + x) as usize * 4;
+            out[di] = acc[0];
+            out[di + 1] = acc[1];
+            out[di + 2] = acc[2];
+        }
     }
 
-    convolve_2d(input, w, h, &kernel, size, r)
+    out
 }
 
-/// Box blur — uniform averaging kernel.
+/// Box blur — separable uniform averaging.
 ///
-/// Each pixel is the unweighted mean of the `(2*radius+1)²` neighborhood.
-/// Edge pixels are clamped (repeat nearest).
+/// Each pixel is the mean of the `(2*radius+1)` neighborhood per axis.
+/// Uses BORDER_REFLECT_101 matching pipeline.
 ///
-/// Validated against: ImageMagick 7.1.1 `-blur {radius}x65535` (large sigma approx box)
+/// Validated against: OpenCV cv2.blur with BORDER_REFLECT_101.
 pub fn box_blur(input: &[f32], w: u32, h: u32, radius: u32) -> Vec<f32> {
     if radius == 0 {
         return input.to_vec();
     }
-    let size = (2 * radius + 1) as usize;
+    let ksize = 2 * radius as usize + 1;
+    let weight = 1.0 / ksize as f32;
+    let w = w as i32;
+    let h = h as i32;
     let r = radius as i32;
-    let weight = 1.0 / (size * size) as f32;
-    let kernel = vec![weight; size * size];
 
-    convolve_2d(input, w, h, &kernel, size, r)
+    // H pass
+    let mut tmp = input.to_vec();
+    for y in 0..h {
+        for x in 0..w {
+            let mut acc = [0.0f32; 3];
+            for kx in -r..=r {
+                let sx = reflect_101(x + kx, w);
+                let si = (y * w + sx) as usize * 4;
+                acc[0] += input[si] * weight;
+                acc[1] += input[si + 1] * weight;
+                acc[2] += input[si + 2] * weight;
+            }
+            let di = (y * w + x) as usize * 4;
+            tmp[di] = acc[0];
+            tmp[di + 1] = acc[1];
+            tmp[di + 2] = acc[2];
+        }
+    }
+
+    // V pass
+    let mut out = tmp.clone();
+    for y in 0..h {
+        for x in 0..w {
+            let mut acc = [0.0f32; 3];
+            for ky in -r..=r {
+                let sy = reflect_101(y + ky, h);
+                let si = (sy * w + x) as usize * 4;
+                acc[0] += tmp[si] * weight;
+                acc[1] += tmp[si + 1] * weight;
+                acc[2] += tmp[si + 2] * weight;
+            }
+            let di = (y * w + x) as usize * 4;
+            out[di] = acc[0];
+            out[di + 1] = acc[1];
+            out[di + 2] = acc[2];
+        }
+    }
+
+    out
 }
 
-/// 2D convolution helper. Kernel is `size x size`, radius is `r`.
-/// Clamps at edges (repeat nearest pixel).
+/// BORDER_REFLECT_101: mirror at boundary excluding edge pixel.
+/// Matches OpenCV's default and our pipeline's clamp_coord.
+/// Pattern: dcb|abcd|cba (not dcba|abcd|dcba)
+fn reflect_101(v: i32, size: i32) -> i32 {
+    if v < 0 {
+        (-v).min(size - 1)
+    } else if v >= size {
+        (2 * size - v - 2).max(0)
+    } else {
+        v
+    }
+}
+
+/// 2D convolution helper (used by median, sharpen).
+#[allow(dead_code)]
 fn convolve_2d(input: &[f32], w: u32, h: u32, kernel: &[f32], size: usize, r: i32) -> Vec<f32> {
     let w = w as i32;
     let h = h as i32;
@@ -72,8 +162,8 @@ fn convolve_2d(input: &[f32], w: u32, h: u32, kernel: &[f32], size: usize, r: i3
             let mut acc = [0.0f32; 3];
             for ky in 0..size as i32 {
                 for kx in 0..size as i32 {
-                    let sx = (x + kx - r).clamp(0, w - 1);
-                    let sy = (y + ky - r).clamp(0, h - 1);
+                    let sx = reflect_101(x + kx - r, w);
+                    let sy = reflect_101(y + ky - r, h);
                     let si = (sy * w + sx) as usize * 4;
                     let ki = (ky as usize) * size + kx as usize;
                     let kw = kernel[ki];
@@ -120,8 +210,8 @@ pub fn median(input: &[f32], w: u32, h: u32, radius: u32) -> Vec<f32> {
 
             for ky in -r..=r {
                 for kx in -r..=r {
-                    let sx = (x + kx).clamp(0, wi - 1);
-                    let sy = (y + ky).clamp(0, hi - 1);
+                    let sx = reflect_101(x + kx, wi);
+                    let sy = reflect_101(y + ky, hi);
                     let si = (sy * wi + sx) as usize * 4;
                     buf_r.push(input[si]);
                     buf_g.push(input[si + 1]);
@@ -218,8 +308,8 @@ pub fn bilateral(input: &[f32], w: u32, h: u32, sigma_spatial: f32, sigma_range:
 
             for ky in -radius..=radius {
                 for kx in -radius..=radius {
-                    let sx = (x + kx).clamp(0, wi - 1);
-                    let sy = (y + ky).clamp(0, hi - 1);
+                    let sx = reflect_101(x + kx, wi);
+                    let sy = reflect_101(y + ky, hi);
                     let si = (sy * wi + sx) as usize * 4;
 
                     let dist_sq = (kx * kx + ky * ky) as f32;

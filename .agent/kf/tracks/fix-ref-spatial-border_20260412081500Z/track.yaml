@@ -1,0 +1,36 @@
+id: fix-ref-spatial-border_20260412081500Z
+title: Fix reference spatial ops border handling — BORDER_REFLECT_101
+type: bug
+status: pending
+created: 2026-04-12
+updated: '2026-04-12'
+spec:
+  summary: 'Fix 4 reference spatial functions (gaussian_blur, box_blur, sharpen,
+
+    high_pass) to use BORDER_REFLECT_101 matching the pipeline.
+
+    '
+  context: 'Golden validation revealed reference spatial ops use simple clamp
+
+    (BORDER_REPLICATE) while the pipeline uses BORDER_REFLECT_101
+
+    (mirror excluding edge). This causes 0.02-0.07 diff.
+
+    Pipeline passes golden. Reference needs to match.
+
+    '
+  acceptance_criteria:
+  - Reference gaussian_blur uses BORDER_REFLECT_101
+  - Reference box_blur uses BORDER_REFLECT_101
+  - Reference sharpen and high_pass (which depend on gaussian) also pass
+  - All spatial golden tests pass for both reference AND pipeline
+plan:
+- phase: Fix border handling
+  tasks:
+  - text: Update reference spatial_ops clamp_coord to use reflect_101 (not replicate)
+    done: true
+  - text: All 6 spatial golden reference tests pass
+    done: true
+  - text: All 42 pipeline golden tests still pass
+    done: false
+extra: {}
