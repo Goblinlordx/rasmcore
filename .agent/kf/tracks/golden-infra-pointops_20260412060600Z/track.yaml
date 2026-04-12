@@ -12,45 +12,43 @@ spec:
   acceptance_criteria: []
   out_of_scope: ''
   technical_notes: ''
-plan: []
-extra: {}
 plan:
-  - phase: Infrastructure
-    tasks:
-      - text: "Create canonical 4x4 test input image (PPM) with known sRGB values covering dark, mid, bright, saturated"
-        done: false
-      - text: "Build generate-golden.sh framework: takes filter name + IM command, runs on test image, outputs JSON golden data"
-        done: false
-      - text: "Build Rust golden test harness: loads golden JSON, runs reference fn, asserts match within 1e-5"
-        done: false
-      - text: "Build Rust pipeline test: loads golden JSON, runs pipeline filter, asserts match within 1e-5"
-        done: false
-      - text: "Add rasmcore-pipeline-v2 as dev-dependency of rasmcore-reference"
-        done: false
-  - phase: Adjustment filters (14)
-    tasks:
-      - text: "Generate IM golden data for brightness, contrast, gamma, exposure, invert"
-        done: false
-      - text: "Generate IM golden data for levels, posterize, solarize, burn, dodge"
-        done: false
-      - text: "Generate IM golden data for sigmoidal_contrast, threshold_binary, triangle_threshold"
-        done: false
-      - text: "Validate reference implementations against golden data — fix any mismatches"
-        done: false
-      - text: "Validate pipeline against golden data — document any mismatches"
-        done: false
-  - phase: Evaluate filters (9)
-    tasks:
-      - text: "Generate IM golden data for all 9 evaluate ops (abs, add, subtract, multiply, divide, pow, log, max, min)"
-        done: false
-      - text: "Validate reference + pipeline against golden data"
-        done: false
-  - phase: Verification
-    tasks:
-      - text: "All golden tests pass (cargo test -p rasmcore-reference --test golden)"
-        done: false
-      - text: "All pipeline parity tests pass (cargo test -p rasmcore-reference --test parity)"
-        done: false
-      - text: "AUTHORITY.md updated with validation status per filter"
-        done: false
+- phase: Infrastructure
+  tasks:
+  - text: Create canonical 4x4 test input image (PPM) with known sRGB values covering dark, mid, bright, saturated
+    done: true
+  - text: 'Build generate-golden.sh framework: takes filter name + IM command, runs on test image, outputs JSON golden data'
+    done: true
+  - text: 'Build Rust golden test harness: loads golden JSON, runs reference fn, asserts match within 1e-5'
+    done: true
+  - text: 'Build Rust pipeline test: loads golden JSON, runs pipeline filter, asserts match within 1e-5'
+    done: true
+  - text: Add rasmcore-pipeline-v2 as dev-dependency of rasmcore-reference
+    done: true
+- phase: Adjustment filters (14)
+  tasks:
+  - text: Generate IM golden data for brightness, contrast, gamma, exposure, invert
+    done: true
+  - text: Generate IM golden data for levels, posterize, solarize, burn, dodge
+    done: true
+  - text: Generate IM golden data for sigmoidal_contrast, threshold_binary, triangle_threshold
+    done: true
+  - text: Validate reference implementations against golden data — fix any mismatches
+    done: true
+  - text: Validate pipeline against golden data — document any mismatches
+    done: true
+- phase: Evaluate filters (9)
+  tasks:
+  - text: Generate IM golden data for all 9 evaluate ops (abs, add, subtract, multiply, divide, pow, log, max, min)
+    done: true
+  - text: Validate reference + pipeline against golden data
+    done: true
+- phase: Verification
+  tasks:
+  - text: All golden tests pass (cargo test -p rasmcore-reference --test golden)
+    done: true
+  - text: All pipeline parity tests pass (cargo test -p rasmcore-reference --test parity)
+    done: true
+  - text: AUTHORITY.md updated with validation status per filter
+    done: true
 extra: {}
