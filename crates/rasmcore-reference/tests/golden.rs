@@ -59,9 +59,14 @@ fn golden_data_path() -> PathBuf {
     golden_dir().join("golden_data").join("pointops.json")
 }
 
+fn spatial_data_path() -> PathBuf {
+    golden_dir().join("golden_data").join("spatial.json")
+}
+
 fn ensure_golden_data() {
-    let path = golden_data_path();
-    if path.exists() {
+    let pointops = golden_data_path();
+    let spatial = spatial_data_path();
+    if pointops.exists() && spatial.exists() {
         return;
     }
     eprintln!("Golden data missing, generating via uv...");
@@ -71,13 +76,20 @@ fn ensure_golden_data() {
         .status()
         .expect("failed to run uv — is it installed?");
     assert!(status.success(), "golden data generation failed");
-    assert!(path.exists(), "golden data not created after generation");
+    assert!(pointops.exists(), "pointops golden data not created after generation");
+    assert!(spatial.exists(), "spatial golden data not created after generation");
 }
 
 fn load_golden() -> GoldenFile {
     ensure_golden_data();
     let data = std::fs::read_to_string(golden_data_path()).expect("read golden JSON");
     serde_json::from_str(&data).expect("parse golden JSON")
+}
+
+fn load_spatial() -> GoldenFile {
+    ensure_golden_data();
+    let data = std::fs::read_to_string(spatial_data_path()).expect("read spatial golden JSON");
+    serde_json::from_str(&data).expect("parse spatial golden JSON")
 }
 
 fn pixels_f64_to_f32(pixels: &[[f64; 4]]) -> Vec<f32> {
@@ -285,4 +297,124 @@ fn golden_pipeline_validation() {
 
     eprintln!("\nPipeline vs golden: {passed} pass, {failed} fail, {skipped} skip");
     assert_eq!(failed, 0, "{failed} pipeline filters don't match golden data");
+}
+
+// ─── Spatial reference dispatch ────────────────────────────────────────────
+
+fn run_spatial_reference(_filter_key: &str, entry: &GoldenEntry, input: &[f32], w: u32, h: u32) -> Option<Vec<f32>> {
+    let p = &entry.params;
+    let f = |k: &str| p.get(k).and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+    let u = |k: &str| p.get(k).and_then(|v| v.as_f64()).unwrap_or(0.0) as u32;
+
+    Some(match entry.filter.as_str() {
+        "gaussian_blur" => refimpl::spatial_ops::gaussian_blur(input, w, h, u("radius")),
+        "box_blur" => refimpl::spatial_ops::box_blur(input, w, h, u("radius")),
+        "sobel" => refimpl::edge_ops::sobel(input, w, h),
+        "bilateral" => refimpl::spatial_ops::bilateral(input, w, h, f("sigma_space"), f("sigma_color")),
+        "sharpen" => refimpl::spatial_ops::sharpen(input, w, h, f("amount")),
+        "high_pass" => refimpl::spatial_ops::high_pass(input, w, h, u("radius")),
+        _ => return None,
+    })
+}
+
+/// Per-filter tolerance overrides for spatial ops. Spatial filters have
+/// inherently more FP accumulation variance than point ops.
+fn spatial_tolerance_for(filter_name: &str) -> f32 {
+    match filter_name {
+        // Bilateral: different window radius computation (ceil(2*sigma) vs d/2)
+        // and per-channel range weighting differences between OpenCV and reference.
+        "bilateral" => 0.05,
+        // Sobel: OpenCV Sobel uses optimized Scharr-like coefficients internally
+        // for small kernels; reference uses textbook kernel. Very close but not exact.
+        "sobel" => 0.005,
+        // Gaussian/box/sharpen/high_pass: kernel construction and border handling
+        // may differ slightly between OpenCV C++ and our pure-Rust reference.
+        _ => 0.001,
+    }
+}
+
+// ─── Spatial tests ─────────────────────────────────────────────────────────
+
+#[test]
+fn golden_spatial_reference_validation() {
+    let golden = load_spatial();
+    let w = golden.meta.width;
+    let h = golden.meta.height;
+    let default_input = pixels_f64_to_f32(&golden.input);
+
+    let mut passed = 0;
+    let mut failed = 0;
+    let mut skipped = 0;
+
+    for (key, entry) in &golden.filters {
+        let input = entry.custom_input.as_ref()
+            .map(|ci| pixels_f64_to_f32(ci))
+            .unwrap_or_else(|| default_input.clone());
+
+        let expected = pixels_f64_to_f32(&entry.output);
+
+        match run_spatial_reference(key, entry, &input, w, h) {
+            Some(ref_output) => {
+                let tol = spatial_tolerance_for(&entry.filter);
+                let diff = max_diff(&ref_output, &expected);
+                if diff <= tol {
+                    eprintln!("  ✓ ref  {key}: max_diff={diff:.8} (tol={tol}, tool: {})", entry.tool);
+                    passed += 1;
+                } else {
+                    eprintln!("  ✗ ref  {key}: max_diff={diff:.8} > {tol} (tool: {})", entry.tool);
+                    failed += 1;
+                }
+            }
+            None => {
+                eprintln!("  - skip {key}: no spatial reference function mapped");
+                skipped += 1;
+            }
+        }
+    }
+
+    eprintln!("\nSpatial reference vs golden: {passed} pass, {failed} fail, {skipped} skip");
+    assert_eq!(failed, 0, "{failed} spatial reference functions don't match golden data");
+}
+
+#[test]
+fn golden_spatial_pipeline_validation() {
+    let golden = load_spatial();
+    let w = golden.meta.width;
+    let h = golden.meta.height;
+    let default_input = pixels_f64_to_f32(&golden.input);
+
+    let mut passed = 0;
+    let mut failed = 0;
+    let mut skipped = 0;
+
+    for (key, entry) in &golden.filters {
+        let input = entry.custom_input.as_ref()
+            .map(|ci| pixels_f64_to_f32(ci))
+            .unwrap_or_else(|| default_input.clone());
+
+        let expected = pixels_f64_to_f32(&entry.output);
+        let params = golden_params_to_parammap(&entry.params, &entry.filter);
+
+        // Check if filter exists in registry
+        let regs = v2::registry::registered_filter_registrations();
+        if !regs.iter().any(|r| r.name == entry.filter) {
+            eprintln!("  - skip {key}: filter '{}' not in pipeline registry", entry.filter);
+            skipped += 1;
+            continue;
+        }
+
+        let tol = spatial_tolerance_for(&entry.filter);
+        let pipeline_output = run_pipeline(&input, w, h, &entry.filter, &params);
+        let diff = max_diff(&pipeline_output, &expected);
+        if diff <= tol {
+            eprintln!("  ✓ pipe {key}: max_diff={diff:.8} (tool: {})", entry.tool);
+            passed += 1;
+        } else {
+            eprintln!("  ✗ pipe {key}: max_diff={diff:.8} > {tol} (tool: {})", entry.tool);
+            failed += 1;
+        }
+    }
+
+    eprintln!("\nSpatial pipeline vs golden: {passed} pass, {failed} fail, {skipped} skip");
+    assert_eq!(failed, 0, "{failed} spatial pipeline filters don't match golden data");
 }

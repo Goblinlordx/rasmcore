@@ -824,6 +824,159 @@ def golden_quantize(levels: int) -> dict:
 # NOTE: match_color is skipped — not found in the pipeline filter registry.
 
 
+# ─── Spatial filter input ──────────────────────────────────────────────────
+# 4x4 is too small for meaningful spatial operations. Use a 16x16 gradient
+# with known values covering a range of intensities.
+
+SPATIAL_W, SPATIAL_H = 16, 16
+
+_spatial_srgb = np.zeros((SPATIAL_H, SPATIAL_W, 3), dtype=np.uint8)
+for _y in range(SPATIAL_H):
+    for _x in range(SPATIAL_W):
+        _spatial_srgb[_y, _x] = [
+            min(_x * 16, 255),
+            min(_y * 16, 255),
+            min((_x + _y) * 8, 255),
+        ]
+SPATIAL_INPUT_LINEAR = srgb_to_linear(_spatial_srgb)
+
+
+# ─── Spatial filter golden generators ──────────────────────────────────────
+# Each uses OpenCV's C++ built-in functions — independent implementations,
+# NOT our formulas reimplemented in numpy.
+
+
+def golden_gaussian_blur(radius: float) -> dict:
+    """Gaussian blur via cv2.GaussianBlur (OpenCV's C++ implementation).
+
+    Parameters match pipeline: ksize = 2*radius+1, sigma = radius/3.0.
+    Input/output in f32 linear. OpenCV blur is per-channel on multi-channel images.
+    """
+    r = int(radius)
+    ksize = 2 * r + 1
+    sigma = radius / 3.0
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    output = cv2.GaussianBlur(img, (ksize, ksize), sigma, borderType=cv2.BORDER_REPLICATE)
+    return {
+        "filter": "gaussian_blur",
+        "params": {"radius": radius},
+        "tool": f"cv2.GaussianBlur (ksize={ksize}, sigma={sigma:.4f})",
+        "tool_version": cv2.__version__,
+        "note": "OpenCV C++ GaussianBlur, per-channel, BORDER_REPLICATE, f32 linear",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_box_blur(radius: float) -> dict:
+    """Box blur via cv2.blur (OpenCV's C++ implementation).
+
+    ksize = 2*radius+1. Per-channel on multi-channel images.
+    """
+    r = int(radius)
+    ksize = 2 * r + 1
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    output = cv2.blur(img, (ksize, ksize), borderType=cv2.BORDER_REPLICATE)
+    return {
+        "filter": "box_blur",
+        "params": {"radius": radius},
+        "tool": f"cv2.blur (ksize={ksize})",
+        "tool_version": cv2.__version__,
+        "note": "OpenCV C++ box blur, per-channel, BORDER_REPLICATE, f32 linear",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_sobel(scale: float) -> dict:
+    """Sobel edge detection via cv2.Sobel (OpenCV's C++ implementation).
+
+    Computes on BT.709 luminance, outputs grayscale magnitude sqrt(gx^2 + gy^2) * scale.
+    Same value in R, G, B — matching pipeline and reference behavior.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    # Compute luminance (BT.709)
+    luma = img[:, :, 0] * 0.2126 + img[:, :, 1] * 0.7152 + img[:, :, 2] * 0.0722
+    luma = luma.astype(np.float32)
+
+    # Use OpenCV Sobel on luminance (ksize=3 matching pipeline)
+    gx = cv2.Sobel(luma, cv2.CV_32F, 1, 0, ksize=3, borderType=cv2.BORDER_REPLICATE)
+    gy = cv2.Sobel(luma, cv2.CV_32F, 0, 1, ksize=3, borderType=cv2.BORDER_REPLICATE)
+    magnitude = np.sqrt(gx * gx + gy * gy).astype(np.float32) * scale
+
+    # Output as grayscale: R=G=B=magnitude
+    output = np.stack([magnitude, magnitude, magnitude], axis=-1)
+    return {
+        "filter": "sobel",
+        "params": {"scale": scale},
+        "tool": "cv2.Sobel (ksize=3, BT.709 luminance)",
+        "tool_version": cv2.__version__,
+        "note": "OpenCV C++ Sobel on luma, magnitude * scale, BORDER_REPLICATE",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_bilateral(diameter: int, sigma_color: float, sigma_space: float) -> dict:
+    """Bilateral filter via cv2.bilateralFilter (OpenCV's C++ implementation).
+
+    Per-channel on multi-channel f32 images. Edge-preserving smoothing.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    # OpenCV bilateralFilter works on multi-channel f32 directly
+    output = cv2.bilateralFilter(img, diameter, sigma_color, sigma_space,
+                                  borderType=cv2.BORDER_REPLICATE)
+    return {
+        "filter": "bilateral",
+        "params": {"diameter": diameter, "sigma_color": sigma_color, "sigma_space": sigma_space},
+        "tool": f"cv2.bilateralFilter (d={diameter}, sigmaColor={sigma_color}, sigmaSpace={sigma_space})",
+        "tool_version": cv2.__version__,
+        "note": "OpenCV C++ bilateralFilter, per-channel, BORDER_REPLICATE, f32 linear",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_sharpen(radius: float, amount: float) -> dict:
+    """Unsharp mask sharpening via cv2.GaussianBlur (OpenCV's C++ implementation).
+
+    Formula: out = in + amount * (in - blur(in, radius))
+    Uses OpenCV GaussianBlur for the blur step.
+    """
+    r = int(radius)
+    ksize = 2 * r + 1
+    sigma = radius / 3.0
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    blurred = cv2.GaussianBlur(img, (ksize, ksize), sigma, borderType=cv2.BORDER_REPLICATE)
+    output = (img + amount * (img - blurred)).astype(np.float32)
+    return {
+        "filter": "sharpen",
+        "params": {"radius": radius, "amount": amount},
+        "tool": f"cv2.GaussianBlur unsharp mask (ksize={ksize}, sigma={sigma:.4f}, amount={amount})",
+        "tool_version": cv2.__version__,
+        "note": "OpenCV C++ GaussianBlur for blur step, unsharp mask formula, f32 linear",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_high_pass(radius: float) -> dict:
+    """High pass filter via cv2.GaussianBlur (OpenCV's C++ implementation).
+
+    Formula: out = in - blur(in, radius) + 0.5
+    Uses OpenCV GaussianBlur for the blur step.
+    """
+    r = int(radius)
+    ksize = 2 * r + 1
+    sigma = radius / 3.0
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    blurred = cv2.GaussianBlur(img, (ksize, ksize), sigma, borderType=cv2.BORDER_REPLICATE)
+    output = (img - blurred + 0.5).astype(np.float32)
+    return {
+        "filter": "high_pass",
+        "params": {"radius": radius},
+        "tool": f"cv2.GaussianBlur high pass (ksize={ksize}, sigma={sigma:.4f})",
+        "tool_version": cv2.__version__,
+        "note": "OpenCV C++ GaussianBlur for blur step, high pass = in - blur + 0.5, f32 linear",
+        "output": pixels_to_list(output),
+    }
+
+
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 def main():
@@ -893,13 +1046,42 @@ def main():
     # golden["filters"]["quantize_4"] = golden_quantize(4)
     # golden["filters"]["quantize_16"] = golden_quantize(16)
 
-    # Write output
+    # Write pointops output
     out_file = out_dir / "pointops.json"
     with open(out_file, "w") as f:
         json.dump(golden, f, indent=2)
 
     n = len(golden["filters"])
     print(f"Generated {n} golden entries → {out_file}")
+
+    # ─── Spatial filters ──────────────────────────────────────────────────
+    spatial = {
+        "meta": {
+            "description": "Golden I/O from OpenCV for spatial filter validation",
+            "input_description": "16x16 sRGB gradient, decoded to linear f32",
+            "width": SPATIAL_W,
+            "height": SPATIAL_H,
+            "tools": tool_info(),
+        },
+        "input": pixels_to_list(SPATIAL_INPUT_LINEAR),
+        "filters": {},
+    }
+
+    # Spatial filters
+    spatial["filters"]["gaussian_blur_2"] = golden_gaussian_blur(2)
+    spatial["filters"]["box_blur_2"] = golden_box_blur(2)
+    spatial["filters"]["sobel_1.0"] = golden_sobel(1.0)
+    spatial["filters"]["bilateral_5_0.1_10"] = golden_bilateral(5, 0.1, 10.0)
+    spatial["filters"]["sharpen_1_1.5"] = golden_sharpen(1.0, 1.5)
+    spatial["filters"]["high_pass_3"] = golden_high_pass(3.0)
+
+    # Write spatial output
+    spatial_file = out_dir / "spatial.json"
+    with open(spatial_file, "w") as f:
+        json.dump(spatial, f, indent=2)
+
+    sn = len(spatial["filters"])
+    print(f"Generated {sn} spatial golden entries → {spatial_file}")
     print(f"Tools: {golden['meta']['tools']}")
 
 
