@@ -1,0 +1,123 @@
+id: ref-parity-harness_20260412053800Z
+title: Parity test harness — validate pipeline filters against reference implementations
+type: feature
+status: pending
+created: 2026-04-12
+updated: 2026-04-12
+spec:
+  summary: |
+    Build a test harness that runs every pipeline filter and its corresponding
+    reference function on identical inputs, asserting outputs match within
+    tolerance. This is the validation layer that makes references meaningful.
+  context: |
+    We have ~143 reference functions in rasmcore-reference and ~165 pipeline
+    filters in rasmcore-pipeline-v2. But zero parity tests exist — nothing
+    actually verifies that the reference output matches the pipeline output.
+    Without this, references are just more untested code.
+
+    The harness needs:
+    1. A mapping table: filter registry name -> reference function
+    2. Shared test inputs (gradient, noise, edge cases)
+    3. Per-filter tolerance thresholds
+    4. A test binary that reports pass/fail per filter
+  codebase_analysis: |
+    Key APIs:
+    - registered_filter_registrations() returns Vec<FilterFactoryRegistration>
+      with name, params (ParamDescriptor with default/min/max), factory fn
+    - create_filter_node(name, upstream, info, params) -> Box<dyn Node>
+    - Graph::new() + add_node() + request_full() to execute pipeline
+    - rasmcore_reference::* modules with pub fn taking (input, w, h, ...params)
+
+    The parity test crate depends on both rasmcore-pipeline-v2 and
+    rasmcore-reference. It lives at crates/rasmcore-parity-tests/.
+
+    Filter categories with different tolerance needs:
+    - Point ops (adjustment, evaluate, color): exact match (1e-6)
+    - Spatial ops (blur, sharpen, edge): floating point order (1e-3)
+    - Stochastic ops (noise, dither, grain): skip exact match, validate
+      statistical properties (mean, variance, range)
+    - Generators (solid, gradient, checkerboard): exact output comparison
+    - Tools (clone stamp, healing): skip (require interactive input)
+    - Analysis (histogram, connected components): non-pixel output
+  acceptance_criteria:
+    - Parity test crate with mapping table covering all paired filters
+    - Shared test inputs (gradient 64x64, noise 32x32, solid colors)
+    - Point op filters match reference within 1e-5 tolerance
+    - Spatial filters match within 1e-2 tolerance
+    - Test report shows pass/fail per filter with max diff
+    - Filters without reference are listed as skipped (not failures)
+    - All currently-paired filters pass parity
+    - cargo test -p rasmcore-parity-tests runs the full suite
+  out_of_scope: |
+    External tool validation (ImageMagick, OpenCV) — that is the
+    reference-tool-crosscheck track. This track validates pipeline vs
+    our own reference only.
+  technical_notes: |
+    The mapping table is a static array of structs:
+      struct ParityEntry {
+        filter_name: &str,
+        reference_fn: fn(&[f32], u32, u32, &ParamMap) -> Vec<f32>,
+        tolerance: f32,
+        category: ParityCategory, // Exact, Spatial, Statistical, Skip
+      }
+
+    For each entry:
+    1. Generate test input (gradient or noise based on category)
+    2. Build pipeline graph: source -> filter(default_params) -> request_full
+    3. Call reference_fn(input, w, h, default_params)
+    4. Compare: max_diff(pipeline_output, reference_output) <= tolerance
+    5. Report results
+
+    Wrapper functions adapt the reference API (which takes explicit params)
+    to the generic (input, w, h, ParamMap) signature.
+
+    The test runs as integration tests in the parity crate, one #[test]
+    per filter category to keep output readable.
+plan:
+  - phase: Harness infrastructure
+    tasks:
+      - text: Create crates/rasmcore-parity-tests/ with Cargo.toml depending on pipeline-v2 and reference
+        done: false
+      - text: Define ParityEntry struct and ParityCategory enum
+        done: false
+      - text: Build test input generators (gradient, noise, solid, edge-case images)
+        done: false
+      - text: Write run_parity_test() function that executes pipeline + reference and compares
+        done: false
+  - phase: Point op mappings
+    tasks:
+      - text: Map all adjustment filters (brightness, contrast, gamma, exposure, levels, etc.)
+        done: false
+      - text: Map all evaluate filters (abs, add, multiply, etc.)
+        done: false
+      - text: Map color filters (sepia, saturate, hue_rotate, white_balance, etc.)
+        done: false
+      - text: Run and fix any parity failures in point ops
+        done: false
+  - phase: Spatial and enhancement mappings
+    tasks:
+      - text: Map spatial filters (gaussian_blur, box_blur, median, sharpen, bilateral, etc.)
+        done: false
+      - text: Map enhancement filters (equalize, normalize, clahe, vignette, dehaze, etc.)
+        done: false
+      - text: Map edge and morphology filters (sobel, threshold, dilate, erode, etc.)
+        done: false
+      - text: Run and fix any parity failures in spatial/enhancement ops
+        done: false
+  - phase: Remaining categories
+    tasks:
+      - text: Map grading filters (asc_cdl, lift_gamma_gain, tonemap, etc.)
+        done: false
+      - text: Map effect filters (noise, chromatic_aberration, oil_paint, etc.)
+        done: false
+      - text: Map distortion filters (barrel, swirl, wave, etc.)
+        done: false
+      - text: Map composite/alpha/mask filters (blend, mask_apply, etc.)
+        done: false
+  - phase: Verification
+    tasks:
+      - text: Full parity suite passes (cargo test -p rasmcore-parity-tests)
+        done: false
+      - text: Generate coverage report listing paired, skipped, and missing filters
+        done: false
+extra: {}
