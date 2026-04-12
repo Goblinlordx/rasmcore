@@ -825,18 +825,20 @@ def golden_quantize(levels: int) -> dict:
 
 
 # ─── Spatial filter input ──────────────────────────────────────────────────
-# 4x4 is too small for meaningful spatial operations. Use a 16x16 gradient
-# with known values covering a range of intensities.
+# 64x64 test image for spatial ops. Large enough that typical kernel sizes
+# (radius 1-3, ksize 11-31) don't make most pixels border pixels.
+# Professional tools (Resolve, Nuke) operate on 4K+ images — a 64x64 test
+# is already a concession to speed.
 
-SPATIAL_W, SPATIAL_H = 16, 16
+SPATIAL_W, SPATIAL_H = 64, 64
 
 _spatial_srgb = np.zeros((SPATIAL_H, SPATIAL_W, 3), dtype=np.uint8)
 for _y in range(SPATIAL_H):
     for _x in range(SPATIAL_W):
         _spatial_srgb[_y, _x] = [
-            min(_x * 16, 255),
-            min(_y * 16, 255),
-            min((_x + _y) * 8, 255),
+            min(_x * 4, 255),
+            min(_y * 4, 255),
+            min((_x + _y) * 2, 255),
         ]
 SPATIAL_INPUT_LINEAR = srgb_to_linear(_spatial_srgb)
 
@@ -849,12 +851,12 @@ SPATIAL_INPUT_LINEAR = srgb_to_linear(_spatial_srgb)
 def golden_gaussian_blur(radius: float) -> dict:
     """Gaussian blur via cv2.GaussianBlur (OpenCV's C++ implementation).
 
-    Parameters match pipeline: ksize = 2*radius+1, sigma = radius/3.0.
-    Input/output in f32 linear. OpenCV blur is per-channel on multi-channel images.
+    Pipeline convention: sigma = radius, ksize = round(sigma * 10 + 1) | 1.
+    (Pipeline uses sigma_multiplier=5, so ksize = round(sigma * 2 * 5 + 1).)
     """
-    r = int(radius)
-    ksize = 2 * r + 1
-    sigma = radius / 3.0
+    sigma = radius  # pipeline uses radius as sigma directly
+    ksize = int(round(sigma * 10.0 + 1.0)) | 1  # ensure odd
+    ksize = max(ksize, 3)
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
     output = cv2.GaussianBlur(img, (ksize, ksize), sigma, borderType=cv2.BORDER_REPLICATE)
     return {
@@ -938,10 +940,11 @@ def golden_sharpen(radius: float, amount: float) -> dict:
 
     Formula: out = in + amount * (in - blur(in, radius))
     Uses OpenCV GaussianBlur for the blur step.
+    Pipeline: sigma = radius, ksize = round(sigma * 10 + 1) | 1.
     """
-    r = int(radius)
-    ksize = 2 * r + 1
-    sigma = radius / 3.0
+    sigma = radius
+    ksize = int(round(sigma * 10.0 + 1.0)) | 1
+    ksize = max(ksize, 3)
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
     blurred = cv2.GaussianBlur(img, (ksize, ksize), sigma, borderType=cv2.BORDER_REPLICATE)
     output = (img + amount * (img - blurred)).astype(np.float32)
@@ -959,11 +962,11 @@ def golden_high_pass(radius: float) -> dict:
     """High pass filter via cv2.GaussianBlur (OpenCV's C++ implementation).
 
     Formula: out = in - blur(in, radius) + 0.5
-    Uses OpenCV GaussianBlur for the blur step.
+    Pipeline: sigma = radius, ksize = round(sigma * 10 + 1) | 1.
     """
-    r = int(radius)
-    ksize = 2 * r + 1
-    sigma = radius / 3.0
+    sigma = radius
+    ksize = int(round(sigma * 10.0 + 1.0)) | 1
+    ksize = max(ksize, 3)
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
     blurred = cv2.GaussianBlur(img, (ksize, ksize), sigma, borderType=cv2.BORDER_REPLICATE)
     output = (img - blurred + 0.5).astype(np.float32)
