@@ -3,52 +3,48 @@ title: Fix pipeline to use standard CIE D65 chromaticity + adopt IEC 61966-2-1 m
 type: bug
 status: pending
 created: 2026-04-12
-updated: 2026-04-12
+updated: '2026-04-12'
 spec:
-  summary: |
-    Fix white_balance_temperature to use standard D65 (0.31270, 0.32900)
+  summary: 'Fix white_balance_temperature to use standard D65 (0.31270, 0.32900)
+
     instead of cie_d_illuminant_xy(6500). Fix lab_adjust to use IEC 61966-2-1
+
     sRGB-to-XYZ matrices matching colour-science.
-  context: |
-    Golden validation found two pipeline issues where our constants differ
-    from the industry standard:
 
-    1. white_balance_temperature uses cie_d_illuminant_xy(6500) as D65 target.
-       But 6500K != D65. The CIE D65 illuminant has CCT ~6504K. The standard
-       chromaticity is (0.31270, 0.32900). Our formula gives (0.31278, 0.32918).
-       Every professional tool uses the standard value.
-
-    2. lab_adjust uses RGB-to-XYZ matrices that differ from IEC 61966-2-1
-       (the sRGB standard). colour-science uses the exact IEC matrices.
-       Our matrices may be from a different source or rounded differently.
+    '
+  context: "Golden validation found two pipeline issues where our constants differ\nfrom the industry standard:\n\n1. white_balance_temperature\
+    \ uses cie_d_illuminant_xy(6500) as D65 target.\n   But 6500K != D65. The CIE D65 illuminant has CCT ~6504K. The standard\n\
+    \   chromaticity is (0.31270, 0.32900). Our formula gives (0.31278, 0.32918).\n   Every professional tool uses the standard\
+    \ value.\n\n2. lab_adjust uses RGB-to-XYZ matrices that differ from IEC 61966-2-1\n   (the sRGB standard). colour-science\
+    \ uses the exact IEC matrices.\n   Our matrices may be from a different source or rounded differently.\n"
   acceptance_criteria:
-    - Pipeline wb_adaptation_matrix uses standard D65 xy (0.31270, 0.32900) not formula
-    - Pipeline Lab conversion uses IEC 61966-2-1 sRGB-to-XYZ matrix
-    - Golden tests for white_balance_temperature pass within 1e-3
-    - Golden tests for lab_adjust pass within 1e-3
-    - Reference implementations updated to match
-    - Existing pipeline tests still pass
+  - Pipeline wb_adaptation_matrix uses standard D65 xy (0.31270, 0.32900) not formula
+  - Pipeline Lab conversion uses IEC 61966-2-1 sRGB-to-XYZ matrix
+  - Golden tests for white_balance_temperature pass within 1e-3
+  - Golden tests for lab_adjust pass within 1e-3
+  - Reference implementations updated to match
+  - Existing pipeline tests still pass
 plan:
-  - phase: Fix D65 chromaticity
-    tasks:
-      - text: "Add CIE_D65_XY constant (0.31270, 0.32900) to color_math.rs"
-        done: false
-      - text: "Update wb_adaptation_matrix to use CIE_D65_XY instead of cie_d_illuminant_xy(6500)"
-        done: false
-      - text: "Update reference white_balance to use same constant"
-        done: false
-  - phase: Fix Lab matrices
-    tasks:
-      - text: "Compare pipeline sRGB-to-XYZ matrix against IEC 61966-2-1 standard"
-        done: false
-      - text: "Update pipeline Lab conversion if matrices differ"
-        done: false
-      - text: "Update reference Lab conversion to match"
-        done: false
-  - phase: Verification
-    tasks:
-      - text: "Golden tests pass for white_balance and lab_adjust"
-        done: false
-      - text: "All existing pipeline tests pass"
-        done: false
+- phase: Fix D65 chromaticity
+  tasks:
+  - text: Add CIE_D65_XY constant (0.31270, 0.32900) to color_math.rs
+    done: true
+  - text: Update wb_adaptation_matrix to use CIE_D65_XY instead of cie_d_illuminant_xy(6500)
+    done: true
+  - text: Update reference white_balance to use same constant
+    done: true
+- phase: Fix Lab matrices
+  tasks:
+  - text: Compare pipeline sRGB-to-XYZ matrix against IEC 61966-2-1 standard
+    done: true
+  - text: Update pipeline Lab conversion if matrices differ
+    done: true
+  - text: Update reference Lab conversion to match
+    done: true
+- phase: Verification
+  tasks:
+  - text: Golden tests pass for white_balance and lab_adjust
+    done: true
+  - text: All existing pipeline tests pass
+    done: true
 extra: {}
