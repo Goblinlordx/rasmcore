@@ -1,0 +1,6 @@
+title: Fix spatial filter discrepancies against OpenCV golden data
+status: pending
+type: bug
+approved: false
+created: '2026-04-12'
+updated: '2026-04-12'
