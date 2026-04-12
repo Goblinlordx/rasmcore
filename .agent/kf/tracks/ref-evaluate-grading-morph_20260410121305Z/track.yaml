@@ -3,7 +3,7 @@ title: Reference implementations — evaluate, grading, morphology (17 filters)
 type: feature
 status: pending
 created: '2026-04-10'
-updated: '2026-04-10'
+updated: '2026-04-12'
 spec:
   summary: 'Reference functions for: evaluate_abs/add/divide/log/max/min/multiply/pow/subtract, tonemap_reinhard, tonemap_filmic,
     tonemap_drago, film_grain_grading, morph_tophat, morph_blackhat, morph_gradient, skeletonize'
@@ -12,27 +12,25 @@ spec:
   acceptance_criteria: []
   out_of_scope: ''
   technical_notes: ''
-plan: []
-extra: {}
 plan:
-  - phase: Evaluate refs
-    tasks:
-      - text: "Implement all 9 evaluate ops (abs, add, divide, log, max, min, multiply, pow, subtract)"
-        done: false
-  - phase: Grading refs
-    tasks:
-      - text: "Implement tonemap_reinhard, tonemap_filmic, tonemap_drago references"
-        done: false
-      - text: "Implement film_grain_grading reference"
-        done: false
-  - phase: Morphology refs
-    tasks:
-      - text: "Implement morph_tophat, morph_blackhat, morph_gradient references"
-        done: false
-      - text: "Implement skeletonize reference (Zhang-Suen thinning)"
-        done: false
-  - phase: Verification
-    tasks:
-      - text: "All 17 reference self-tests pass"
-        done: false
+- phase: Evaluate refs
+  tasks:
+  - text: Implement all 9 evaluate ops (abs, add, divide, log, max, min, multiply, pow, subtract)
+    done: true
+- phase: Grading refs
+  tasks:
+  - text: Implement tonemap_reinhard, tonemap_filmic, tonemap_drago references
+    done: true
+  - text: Implement film_grain_grading reference
+    done: true
+- phase: Morphology refs
+  tasks:
+  - text: Implement morph_tophat, morph_blackhat, morph_gradient references
+    done: true
+  - text: Implement skeletonize reference (Zhang-Suen thinning)
+    done: true
+- phase: Verification
+  tasks:
+  - text: All 17 reference self-tests pass
+    done: true
 extra: {}
