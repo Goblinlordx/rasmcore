@@ -3,55 +3,68 @@ title: Fix spatial filter discrepancies against OpenCV golden data
 type: bug
 status: pending
 created: 2026-04-12
-updated: 2026-04-12
+updated: '2026-04-12'
 spec:
-  summary: |
-    Investigate and fix 5 pipeline + 1 reference spatial filter failures
+  summary: 'Investigate and fix 5 pipeline + 1 reference spatial filter failures
+
     against OpenCV golden validation data.
-  context: |
-    Golden spatial validation found these failures:
+
+    '
+  context: 'Golden spatial validation found these failures:
+
 
     Pipeline (5 fail):
+
     - gaussian_blur (0.16 diff): sigma/kernel mapping differs from OpenCV
+
     - box_blur (0.07): border handling
+
     - bilateral (0.06): parameter interpretation
+
     - sharpen (0.14): depends on gaussian correctness
+
     - high_pass (0.23): depends on gaussian correctness
 
+
     Reference (1 fail):
+
     - bilateral (0.09): same parameter issue
 
+
     For each: determine if our implementation or OpenCV is the better
+
     authority, fix accordingly or document why we differ.
+
+    '
   acceptance_criteria:
-    - All 6 spatial golden tests pass
-    - Root cause documented per failure
-    - AUTHORITY.md updated for spatial filters
+  - All 6 spatial golden tests pass
+  - Root cause documented per failure
+  - AUTHORITY.md updated for spatial filters
 plan:
-  - phase: Gaussian blur investigation
-    tasks:
-      - text: "Compare pipeline sigma = radius/3 vs OpenCV sigma = 0 (auto from ksize) or explicit"
-        done: false
-      - text: "Compare border handling: pipeline clamp vs OpenCV BORDER_REPLICATE"
-        done: false
-      - text: "Fix pipeline or golden to align — determine correct authority"
-        done: false
-  - phase: Box blur and bilateral
-    tasks:
-      - text: "Investigate box_blur border handling difference"
-        done: false
-      - text: "Investigate bilateral sigma_color interpretation (0-1 vs 0-255 range)"
-        done: false
-      - text: "Fix pipeline or golden to align"
-        done: false
-  - phase: Dependent filters
-    tasks:
-      - text: "Sharpen and high_pass should pass once gaussian_blur is fixed"
-        done: false
-  - phase: Verification
-    tasks:
-      - text: "All 6 spatial golden tests pass"
-        done: false
-      - text: "All 36 pointops+color golden tests still pass"
-        done: false
+- phase: Gaussian blur investigation
+  tasks:
+  - text: Compare pipeline sigma = radius/3 vs OpenCV sigma = 0 (auto from ksize) or explicit
+    done: true
+  - text: 'Compare border handling: pipeline clamp vs OpenCV BORDER_REPLICATE'
+    done: true
+  - text: Fix pipeline or golden to align — determine correct authority
+    done: true
+- phase: Box blur and bilateral
+  tasks:
+  - text: Investigate box_blur border handling difference
+    done: true
+  - text: Investigate bilateral sigma_color interpretation (0-1 vs 0-255 range)
+    done: true
+  - text: Fix pipeline or golden to align
+    done: true
+- phase: Dependent filters
+  tasks:
+  - text: Sharpen and high_pass should pass once gaussian_blur is fixed
+    done: true
+- phase: Verification
+  tasks:
+  - text: All 6 spatial golden tests pass
+    done: true
+  - text: All 36 pointops+color golden tests still pass
+    done: true
 extra: {}
