@@ -918,20 +918,32 @@ def golden_sobel(scale: float) -> dict:
 
 
 def golden_bilateral(diameter: int, sigma_color: float, sigma_space: float) -> dict:
-    """Bilateral filter via cv2.bilateralFilter (OpenCV's C++ implementation).
+    """Bilateral filter via scikit-image denoise_bilateral (Cython implementation).
 
-    Per-channel on multi-channel f32 images. Edge-preserving smoothing.
+    Uses combined multichannel color distance — matches Photoshop/Resolve model
+    and our pipeline. NOT OpenCV's per-channel approach.
+
+    scikit-image is an independent Cython/C implementation of the bilateral
+    filter with multichannel color distance weighting.
     """
-    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
-    # OpenCV bilateralFilter works on multi-channel f32 directly
-    output = cv2.bilateralFilter(img, diameter, sigma_color, sigma_space,
-                                  borderType=cv2.BORDER_REFLECT_101)
+    from skimage.restoration import denoise_bilateral
+    import skimage
+
+    img = SPATIAL_INPUT_LINEAR.astype(np.float64)  # skimage prefers f64
+    output = denoise_bilateral(
+        img,
+        sigma_color=sigma_color,
+        sigma_spatial=sigma_space,
+        win_size=diameter,
+        channel_axis=-1,
+    ).astype(np.float32)
+
     return {
         "filter": "bilateral",
         "params": {"diameter": diameter, "sigma_color": sigma_color, "sigma_space": sigma_space},
-        "tool": f"cv2.bilateralFilter (d={diameter}, sigmaColor={sigma_color}, sigmaSpace={sigma_space})",
-        "tool_version": cv2.__version__,
-        "note": "OpenCV C++ bilateralFilter, per-channel, BORDER_REFLECT_101, f32 linear",
+        "tool": f"skimage.restoration.denoise_bilateral (win_size={diameter}, sigma_color={sigma_color}, sigma_spatial={sigma_space})",
+        "tool_version": skimage.__version__,
+        "note": "scikit-image Cython bilateral, combined multichannel color distance (Photoshop/Resolve model)",
         "output": pixels_to_list(output),
     }
 

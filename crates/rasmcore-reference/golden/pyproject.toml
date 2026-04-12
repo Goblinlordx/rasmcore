@@ -8,6 +8,7 @@ dependencies = [
     "opencv-python-headless>=4.8",
     "colour-science>=0.4",
     "Pillow>=10.0",
+    "scikit-image>=0.22",
 ]
 
 [tool.uv]
