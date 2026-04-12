@@ -1,0 +1,6 @@
+title: Fix pipeline to use standard CIE D65 chromaticity + adopt IEC 61966-2-1 matrices
+status: pending
+type: bug
+approved: false
+created: '2026-04-12'
+updated: '2026-04-12'
