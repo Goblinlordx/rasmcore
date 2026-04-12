@@ -1,0 +1,56 @@
+id: golden-infra-pointops_20260412060600Z
+title: Golden validation infrastructure + point ops (23 filters)
+type: feature
+status: pending
+created: '2026-04-12'
+updated: '2026-04-12'
+spec:
+  summary: Generate golden I/O from external tools (IM/OpenCV/vips), validate reference implementations against golden data,
+    validate pipeline against golden data.
+  context: ''
+  codebase_analysis: ''
+  acceptance_criteria: []
+  out_of_scope: ''
+  technical_notes: ''
+plan: []
+extra: {}
+plan:
+  - phase: Infrastructure
+    tasks:
+      - text: "Create canonical 4x4 test input image (PPM) with known sRGB values covering dark, mid, bright, saturated"
+        done: false
+      - text: "Build generate-golden.sh framework: takes filter name + IM command, runs on test image, outputs JSON golden data"
+        done: false
+      - text: "Build Rust golden test harness: loads golden JSON, runs reference fn, asserts match within 1e-5"
+        done: false
+      - text: "Build Rust pipeline test: loads golden JSON, runs pipeline filter, asserts match within 1e-5"
+        done: false
+      - text: "Add rasmcore-pipeline-v2 as dev-dependency of rasmcore-reference"
+        done: false
+  - phase: Adjustment filters (14)
+    tasks:
+      - text: "Generate IM golden data for brightness, contrast, gamma, exposure, invert"
+        done: false
+      - text: "Generate IM golden data for levels, posterize, solarize, burn, dodge"
+        done: false
+      - text: "Generate IM golden data for sigmoidal_contrast, threshold_binary, triangle_threshold"
+        done: false
+      - text: "Validate reference implementations against golden data — fix any mismatches"
+        done: false
+      - text: "Validate pipeline against golden data — document any mismatches"
+        done: false
+  - phase: Evaluate filters (9)
+    tasks:
+      - text: "Generate IM golden data for all 9 evaluate ops (abs, add, subtract, multiply, divide, pow, log, max, min)"
+        done: false
+      - text: "Validate reference + pipeline against golden data"
+        done: false
+  - phase: Verification
+    tasks:
+      - text: "All golden tests pass (cargo test -p rasmcore-reference --test golden)"
+        done: false
+      - text: "All pipeline parity tests pass (cargo test -p rasmcore-reference --test parity)"
+        done: false
+      - text: "AUTHORITY.md updated with validation status per filter"
+        done: false
+extra: {}

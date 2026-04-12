@@ -1,0 +1,42 @@
+id: golden-color-ops_20260412060601Z
+title: Golden validation — color ops (23 filters)
+type: feature
+status: pending
+created: '2026-04-12'
+updated: '2026-04-12'
+spec:
+  summary: Generate golden I/O from external tools (IM/OpenCV/vips), validate reference implementations against golden data,
+    validate pipeline against golden data.
+  context: ''
+  codebase_analysis: ''
+  acceptance_criteria: []
+  out_of_scope: ''
+  technical_notes: ''
+plan: []
+extra: {}
+plan:
+  - phase: IM-validatable color ops
+    tasks:
+      - text: "Generate golden data for sepia, saturate, hue_rotate, channel_mixer, colorize"
+        done: false
+      - text: "Generate golden data for modulate, photo_filter, vibrance, saturate_hsl"
+        done: false
+      - text: "Generate golden data for selective_color, replace_color, match_color"
+        done: false
+      - text: "Generate golden data for dither_ordered, dither_floyd_steinberg, quantize, kmeans_quantize"
+        done: false
+  - phase: CIE/ACES color ops
+    tasks:
+      - text: "Generate golden data for white_balance_temperature (CIE CAT16 — validate against colour-science Python)"
+        done: false
+      - text: "Generate golden data for white_balance_gray_world, lab_adjust, lab_sharpen"
+        done: false
+      - text: "Generate golden data for aces_idt, aces_odt, aces_cct_to_cg, aces_cg_to_cct"
+        done: false
+  - phase: Validate and fix
+    tasks:
+      - text: "Validate all 23 color ref + pipeline against golden — fix mismatches"
+        done: false
+      - text: "For filters where IM clamps or differs, identify correct external authority"
+        done: false
+extra: {}
