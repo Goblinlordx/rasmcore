@@ -5,8 +5,8 @@ status: pending
 created: '2026-04-12'
 updated: '2026-04-12'
 spec:
-  summary: Generate golden I/O from external tools (IM/OpenCV/vips), validate reference
-    implementations against golden data, validate pipeline against golden data.
+  summary: Generate golden I/O from external tools (IM/OpenCV/vips), validate reference implementations against golden data,
+    validate pipeline against golden data.
   context: ''
   codebase_analysis: ''
   acceptance_criteria: []
@@ -16,13 +16,13 @@ plan:
 - phase: Golden generation — add to generate.py
   tasks:
   - text: Add golden for equalize, normalize (OpenCV cv2.equalizeHist, numpy min/max)
-    done: false
+    done: true
   - text: Add golden for auto_level, clahe (OpenCV cv2.createCLAHE)
-    done: false
+    done: true
   - text: Add golden for vignette, vignette_powerlaw (numpy radial mask)
-    done: false
+    done: true
   - text: Add golden for shadow_highlight, clarity (numpy luminance-weighted ops)
-    done: false
+    done: true
   - text: Add golden for dehaze (OpenCV dark channel prior reference implementation)
     done: false
   - text: Add golden for nlm_denoise (OpenCV cv2.fastNlMeansDenoising)
@@ -36,7 +36,7 @@ plan:
 - phase: Validate and fix
   tasks:
   - text: Run golden tests — fix all reference and pipeline mismatches
-    done: false
+    done: true
   - text: Update AUTHORITY.md
-    done: false
+    done: true
 extra: {}
