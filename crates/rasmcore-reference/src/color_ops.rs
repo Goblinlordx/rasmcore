@@ -217,7 +217,8 @@ fn cat16_adaptation_matrix(temperature_k: f32, tint: f32) -> [f32; 9] {
     ];
 
     let src_xy = tint_shift_xy(cie_d_illuminant_xy(temperature_k), tint);
-    let tgt_xy = cie_d_illuminant_xy(6500.0);
+    // Standard CIE D65 chromaticity (not formula at 6500K — D65 CCT ≈ 6504K)
+    let tgt_xy = (0.31270_f64, 0.32900_f64);
 
     let xy_to_xyz = |x: f64, y: f64| -> [f64; 3] {
         if y.abs() < 1e-10 {
@@ -626,7 +627,8 @@ mod tests {
     fn white_balance_d65_is_identity() {
         let input = crate::gradient(4, 4);
         let output = white_balance(&input, 4, 4, 6500.0, 0.0);
-        crate::assert_parity("wb_d65", &output, &input, 1e-4);
+        // 6500K ≈ D65 but not exact (D65 CCT ≈ 6504K)
+        crate::assert_parity("wb_d65", &output, &input, 0.002);
     }
 
     #[test]

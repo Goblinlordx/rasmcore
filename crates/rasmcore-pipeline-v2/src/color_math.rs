@@ -491,10 +491,22 @@ pub fn oklch_to_oklab(ok_l: f32, c: f32, h: f32) -> (f32, f32, f32) {
 // ─── CIE Colorimetry ─────────────────────────────────────────────────────────
 // CIE 015:2018 D-illuminant series, Planckian locus, CAT16 adaptation.
 
+/// Standard CIE D65 illuminant chromaticity (CIE 015:2018, Table 1).
+///
+/// This is the canonical D65 value from the CIE standard illuminant table,
+/// NOT computed from the D-illuminant formula at 6500K (which gives slightly
+/// different values because D65 has CCT ≈ 6504K, not 6500K).
+///
+/// Use this for white balance target, sRGB whitepoint, etc.
+pub const CIE_D65_XY: (f32, f32) = (0.31270, 0.32900);
+
 /// CIE D-illuminant chromaticity (CIE 015:2018, eq 4.1).
 ///
 /// Valid for 4000K <= T <= 25000K. Outside this range, clamps to boundary.
 /// Returns (x, y) CIE 1931 chromaticity coordinates.
+///
+/// NOTE: For D65 specifically, use `CIE_D65_XY` constant instead.
+/// The formula at 6500K gives slightly different values.
 pub fn cie_d_illuminant_xy(temperature_k: f32) -> (f32, f32) {
     let t = temperature_k.clamp(4000.0, 25000.0) as f64;
     let t2 = t * t;

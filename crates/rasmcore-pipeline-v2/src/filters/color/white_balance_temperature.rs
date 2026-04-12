@@ -41,11 +41,10 @@ impl Filter for WhiteBalanceTemperature {
 /// Setting 8000K means "scene was under blue sky" → warm up to D65.
 /// Setting 3200K means "scene was under tungsten" → cool down to D65.
 fn wb_adaptation_matrix(temperature: f32, tint: f32) -> [f32; 9] {
-    use crate::color_math::{cat16_adaptation_matrix, cie_d_illuminant_xy, tint_shift_xy};
+    use crate::color_math::{cat16_adaptation_matrix, cie_d_illuminant_xy, tint_shift_xy, CIE_D65_XY};
     let source = cie_d_illuminant_xy(temperature);
     let source = tint_shift_xy(source, tint);
-    let d65 = cie_d_illuminant_xy(6500.0);
-    cat16_adaptation_matrix(source, d65)
+    cat16_adaptation_matrix(source, CIE_D65_XY)
 }
 
 impl ClutOp for WhiteBalanceTemperature {
@@ -136,7 +135,8 @@ mod tests {
             tint: 0.0,
         };
         let out = f.compute(&input, 1, 1).unwrap();
-        assert_rgb_close(&out, (0.5, 0.5, 0.5), 1e-6, "wb 6500K neutral");
+        // 6500K ≠ D65 (D65 CCT ≈ 6504K). Close but not exact identity.
+        assert_rgb_close(&out, (0.5, 0.5, 0.5), 0.002, "wb 6500K ≈ neutral");
     }
 
     #[test]
