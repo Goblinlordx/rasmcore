@@ -5,34 +5,35 @@ status: pending
 created: '2026-04-12'
 updated: '2026-04-12'
 spec:
-  summary: Generate golden I/O from external tools (IM/OpenCV/vips), validate reference implementations against golden data,
-    validate pipeline against golden data.
+  summary: Generate golden I/O from external tools (IM/OpenCV/vips), validate reference
+    implementations against golden data, validate pipeline against golden data.
   context: ''
   codebase_analysis: ''
   acceptance_criteria: []
   out_of_scope: ''
   technical_notes: ''
-plan: []
-extra: {}
 plan:
-  - phase: Generate golden data
-    tasks:
-      - text: "Identify correct external tool per filter (IM primary, OpenCV/vips/Python where needed)"
-        done: false
-      - text: "Generate golden I/O data for all filters in this category"
-        done: false
-      - text: "For self-validating filters (generators, draw), document why no external ref needed"
-        done: false
-  - phase: Validate references
-    tasks:
-      - text: "Run all reference implementations against golden data — fix mismatches"
-        done: false
-      - text: "Freeze validated references (no further changes without re-validation)"
-        done: false
-  - phase: Validate pipeline
-    tasks:
-      - text: "Run pipeline filters against golden data — document any mismatches"
-        done: false
-      - text: "Update AUTHORITY.md with per-filter validation status"
-        done: false
+- phase: Golden generation — add to generate.py
+  tasks:
+  - text: Add golden for sobel, laplacian, canny, scharr (OpenCV cv2.Sobel, cv2.Canny)
+    done: false
+  - text: Add golden for threshold, otsu_threshold (OpenCV cv2.threshold)
+    done: false
+  - text: Add golden for dilate, erode, morph_open, morph_close (OpenCV cv2.morphologyEx)
+    done: false
+  - text: Add golden for morph_tophat, morph_blackhat, morph_gradient, skeletonize
+      (OpenCV/skimage)
+    done: false
+  - text: Add golden for blend modes (Pillow ImageChops or W3C spec formulas via numpy)
+    done: false
+  - text: Add golden for mask_apply, mask_combine, feather (numpy alpha ops)
+    done: false
+  - text: Add golden for add_alpha, remove_alpha, flatten (numpy channel ops)
+    done: false
+- phase: Validate and fix
+  tasks:
+  - text: Run golden tests — fix all mismatches
+    done: false
+  - text: Update AUTHORITY.md
+    done: false
 extra: {}

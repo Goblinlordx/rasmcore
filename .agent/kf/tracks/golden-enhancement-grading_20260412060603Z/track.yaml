@@ -5,34 +5,38 @@ status: pending
 created: '2026-04-12'
 updated: '2026-04-12'
 spec:
-  summary: Generate golden I/O from external tools (IM/OpenCV/vips), validate reference implementations against golden data,
-    validate pipeline against golden data.
+  summary: Generate golden I/O from external tools (IM/OpenCV/vips), validate reference
+    implementations against golden data, validate pipeline against golden data.
   context: ''
   codebase_analysis: ''
   acceptance_criteria: []
   out_of_scope: ''
   technical_notes: ''
-plan: []
-extra: {}
 plan:
-  - phase: Generate golden data
-    tasks:
-      - text: "Identify correct external tool per filter (IM primary, OpenCV/vips/Python where needed)"
-        done: false
-      - text: "Generate golden I/O data for all filters in this category"
-        done: false
-      - text: "For self-validating filters (generators, draw), document why no external ref needed"
-        done: false
-  - phase: Validate references
-    tasks:
-      - text: "Run all reference implementations against golden data — fix mismatches"
-        done: false
-      - text: "Freeze validated references (no further changes without re-validation)"
-        done: false
-  - phase: Validate pipeline
-    tasks:
-      - text: "Run pipeline filters against golden data — document any mismatches"
-        done: false
-      - text: "Update AUTHORITY.md with per-filter validation status"
-        done: false
+- phase: Golden generation — add to generate.py
+  tasks:
+  - text: Add golden for equalize, normalize (OpenCV cv2.equalizeHist, numpy min/max)
+    done: false
+  - text: Add golden for auto_level, clahe (OpenCV cv2.createCLAHE)
+    done: false
+  - text: Add golden for vignette, vignette_powerlaw (numpy radial mask)
+    done: false
+  - text: Add golden for shadow_highlight, clarity (numpy luminance-weighted ops)
+    done: false
+  - text: Add golden for dehaze (OpenCV dark channel prior reference implementation)
+    done: false
+  - text: Add golden for nlm_denoise (OpenCV cv2.fastNlMeansDenoising)
+    done: false
+  - text: Add golden for retinex_ssr, retinex_msr, retinex_msrcr (numpy log-domain)
+    done: false
+  - text: Add golden for frequency_high, frequency_low (OpenCV GaussianBlur subtract)
+    done: false
+  - text: Add golden for tonemap_reinhard, tonemap_filmic, tonemap_drago (OpenCV cv2.createTonemap*)
+    done: false
+- phase: Validate and fix
+  tasks:
+  - text: Run golden tests — fix all reference and pipeline mismatches
+    done: false
+  - text: Update AUTHORITY.md
+    done: false
 extra: {}

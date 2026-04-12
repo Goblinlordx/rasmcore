@@ -5,34 +5,48 @@ status: pending
 created: '2026-04-12'
 updated: '2026-04-12'
 spec:
-  summary: Generate golden I/O from external tools (IM/OpenCV/vips), validate reference implementations against golden data,
-    validate pipeline against golden data.
+  summary: Generate golden I/O from external tools (IM/OpenCV/vips), validate reference
+    implementations against golden data, validate pipeline against golden data.
   context: ''
   codebase_analysis: ''
   acceptance_criteria: []
   out_of_scope: ''
   technical_notes: ''
-plan: []
-extra: {}
 plan:
-  - phase: Generate golden data
-    tasks:
-      - text: "Identify correct external tool per filter (IM primary, OpenCV/vips/Python where needed)"
-        done: false
-      - text: "Generate golden I/O data for all filters in this category"
-        done: false
-      - text: "For self-validating filters (generators, draw), document why no external ref needed"
-        done: false
-  - phase: Validate references
-    tasks:
-      - text: "Run all reference implementations against golden data — fix mismatches"
-        done: false
-      - text: "Freeze validated references (no further changes without re-validation)"
-        done: false
-  - phase: Validate pipeline
-    tasks:
-      - text: "Run pipeline filters against golden data — document any mismatches"
-        done: false
-      - text: "Update AUTHORITY.md with per-filter validation status"
-        done: false
+- phase: Golden generation — add to generate.py
+  tasks:
+  - text: Add golden for gaussian_blur, box_blur (OpenCV cv2.GaussianBlur, cv2.blur)
+    done: false
+  - text: Add golden for median (OpenCV cv2.medianBlur)
+    done: false
+  - text: Add golden for sharpen, high_pass (OpenCV unsharp mask)
+    done: false
+  - text: Add golden for bilateral (OpenCV cv2.bilateralFilter)
+    done: false
+  - text: Add golden for motion_blur, zoom_blur, spin_blur (OpenCV warpAffine-based
+      sampling)
+    done: false
+  - text: Add golden for lens_blur, bokeh_blur (OpenCV filter2D with disc/hex kernel)
+    done: false
+  - text: Add golden for tilt_shift (OpenCV GaussianBlur + depth mask blend)
+    done: false
+  - text: Add golden for adaptive_threshold (OpenCV cv2.adaptiveThreshold)
+    done: false
+  - text: Add golden for scharr (OpenCV cv2.Scharr)
+    done: false
+  - text: Add golden for smart_sharpen (OpenCV bilateralFilter + unsharp)
+    done: false
+- phase: Validate and fix references
+  tasks:
+  - text: Run golden tests — fix all reference mismatches (especially separable vs
+      2D kernel)
+    done: false
+  - text: Align sigma/radius mapping to match OpenCV convention
+    done: false
+- phase: Validate pipeline
+  tasks:
+  - text: All 18 pipeline spatial filters match golden within tolerance
+    done: false
+  - text: Update AUTHORITY.md with validation status
+    done: false
 extra: {}
