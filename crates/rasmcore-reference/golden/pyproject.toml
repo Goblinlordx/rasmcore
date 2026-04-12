@@ -1,0 +1,14 @@
+[project]
+name = "rasmcore-golden"
+version = "0.1.0"
+description = "Golden I/O generation for rasmcore filter validation"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.24",
+    "opencv-python-headless>=4.8",
+    "colour-science>=0.4",
+    "Pillow>=10.0",
+]
+
+[tool.uv]
+dev-dependencies = []

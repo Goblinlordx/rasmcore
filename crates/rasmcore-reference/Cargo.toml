@@ -8,5 +8,10 @@ description = "Textbook reference implementations for filter parity testing"
 # No dependencies — pure math only.
 [dependencies]
 
+[dev-dependencies]
+rasmcore-pipeline-v2 = { path = "../rasmcore-pipeline-v2" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
 [lints]
 workspace = true

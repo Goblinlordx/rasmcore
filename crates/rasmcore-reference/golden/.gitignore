@@ -1,0 +1,6 @@
+# Generated golden data — reproducible, never committed
+golden_data/
+.venv/
+__pycache__/
+*.pyc
+uv.lock
