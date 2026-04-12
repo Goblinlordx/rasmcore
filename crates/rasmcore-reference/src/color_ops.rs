@@ -332,7 +332,8 @@ pub fn vibrance(input: &[f32], _w: u32, _h: u32, amount: f32) -> Vec<f32> {
         let max = px[0].max(px[1]).max(px[2]);
         let min = px[0].min(px[1]).min(px[2]);
         let sat = if max > 1e-10 { (max - min) / max } else { 0.0 };
-        let weight = amount * (1.0 - sat);
+        let amt = amount / 100.0;
+        let weight = amt * (1.0 - sat);
         let (h, s, l) = rgb_to_hsl(px[0], px[1], px[2]);
         let s2 = (s * (1.0 + weight)).clamp(0.0, 1.0);
         let (r, g, b) = hsl_to_rgb(h, s2, l);
@@ -444,26 +445,25 @@ pub fn selective_color(
     sat_shift: f32,
     lum_shift: f32,
 ) -> Vec<f32> {
-    let target_frac = (target_hue / 360.0).rem_euclid(1.0);
-    let range_frac = hue_range / 360.0;
-    let shift_frac = hue_shift / 360.0;
+    // Matches pipeline: H in degrees, half-range, cosine taper
+    let half = hue_range * 0.5;
     let mut out = input.to_vec();
     for px in out.chunks_exact_mut(4) {
-        let (h, s, l) = rgb_to_hsl(px[0], px[1], px[2]);
-        let mut diff = (h - target_frac).abs();
-        if diff > 0.5 {
-            diff = 1.0 - diff;
-        }
-        if range_frac > 1e-10 && diff < range_frac {
-            let weight = (std::f32::consts::PI * diff / range_frac).cos().max(0.0);
-            let h2 = ((h + shift_frac * weight) % 1.0 + 1.0) % 1.0;
-            let s2 = (s + sat_shift * weight).clamp(0.0, 1.0);
-            let l2 = (l + lum_shift * weight).clamp(0.0, 1.0);
-            let (r, g, b) = hsl_to_rgb(h2, s2, l2);
-            px[0] = r;
-            px[1] = g;
-            px[2] = b;
-        }
+        let (h_norm, s, l) = rgb_to_hsl(px[0], px[1], px[2]);
+        let h = h_norm * 360.0; // convert [0,1] → degrees for comparison
+        let mut diff = (h - target_hue).abs();
+        if diff > 180.0 { diff = 360.0 - diff; }
+        if diff > half { continue; }
+        let weight = 0.5 * (1.0 + (std::f32::consts::PI * diff / half).cos());
+        let mut nh = h + hue_shift * weight;
+        if nh < 0.0 { nh += 360.0; }
+        if nh >= 360.0 { nh -= 360.0; }
+        let ns = (s * (1.0 + (sat_shift - 1.0) * weight)).clamp(0.0, 1.0);
+        let nl = (l + lum_shift * weight).clamp(0.0, 1.0);
+        let (r, g, b) = hsl_to_rgb(nh / 360.0, ns, nl);
+        px[0] = r;
+        px[1] = g;
+        px[2] = b;
     }
     out
 }
@@ -487,29 +487,28 @@ pub fn replace_color(
     sat_shift: f32,
     lum_shift: f32,
 ) -> Vec<f32> {
-    let center_frac = (center_hue / 360.0).rem_euclid(1.0);
-    let range_frac = hue_range / 360.0;
-    let shift_frac = hue_shift / 360.0;
+    // Matches pipeline: H in degrees, half-range, cosine taper, S/L range gate
+    let half = hue_range * 0.5;
     let mut out = input.to_vec();
     for px in out.chunks_exact_mut(4) {
-        let (h, s, l) = rgb_to_hsl(px[0], px[1], px[2]);
+        let (h_norm, s, l) = rgb_to_hsl(px[0], px[1], px[2]);
+        let h = h_norm * 360.0;
         if s < sat_min || s > sat_max || l < lum_min || l > lum_max {
             continue;
         }
-        let mut diff = (h - center_frac).abs();
-        if diff > 0.5 {
-            diff = 1.0 - diff;
-        }
-        if range_frac > 1e-10 && diff < range_frac {
-            let weight = (std::f32::consts::PI * diff / range_frac).cos().max(0.0);
-            let h2 = ((h + shift_frac * weight) % 1.0 + 1.0) % 1.0;
-            let s2 = (s + sat_shift * weight).clamp(0.0, 1.0);
-            let l2 = (l + lum_shift * weight).clamp(0.0, 1.0);
-            let (r, g, b) = hsl_to_rgb(h2, s2, l2);
-            px[0] = r;
-            px[1] = g;
-            px[2] = b;
-        }
+        let mut diff = (h - center_hue).abs();
+        if diff > 180.0 { diff = 360.0 - diff; }
+        if diff > half { continue; }
+        let weight = 0.5 * (1.0 + (std::f32::consts::PI * diff / half).cos());
+        let mut nh = h + hue_shift * weight;
+        if nh < 0.0 { nh += 360.0; }
+        if nh >= 360.0 { nh -= 360.0; }
+        let ns = (s + sat_shift * weight).clamp(0.0, 1.0);
+        let nl = (l + lum_shift * weight).clamp(0.0, 1.0);
+        let (r, g, b) = hsl_to_rgb(nh / 360.0, ns, nl);
+        px[0] = r;
+        px[1] = g;
+        px[2] = b;
     }
     out
 }

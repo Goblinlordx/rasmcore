@@ -171,7 +171,7 @@ fn run_reference(_filter_key: &str, entry: &GoldenEntry, input: &[f32], w: u32, 
                 .and_then(|v| v.as_bool()).unwrap_or(false);
             refimpl::color_ops::photo_filter(input, w, h, f("color_r"), f("color_g"), f("color_b"), f("density"), preserve)
         },
-        "selective_color" => refimpl::color_ops::selective_color(input, w, h, f("target_hue"), f("hue_range"), f("hue_shift"), f("sat_shift"), f("lum_shift")),
+        "selective_color" => refimpl::color_ops::selective_color(input, w, h, f("target_hue"), f("hue_range"), f("hue_shift"), f("saturation"), f("lightness")),
         "replace_color" => refimpl::color_ops::replace_color(input, w, h, f("center_hue"), f("hue_range"), f("sat_min"), f("sat_max"), f("lum_min"), f("lum_max"), f("hue_shift"), f("sat_shift"), f("lum_shift")),
         "white_balance_gray_world" => refimpl::color_ops::white_balance_gray_world(input, w, h),
         "white_balance_temperature" => refimpl::color_ops::white_balance(input, w, h, f("temperature"), f("tint")),
