@@ -17,9 +17,9 @@ pub fn sepia(input: &[f32], _w: u32, _h: u32, intensity: f32) -> Vec<f32> {
     let mut out = input.to_vec();
     for px in out.chunks_exact_mut(4) {
         let (r, g, b) = (px[0], px[1], px[2]);
-        let sr = (0.393 * r + 0.769 * g + 0.189 * b).min(1.0);
-        let sg = (0.349 * r + 0.686 * g + 0.168 * b).min(1.0);
-        let sb = (0.272 * r + 0.534 * g + 0.131 * b).min(1.0);
+        let sr = 0.393 * r + 0.769 * g + 0.189 * b;
+        let sg = 0.349 * r + 0.686 * g + 0.168 * b;
+        let sb = 0.272 * r + 0.534 * g + 0.131 * b;
         px[0] = inv * r + intensity * sr;
         px[1] = inv * g + intensity * sg;
         px[2] = inv * b + intensity * sb;

@@ -182,15 +182,16 @@ def golden_levels(black: float, white: float, gamma_val: float) -> dict:
 
 
 def golden_posterize(levels: int) -> dict:
-    """Posterize via numpy quantization."""
-    n = max(levels - 1, 1)
-    output = (np.round(INPUT_LINEAR * n) / n).astype(np.float32)
+    """Posterize via floor quantization (matches pipeline + Photoshop)."""
+    n = float(levels)
+    inv = 1.0 / max(n - 1.0, 1.0)
+    output = (np.minimum(np.floor(INPUT_LINEAR * n), n - 1.0) * inv).astype(np.float32)
     return {
         "filter": "posterize",
         "params": {"levels": levels},
-        "tool": "numpy (round quantize)",
+        "tool": "numpy (floor quantize — matches Photoshop)",
         "tool_version": np.__version__,
-        "note": "round(pixel * (levels-1)) / (levels-1)",
+        "note": "floor(pixel * levels) / (levels - 1), clamped",
         "output": pixels_to_list(output),
     }
 
@@ -289,44 +290,50 @@ def golden_evaluate_divide(value: float) -> dict:
     }
 
 
-def golden_evaluate_pow(value: float) -> dict:
-    output = np.where(INPUT_LINEAR > 0, INPUT_LINEAR ** value, 0).astype(np.float32)
+def golden_evaluate_pow(exponent: float) -> dict:
+    """Pipeline formula: max(pixel, 0) ^ exponent"""
+    output = np.where(INPUT_LINEAR > 0, INPUT_LINEAR ** exponent, 0).astype(np.float32)
     return {
         "filter": "evaluate_pow",
-        "params": {"value": value},
+        "params": {"exponent": exponent},
         "tool": "numpy.power",
         "tool_version": np.__version__,
+        "note": "max(pixel, 0) ^ exponent",
         "output": pixels_to_list(output),
     }
 
 
-def golden_evaluate_log(value: float) -> dict:
-    output = np.log(INPUT_LINEAR * value + 1).astype(np.float32)
+def golden_evaluate_log(scale: float) -> dict:
+    """Pipeline formula: ln(1 + max(pixel, 0)) * scale"""
+    output = (np.log(1.0 + np.maximum(INPUT_LINEAR, 0)) * scale).astype(np.float32)
     return {
         "filter": "evaluate_log",
-        "params": {"value": value},
+        "params": {"scale": scale},
         "tool": "numpy.log",
         "tool_version": np.__version__,
+        "note": "ln(1 + max(pixel, 0)) * scale",
         "output": pixels_to_list(output),
     }
 
 
-def golden_evaluate_max(value: float) -> dict:
-    output = np.maximum(INPUT_LINEAR, value).astype(np.float32)
+def golden_evaluate_max(threshold: float) -> dict:
+    """Pipeline formula: max(pixel, threshold)"""
+    output = np.maximum(INPUT_LINEAR, threshold).astype(np.float32)
     return {
         "filter": "evaluate_max",
-        "params": {"value": value},
+        "params": {"threshold": threshold},
         "tool": "numpy.maximum",
         "tool_version": np.__version__,
         "output": pixels_to_list(output),
     }
 
 
-def golden_evaluate_min(value: float) -> dict:
-    output = np.minimum(INPUT_LINEAR, value).astype(np.float32)
+def golden_evaluate_min(threshold: float) -> dict:
+    """Pipeline formula: min(pixel, threshold)"""
+    output = np.minimum(INPUT_LINEAR, threshold).astype(np.float32)
     return {
         "filter": "evaluate_min",
-        "params": {"value": value},
+        "params": {"threshold": threshold},
         "tool": "numpy.minimum",
         "tool_version": np.__version__,
         "output": pixels_to_list(output),
@@ -368,10 +375,10 @@ def main():
     golden["filters"]["evaluate_subtract_0.1"] = golden_evaluate_subtract(0.1)
     golden["filters"]["evaluate_abs"] = golden_evaluate_abs()
     golden["filters"]["evaluate_divide_2.0"] = golden_evaluate_divide(2.0)
-    golden["filters"]["evaluate_pow_0.5"] = golden_evaluate_pow(0.5)
-    golden["filters"]["evaluate_log_1.0"] = golden_evaluate_log(1.0)
-    golden["filters"]["evaluate_max_0.3"] = golden_evaluate_max(0.3)
-    golden["filters"]["evaluate_min_0.5"] = golden_evaluate_min(0.5)
+    golden["filters"]["evaluate_pow_0.5"] = golden_evaluate_pow(exponent=0.5)
+    golden["filters"]["evaluate_log_1.0"] = golden_evaluate_log(scale=1.0)
+    golden["filters"]["evaluate_max_0.3"] = golden_evaluate_max(threshold=0.3)
+    golden["filters"]["evaluate_min_0.5"] = golden_evaluate_min(threshold=0.5)
 
     # Write output
     out_file = out_dir / "pointops.json"

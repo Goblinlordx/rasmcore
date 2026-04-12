@@ -114,12 +114,14 @@ pub fn evaluate_pow(input: &[f32], _w: u32, _h: u32, value: f32) -> Vec<f32> {
 /// The +1 offset ensures the argument is always >= 1 when channel >= 0
 /// and value >= 0, avoiding log of zero or negative numbers.
 ///
-/// Validated against: custom reference implementation.
-pub fn evaluate_log(input: &[f32], _w: u32, _h: u32, value: f32) -> Vec<f32> {
+/// Validated against: numpy ln(1 + max(pixel, 0)) * scale
+///
+/// Formula: `out = ln(1 + max(channel, 0)) * scale`
+pub fn evaluate_log(input: &[f32], _w: u32, _h: u32, scale: f32) -> Vec<f32> {
     let mut out = input.to_vec();
     for px in out.chunks_exact_mut(4) {
         for c in 0..3 {
-            px[c] = (px[c] * value + 1.0).ln();
+            px[c] = (1.0 + px[c].max(0.0)).ln() * scale;
         }
     }
     out
