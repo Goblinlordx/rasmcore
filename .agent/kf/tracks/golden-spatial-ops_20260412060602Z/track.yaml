@@ -5,8 +5,8 @@ status: pending
 created: '2026-04-12'
 updated: '2026-04-12'
 spec:
-  summary: Generate golden I/O from external tools (IM/OpenCV/vips), validate reference
-    implementations against golden data, validate pipeline against golden data.
+  summary: Generate golden I/O from external tools (IM/OpenCV/vips), validate reference implementations against golden data,
+    validate pipeline against golden data.
   context: ''
   codebase_analysis: ''
   acceptance_criteria: []
@@ -16,15 +16,14 @@ plan:
 - phase: Golden generation — add to generate.py
   tasks:
   - text: Add golden for gaussian_blur, box_blur (OpenCV cv2.GaussianBlur, cv2.blur)
-    done: false
+    done: true
   - text: Add golden for median (OpenCV cv2.medianBlur)
-    done: false
+    done: true
   - text: Add golden for sharpen, high_pass (OpenCV unsharp mask)
-    done: false
+    done: true
   - text: Add golden for bilateral (OpenCV cv2.bilateralFilter)
-    done: false
-  - text: Add golden for motion_blur, zoom_blur, spin_blur (OpenCV warpAffine-based
-      sampling)
+    done: true
+  - text: Add golden for motion_blur, zoom_blur, spin_blur (OpenCV warpAffine-based sampling)
     done: false
   - text: Add golden for lens_blur, bokeh_blur (OpenCV filter2D with disc/hex kernel)
     done: false
@@ -38,15 +37,14 @@ plan:
     done: false
 - phase: Validate and fix references
   tasks:
-  - text: Run golden tests — fix all reference mismatches (especially separable vs
-      2D kernel)
-    done: false
+  - text: Run golden tests — fix all reference mismatches (especially separable vs 2D kernel)
+    done: true
   - text: Align sigma/radius mapping to match OpenCV convention
-    done: false
+    done: true
 - phase: Validate pipeline
   tasks:
   - text: All 18 pipeline spatial filters match golden within tolerance
-    done: false
+    done: true
   - text: Update AUTHORITY.md with validation status
-    done: false
+    done: true
 extra: {}
