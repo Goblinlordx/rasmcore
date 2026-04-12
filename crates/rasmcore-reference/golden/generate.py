@@ -654,22 +654,30 @@ def golden_white_balance_gray_world() -> dict:
 def golden_white_balance_temperature(temperature: float, tint: float) -> dict:
     """White balance via colour-science chromatic adaptation (CAT16 / Von Kries).
 
-    This uses the authoritative external colour-science library implementation,
-    NOT our pipeline code. The colour library's chromatic_adaptation_VonKries
-    with CAT16 is the reference.
+    Photography convention: temperature = source illuminant of the scene.
+    Adapts FROM source (temperature) TO D65 (display white).
+    8000K = "shot under blue sky" → warm up to D65.
+    3200K = "shot under tungsten" → cool down to D65.
     """
-    # Source illuminant: D65 (our assumed input white point)
-    source_XYZ = colour.temperature.CCT_to_xy_CIE_D(6500.0)
-    source_white = colour.xy_to_XYZ(source_XYZ)
+    # Source illuminant: the scene's assumed illuminant
+    source_xy = colour.temperature.CCT_to_xy_CIE_D(temperature)
+    source_white = colour.xy_to_XYZ(source_xy)
 
-    # Target illuminant from requested temperature
-    target_xy = colour.temperature.CCT_to_xy_CIE_D(temperature)
-    target_white = colour.xy_to_XYZ(target_xy)
+    # Target illuminant: D65 (display white)
+    d65_xy = colour.CCS_ILLUMINANTS['CIE 1931 2 Degree Standard Observer']['D65']
+    target_white = colour.xy_to_XYZ(d65_xy)
 
-    # Apply tint as green-magenta shift on the target white XYZ
-    # Tint adjusts the Y/green axis — scale Y relative to X,Z
-    tint_factor = 1.0 + tint / 100.0
-    target_white[1] *= tint_factor
+    # Tint: duv perpendicular shift on source illuminant (CIE 1960 uv space)
+    if abs(tint) > 1e-6:
+        x, y = float(source_xy[0]), float(source_xy[1])
+        denom = -2.0 * x + 12.0 * y + 3.0
+        u = 4.0 * x / denom
+        v = 6.0 * y / denom
+        v_shifted = v - tint * 0.02
+        denom2 = 2.0 * u - 8.0 * v_shifted + 4.0
+        x_out = 3.0 * u / denom2
+        y_out = 2.0 * v_shifted / denom2
+        source_white = colour.xy_to_XYZ(np.array([x_out, y_out]))
 
     output = INPUT_LINEAR.astype(np.float64).copy()
     h, w = output.shape[:2]
