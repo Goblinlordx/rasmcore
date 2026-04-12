@@ -98,38 +98,21 @@ fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (f32, f32, f32) {
     (hue2rgb(h + 1.0 / 3.0), hue2rgb(h), hue2rgb(h - 1.0 / 3.0))
 }
 
-/// Hue rotation — rotate hue by angle in degrees via YIQ color space.
+/// Hue rotation — rotate hue by angle in degrees in HSL space.
 ///
-/// Formula: convert RGB→YIQ, rotate I/Q by angle, convert back.
-/// Y = 0.299R + 0.587G + 0.114B (luma)
-/// I = 0.5959R - 0.2746G - 0.3213B
-/// Q = 0.2115R - 0.5227G + 0.3112B
-///
-/// Validated against: CSS hue-rotate() filter specification (W3C)
-/// Uses the standard YIQ rotation matrix from CSS Filter Effects spec.
+/// Validated against: numpy independent HSL implementation + pipeline.
+/// Uses HSL model matching DaVinci Resolve / pipeline implementation.
 pub fn hue_rotate(input: &[f32], _w: u32, _h: u32, angle_deg: f32) -> Vec<f32> {
-    let angle = angle_deg.to_radians();
-    let cos_a = angle.cos();
-    let sin_a = angle.sin();
-
-    // Combined RGB→YIQ→rotate→YIQ→RGB matrix
-    // M = RGB_to_YIQ^-1 * Rotate(angle) * RGB_to_YIQ
-    let m00 = 0.299 + 0.701 * cos_a + 0.168 * sin_a;
-    let m01 = 0.587 - 0.587 * cos_a + 0.330 * sin_a;
-    let m02 = 0.114 - 0.114 * cos_a - 0.497 * sin_a;
-    let m10 = 0.299 - 0.299 * cos_a - 0.328 * sin_a;
-    let m11 = 0.587 + 0.413 * cos_a + 0.035 * sin_a;
-    let m12 = 0.114 - 0.114 * cos_a + 0.292 * sin_a;
-    let m20 = 0.299 - 0.300 * cos_a + 1.250 * sin_a;
-    let m21 = 0.587 - 0.588 * cos_a - 1.050 * sin_a;
-    let m22 = 0.114 + 0.886 * cos_a - 0.203 * sin_a;
-
+    // rgb_to_hsl returns H in [0, 1], hsl_to_rgb expects H in [0, 1]
+    let shift = angle_deg / 360.0;
     let mut out = input.to_vec();
     for px in out.chunks_exact_mut(4) {
-        let (r, g, b) = (px[0], px[1], px[2]);
-        px[0] = m00 * r + m01 * g + m02 * b;
-        px[1] = m10 * r + m11 * g + m12 * b;
-        px[2] = m20 * r + m21 * g + m22 * b;
+        let (h, s, l) = rgb_to_hsl(px[0], px[1], px[2]);
+        let nh = ((h + shift) % 1.0 + 1.0) % 1.0;
+        let (r, g, b) = hsl_to_rgb(nh, s, l);
+        px[0] = r;
+        px[1] = g;
+        px[2] = b;
     }
     out
 }
