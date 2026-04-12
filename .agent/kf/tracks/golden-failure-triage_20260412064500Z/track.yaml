@@ -3,118 +3,87 @@ title: Triage golden validation failures — root cause + authority decisions
 type: chore
 status: pending
 created: 2026-04-12
-updated: 2026-04-12
+updated: '2026-04-12'
 spec:
-  summary: |
-    Investigate each golden validation failure, determine root cause,
+  summary: 'Investigate each golden validation failure, determine root cause,
+
     and decide: fix our implementation, fix our reference, or change
+
     the external authority tool.
-  context: |
-    Golden validation (pipeline + reference vs external tool output)
-    found 10 failures across color ops. Each failure needs individual
-    investigation to determine:
 
-    1. Is our pipeline wrong? (fix pipeline)
-    2. Is our reference wrong? (fix reference)
-    3. Is the golden generator wrong? (fix golden, different external tool)
-    4. Are we and the external tool using different algorithms intentionally?
-       (choose which is correct for our design goals, document in AUTHORITY.md)
-
-    Current failures (from golden-color-ops track):
-
-    A. white_balance_temperature (diff=0.59, both ref+pipe fail)
-       - Our CAT16 vs colour-science's CAT16
-       - Likely: different xy→XYZ normalization or adaptation degree
-
-    B. lab_adjust (ref diff=0.00007, pipe diff=0.24)
-       - Our Lab matrices vs colour-science's
-       - Reference almost matches, pipeline way off
-
-    C. vibrance (ref diff=0.21-0.24, pipe passes)
-       - Pipeline matches golden, reference doesn't
-       - Reference formula is wrong
-
-    D. selective_color (ref diff=0.04, pipe diff=0.45)
-       - Cosine falloff formula differences
-       - Both wrong relative to golden
-
-    E. replace_color (ref diff=0.31, pipe diff=0.66)
-       - Same issue as selective_color
-
-    F. quantize (ref diff=0.07-0.33, pipe diff=0.69)
-       - Pipeline uses median-cut palette, golden uses floor quantize
-       - Fundamentally different algorithms
-
-    G. aces_cct_to_cg (ref diff=0.00003, pipe diff=0.0017)
-       - Small precision diff in ACEScct log transfer constants
-
-    H. aces_cg_to_cct (pipe diff=0.00002)
-       - Inverse of G, same precision issue
+    '
+  context: "Golden validation (pipeline + reference vs external tool output)\nfound 10 failures across color ops. Each failure\
+    \ needs individual\ninvestigation to determine:\n\n1. Is our pipeline wrong? (fix pipeline)\n2. Is our reference wrong?\
+    \ (fix reference)\n3. Is the golden generator wrong? (fix golden, different external tool)\n4. Are we and the external\
+    \ tool using different algorithms intentionally?\n   (choose which is correct for our design goals, document in AUTHORITY.md)\n\
+    \nCurrent failures (from golden-color-ops track):\n\nA. white_balance_temperature (diff=0.59, both ref+pipe fail)\n  \
+    \ - Our CAT16 vs colour-science's CAT16\n   - Likely: different xy→XYZ normalization or adaptation degree\n\nB. lab_adjust\
+    \ (ref diff=0.00007, pipe diff=0.24)\n   - Our Lab matrices vs colour-science's\n   - Reference almost matches, pipeline\
+    \ way off\n\nC. vibrance (ref diff=0.21-0.24, pipe passes)\n   - Pipeline matches golden, reference doesn't\n   - Reference\
+    \ formula is wrong\n\nD. selective_color (ref diff=0.04, pipe diff=0.45)\n   - Cosine falloff formula differences\n  \
+    \ - Both wrong relative to golden\n\nE. replace_color (ref diff=0.31, pipe diff=0.66)\n   - Same issue as selective_color\n\
+    \nF. quantize (ref diff=0.07-0.33, pipe diff=0.69)\n   - Pipeline uses median-cut palette, golden uses floor quantize\n\
+    \   - Fundamentally different algorithms\n\nG. aces_cct_to_cg (ref diff=0.00003, pipe diff=0.0017)\n   - Small precision\
+    \ diff in ACEScct log transfer constants\n\nH. aces_cg_to_cct (pipe diff=0.00002)\n   - Inverse of G, same precision issue\n"
   acceptance_criteria:
-    - Each failure has documented root cause
-    - Each failure has a decision (fix pipeline / fix reference / change authority)
-    - Decisions documented in AUTHORITY.md with rationale
-    - All fixable failures are fixed (golden tests pass)
-    - Unfixable differences have documented justification
-  out_of_scope: |
-    Adding golden tests for new filter categories (spatial, enhancement, etc.)
-    Those are in separate golden-* tracks.
-  technical_notes: |
-    Investigation approach per failure:
+  - Each failure has documented root cause
+  - Each failure has a decision (fix pipeline / fix reference / change authority)
+  - Decisions documented in AUTHORITY.md with rationale
+  - All fixable failures are fixed (golden tests pass)
+  - Unfixable differences have documented justification
+  out_of_scope: 'Adding golden tests for new filter categories (spatial, enhancement, etc.)
 
-    1. Print actual values from pipeline, reference, and golden at the
-       failing pixel. Identify WHERE the values diverge.
-    2. For matrix differences (CAT16, Lab): compare our matrix constants
-       against colour-science's source code. Check if they use different
-       standards (CIE 2006 vs CIE 1931, different whitepoint, etc.).
-    3. For algorithm differences (quantize): determine which algorithm
-       our pipeline actually implements, and choose a golden generator
-       that matches. If our pipeline uses median-cut, the golden should
-       test median-cut behavior, not floor quantization.
-    4. For formula differences (selective_color, vibrance): compare the
-       exact formula step by step between pipeline, reference, and golden.
-       Find the specific step where they diverge.
+    Those are in separate golden-* tracks.
+
+    '
+  technical_notes: "Investigation approach per failure:\n\n1. Print actual values from pipeline, reference, and golden at\
+    \ the\n   failing pixel. Identify WHERE the values diverge.\n2. For matrix differences (CAT16, Lab): compare our matrix\
+    \ constants\n   against colour-science's source code. Check if they use different\n   standards (CIE 2006 vs CIE 1931,\
+    \ different whitepoint, etc.).\n3. For algorithm differences (quantize): determine which algorithm\n   our pipeline actually\
+    \ implements, and choose a golden generator\n   that matches. If our pipeline uses median-cut, the golden should\n   test\
+    \ median-cut behavior, not floor quantization.\n4. For formula differences (selective_color, vibrance): compare the\n\
+    \   exact formula step by step between pipeline, reference, and golden.\n   Find the specific step where they diverge.\n"
 plan:
-  - phase: White balance CAT16 investigation
-    tasks:
-      - text: "Compare our CAT16 matrix constants against colour-science source (colour.CHROMATIC_ADAPTATION_TRANSFORMS)"
-        done: false
-      - text: "Check if adaptation degree D differs (our code vs colour default)"
-        done: false
-      - text: "Check XYZ normalization (Y=1 vs Y=100) between implementations"
-        done: false
-      - text: "Decision: fix our CAT16 or document why we differ"
-        done: false
-  - phase: Lab and ACES precision
-    tasks:
-      - text: "Compare our RGB-to-XYZ matrix against colour-science (sRGB D65 primaries)"
-        done: false
-      - text: "Compare Lab f() function constants (delta = 6/29 vs other)"
-        done: false
-      - text: "Check ACEScct transfer function constants against ACES spec S-2016-001"
-        done: false
-      - text: "Fix precision issues or document acceptable tolerance"
-        done: false
-  - phase: Formula mismatches (vibrance, selective_color, replace_color)
-    tasks:
-      - text: "Vibrance: compare reference HSV sat measure vs golden HSV measure step by step"
-        done: false
-      - text: "Selective_color: compare cosine falloff formula (half range, weight calc)"
-        done: false
-      - text: "Replace_color: same as selective_color + check S/L range gating"
-        done: false
-      - text: "Fix reference to match golden, or fix golden to match pipeline (whichever is correct)"
-        done: false
-  - phase: Algorithm mismatch (quantize)
-    tasks:
-      - text: "Determine what algorithm pipeline quantize actually uses (median-cut? uniform floor?)"
-        done: false
-      - text: "Change golden generator to test the same algorithm, or change authority"
-        done: false
-  - phase: Verification
-    tasks:
-      - text: "All golden tests pass (0 failures)"
-        done: false
-      - text: "AUTHORITY.md updated with per-filter validation status and decisions"
-        done: false
+- phase: White balance CAT16 investigation
+  tasks:
+  - text: Compare our CAT16 matrix constants against colour-science source (colour.CHROMATIC_ADAPTATION_TRANSFORMS)
+    done: true
+  - text: Check if adaptation degree D differs (our code vs colour default)
+    done: true
+  - text: Check XYZ normalization (Y=1 vs Y=100) between implementations
+    done: true
+  - text: 'Decision: fix our CAT16 or document why we differ'
+    done: true
+- phase: Lab and ACES precision
+  tasks:
+  - text: Compare our RGB-to-XYZ matrix against colour-science (sRGB D65 primaries)
+    done: true
+  - text: Compare Lab f() function constants (delta = 6/29 vs other)
+    done: true
+  - text: Check ACEScct transfer function constants against ACES spec S-2016-001
+    done: true
+  - text: Fix precision issues or document acceptable tolerance
+    done: true
+- phase: Formula mismatches (vibrance, selective_color, replace_color)
+  tasks:
+  - text: 'Vibrance: compare reference HSV sat measure vs golden HSV measure step by step'
+    done: true
+  - text: 'Selective_color: compare cosine falloff formula (half range, weight calc)'
+    done: true
+  - text: 'Replace_color: same as selective_color + check S/L range gating'
+    done: true
+  - text: Fix reference to match golden, or fix golden to match pipeline (whichever is correct)
+    done: true
+- phase: Algorithm mismatch (quantize)
+  tasks:
+  - text: Determine what algorithm pipeline quantize actually uses (median-cut? uniform floor?)
+    done: true
+  - text: Change golden generator to test the same algorithm, or change authority
+    done: true
+- phase: Verification
+  tasks:
+  - text: All golden tests pass (0 failures)
+    done: true
+  - text: AUTHORITY.md updated with per-filter validation status and decisions
+    done: true
 extra: {}
