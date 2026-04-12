@@ -320,8 +320,40 @@ fn run_spatial_reference(_filter_key: &str, entry: &GoldenEntry, input: &[f32], 
         "vignette_powerlaw" => refimpl::enhancement_ops2::vignette_powerlaw(input, w, h, f("strength"), f("falloff")),
         "frequency_high" => refimpl::enhancement_ops2::frequency_high(input, w, h, f("sigma")),
         "frequency_low" => refimpl::enhancement_ops2::frequency_low(input, w, h, f("sigma")),
+        "clahe" => refimpl::enhancement_ops::clahe(input, w, h, f("clip_limit"), u("tile_grid")),
+        "clarity" => refimpl::enhancement_ops2::clarity(input, w, h, f("amount"), u("radius")),
+        "shadow_highlight" => refimpl::enhancement_ops2::shadow_highlight(input, w, h, f("shadows"), f("highlights")),
+        "dehaze" => refimpl::enhancement_ops2::dehaze(input, w, h, u("patch_radius"), f("omega"), f("t_min")),
+        "nlm_denoise" => refimpl::enhancement_ops2::nlm_denoise(input, w, h, f("h"), u("patch_radius"), u("search_radius")),
+        "retinex_ssr" => refimpl::enhancement_ops2::retinex_ssr(input, w, h, f("sigma")),
+        "retinex_msr" => refimpl::enhancement_ops2::retinex_msr(input, w, h, f("sigma_small"), f("sigma_medium"), f("sigma_large")),
         // Grading
         "tonemap_reinhard" => refimpl::grading_ops2::tonemap_reinhard(input, w, h, 1.0),
+        "tonemap_filmic" => {
+            let a = f("a"); let b = f("b"); let c = f("c"); let d = f("d"); let e = f("e");
+            // Apply filmic formula per channel
+            let mut out = input.to_vec();
+            for px in out.chunks_exact_mut(4) {
+                for ch in 0..3 {
+                    let x = px[ch];
+                    px[ch] = x * (a * x + b) / (x * (c * x + d) + e);
+                }
+            }
+            out
+        },
+        "tonemap_drago" => {
+            let l_max = f("l_max"); let bias = f("bias");
+            let log_max = (1.0 + l_max).ln();
+            let bias_pow = (bias.ln() / 0.5f32.ln()).max(0.01);
+            let mut out = input.to_vec();
+            for px in out.chunks_exact_mut(4) {
+                for ch in 0..3 {
+                    let v = px[ch];
+                    px[ch] = if v <= 0.0 { 0.0 } else { ((1.0 + v).ln() / log_max).powf(1.0 / bias_pow) };
+                }
+            }
+            out
+        },
         _ => return None,
     })
 }
@@ -339,7 +371,19 @@ fn spatial_tolerance_for(filter_name: &str) -> f32 {
         // Frequency split: depends on gaussian blur precision
         "frequency_high" | "frequency_low" => 0.001,
         // Tonemap: simple formula, tight
-        "tonemap_reinhard" => 0.001,
+        "tonemap_reinhard" | "tonemap_filmic" | "tonemap_drago" => 0.001,
+        // CLAHE: u8 quantization in histogram causes small diff
+        "clahe" => 0.02,
+        // NLM: f32 vs f64 accumulation in patch SSD
+        "nlm_denoise" => 0.01,
+        // Dehaze: min-filter + atmospheric light estimation chain
+        "dehaze" => 0.01,
+        // Clarity: depends on gaussian blur precision
+        "clarity" => 0.001,
+        // Shadow/Highlight: depends on blurred luminance precision
+        "shadow_highlight" => 0.01,
+        // Retinex: log domain + normalization amplifies small diffs
+        "retinex_ssr" | "retinex_msr" => 0.01,
         // All other spatial ops
         _ => 0.001,
     }

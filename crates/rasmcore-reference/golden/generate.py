@@ -1280,22 +1280,388 @@ def golden_frequency_low(sigma: float) -> dict:
     }
 
 
-# TODO: The following enhancement/grading filters need more investigation before
-# golden generators can be written. They have complex algorithms without clean
-# single-function external references:
-#   - NLM (non-local means): cv2.fastNlMeansDenoisingColored operates in u8 space,
-#     need to verify pipeline's f32 linear-space NLM matches after round-trip.
-#   - dehaze: no standard OpenCV function; Dark Channel Prior (He et al. 2009) has
-#     multiple implementation-specific choices (patch size, transmission clamp, etc.)
-#   - retinex: multiple variants (SSR, MSR, MSRCR); pipeline impl needs spec audit.
-#   - CLAHE: cv2.createCLAHE exists but operates on u8; pipeline's f32 CLAHE may
-#     differ in bin quantization and tile boundary interpolation.
-#   - clarity: Photoshop-style local contrast; no standard external reference.
-#   - shadow_highlight: Adobe-style shadow/highlight recovery; implementation-specific.
-#   - pyramid_detail_remap: Laplacian pyramid detail manipulation; no standard ref.
-#   - tonemap_filmic: ACES Narkowicz approximation — could add but has 5 params.
-#   - tonemap_drago: logarithmic tone map with bias — could add but needs param matching.
-#   - film_grain_grading: procedural noise; output depends on RNG seed.
+def _gauss_blur(img, sigma, border=cv2.BORDER_REFLECT_101):
+    """Shared Gaussian blur helper: sigma=radius, ksize=round(sigma*10+1)|1."""
+    ksize = int(round(sigma * 10.0 + 1.0)) | 1
+    ksize = max(ksize, 3)
+    return cv2.GaussianBlur(img, (ksize, ksize), sigma, borderType=border)
+
+
+def golden_clahe(tile_grid: int, clip_limit: float) -> dict:
+    """CLAHE via cv2.createCLAHE applied to BT.709 luminance in u8 space.
+
+    Pipeline: quantize luminance to u8, apply CLAHE, compute ratio, apply to RGB.
+    We use OpenCV's CLAHE on the u8 luminance channel, then apply the ratio to
+    the original linear RGB channels.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float64)
+    h, w = img.shape[:2]
+
+    # BT.709 luminance
+    luma = img[:, :, 0] * 0.2126 + img[:, :, 1] * 0.7152 + img[:, :, 2] * 0.0722
+
+    # Quantize luminance to u8
+    luma_u8 = np.clip(luma * 255.0 + 0.5, 0, 255).astype(np.uint8)
+
+    # Apply OpenCV CLAHE
+    clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(tile_grid, tile_grid))
+    luma_clahe_u8 = clahe.apply(luma_u8)
+
+    # Convert back to f64
+    luma_clahe = luma_clahe_u8.astype(np.float64) / 255.0
+
+    # Compute ratio and apply to RGB
+    output = img.copy()
+    ratio = np.where(luma > 1e-10, luma_clahe / luma, 1.0)
+    for c in range(3):
+        output[:, :, c] *= ratio
+
+    return {
+        "filter": "clahe",
+        "params": {"tile_grid": tile_grid, "clip_limit": clip_limit},
+        "tool": f"cv2.createCLAHE (clipLimit={clip_limit}, tileGridSize={tile_grid})",
+        "tool_version": cv2.__version__,
+        "note": "BT.709 luma -> u8 -> CLAHE -> ratio -> apply to linear RGB",
+        "output": pixels_to_list(output.astype(np.float32)),
+    }
+
+
+def golden_nlm_denoise(h_param: float, patch_radius: int, search_radius: int) -> dict:
+    """Non-local means denoising — exact NLM formula in numpy (f64 precision).
+
+    For each pixel, compute patch-based SSD against all pixels in search window,
+    apply exponential weighting, and blend. Independent numpy implementation.
+
+    Formula: w(i,j) = exp(-max(0, ||P(i)-P(j)||^2 - 2*sigma^2) / h^2)
+             out(i) = sum(w(i,j)*in(j)) / sum(w(i,j))
+    We use sigma=0 (no noise variance subtraction) matching pipeline default.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float64)
+    height, width = img.shape[:2]
+    output = np.zeros_like(img)
+    pr = patch_radius
+    sr = search_radius
+    h2 = h_param * h_param
+    patch_area = (2 * pr + 1) ** 2
+
+    def reflect_101(v, s):
+        if v < 0: return min(-v, s - 1)
+        if v >= s: return max(2 * s - v - 2, 0)
+        return v
+
+    def get_patch(img, y, x, pr, h, w):
+        """Extract patch around (y,x) with BORDER_REFLECT_101."""
+        patch = np.zeros((2 * pr + 1, 2 * pr + 1, 3), dtype=np.float64)
+        for dy in range(-pr, pr + 1):
+            for dx in range(-pr, pr + 1):
+                sy = reflect_101(y + dy, h)
+                sx = reflect_101(x + dx, w)
+                patch[dy + pr, dx + pr] = img[sy, sx]
+        return patch
+
+    for y in range(height):
+        for x in range(width):
+            patch_i = get_patch(img, y, x, pr, height, width)
+            weight_sum = 0.0
+            pixel_sum = np.zeros(3, dtype=np.float64)
+
+            for dy in range(-sr, sr + 1):
+                for dx in range(-sr, sr + 1):
+                    jy = reflect_101(y + dy, height)
+                    jx = reflect_101(x + dx, width)
+                    patch_j = get_patch(img, jy, jx, pr, height, width)
+
+                    # SSD across all channels
+                    diff = patch_i - patch_j
+                    ssd = np.sum(diff * diff)
+                    # Normalize by patch area and channels
+                    dist2 = max(ssd / (patch_area * 3.0), 0.0)
+                    w = np.exp(-dist2 / h2) if h2 > 1e-20 else (1.0 if dist2 < 1e-20 else 0.0)
+
+                    weight_sum += w
+                    pixel_sum += w * img[jy, jx]
+
+            if weight_sum > 1e-20:
+                output[y, x] = pixel_sum / weight_sum
+
+    return {
+        "filter": "nlm_denoise",
+        "params": {"h": h_param, "patch_radius": patch_radius, "search_radius": search_radius},
+        "tool": "numpy (exact NLM formula, f64 precision)",
+        "tool_version": np.__version__,
+        "note": "Patch SSD + exponential weight, per-pixel, BORDER_REFLECT_101",
+        "output": pixels_to_list(output.astype(np.float32)),
+    }
+
+
+def golden_dehaze(patch_radius: int, omega: float, t_min: float) -> dict:
+    """Dark channel prior dehazing (He et al. 2009) in numpy.
+
+    Algorithm:
+    1. Dark channel: min over RGB, then min-filter over patch.
+    2. Atmospheric light: brightest pixel in dark channel -> use its RGB.
+    3. Transmission map: t = 1 - omega * dark_channel(I/A).
+    4. Recovery: J = (I - A) / max(t, t_min) + A.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float64)
+    height, width = img.shape[:2]
+    r = patch_radius
+
+    def reflect_101(v, s):
+        if v < 0: return min(-v, s - 1)
+        if v >= s: return max(2 * s - v - 2, 0)
+        return v
+
+    def min_filter(arr, radius):
+        """Min filter with BORDER_REFLECT_101."""
+        h, w = arr.shape
+        out = np.zeros_like(arr)
+        for y in range(h):
+            for x in range(w):
+                mn = arr[y, x]
+                for dy in range(-radius, radius + 1):
+                    for dx in range(-radius, radius + 1):
+                        sy = reflect_101(y + dy, h)
+                        sx = reflect_101(x + dx, w)
+                        mn = min(mn, arr[sy, sx])
+                out[y, x] = mn
+        return out
+
+    # Step 1: Dark channel of input
+    dark_input = np.min(img, axis=2)  # min over RGB
+    dark_input = min_filter(dark_input, r)
+
+    # Step 2: Atmospheric light — pixel with highest dark channel value
+    # (simplified: brightest pixel in dark channel, take its RGB)
+    flat_idx = np.argmax(dark_input)
+    ay, ax = divmod(flat_idx, width)
+    atmos = img[ay, ax].copy()
+    # Ensure atmospheric light is not zero
+    atmos = np.maximum(atmos, 1e-10)
+
+    # Step 3: Transmission map
+    # Normalize image by atmospheric light
+    norm = img.copy()
+    for c in range(3):
+        norm[:, :, c] = img[:, :, c] / atmos[c]
+    dark_norm = np.min(norm, axis=2)
+    dark_norm = min_filter(dark_norm, r)
+    transmission = 1.0 - omega * dark_norm
+
+    # Step 4: Recovery
+    t_clamped = np.maximum(transmission, t_min)
+    output = img.copy()
+    for c in range(3):
+        output[:, :, c] = (img[:, :, c] - atmos[c]) / t_clamped + atmos[c]
+
+    return {
+        "filter": "dehaze",
+        "params": {"patch_radius": patch_radius, "omega": omega, "t_min": t_min},
+        "tool": "numpy (He et al. 2009 dark channel prior)",
+        "tool_version": np.__version__,
+        "note": "Dark channel min-filter, atmospheric light from brightest dark pixel, t=1-omega*dc(I/A), recover",
+        "output": pixels_to_list(output.astype(np.float32)),
+    }
+
+
+def golden_clarity(amount: float, radius: float) -> dict:
+    """Clarity — midtone-weighted local contrast enhancement.
+
+    Formula: out = in + amount * 4 * luma * (1 - luma) * (in - blur)
+    Uses cv2.GaussianBlur for the blur step.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float64)
+    sigma = radius
+    blurred = _gauss_blur(img.astype(np.float32), sigma).astype(np.float64)
+
+    # BT.709 luminance
+    luma = img[:, :, 0] * 0.2126 + img[:, :, 1] * 0.7152 + img[:, :, 2] * 0.0722
+
+    # Midtone weight: 4 * luma * (1 - luma), peaks at luma=0.5
+    midtone = 4.0 * luma * (1.0 - luma)
+
+    # Apply per channel
+    output = img.copy()
+    for c in range(3):
+        detail = img[:, :, c] - blurred[:, :, c]
+        output[:, :, c] = img[:, :, c] + amount * midtone * detail
+
+    return {
+        "filter": "clarity",
+        "params": {"amount": amount, "radius": radius},
+        "tool": f"cv2.GaussianBlur + numpy midtone weighting (sigma={sigma})",
+        "tool_version": cv2.__version__,
+        "note": "out = in + amount * 4*luma*(1-luma) * (in - blur), BT.709 luma",
+        "output": pixels_to_list(output.astype(np.float32)),
+    }
+
+
+def golden_shadow_highlight(shadows: float, highlights: float) -> dict:
+    """Shadow/highlight recovery via blurred luminance weighting.
+
+    Simplified version with default params:
+    - radius=100 (blur sigma for luminance)
+    - compress=0.5 (unused in simplified version)
+    - ccorrect=1.0 (unused in simplified version)
+    - whitepoint=0 (unused in simplified version)
+
+    Algorithm:
+    1. Compute BT.709 luminance.
+    2. Blur luminance with GaussianBlur(sigma=100).
+    3. Shadow weight = (1 - blurred_luma)^2.
+    4. Highlight weight = blurred_luma^2.
+    5. out = in + shadows * shadow_weight * in + highlights * highlight_weight * in
+       => out = in * (1 + shadows * sw + highlights * hw)
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float64)
+    sigma = 100.0
+
+    # BT.709 luminance
+    luma = img[:, :, 0] * 0.2126 + img[:, :, 1] * 0.7152 + img[:, :, 2] * 0.0722
+    luma_f32 = luma.astype(np.float32)
+
+    # Blur luminance
+    blurred_luma = _gauss_blur(luma_f32, sigma).astype(np.float64)
+
+    # Weights
+    shadow_w = (1.0 - blurred_luma) ** 2
+    highlight_w = blurred_luma ** 2
+
+    # Apply
+    output = img.copy()
+    factor = 1.0 + shadows * shadow_w + highlights * highlight_w
+    for c in range(3):
+        output[:, :, c] = img[:, :, c] * factor
+
+    return {
+        "filter": "shadow_highlight",
+        "params": {"shadows": shadows, "highlights": highlights},
+        "tool": f"cv2.GaussianBlur (sigma=100) + numpy shadow/highlight weights",
+        "tool_version": cv2.__version__,
+        "note": "sw=(1-bl)^2, hw=bl^2, out=in*(1+shadows*sw+highlights*hw), blur sigma=100",
+        "output": pixels_to_list(output.astype(np.float32)),
+    }
+
+
+def golden_retinex_ssr(sigma: float) -> dict:
+    """Single-scale Retinex (SSR) via cv2.GaussianBlur.
+
+    Per-channel: log(max(in, 1e-10)) - log(max(blur(in, sigma), 1e-10)),
+    then normalize result to [0,1] per channel.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float64)
+    blurred = _gauss_blur(img.astype(np.float32), sigma).astype(np.float64)
+
+    # SSR per channel
+    retinex = np.log(np.maximum(img, 1e-10)) - np.log(np.maximum(blurred, 1e-10))
+
+    # Normalize each channel to [0, 1]
+    output = retinex.copy()
+    for c in range(3):
+        ch = retinex[:, :, c]
+        ch_min = ch.min()
+        ch_max = ch.max()
+        rng = ch_max - ch_min
+        if rng > 1e-10:
+            output[:, :, c] = (ch - ch_min) / rng
+        else:
+            output[:, :, c] = 0.0
+
+    return {
+        "filter": "retinex_ssr",
+        "params": {"sigma": sigma},
+        "tool": f"cv2.GaussianBlur + numpy log (sigma={sigma})",
+        "tool_version": cv2.__version__,
+        "note": "log(in) - log(blur(in)), per-channel, normalized to [0,1]",
+        "output": pixels_to_list(output.astype(np.float32)),
+    }
+
+
+def golden_retinex_msr(sigma_s: float, sigma_m: float, sigma_l: float) -> dict:
+    """Multi-scale Retinex (MSR) — average of 3 SSR scales, then normalize.
+
+    Computes SSR at each sigma, averages, then normalizes to [0,1] per channel.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float64)
+
+    retinex_sum = np.zeros_like(img)
+    for sigma in [sigma_s, sigma_m, sigma_l]:
+        blurred = _gauss_blur(img.astype(np.float32), sigma).astype(np.float64)
+        retinex_sum += np.log(np.maximum(img, 1e-10)) - np.log(np.maximum(blurred, 1e-10))
+    retinex_avg = retinex_sum / 3.0
+
+    # Normalize each channel to [0, 1]
+    output = retinex_avg.copy()
+    for c in range(3):
+        ch = retinex_avg[:, :, c]
+        ch_min = ch.min()
+        ch_max = ch.max()
+        rng = ch_max - ch_min
+        if rng > 1e-10:
+            output[:, :, c] = (ch - ch_min) / rng
+        else:
+            output[:, :, c] = 0.0
+
+    return {
+        "filter": "retinex_msr",
+        "params": {"sigma_s": sigma_s, "sigma_m": sigma_m, "sigma_l": sigma_l},
+        "tool": f"cv2.GaussianBlur + numpy log (sigmas={sigma_s},{sigma_m},{sigma_l})",
+        "tool_version": cv2.__version__,
+        "note": "Average of 3 SSR (log(in)-log(blur)) at different sigmas, normalized [0,1]",
+        "output": pixels_to_list(output.astype(np.float32)),
+    }
+
+
+def golden_tonemap_filmic(a: float, b: float, c: float, d: float, e: float) -> dict:
+    """Filmic tone mapping: f(x) = x*(a*x+b) / (x*(c*x+d)+e) per channel.
+
+    Pure numpy implementation of the Uncharted-style filmic curve.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float64)
+    x = img
+    output = (x * (a * x + b)) / (x * (c * x + d) + e)
+
+    return {
+        "filter": "tonemap_filmic",
+        "params": {"a": a, "b": b, "c": c, "d": d, "e": e},
+        "tool": "numpy (filmic curve: x*(a*x+b) / (x*(c*x+d)+e))",
+        "tool_version": np.__version__,
+        "note": "Per-channel filmic tone map, no clamp (HDR safe)",
+        "output": pixels_to_list(output.astype(np.float32)),
+    }
+
+
+def golden_tonemap_drago(l_max: float, bias: float) -> dict:
+    """Drago logarithmic tone mapping.
+
+    Formula: drago(v) = (ln(1+v) / ln(1+l_max)) ^ (1/bias_pow)
+    where bias_pow = ln(bias) / ln(0.5).
+    Per channel, pure numpy.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float64)
+    bias_pow = np.log(bias) / np.log(0.5)
+    inv_bias = 1.0 / bias_pow if abs(bias_pow) > 1e-20 else 1.0
+    log_denom = np.log(1.0 + l_max)
+    if abs(log_denom) < 1e-20:
+        log_denom = 1e-20
+
+    output = (np.log(1.0 + img) / log_denom) ** inv_bias
+
+    return {
+        "filter": "tonemap_drago",
+        "params": {"l_max": l_max, "bias": bias},
+        "tool": "numpy (Drago log tone map)",
+        "tool_version": np.__version__,
+        "note": f"(ln(1+v)/ln(1+l_max))^(1/bias_pow), bias_pow=ln(bias)/ln(0.5)={bias_pow:.6f}",
+        "output": pixels_to_list(output.astype(np.float32)),
+    }
+
+
+# NOTE: pyramid_detail_remap is skipped — Laplacian pyramid is too complex for
+# a golden generator and has no single external tool equivalent.
+
+# NOTE: film_grain_grading is skipped — deterministic noise depends on our
+# specific PRNG, no external equivalent.
 
 
 # ─── Main ────────────────────────────────────────────────────────────────────
@@ -1409,6 +1775,17 @@ def main():
     spatial["filters"]["frequency_high_1"] = golden_frequency_high(1.0)
     spatial["filters"]["frequency_low_3"] = golden_frequency_low(3.0)
     spatial["filters"]["frequency_low_1"] = golden_frequency_low(1.0)
+
+    # Enhancement / grading filters (enhancement + grading batch)
+    spatial["filters"]["clahe_4_3"] = golden_clahe(4, 3.0)
+    spatial["filters"]["nlm_denoise_0.1_2_5"] = golden_nlm_denoise(0.1, 2, 5)
+    spatial["filters"]["dehaze_7_0.95_0.1"] = golden_dehaze(7, 0.95, 0.1)
+    spatial["filters"]["clarity_0.5_15"] = golden_clarity(0.5, 15.0)
+    spatial["filters"]["shadow_highlight_0.3_-0.2"] = golden_shadow_highlight(0.3, -0.2)
+    spatial["filters"]["retinex_ssr_80"] = golden_retinex_ssr(80.0)
+    spatial["filters"]["retinex_msr_15_80_250"] = golden_retinex_msr(15.0, 80.0, 250.0)
+    spatial["filters"]["tonemap_filmic_default"] = golden_tonemap_filmic(0.22, 0.3, 0.1, 0.2, 0.01)
+    spatial["filters"]["tonemap_drago_100_0.85"] = golden_tonemap_drago(100.0, 0.85)
 
     # Write spatial output
     spatial_file = out_dir / "spatial.json"
