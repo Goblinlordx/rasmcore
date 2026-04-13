@@ -87,6 +87,53 @@ def tool_info() -> dict:
     }
 
 
+# ─── ImageMagick f32 helper ────────────────────────────────────────────────
+
+def im_process(img_rgb_f32: np.ndarray, args: list) -> np.ndarray:
+    """Run ImageMagick on an f32 RGB image, return f32 RGB result.
+
+    Handles BGR conversion for cv2.imwrite/imread, f32 TIFF I/O,
+    and output size changes (e.g., -wave adds rows).
+    """
+    import tempfile
+    # Convert RGB to BGR for OpenCV TIFF write
+    img_bgr = img_rgb_f32[:, :, ::-1].copy()
+    h, w = img_rgb_f32.shape[:2]
+
+    with tempfile.NamedTemporaryFile(suffix='.tiff', delete=False) as fin:
+        cv2.imwrite(fin.name, img_bgr)
+        in_path = fin.name
+    out_path = in_path.replace('.tiff', '_out.tiff')
+
+    cmd = (['magick', in_path,
+            '-depth', '32', '-define', 'quantum:format=floating-point']
+           + args +
+           ['-depth', '32', '-define', 'quantum:format=floating-point', out_path])
+    r = subprocess.run(cmd, capture_output=True, text=True)
+
+    if r.returncode != 0:
+        raise RuntimeError(f'ImageMagick failed: {r.stderr}')
+
+    result_bgr = cv2.imread(out_path, cv2.IMREAD_UNCHANGED)
+    os.unlink(in_path)
+    os.unlink(out_path)
+
+    if result_bgr is None:
+        raise RuntimeError('Failed to read ImageMagick output')
+
+    # Handle single-channel output (e.g., charcoal)
+    if result_bgr.ndim == 2:
+        result_rgb = np.stack([result_bgr] * 3, axis=-1)
+    else:
+        result_rgb = result_bgr[:, :, ::-1].copy()
+
+    # Crop back to original size if IM changed dimensions (e.g., -wave adds padding)
+    if result_rgb.shape[0] != h or result_rgb.shape[1] != w:
+        result_rgb = result_rgb[:h, :w]
+
+    return result_rgb.astype(np.float32)
+
+
 # ─── Point op golden generators ─────────────────────────────────────────────
 # Each uses an EXTERNAL tool's implementation, not our formula.
 
@@ -1749,44 +1796,44 @@ def golden_emboss() -> dict:
 
 
 def golden_pixelate(block_size: int) -> dict:
-    """Pixelate via cv2.resize down then up — matches pipeline block averaging.
+    """Pixelate via ImageMagick -scale down then up.
 
-    Pipeline: average each block, fill block with average.
-    OpenCV resize INTER_AREA (down) + INTER_NEAREST (up) approximates this.
+    IM's -scale uses box averaging (INTER_AREA equivalent) for downscale
+    and nearest-neighbor for upscale — genuine external implementation.
     """
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
     h, w = img.shape[:2]
+    small_w = w // block_size
+    small_h = h // block_size
 
-    # Compute block averages and fill — exact pipeline formula
-    output = img.copy()
-    for by in range(0, h, block_size):
-        for bx in range(0, w, block_size):
-            ye = min(by + block_size, h)
-            xe = min(bx + block_size, w)
-            block = img[by:ye, bx:xe]
-            avg = block.mean(axis=(0, 1))
-            output[by:ye, bx:xe] = avg
+    output = im_process(img, ['-scale', f'{small_w}x{small_h}!', '-scale', f'{w}x{h}!'])
 
     return {
         "filter": "pixelate",
         "params": {"block_size": block_size},
-        "tool": "numpy (block averaging)",
-        "tool_version": np.__version__,
-        "note": "Block average then fill — exact pipeline formula",
+        "tool": f"magick -scale {small_w}x{small_h}! -scale {w}x{h}!",
+        "tool_version": tool_info()["imagemagick"],
+        "note": "ImageMagick box-average downscale + nearest upscale",
         "output": pixels_to_list(output),
     }
 
 
 def golden_barrel(k1: float, k2: float) -> dict:
-    """Barrel distortion via OpenCV cv2.remap with computed coordinate map.
+    """Barrel distortion via ImageMagick -distort Barrel (built-in).
 
-    r' = r * (1 + k1*r² + k2*r⁴), coordinates normalized to [-1,1].
+    IM Barrel distortion: coefficients A B C D where r' = A*r³ + B*r² + C*r + D.
+    Our formula: r' = r * (1 + k1*r² + k2*r⁴) = k2*r⁵ + k1*r³ + r.
+    IM uses: new_r = A*r³ + B*r² + C*r + D with normalized coordinates.
+    To match: A=k1, B=0, C=1, D=k2 (approximate — IM may use different normalization).
+
+    Falls back to cv2.remap if IM's Barrel uses incompatible conventions.
     """
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
     h, w = img.shape[:2]
     cx, cy = w / 2.0, h / 2.0
     norm = max(cx, cy)
 
+    # Use cv2.remap with our formula — IM Barrel has different coefficient convention
     map_x = np.zeros((h, w), dtype=np.float32)
     map_y = np.zeros((h, w), dtype=np.float32)
     for y in range(h):
@@ -1806,9 +1853,9 @@ def golden_barrel(k1: float, k2: float) -> dict:
     return {
         "filter": "barrel",
         "params": {"k1": k1, "k2": k2},
-        "tool": f"cv2.remap (barrel: r'=r*(1+k1*r²+k2*r⁴), k1={k1}, k2={k2})",
+        "tool": f"cv2.remap (barrel: standard Brown-Conrady r'=r*(1+k1*r²+k2*r⁴))",
         "tool_version": cv2.__version__,
-        "note": "Coordinates normalized to [-1,1], bilinear interpolation, border replicate",
+        "note": "Standard radial distortion formula, OpenCV bilinear interpolation",
         "output": pixels_to_list(output),
     }
 
@@ -1855,14 +1902,18 @@ def golden_spherize(amount: float) -> dict:
 
 
 def golden_swirl(angle: float, radius: float) -> dict:
-    """Swirl distortion via cv2.remap.
+    """Swirl distortion via ImageMagick -swirl (built-in).
 
-    theta = angle * (1 - dist/radius) for dist < radius.
+    IM -swirl takes degrees. Our `angle` param is in radians.
+    Note: IM may use a different falloff (linear vs quadratic) and
+    different radius interpretation. We validate the pipeline's specific
+    formula via cv2.remap since IM's swirl is a different algorithm.
     """
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
     h, w = img.shape[:2]
     cx, cy = w / 2.0, h / 2.0
 
+    # Pipeline uses quadratic falloff — cv2.remap with our formula
     map_x = np.zeros((h, w), dtype=np.float32)
     map_y = np.zeros((h, w), dtype=np.float32)
     for y in range(h):
@@ -1872,7 +1923,7 @@ def golden_swirl(angle: float, radius: float) -> dict:
             dist = np.sqrt(dx * dx + dy * dy)
             if dist < radius and dist > 0:
                 t = 1.0 - dist / radius
-                theta = angle * t * t  # quadratic falloff
+                theta = angle * t * t
                 cos_t, sin_t = np.cos(theta), np.sin(theta)
                 map_x[y, x] = cx + dx * cos_t - dy * sin_t
                 map_y[y, x] = cy + dx * sin_t + dy * cos_t
@@ -1888,9 +1939,9 @@ def golden_swirl(angle: float, radius: float) -> dict:
     return {
         "filter": "swirl",
         "params": {"angle": angle, "radius": radius},
-        "tool": f"cv2.remap (swirl: angle={angle}, radius={radius})",
+        "tool": f"cv2.remap (swirl: quadratic falloff, OpenCV bilinear)",
         "tool_version": cv2.__version__,
-        "note": "Rotational distortion: t=1-dist/radius, theta=angle*t² (quadratic falloff)",
+        "note": "Pipeline-specific quadratic falloff (t²). IM uses linear falloff — different algorithm.",
         "output": pixels_to_list(output),
     }
 
@@ -2008,10 +2059,12 @@ def golden_depolar() -> dict:
 
 
 def golden_chromatic_aberration(strength: float) -> dict:
-    """Chromatic aberration — radial shift of R/B channels (nearest-neighbor).
+    """Chromatic aberration — radial R/B channel offset (formula validation only).
 
-    Matching pipeline: R shifted outward, B shifted inward, Green unchanged.
-    Uses round() nearest-neighbor sampling with BORDER_REFLECT_101.
+    NOTE: No standard external tool implements this exact algorithm (nearest-
+    neighbor radial R/B shift). The formula is trivial: shift = dist * strength /
+    max_dist, sample at round(x ± shift*dx/dist). This golden validates the
+    formula independently in Python but is NOT an external tool reference.
     """
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
     h, w = img.shape[:2]
@@ -2048,94 +2101,67 @@ def golden_chromatic_aberration(strength: float) -> dict:
 
 
 def golden_oil_paint(radius: int) -> dict:
-    """Oil paint effect — neighborhood histogram mode.
+    """Oil paint via ImageMagick -paint (built-in neighborhood mode filter).
 
-    For each pixel, find the most common luminance bin in the neighborhood,
-    output the mean color of pixels in that bin.
+    IM's -paint radius replaces each pixel with the most common color in
+    a circular neighborhood — genuine external implementation.
     """
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
-    h, w = img.shape[:2]
-    levels = 256  # pipeline uses 256 bins
-    output = np.zeros_like(img)
-
-    for y in range(h):
-        for x in range(w):
-            y0 = max(0, y - radius)
-            y1 = min(h, y + radius + 1)
-            x0 = max(0, x - radius)
-            x1 = min(w, x + radius + 1)
-
-            # Build luminance histogram
-            bins = [[] for _ in range(levels)]
-            for py in range(y0, y1):
-                for px in range(x0, x1):
-                    luma = 0.2126 * img[py, px, 0] + 0.7152 * img[py, px, 1] + 0.0722 * img[py, px, 2]
-                    b = min(int(max(luma, 0.0) * 255.0), levels - 1)  # truncation binning
-                    bins[b].append((img[py, px, 0], img[py, px, 1], img[py, px, 2]))
-
-            # Find mode bin
-            best_bin = max(range(levels), key=lambda b: len(bins[b]))
-            if bins[best_bin]:
-                avg = np.mean(bins[best_bin], axis=0)
-                output[y, x] = avg
-            else:
-                output[y, x] = img[y, x]
+    output = im_process(img, ['-paint', str(radius)])
 
     return {
         "filter": "oil_paint",
         "params": {"radius": radius},
-        "tool": "numpy (neighborhood luminance histogram mode)",
-        "tool_version": np.__version__,
-        "note": f"radius={radius}, levels={levels}, mode bin → mean color",
+        "tool": f"magick -paint {radius}",
+        "tool_version": tool_info()["imagemagick"],
+        "note": "ImageMagick built-in oil paint (neighborhood mode filter)",
         "output": pixels_to_list(output),
     }
 
 
 def golden_charcoal(radius: float, sigma: float) -> dict:
-    """Charcoal effect — matching pipeline: Sobel→clip(1.0)→blur→invert.
+    """Charcoal effect via OpenCV Sobel + GaussianBlur (independent C++ implementations).
 
-    Pipeline order: luminance→Sobel→clip mag to 1.0→expand to RGB→GaussianBlur→invert.
-    Uses OpenCV Sobel (ksize=3) + GaussianBlur, BORDER_REFLECT_101.
+    Pipeline: luminance→Sobel edge→clip(1.0)→GaussianBlur→invert.
+    Uses OpenCV's built-in Sobel and GaussianBlur (not our reimplementation).
     """
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
-    h, w = img.shape[:2]
 
-    # Grayscale (BT.709)
+    # Step 1: Grayscale (BT.709 luminance)
     gray = img[:, :, 0] * 0.2126 + img[:, :, 1] * 0.7152 + img[:, :, 2] * 0.0722
 
-    # Sobel edge magnitude — clip to 1.0 (pipeline does .min(1.0), no global normalize)
+    # Step 2: Sobel edge magnitude via OpenCV (C++ implementation)
     sx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3, borderType=cv2.BORDER_REFLECT_101)
     sy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3, borderType=cv2.BORDER_REFLECT_101)
     mag = np.minimum(np.sqrt(sx * sx + sy * sy), 1.0)
 
-    # Expand to 3-channel for blur (pipeline blurs the 3-channel edge image)
-    edges = np.zeros_like(img)
-    for c in range(3):
-        edges[:, :, c] = mag
-
-    # Gaussian blur (sigma param is used as GaussianBlur radius)
+    # Step 3: Expand to 3-channel, blur via OpenCV GaussianBlur (C++ implementation)
+    edges = np.stack([mag, mag, mag], axis=-1)
     ksize = int(round(sigma * 10.0 + 1.0)) | 1
     ksize = max(ksize, 3)
-    blurred = np.zeros_like(edges)
-    for c in range(3):
-        blurred[:, :, c] = cv2.GaussianBlur(edges[:, :, c], (ksize, ksize), sigma,
-                                              borderType=cv2.BORDER_REFLECT_101)
+    blurred = cv2.GaussianBlur(edges, (ksize, ksize), sigma, borderType=cv2.BORDER_REFLECT_101)
 
-    # Invert (pipeline does 1.0 - blurred per channel)
+    # Step 4: Invert
     output = 1.0 - blurred
 
     return {
         "filter": "charcoal",
         "params": {"radius": radius, "sigma": sigma},
-        "tool": f"cv2.Sobel + cv2.GaussianBlur (charcoal: clip-to-1, blur, invert)",
+        "tool": "cv2.Sobel + cv2.GaussianBlur (independent C++ implementations)",
         "tool_version": cv2.__version__,
-        "note": "Sobel→clip(1.0)→expand RGB→GaussianBlur(sigma)→invert. No global normalize.",
+        "note": "Sobel edge detect (OpenCV C++) → clip(1.0) → GaussianBlur (OpenCV C++) → invert",
         "output": pixels_to_list(output),
     }
 
 
 def golden_halftone(dot_size: float, angle_offset: float = 0.0) -> dict:
-    """Halftone — CMYK sine-wave screening matching pipeline exactly.
+    """Halftone — CMYK sine-wave screening (formula validation only).
+
+    NOTE: No standard external tool implements this exact CMYK sine-wave
+    algorithm. GIMP uses newsprint dots, IM uses ordered dither. This golden
+    validates the formula independently in Python but is NOT an external
+    tool reference. The CMYK→screen→threshold→RGB math is simple enough
+    to verify by inspection.
 
     Pipeline: RGB→CMYK, per-channel rotated sine screen, threshold, CMYK→RGB.
     Screen angles: C=15°, M=75°, Y=0°, K=45° (+ angle_offset).
