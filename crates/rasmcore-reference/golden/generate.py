@@ -2521,6 +2521,154 @@ def golden_flatten(bg_r: float, bg_g: float, bg_b: float) -> dict:
     }
 
 
+# ─── Generator + draw + tool golden generators ─────────────────────────────
+
+
+def golden_checkerboard(block_size: int) -> dict:
+    """Checkerboard — trivially verifiable procedural pattern.
+
+    Formula: color1 if (floor(x/size) + floor(y/size)) % 2 == 0, else color2.
+    This is a deterministic formula with no image processing — the formula IS the spec.
+    No external tool reference needed (IM's pattern:checkerboard uses non-standard colors).
+    """
+    h, w = SPATIAL_H, SPATIAL_W
+    output = np.zeros((h, w, 3), dtype=np.float32)
+    for y_px in range(h):
+        for x_px in range(w):
+            cx = int(x_px / block_size)
+            cy = int(y_px / block_size)
+            val = 1.0 if (cx + cy) % 2 == 0 else 0.0
+            output[y_px, x_px] = [val, val, val]
+
+    return {
+        "filter": "checkerboard",
+        "params": {"size": float(block_size), "color1_r": 1.0, "color1_g": 1.0, "color1_b": 1.0,
+                   "color2_r": 0.0, "color2_g": 0.0, "color2_b": 0.0},
+        "tool": "numpy (deterministic formula: floor(x/size)+floor(y/size) mod 2)",
+        "tool_version": np.__version__,
+        "note": f"Procedural pattern, block_size={block_size}. Formula is trivially verifiable by inspection.",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_draw_circle() -> dict:
+    """Draw filled circle via OpenCV cv2.circle (C++ implementation)."""
+    h, w = SPATIAL_H, SPATIAL_W
+    canvas = np.zeros((h, w, 3), dtype=np.float32)
+    # Draw white filled circle at center, radius 30
+    cv2.circle(canvas, (w // 2, h // 2), 30, (1.0, 1.0, 1.0), -1, lineType=cv2.LINE_8)
+    # Convert BGR to RGB (cv2.circle draws in BGR)
+    output = canvas[:, :, ::-1].copy()
+
+    return {
+        "filter": "draw_circle",
+        "params": {"center_x": w // 2, "center_y": h // 2, "radius": 30,
+                   "r": 1.0, "g": 1.0, "b": 1.0, "filled": True},
+        "tool": "cv2.circle (LINE_8, filled)",
+        "tool_version": cv2.__version__,
+        "note": "OpenCV filled circle at center, radius=30, white on black",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_draw_rect() -> dict:
+    """Draw filled rectangle via OpenCV cv2.rectangle (C++ implementation)."""
+    h, w = SPATIAL_H, SPATIAL_W
+    canvas = np.zeros((h, w, 3), dtype=np.float32)
+    cv2.rectangle(canvas, (20, 20), (100, 80), (1.0, 1.0, 1.0), -1, lineType=cv2.LINE_8)
+    output = canvas[:, :, ::-1].copy()
+
+    return {
+        "filter": "draw_rect",
+        "params": {"x": 20, "y": 20, "width": 80, "height": 60,
+                   "r": 1.0, "g": 1.0, "b": 1.0, "filled": True},
+        "tool": "cv2.rectangle (LINE_8, filled)",
+        "tool_version": cv2.__version__,
+        "note": "OpenCV filled rectangle (20,20)-(100,80), white on black",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_draw_line() -> dict:
+    """Draw line via OpenCV cv2.line (C++ implementation)."""
+    h, w = SPATIAL_H, SPATIAL_W
+    canvas = np.zeros((h, w, 3), dtype=np.float32)
+    cv2.line(canvas, (10, 10), (100, 80), (1.0, 1.0, 1.0), 2, lineType=cv2.LINE_8)
+    output = canvas[:, :, ::-1].copy()
+
+    return {
+        "filter": "draw_line",
+        "params": {"x1": 10, "y1": 10, "x2": 100, "y2": 80,
+                   "r": 1.0, "g": 1.0, "b": 1.0, "thickness": 2},
+        "tool": "cv2.line (LINE_8, thickness=2)",
+        "tool_version": cv2.__version__,
+        "note": "OpenCV line (10,10)-(100,80), white, thickness=2",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_flood_fill() -> dict:
+    """Flood fill via OpenCV cv2.floodFill (C++ implementation).
+
+    Start from a test image with a region, fill from a seed point.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+
+    # Create a binary mask area in the image (threshold at 0.3)
+    gray = img[:, :, 0] * 0.2126 + img[:, :, 1] * 0.7152 + img[:, :, 2] * 0.0722
+    binary = np.where(gray > 0.3, 1.0, 0.0).astype(np.float32)
+    test_img = np.stack([binary, binary, binary], axis=-1).copy()
+
+    # Flood fill from center with red
+    mask = np.zeros((h + 2, w + 2), dtype=np.uint8)
+    flood_img = test_img.copy()
+    cv2.floodFill(flood_img, mask, (w // 2, h // 2), (1.0, 0.0, 0.0),
+                  loDiff=(0.1, 0.1, 0.1), upDiff=(0.1, 0.1, 0.1))
+    # BGR to RGB
+    output = flood_img[:, :, ::-1].copy()
+
+    return {
+        "filter": "flood_fill",
+        "params": {"seed_x": w // 2, "seed_y": h // 2, "r": 1.0, "g": 0.0, "b": 0.0,
+                   "tolerance": 0.1},
+        "tool": "cv2.floodFill (4-connected)",
+        "tool_version": cv2.__version__,
+        "note": "OpenCV flood fill from center, red, tolerance=0.1",
+        "output": pixels_to_list(output),
+        "custom_input": pixels_to_list(test_img[:, :, ::-1]),  # pass the thresholded image
+    }
+
+
+def golden_perspective_warp() -> dict:
+    """Perspective warp via OpenCV cv2.warpPerspective (C++ implementation).
+
+    Uses a known 4-point transform.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+
+    # Define source and destination quadrilateral
+    src_pts = np.float32([[0, 0], [w, 0], [w, h], [0, h]])
+    # Slight perspective: pull top-right in, push bottom-left out
+    dst_pts = np.float32([[10, 10], [w - 20, 5], [w - 5, h - 5], [15, h - 15]])
+
+    M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+    warped = np.zeros_like(img)
+    for c in range(3):
+        warped[:, :, c] = cv2.warpPerspective(img[:, :, c], M, (w, h),
+                                                borderMode=cv2.BORDER_REPLICATE)
+
+    return {
+        "filter": "perspective_warp",
+        "params": {"src": src_pts.tolist(), "dst": dst_pts.tolist()},
+        "tool": "cv2.getPerspectiveTransform + cv2.warpPerspective",
+        "tool_version": cv2.__version__,
+        "note": "OpenCV perspective warp, BORDER_REPLICATE",
+        "output": pixels_to_list(warped),
+    }
+
+
 def main():
     out_dir = Path(__file__).parent / "golden_data"
     out_dir.mkdir(exist_ok=True)
@@ -2676,6 +2824,12 @@ def main():
     spatial["filters"]["morph_tophat_2"] = golden_morph_tophat(2)
     spatial["filters"]["morph_blackhat_2"] = golden_morph_blackhat(2)
     spatial["filters"]["morph_gradient_2"] = golden_morph_gradient(2)
+
+    # ── Generator + draw + tool filters ────────────────────────────────
+    spatial["filters"]["checkerboard_8"] = golden_checkerboard(8)
+    # Draw ops (circle, rect, line) use SDF anti-aliased rendering — no external
+    # tool matches this approach. Validated via pipeline-vs-reference parity only.
+    # Flood fill and perspective_warp need interactive/complex param setup.
 
     # Write spatial output
     spatial_file = out_dir / "spatial.json"
