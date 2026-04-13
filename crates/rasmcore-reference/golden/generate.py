@@ -2258,6 +2258,227 @@ def golden_ripple(amplitude: float, wavelength: float) -> dict:
     }
 
 
+# ─── Edge + morphology golden generators ────────────────────────────────────
+
+
+def golden_laplacian(scale: float) -> dict:
+    """Laplacian edge detection via cv2.Laplacian (OpenCV C++ implementation)."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    gray = img[:, :, 0] * 0.2126 + img[:, :, 1] * 0.7152 + img[:, :, 2] * 0.0722
+    # OpenCV Laplacian ksize=3 uses kernel [0,2,0,2,-8,2,0,2,0] (2× our [0,1,0,1,-4,1,0,1,0])
+    lap = cv2.Laplacian(gray.astype(np.float32), cv2.CV_32F, ksize=3,
+                         borderType=cv2.BORDER_REPLICATE)
+    mag = np.abs(lap / 2.0) * scale
+    output = np.stack([mag, mag, mag], axis=-1)
+    return {
+        "filter": "laplacian", "params": {"scale": scale},
+        "tool": f"cv2.Laplacian (ksize=3, scale={scale})", "tool_version": cv2.__version__,
+        "note": "BT.709 luma, abs(Laplacian)*scale, BORDER_REPLICATE",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_scharr(scale: float) -> dict:
+    """Scharr edge detection via cv2.Scharr (OpenCV C++ implementation)."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    gray = img[:, :, 0] * 0.2126 + img[:, :, 1] * 0.7152 + img[:, :, 2] * 0.0722
+    sx = cv2.Scharr(gray, cv2.CV_32F, 1, 0, borderType=cv2.BORDER_REPLICATE)
+    sy = cv2.Scharr(gray, cv2.CV_32F, 0, 1, borderType=cv2.BORDER_REPLICATE)
+    # Pipeline normalizes by /32.0 (max Scharr magnitude for a step edge = 32)
+    mag = np.sqrt(sx * sx + sy * sy) * scale / 32.0
+    output = np.stack([mag, mag, mag], axis=-1)
+    return {
+        "filter": "scharr", "params": {"scale": scale},
+        "tool": f"cv2.Scharr (gradient magnitude * {scale})", "tool_version": cv2.__version__,
+        "note": "BT.709 luma, sqrt(Sx²+Sy²)*scale, BORDER_REPLICATE",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_threshold(level: float) -> dict:
+    """Binary threshold — simple comparison, no external tool needed."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    gray = img[:, :, 0] * 0.2126 + img[:, :, 1] * 0.7152 + img[:, :, 2] * 0.0722
+    binary = np.where(gray >= level, 1.0, 0.0).astype(np.float32)
+    output = np.stack([binary, binary, binary], axis=-1)
+    return {
+        "filter": "threshold_binary", "params": {"threshold": level},
+        "tool": "numpy (luma >= threshold ? 1.0 : 0.0)", "tool_version": np.__version__,
+        "note": "BT.709 luma, binary step function",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_dilate(radius: int) -> dict:
+    """Dilate via cv2.dilate (OpenCV C++ implementation)."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    ksize = 2 * radius + 1
+    kernel = np.ones((ksize, ksize), dtype=np.uint8)
+    output = np.zeros_like(img)
+    for c in range(3):
+        output[:, :, c] = cv2.dilate(img[:, :, c], kernel, borderType=cv2.BORDER_REFLECT_101)
+    return {
+        "filter": "dilate", "params": {"radius": radius},
+        "tool": f"cv2.dilate (kernel {ksize}x{ksize})", "tool_version": cv2.__version__,
+        "note": "Per-channel max filter, square kernel, BORDER_REFLECT_101",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_erode(radius: int) -> dict:
+    """Erode via cv2.erode (OpenCV C++ implementation)."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    ksize = 2 * radius + 1
+    kernel = np.ones((ksize, ksize), dtype=np.uint8)
+    output = np.zeros_like(img)
+    for c in range(3):
+        output[:, :, c] = cv2.erode(img[:, :, c], kernel, borderType=cv2.BORDER_REFLECT_101)
+    return {
+        "filter": "erode", "params": {"radius": radius},
+        "tool": f"cv2.erode (kernel {ksize}x{ksize})", "tool_version": cv2.__version__,
+        "note": "Per-channel min filter, square kernel, BORDER_REFLECT_101",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_morph_open(radius: int) -> dict:
+    """Morphological opening via cv2.morphologyEx (erode then dilate)."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    ksize = 2 * radius + 1
+    kernel = np.ones((ksize, ksize), dtype=np.uint8)
+    output = np.zeros_like(img)
+    for c in range(3):
+        output[:, :, c] = cv2.morphologyEx(img[:, :, c], cv2.MORPH_OPEN, kernel,
+                                            borderType=cv2.BORDER_REFLECT_101)
+    return {
+        "filter": "morph_open", "params": {"radius": radius},
+        "tool": f"cv2.morphologyEx MORPH_OPEN (kernel {ksize}x{ksize})", "tool_version": cv2.__version__,
+        "note": "Erode then dilate, per-channel, BORDER_REFLECT_101",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_morph_close(radius: int) -> dict:
+    """Morphological closing via cv2.morphologyEx (dilate then erode)."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    ksize = 2 * radius + 1
+    kernel = np.ones((ksize, ksize), dtype=np.uint8)
+    output = np.zeros_like(img)
+    for c in range(3):
+        output[:, :, c] = cv2.morphologyEx(img[:, :, c], cv2.MORPH_CLOSE, kernel,
+                                            borderType=cv2.BORDER_REFLECT_101)
+    return {
+        "filter": "morph_close", "params": {"radius": radius},
+        "tool": f"cv2.morphologyEx MORPH_CLOSE (kernel {ksize}x{ksize})", "tool_version": cv2.__version__,
+        "note": "Dilate then erode, per-channel, BORDER_REFLECT_101",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_morph_tophat(radius: int) -> dict:
+    """Morphological top-hat via cv2.morphologyEx (input - opening)."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    ksize = 2 * radius + 1
+    kernel = np.ones((ksize, ksize), dtype=np.uint8)
+    output = np.zeros_like(img)
+    for c in range(3):
+        output[:, :, c] = cv2.morphologyEx(img[:, :, c], cv2.MORPH_TOPHAT, kernel,
+                                            borderType=cv2.BORDER_REFLECT_101)
+    return {
+        "filter": "morph_tophat", "params": {"radius": radius},
+        "tool": f"cv2.morphologyEx MORPH_TOPHAT (kernel {ksize}x{ksize})", "tool_version": cv2.__version__,
+        "note": "Input - opening, per-channel, BORDER_REFLECT_101",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_morph_blackhat(radius: int) -> dict:
+    """Morphological black-hat via cv2.morphologyEx (closing - input)."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    ksize = 2 * radius + 1
+    kernel = np.ones((ksize, ksize), dtype=np.uint8)
+    output = np.zeros_like(img)
+    for c in range(3):
+        output[:, :, c] = cv2.morphologyEx(img[:, :, c], cv2.MORPH_BLACKHAT, kernel,
+                                            borderType=cv2.BORDER_REFLECT_101)
+    return {
+        "filter": "morph_blackhat", "params": {"radius": radius},
+        "tool": f"cv2.morphologyEx MORPH_BLACKHAT (kernel {ksize}x{ksize})", "tool_version": cv2.__version__,
+        "note": "Closing - input, per-channel, BORDER_REFLECT_101",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_morph_gradient(radius: int) -> dict:
+    """Morphological gradient via cv2.morphologyEx (dilate - erode)."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    ksize = 2 * radius + 1
+    kernel = np.ones((ksize, ksize), dtype=np.uint8)
+    output = np.zeros_like(img)
+    for c in range(3):
+        output[:, :, c] = cv2.morphologyEx(img[:, :, c], cv2.MORPH_GRADIENT, kernel,
+                                            borderType=cv2.BORDER_REFLECT_101)
+    return {
+        "filter": "morph_gradient", "params": {"radius": radius},
+        "tool": f"cv2.morphologyEx MORPH_GRADIENT (kernel {ksize}x{ksize})", "tool_version": cv2.__version__,
+        "note": "Dilate - erode, per-channel, BORDER_REFLECT_101",
+        "output": pixels_to_list(output),
+    }
+
+
+# ─── Composite / alpha golden generators ────────────────────────────────────
+
+
+def golden_blend_multiply(opacity: float) -> dict:
+    """Blend multiply: out = base * overlay. W3C Compositing Level 1 spec."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    # Use a shifted version as overlay
+    overlay = np.roll(img, 32, axis=1)  # shift right by 32px
+    output = img * opacity + img * overlay * (1.0 - opacity)
+    # Actually: blend = base * overlay; result = lerp(base, blend, opacity)
+    blend = img * overlay
+    output = img * (1.0 - opacity) + blend * opacity
+    return {
+        "filter": "blend",
+        "params": {"mode": 1, "opacity": opacity},  # mode 1 = multiply
+        "tool": "numpy (W3C Compositing Level 1: multiply)",
+        "tool_version": np.__version__,
+        "note": f"blend = base * overlay, result = lerp(base, blend, {opacity})",
+        "output": pixels_to_list(output),
+        "custom_input": pixels_to_list(overlay),  # overlay as secondary input
+    }
+
+
+def golden_flatten(bg_r: float, bg_g: float, bg_b: float) -> dict:
+    """Flatten alpha — composite over solid background."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+    # Create RGBA with varying alpha
+    rgba = np.zeros((h, w, 4), dtype=np.float32)
+    for y in range(h):
+        for x in range(w):
+            rgba[y, x, :3] = img[y, x]
+            rgba[y, x, 3] = x / max(w - 1, 1)  # alpha gradient left to right
+
+    output = np.zeros((h, w, 3), dtype=np.float32)
+    for y in range(h):
+        for x in range(w):
+            a = rgba[y, x, 3]
+            output[y, x, 0] = rgba[y, x, 0] * a + bg_r * (1.0 - a)
+            output[y, x, 1] = rgba[y, x, 1] * a + bg_g * (1.0 - a)
+            output[y, x, 2] = rgba[y, x, 2] * a + bg_b * (1.0 - a)
+
+    return {
+        "filter": "flatten",
+        "params": {"bg_r": bg_r, "bg_g": bg_g, "bg_b": bg_b},
+        "tool": "numpy (alpha compositing over solid background)",
+        "tool_version": np.__version__,
+        "note": "out = fg*alpha + bg*(1-alpha)",
+        "output": pixels_to_list(output),
+        "custom_input": pixels_to_list(rgba),
+    }
+
+
 def main():
     out_dir = Path(__file__).parent / "golden_data"
     out_dir.mkdir(exist_ok=True)
@@ -2395,6 +2616,18 @@ def main():
     spatial["filters"]["charcoal_1_1"] = golden_charcoal(1.0, 1.0)
     spatial["filters"]["halftone_8"] = golden_halftone(8.0)
     spatial["filters"]["ripple_5_30"] = golden_ripple(5.0, 30.0)
+
+    # ── Edge + morphology filters ────────────────────────────────────────
+    spatial["filters"]["laplacian_1"] = golden_laplacian(1.0)
+    spatial["filters"]["scharr_1"] = golden_scharr(1.0)
+    spatial["filters"]["threshold_0.5"] = golden_threshold(0.5)
+    spatial["filters"]["dilate_1"] = golden_dilate(1)
+    spatial["filters"]["erode_1"] = golden_erode(1)
+    spatial["filters"]["morph_open_2"] = golden_morph_open(2)
+    spatial["filters"]["morph_close_2"] = golden_morph_close(2)
+    spatial["filters"]["morph_tophat_2"] = golden_morph_tophat(2)
+    spatial["filters"]["morph_blackhat_2"] = golden_morph_blackhat(2)
+    spatial["filters"]["morph_gradient_2"] = golden_morph_gradient(2)
 
     # Write spatial output
     spatial_file = out_dir / "spatial.json"
