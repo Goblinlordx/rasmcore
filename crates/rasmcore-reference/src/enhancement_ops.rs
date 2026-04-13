@@ -181,12 +181,11 @@ pub fn auto_level(input: &[f32], w: u32, h: u32, clip_pct: f32) -> Vec<f32> {
 
 /// Contrast Limited Adaptive Histogram Equalization (CLAHE).
 ///
-/// Operates on BT.709 luminance, applies ratio to RGB:
-/// 1. Compute luminance, clamp [0,1]
-/// 2. Divide into grid_size x grid_size tiles
-/// 3. Per tile: build 256-bin histogram (round-to-nearest), clip & redistribute, build CDF/N LUT
-/// 4. Bilinear interpolate between tile LUTs (anchored at tile centers)
-/// 5. Apply luma ratio to RGB
+/// Matches OpenCV's cv2.createCLAHE algorithm exactly:
+/// 1. BT.709 luminance → u8
+/// 2. Per-tile: histogram, clip with strided redistribution, CDF → u8 LUT
+/// 3. Bilinear interpolation between u8 LUTs (tile centers at x/tw - 0.5)
+/// 4. Apply luma ratio to RGB
 pub fn clahe(input: &[f32], w: u32, h: u32, clip_limit: f32, grid_size: u32) -> Vec<f32> {
     let grid = grid_size as usize;
     let width = w as usize;
@@ -200,14 +199,18 @@ pub fn clahe(input: &[f32], w: u32, h: u32, clip_limit: f32, grid_size: u32) -> 
 
     let npixels_per_tile = tile_w * tile_h;
     let clip = (clip_limit * npixels_per_tile as f32 / 256.0).max(1.0) as u32;
+    let lut_scale = 255.0 / npixels_per_tile as f32;
 
-    // Compute luminance
+    // Compute luminance and quantize to u8
     let luma: Vec<f32> = input.chunks_exact(4)
         .map(|p| (0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2]).clamp(0.0, 1.0))
         .collect();
+    let luma_u8: Vec<u8> = luma.iter()
+        .map(|&v| (v * 255.0 + 0.5).min(255.0) as u8)
+        .collect();
 
-    // Build per-tile LUTs
-    let mut tile_luts = vec![[0.0f32; NUM_BINS]; grid * grid];
+    // Build per-tile LUTs as u8 (matching OpenCV)
+    let mut tile_luts = vec![[0u8; NUM_BINS]; grid * grid];
     for ty in 0..grid {
         for tx in 0..grid {
             let mut hist = [0u32; NUM_BINS];
@@ -217,12 +220,11 @@ pub fn clahe(input: &[f32], w: u32, h: u32, clip_limit: f32, grid_size: u32) -> 
                 for dx in 0..tile_w {
                     let py = (y0 + dy).min(height - 1);
                     let px = (x0 + dx).min(width - 1);
-                    let bin = ((luma[py * width + px] * 255.0 + 0.5) as usize).min(255);
-                    hist[bin] += 1;
+                    hist[luma_u8[py * width + px] as usize] += 1;
                 }
             }
 
-            // Clip and redistribute
+            // Clip and redistribute (OpenCV single-pass with strided residual)
             let mut excess = 0u32;
             for h in &mut hist {
                 if *h > clip {
@@ -230,45 +232,57 @@ pub fn clahe(input: &[f32], w: u32, h: u32, clip_limit: f32, grid_size: u32) -> 
                     *h = clip;
                 }
             }
-            let per_bin = excess / 256;
-            let remainder = excess % 256;
-            for (i, h) in hist.iter_mut().enumerate() {
-                *h += per_bin + if (i as u32) < remainder { 1 } else { 0 };
+            let redist_batch = excess / 256;
+            let residual = excess - redist_batch * 256;
+            for h in hist.iter_mut() {
+                *h += redist_batch;
+            }
+            if residual > 0 {
+                let step = (256 / residual).max(1) as usize;
+                let mut remaining = residual;
+                let mut i = 0;
+                while i < NUM_BINS && remaining > 0 {
+                    hist[i] += 1;
+                    remaining -= 1;
+                    i += step;
+                }
             }
 
-            // Build CDF -> LUT (normalize by N)
-            let cdf = build_cdf(&hist);
-            let total = npixels_per_tile as f32;
+            // CDF → u8 LUT: round(CDF * 255 / total)
+            let mut cdf_sum = 0u32;
             let lut = &mut tile_luts[ty * grid + tx];
             for i in 0..NUM_BINS {
-                lut[i] = cdf[i] as f32 / total;
+                cdf_sum += hist[i];
+                lut[i] = (cdf_sum as f32 * lut_scale + 0.5).min(255.0) as u8;
             }
         }
     }
 
-    // Apply with bilinear interpolation (anchored at tile centers)
+    // Bilinear interpolation (OpenCV: txf = x / tileWidth - 0.5)
+    let inv_tw = 1.0f32 / tile_w as f32;
+    let inv_th = 1.0f32 / tile_h as f32;
+
     let mut out = input.to_vec();
     for y in 0..height {
+        let tyf = y as f32 * inv_th - 0.5;
+        let ty1 = (tyf.floor() as i32).max(0).min(grid as i32 - 1) as usize;
+        let ty2 = (ty1 + 1).min(grid - 1);
+        let ya = (tyf - ty1 as f32).clamp(0.0, 1.0);
+        let ya1 = 1.0 - ya;
+
         for x in 0..width {
-            let tx_f = ((x as f32 + 0.5) / tile_w as f32 - 0.5).clamp(0.0, (grid - 1) as f32);
-            let ty_f = ((y as f32 + 0.5) / tile_h as f32 - 0.5).clamp(0.0, (grid - 1) as f32);
-            let tx0 = tx_f as usize;
-            let ty0 = ty_f as usize;
-            let tx1 = (tx0 + 1).min(grid - 1);
-            let ty1 = (ty0 + 1).min(grid - 1);
-            let fx = tx_f - tx0 as f32;
-            let fy = ty_f - ty0 as f32;
+            let txf = x as f32 * inv_tw - 0.5;
+            let tx1 = (txf.floor() as i32).max(0).min(grid as i32 - 1) as usize;
+            let tx2 = (tx1 + 1).min(grid - 1);
+            let xa = (txf - tx1 as f32).clamp(0.0, 1.0);
+            let xa1 = 1.0 - xa;
 
-            let bin = ((luma[y * width + x] * 255.0 + 0.5) as usize).min(255);
-            let v00 = tile_luts[ty0 * grid + tx0][bin];
-            let v10 = tile_luts[ty0 * grid + tx1][bin];
-            let v01 = tile_luts[ty1 * grid + tx0][bin];
-            let v11 = tile_luts[ty1 * grid + tx1][bin];
-
-            let new_luma = v00 * (1.0 - fx) * (1.0 - fy)
-                + v10 * fx * (1.0 - fy)
-                + v01 * (1.0 - fx) * fy
-                + v11 * fx * fy;
+            let bin = luma_u8[y * width + x] as usize;
+            let v_top = tile_luts[ty1 * grid + tx1][bin] as f32 * xa1
+                + tile_luts[ty1 * grid + tx2][bin] as f32 * xa;
+            let v_bot = tile_luts[ty2 * grid + tx1][bin] as f32 * xa1
+                + tile_luts[ty2 * grid + tx2][bin] as f32 * xa;
+            let new_luma = (v_top * ya1 + v_bot * ya) / 255.0;
 
             let old_luma = luma[y * width + x].max(1e-10);
             let ratio = new_luma / old_luma;

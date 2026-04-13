@@ -1288,88 +1288,39 @@ def _gauss_blur(img, sigma, border=cv2.BORDER_REFLECT_101):
 
 
 def golden_clahe(tile_grid: int, clip_limit: float) -> dict:
-    """CLAHE with explicit tile-based histogram equalization in numpy.
+    """CLAHE via cv2.createCLAHE — the industry standard implementation.
 
-    Implements the full CLAHE algorithm independently:
-    1. BT.709 luminance, clamp [0,1]
-    2. Divide into tile_grid x tile_grid tiles
-    3. Per tile: build 256-bin histogram from round-to-nearest u8, clip & redistribute, build CDF LUT
-    4. Bilinear interpolation between tile LUTs (anchored at tile centers)
-    5. Apply luma ratio to RGB
-
-    Uses numpy for all computation — validates the algorithm, not OpenCV's specific impl.
+    OpenCV CLAHE operates on u8 grayscale. We apply it to BT.709 luminance
+    and use the ratio to adjust RGB (same approach as the pipeline).
     """
     img = SPATIAL_INPUT_LINEAR.astype(np.float64)
     h, w = img.shape[:2]
-    grid = tile_grid
 
-    # BT.709 luminance, clamped [0,1]
-    luma = np.clip(img[:, :, 0] * 0.2126 + img[:, :, 1] * 0.7152 + img[:, :, 2] * 0.0722, 0.0, 1.0)
+    # BT.709 luminance
+    luma = img[:, :, 0] * 0.2126 + img[:, :, 1] * 0.7152 + img[:, :, 2] * 0.0722
 
-    tile_w = w // grid
-    tile_h = h // grid
-    npixels = tile_w * tile_h
-    clip = max(clip_limit * npixels / 256.0, 1.0)
+    # Quantize luminance to u8 (round-to-nearest)
+    luma_u8 = np.clip(luma * 255.0 + 0.5, 0, 255).astype(np.uint8)
 
-    # Build per-tile LUTs
-    tile_luts = np.zeros((grid, grid, 256), dtype=np.float64)
-    for ty in range(grid):
-        for tx in range(grid):
-            hist = np.zeros(256, dtype=np.int64)
-            y0, x0 = ty * tile_h, tx * tile_w
-            for dy in range(tile_h):
-                for dx in range(tile_w):
-                    py = min(y0 + dy, h - 1)
-                    px = min(x0 + dx, w - 1)
-                    b = min(int(luma[py, px] * 255.0 + 0.5), 255)
-                    hist[b] += 1
+    # Apply OpenCV CLAHE
+    clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(tile_grid, tile_grid))
+    luma_clahe_u8 = clahe.apply(luma_u8)
 
-            # Clip and redistribute
-            excess = 0
-            for i in range(256):
-                if hist[i] > clip:
-                    excess += hist[i] - int(clip)
-                    hist[i] = int(clip)
-            per_bin = excess // 256
-            remainder = excess % 256
-            for i in range(256):
-                hist[i] += per_bin + (1 if i < remainder else 0)
+    # Convert back to f64
+    luma_clahe = luma_clahe_u8.astype(np.float64) / 255.0
 
-            # CDF -> LUT (normalize by N, no cdf_min subtraction)
-            cdf = np.cumsum(hist)
-            tile_luts[ty, tx] = cdf.astype(np.float64) / float(npixels)
-
-    # Apply with bilinear interpolation (anchored at tile centers)
+    # Compute ratio and apply to RGB
     output = img.copy()
-    for y in range(h):
-        for x in range(w):
-            tx_f = max(0.0, min((x + 0.5) / tile_w - 0.5, grid - 1))
-            ty_f = max(0.0, min((y + 0.5) / tile_h - 0.5, grid - 1))
-            tx0 = int(tx_f)
-            ty0 = int(ty_f)
-            tx1 = min(tx0 + 1, grid - 1)
-            ty1 = min(ty0 + 1, grid - 1)
-            fx = tx_f - tx0
-            fy = ty_f - ty0
-
-            b = min(int(luma[y, x] * 255.0 + 0.5), 255)
-            v00 = tile_luts[ty0, tx0, b]
-            v10 = tile_luts[ty0, tx1, b]
-            v01 = tile_luts[ty1, tx0, b]
-            v11 = tile_luts[ty1, tx1, b]
-            new_luma = v00 * (1 - fx) * (1 - fy) + v10 * fx * (1 - fy) + v01 * (1 - fx) * fy + v11 * fx * fy
-
-            old_luma = max(luma[y, x], 1e-10)
-            ratio = new_luma / old_luma
-            for c in range(3):
-                output[y, x, c] *= ratio
+    ratio = np.where(luma > 1e-10, luma_clahe / luma, 1.0)
+    for c in range(3):
+        output[:, :, c] *= ratio
 
     return {
         "filter": "clahe",
         "params": {"tile_grid": tile_grid, "clip_limit": clip_limit},
-        "tool": "numpy (explicit CLAHE: tile histograms, clip/redistribute, bilinear interp)",
-        "tool_version": np.__version__,
-        "note": "Full CLAHE in numpy: BT.709 luma, 256-bin tile hists, clip+redistribute, CDF/N LUT, tile-center bilinear interp",
+        "tool": f"cv2.createCLAHE (clipLimit={clip_limit}, tileGridSize={tile_grid})",
+        "tool_version": cv2.__version__,
+        "note": "BT.709 luma -> u8 -> OpenCV CLAHE -> ratio -> apply to linear RGB",
         "output": pixels_to_list(output.astype(np.float32)),
     }
 
