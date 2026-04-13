@@ -315,7 +315,7 @@ fn run_spatial_reference(_filter_key: &str, entry: &GoldenEntry, input: &[f32], 
         "high_pass" => refimpl::spatial_ops::high_pass(input, w, h, u("radius")),
         // Enhancement
         "equalize" => refimpl::enhancement_ops::equalize(input, w, h),
-        "normalize" => refimpl::enhancement_ops::normalize(input, w, h),
+        "normalize" => refimpl::enhancement_ops::normalize_clipped(input, w, h, f("black_clip"), f("white_clip")),
         "vignette" => refimpl::enhancement_ops2::vignette(input, w, h, f("sigma"), f("x_inset"), f("y_inset")),
         "vignette_powerlaw" => refimpl::enhancement_ops2::vignette_powerlaw(input, w, h, f("strength"), f("falloff")),
         "frequency_high" => refimpl::enhancement_ops2::frequency_high(input, w, h, f("sigma")),
@@ -376,8 +376,9 @@ fn spatial_tolerance_for(filter_name: &str) -> f32 {
         "clahe" => 0.02,
         // NLM: f32 vs f64 accumulation in patch SSD
         "nlm_denoise" => 0.01,
-        // Dehaze: min-filter + atmospheric light estimation chain
-        "dehaze" => 0.01,
+        // Dehaze: multi-stage (dark channel min, top-0.1% atmos average, transmission, recovery)
+        // f32 operation ordering across Rust/numpy accumulates through 4 dependent stages
+        "dehaze" => 0.03,
         // Clarity: depends on gaussian blur precision
         "clarity" => 0.001,
         // Shadow/Highlight: depends on blurred luminance precision

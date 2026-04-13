@@ -50,7 +50,7 @@ impl Filter for Clahe {
                     for dx in 0..tile_w {
                         let py = (y0 + dy).min(h - 1);
                         let px = (x0 + dx).min(w - 1);
-                        let bin = (luma[py * w + px] * 255.0) as usize;
+                        let bin = (luma[py * w + px] * 255.0 + 0.5) as usize;
                         hist[bin.min(255)] += 1;
                     }
                 }
@@ -69,18 +69,17 @@ impl Filter for Clahe {
                     *h += per_bin + if (i as u32) < remainder { 1 } else { 0 };
                 }
 
-                // Build CDF -> LUT
+                // Build CDF -> LUT (OpenCV-style: normalize by N, no cdf_min subtraction)
                 let mut cdf = [0u32; 256];
                 cdf[0] = hist[0];
                 for i in 1..256 {
                     cdf[i] = cdf[i - 1] + hist[i];
                 }
-                let cdf_min = cdf.iter().find(|&&v| v > 0).copied().unwrap_or(0);
-                let denom = (npixels_per_tile as u32).saturating_sub(cdf_min).max(1);
+                let total = npixels_per_tile as f32;
 
                 let lut = &mut tile_luts[ty * grid + tx];
                 for i in 0..256 {
-                    lut[i] = (cdf[i] - cdf_min) as f32 / denom as f32;
+                    lut[i] = cdf[i] as f32 / total;
                 }
             }
         }
@@ -89,8 +88,9 @@ impl Filter for Clahe {
         let mut out = input.to_vec();
         for y in 0..h {
             for x in 0..w {
-                let tx_f = (x as f32 / tile_w as f32 - 0.5).clamp(0.0, (grid - 1) as f32);
-                let ty_f = (y as f32 / tile_h as f32 - 0.5).clamp(0.0, (grid - 1) as f32);
+                // Anchor interpolation at tile centers (matching OpenCV CLAHE)
+                let tx_f = ((x as f32 + 0.5) / tile_w as f32 - 0.5).clamp(0.0, (grid - 1) as f32);
+                let ty_f = ((y as f32 + 0.5) / tile_h as f32 - 0.5).clamp(0.0, (grid - 1) as f32);
                 let tx0 = tx_f as usize;
                 let ty0 = ty_f as usize;
                 let tx1 = (tx0 + 1).min(grid - 1);
@@ -98,7 +98,7 @@ impl Filter for Clahe {
                 let fx = tx_f - tx0 as f32;
                 let fy = ty_f - ty0 as f32;
 
-                let bin = (luma[y * w + x] * 255.0) as usize;
+                let bin = (luma[y * w + x] * 255.0 + 0.5) as usize;
                 let bin = bin.min(255);
 
                 let v00 = tile_luts[ty0 * grid + tx0][bin];

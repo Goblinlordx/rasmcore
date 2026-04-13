@@ -11,33 +11,46 @@ fn luminance(r: f32, g: f32, b: f32) -> f32 {
     0.2126 * r + 0.7152 * g + 0.0722 * b
 }
 
-/// Separable Gaussian blur on RGBA interleaved f32 data.
-///
-/// Kernel radius is `ceil(3 * sigma)`. Truncated Gaussian, normalized.
-/// Processes R, G, B independently; alpha is copied unchanged.
-fn gaussian_blur(input: &[f32], w: u32, h: u32, sigma: f32) -> Vec<f32> {
-    if sigma <= 0.0 {
-        return input.to_vec();
-    }
-    let radius = (3.0 * sigma).ceil() as i32;
-    if radius == 0 {
-        return input.to_vec();
-    }
+/// BORDER_REFLECT_101: mirrors at boundary, excluding edge pixel.
+fn reflect_101(v: i32, size: i32) -> i32 {
+    if size <= 1 { return 0; }
+    let mut v = v;
+    if v < 0 { v = -v; }
+    if v >= size { v = 2 * size - v - 2; }
+    v.clamp(0, size - 1)
+}
 
-    // Build 1D kernel.
-    let kernel_size = (2 * radius + 1) as usize;
-    let mut kernel = vec![0.0f32; kernel_size];
+/// Build a 1D Gaussian kernel matching the pipeline convention.
+///
+/// ksize = round(sigma * 10 + 1) | 1, min 3. Sigma = radius parameter.
+fn build_gaussian_kernel(sigma: f32) -> Vec<f32> {
+    let ksize = ((sigma * 10.0 + 1.0).round() as usize) | 1;
+    let ksize = ksize.max(3);
+    let center = ksize / 2;
+    let mut kernel = Vec::with_capacity(ksize);
     let mut sum = 0.0f32;
-    for i in 0..kernel_size {
-        let x = (i as i32 - radius) as f32;
+    for i in 0..ksize {
+        let x = i as f32 - center as f32;
         let v = (-x * x / (2.0 * sigma * sigma)).exp();
-        kernel[i] = v;
+        kernel.push(v);
         sum += v;
     }
     for k in kernel.iter_mut() {
         *k /= sum;
     }
+    kernel
+}
 
+/// Separable Gaussian blur on RGBA interleaved f32 data.
+///
+/// ksize = round(sigma * 10 + 1) | 1, BORDER_REFLECT_101.
+/// Processes R, G, B independently; alpha is copied unchanged.
+fn gaussian_blur(input: &[f32], w: u32, h: u32, sigma: f32) -> Vec<f32> {
+    if sigma <= 0.0 {
+        return input.to_vec();
+    }
+    let kernel = build_gaussian_kernel(sigma);
+    let r = (kernel.len() / 2) as i32;
     let w = w as usize;
     let h = h as usize;
 
@@ -46,13 +59,12 @@ fn gaussian_blur(input: &[f32], w: u32, h: u32, sigma: f32) -> Vec<f32> {
     for y in 0..h {
         for x in 0..w {
             let mut acc = [0.0f32; 3];
-            for ki in 0..kernel_size {
-                let sx = (x as i32 + ki as i32 - radius).clamp(0, w as i32 - 1) as usize;
+            for ki in 0..kernel.len() {
+                let sx = reflect_101(x as i32 + ki as i32 - r, w as i32) as usize;
                 let idx = (y * w + sx) * 4;
-                let weight = kernel[ki];
-                acc[0] += input[idx] * weight;
-                acc[1] += input[idx + 1] * weight;
-                acc[2] += input[idx + 2] * weight;
+                acc[0] += input[idx] * kernel[ki];
+                acc[1] += input[idx + 1] * kernel[ki];
+                acc[2] += input[idx + 2] * kernel[ki];
             }
             let oidx = (y * w + x) * 4;
             temp[oidx] = acc[0];
@@ -67,13 +79,12 @@ fn gaussian_blur(input: &[f32], w: u32, h: u32, sigma: f32) -> Vec<f32> {
     for y in 0..h {
         for x in 0..w {
             let mut acc = [0.0f32; 3];
-            for ki in 0..kernel_size {
-                let sy = (y as i32 + ki as i32 - radius).clamp(0, h as i32 - 1) as usize;
+            for ki in 0..kernel.len() {
+                let sy = reflect_101(y as i32 + ki as i32 - r, h as i32) as usize;
                 let idx = (sy * w + x) * 4;
-                let weight = kernel[ki];
-                acc[0] += temp[idx] * weight;
-                acc[1] += temp[idx + 1] * weight;
-                acc[2] += temp[idx + 2] * weight;
+                acc[0] += temp[idx] * kernel[ki];
+                acc[1] += temp[idx + 1] * kernel[ki];
+                acc[2] += temp[idx + 2] * kernel[ki];
             }
             let oidx = (y * w + x) * 4;
             out[oidx] = acc[0];
@@ -92,31 +103,16 @@ fn gaussian_blur_single(input: &[f32], w: usize, h: usize, sigma: f32) -> Vec<f3
     if sigma <= 0.0 {
         return input.to_vec();
     }
-    let radius = (3.0 * sigma).ceil() as i32;
-    if radius == 0 {
-        return input.to_vec();
-    }
-
-    let kernel_size = (2 * radius + 1) as usize;
-    let mut kernel = vec![0.0f32; kernel_size];
-    let mut sum = 0.0f32;
-    for i in 0..kernel_size {
-        let x = (i as i32 - radius) as f32;
-        let v = (-x * x / (2.0 * sigma * sigma)).exp();
-        kernel[i] = v;
-        sum += v;
-    }
-    for k in kernel.iter_mut() {
-        *k /= sum;
-    }
+    let kernel = build_gaussian_kernel(sigma);
+    let r = (kernel.len() / 2) as i32;
 
     // Horizontal pass.
     let mut temp = vec![0.0f32; w * h];
     for y in 0..h {
         for x in 0..w {
             let mut acc = 0.0f32;
-            for ki in 0..kernel_size {
-                let sx = (x as i32 + ki as i32 - radius).clamp(0, w as i32 - 1) as usize;
+            for ki in 0..kernel.len() {
+                let sx = reflect_101(x as i32 + ki as i32 - r, w as i32) as usize;
                 acc += input[y * w + sx] * kernel[ki];
             }
             temp[y * w + x] = acc;
@@ -128,8 +124,8 @@ fn gaussian_blur_single(input: &[f32], w: usize, h: usize, sigma: f32) -> Vec<f3
     for y in 0..h {
         for x in 0..w {
             let mut acc = 0.0f32;
-            for ki in 0..kernel_size {
-                let sy = (y as i32 + ki as i32 - radius).clamp(0, h as i32 - 1) as usize;
+            for ki in 0..kernel.len() {
+                let sy = reflect_101(y as i32 + ki as i32 - r, h as i32) as usize;
                 acc += temp[sy * w + x] * kernel[ki];
             }
             out[y * w + x] = acc;
@@ -175,33 +171,45 @@ fn min_filter(input: &[f32], w: usize, h: usize, radius: u32) -> Vec<f32> {
 
 // ─── Public Operations ──────────────────────────────────────────────────────
 
-/// Elliptical Gaussian vignette.
+/// Elliptical vignette — binary mask + Gaussian blur.
 ///
-/// Applies a Gaussian falloff mask from center. `x_inset` / `y_inset` shrink
-/// the effective ellipse radii from the image half-dimensions.
-///
-/// `rx = w/2 - x_inset`, `ry = h/2 - y_inset`. For each pixel, compute
-/// normalized distance `dx = (px - cx) / rx`, `dy = (py - cy) / ry`.
-/// `factor = exp(-(dx² + dy²) / (2 * sigma²))`. Multiply RGB by factor.
+/// 1. Build binary elliptical mask (1.0 inside, 0.0 outside).
+/// 2. Blur the mask with Gaussian(sigma).
+/// 3. Multiply RGB by blurred mask.
 pub fn vignette(input: &[f32], w: u32, h: u32, sigma: f32, x_inset: f32, y_inset: f32) -> Vec<f32> {
-    let mut out = input.to_vec();
+    let wu = w as usize;
+    let hu = h as usize;
     let cx = w as f32 / 2.0;
     let cy = h as f32 / 2.0;
-    let rx = cx - x_inset;
-    let ry = cy - y_inset;
+    let rx = (cx - x_inset).max(1.0);
+    let ry = (cy - y_inset).max(1.0);
 
-    for y in 0..h {
-        for x in 0..w {
-            let dx = if rx > 0.0 { (x as f32 + 0.5 - cx) / rx } else { 0.0 };
-            let dy = if ry > 0.0 { (y as f32 + 0.5 - cy) / ry } else { 0.0 };
-            let dist2 = dx * dx + dy * dy;
-            let factor = (-dist2 / (2.0 * sigma * sigma)).exp();
+    // Build binary elliptical mask
+    let mut mask = vec![0.0f32; wu * hu];
+    for y in 0..hu {
+        for x in 0..wu {
+            let dx = (x as f32 - cx) / rx;
+            let dy = (y as f32 - cy) / ry;
+            if dx * dx + dy * dy <= 1.0 {
+                mask[y * wu + x] = 1.0;
+            }
+        }
+    }
 
-            let idx = (y * w + x) as usize * 4;
+    // Blur the mask
+    if sigma > 0.0 {
+        mask = gaussian_blur_single(&mask, wu, hu, sigma);
+    }
+
+    // Multiply RGB by mask
+    let mut out = input.to_vec();
+    for y in 0..hu {
+        for x in 0..wu {
+            let factor = mask[y * wu + x];
+            let idx = (y * wu + x) * 4;
             out[idx] *= factor;
             out[idx + 1] *= factor;
             out[idx + 2] *= factor;
-            // alpha unchanged
         }
     }
     out
@@ -224,8 +232,8 @@ pub fn vignette_powerlaw(input: &[f32], w: u32, h: u32, strength: f32, falloff: 
 
     for y in 0..h {
         for x in 0..w {
-            let dx = x as f32 + 0.5 - cx;
-            let dy = y as f32 + 0.5 - cy;
+            let dx = x as f32 - cx;
+            let dy = y as f32 - cy;
             let dist = (dx * dx + dy * dy).sqrt();
             let norm = dist / max_dist;
             let factor = (1.0 - strength * norm.powf(falloff)).max(0.0);
@@ -239,23 +247,62 @@ pub fn vignette_powerlaw(input: &[f32], w: u32, h: u32, strength: f32, falloff: 
     out
 }
 
-/// Shadow / highlight recovery.
+/// Shadow / highlight recovery — full pipeline formula.
 ///
-/// Simplified luminance-gated adjustment. Compute per-pixel luminance, then:
-/// - `shadow_weight = (1 - luma)²`
-/// - `highlight_weight = luma²`
-/// - `pixel += shadows * shadow_weight * (1 - pixel) + highlights * highlight_weight * (-pixel)`
-///
-/// `shadows` > 0 lifts shadows, `highlights` < 0 pulls highlights down.
+/// Uses blurred luminance for smooth weight estimation, quadratic shadow/highlight
+/// weights with midtone compression, whitepoint offset, and chroma correction.
 pub fn shadow_highlight(input: &[f32], w: u32, h: u32, shadows: f32, highlights: f32) -> Vec<f32> {
-    let _ = (w, h);
+    // Default params matching pipeline defaults
+    shadow_highlight_full(input, w, h, shadows, highlights, 0.0, 100.0, 50.0, 100.0, 100.0)
+}
+
+/// Full shadow/highlight with all parameters.
+pub fn shadow_highlight_full(
+    input: &[f32], w: u32, h: u32,
+    shadows: f32, highlights: f32, whitepoint: f32,
+    radius: f32, compress: f32,
+    shadows_ccorrect: f32, highlights_ccorrect: f32,
+) -> Vec<f32> {
+    let wu = w as usize;
+    let hu = h as usize;
+    let sh = shadows / 100.0;
+    let hl = highlights / 100.0;
+    let wp = whitepoint;
+    let comp = compress / 100.0;
+    let sc = shadows_ccorrect / 100.0;
+    let hc = highlights_ccorrect / 100.0;
+
+    // Compute per-pixel luminance
+    let luma: Vec<f32> = input.chunks_exact(4)
+        .map(|px| luminance(px[0], px[1], px[2]))
+        .collect();
+
+    // Blur luminance
+    let blurred = gaussian_blur_single(&luma, wu, hu, radius);
+
     let mut out = input.to_vec();
-    for px in out.chunks_exact_mut(4) {
-        let luma = luminance(px[0], px[1], px[2]);
-        let sw = (1.0 - luma) * (1.0 - luma);
-        let hw = luma * luma;
+    for i in 0..(wu * hu) {
+        let bl = blurred[i];
+        let mut sw = (1.0 - bl) * (1.0 - bl);
+        let mut hw = bl * bl;
+        if comp > 0.0 {
+            let mid = 4.0 * bl * (1.0 - bl);
+            sw *= 1.0 - comp * mid;
+            hw *= 1.0 - comp * mid;
+        }
+
+        let luma_adj = sh * sw - hl * hw + wp * 0.01;
+        let cur_luma = luma[i].max(1e-10);
+        let new_luma = (cur_luma + luma_adj).max(0.0);
+        let ratio = new_luma / cur_luma;
+
+        let idx = i * 4;
         for c in 0..3 {
-            px[c] += shadows * sw * (1.0 - px[c]) + highlights * hw * (-px[c]);
+            let v = input[idx + c];
+            let chroma = v - cur_luma;
+            let sign_c = if chroma >= 0.0 { 1.0 } else { -1.0 };
+            let sat_adj = (1.0 + sign_c * sw * (sc - 1.0) + sign_c * hw * (hc - 1.0)).max(0.0);
+            out[idx + c] = new_luma + chroma * sat_adj * ratio;
         }
     }
     out
@@ -428,7 +475,6 @@ pub fn retinex_ssr(input: &[f32], w: u32, h: u32, sigma: f32) -> Vec<f32> {
     let wu = w as usize;
     let hu = h as usize;
     let npx = wu * hu;
-    let eps = 1e-6f32;
 
     let mut out = input.to_vec();
 
@@ -441,10 +487,10 @@ pub fn retinex_ssr(input: &[f32], w: u32, h: u32, sigma: f32) -> Vec<f32> {
 
         let blurred = gaussian_blur_single(&channel, wu, hu, sigma);
 
-        // Retinex: log(I+eps) - log(blur+eps).
+        // Retinex: log(max(I, 1e-10)) - log(max(blur, 1e-10)).
         let mut retinex = vec![0.0f32; npx];
         for i in 0..npx {
-            retinex[i] = (channel[i] + eps).ln() - (blurred[i] + eps).ln();
+            retinex[i] = channel[i].max(1e-10).ln() - blurred[i].max(1e-10).ln();
         }
 
         // Normalize to [0, 1].
@@ -475,7 +521,6 @@ pub fn retinex_msr(input: &[f32], w: u32, h: u32, sigma_s: f32, sigma_m: f32, si
     let wu = w as usize;
     let hu = h as usize;
     let npx = wu * hu;
-    let eps = 1e-6f32;
 
     let mut out = input.to_vec();
     let sigmas = [sigma_s, sigma_m, sigma_l];
@@ -490,7 +535,7 @@ pub fn retinex_msr(input: &[f32], w: u32, h: u32, sigma_s: f32, sigma_m: f32, si
         for &sigma in &sigmas {
             let blurred = gaussian_blur_single(&channel, wu, hu, sigma);
             for i in 0..npx {
-                msr[i] += (channel[i] + eps).ln() - (blurred[i] + eps).ln();
+                msr[i] += channel[i].max(1e-10).ln() - blurred[i].max(1e-10).ln();
             }
         }
         for v in msr.iter_mut() {

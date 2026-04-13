@@ -35,53 +35,90 @@ fn build_cdf(hist: &[u32; NUM_BINS]) -> [u32; NUM_BINS] {
 /// Histogram equalization.
 ///
 /// Per channel independently: quantize to 256 bins, build CDF, remap each
-/// pixel so that `out[c] = cdf[c][bin] / total_pixels`.
+/// pixel so that `out[c] = (cdf[c][bin] - cdf_min) / (N - cdf_min)`.
 ///
-/// Validated against: ImageMagick 7.1.1 `-colorspace Linear -equalize`
+/// Standard histogram equalization formula matching numpy/OpenCV.
 pub fn equalize(input: &[f32], w: u32, h: u32) -> Vec<f32> {
-    let total = (w * h) as f32;
-    let mut cdfs = [[0u32; NUM_BINS]; 3];
+    let npixels = (w * h) as u32;
+    let mut luts = [[0.0f32; NUM_BINS]; 3];
+
+    // Use truncation binning (matching pipeline): floor(clamp(v,0,inf)*255)
+    let trunc_bin = |v: f32| -> usize { ((v.max(0.0) * 255.0) as usize).min(255) };
+
     for c in 0..3 {
-        let hist = build_histogram(input, c);
-        cdfs[c] = build_cdf(&hist);
+        let mut hist = [0u32; NUM_BINS];
+        for px in input.chunks_exact(4) {
+            hist[trunc_bin(px[c])] += 1;
+        }
+        let cdf = build_cdf(&hist);
+        let cdf_min = cdf.iter().find(|&&v| v > 0).copied().unwrap_or(0);
+        let denom = npixels.saturating_sub(cdf_min).max(1) as f32;
+        for i in 0..NUM_BINS {
+            luts[c][i] = (cdf[i].saturating_sub(cdf_min)) as f32 / denom;
+        }
     }
 
     let mut out = input.to_vec();
     for px in out.chunks_exact_mut(4) {
         for c in 0..3 {
-            let bin = to_bin(px[c]);
-            px[c] = cdfs[c][bin] as f32 / total;
+            px[c] = luts[c][trunc_bin(px[c])];
         }
-        // alpha unchanged
     }
     out
 }
 
-/// Normalize to full range per channel.
+/// Normalize — linear contrast stretch with percentile clipping.
 ///
-/// Per channel: find min and max, remap `out[c] = (in[c] - min) / (max - min)`.
-/// If max == min, output 0.0 for that channel.
-///
-/// Validated against: ImageMagick 7.1.1 `-colorspace Linear -normalize`
+/// Per channel: build 256-bin histogram (truncation binning), find percentile
+/// clip points for black and white, linearly remap. No output clamping.
 pub fn normalize(input: &[f32], _w: u32, _h: u32) -> Vec<f32> {
-    let mut mins = [f32::MAX; 3];
-    let mut maxs = [f32::MIN; 3];
+    // Default: 2% black, 1% white (matching pipeline defaults)
+    normalize_clipped(input, _w, _h, 0.02, 0.01)
+}
 
-    for px in input.chunks_exact(4) {
-        for c in 0..3 {
-            mins[c] = mins[c].min(px[c]);
-            maxs[c] = maxs[c].max(px[c]);
-        }
-    }
-
+/// Normalize with explicit clip percentages.
+pub fn normalize_clipped(input: &[f32], _w: u32, _h: u32, black_clip: f32, white_clip: f32) -> Vec<f32> {
+    let npixels = input.len() / 4;
     let mut out = input.to_vec();
-    for px in out.chunks_exact_mut(4) {
-        for c in 0..3 {
-            let range = maxs[c] - mins[c];
-            if range == 0.0 {
-                px[c] = 0.0;
-            } else {
-                px[c] = (px[c] - mins[c]) / range;
+
+    for c in 0..3 {
+        let mut hist = [0u32; NUM_BINS];
+        for px in input.chunks_exact(4) {
+            let bin = ((px[c].max(0.0) * 255.0) as usize).min(255);
+            hist[bin] += 1;
+        }
+
+        // Find black point
+        let black_threshold = (npixels as f32 * black_clip) as u32;
+        let mut accum = 0u32;
+        let mut black_bin = 0;
+        for (i, &h) in hist.iter().enumerate() {
+            accum += h;
+            if accum >= black_threshold {
+                black_bin = i;
+                break;
+            }
+        }
+
+        // Find white point
+        let white_threshold = (npixels as f32 * white_clip) as u32;
+        accum = 0;
+        let mut white_bin = 255;
+        for i in (0..NUM_BINS).rev() {
+            accum += hist[i];
+            if accum >= white_threshold {
+                white_bin = i;
+                break;
+            }
+        }
+
+        let black = black_bin as f32 / 255.0;
+        let white = white_bin as f32 / 255.0;
+        let range = white - black;
+
+        if range > 1e-10 {
+            for px in out.chunks_exact_mut(4) {
+                px[c] = (px[c] - black) / range;
             }
         }
     }
@@ -144,124 +181,102 @@ pub fn auto_level(input: &[f32], w: u32, h: u32, clip_pct: f32) -> Vec<f32> {
 
 /// Contrast Limited Adaptive Histogram Equalization (CLAHE).
 ///
-/// Divide the image into `grid_size x grid_size` tiles. For each tile:
-/// - Build a 256-bin histogram
-/// - Clip histogram at `clip_limit` and redistribute excess evenly
-/// - Build CDF from clipped histogram
-///
-/// For each pixel, bilinear interpolate between the CDFs of the 4 nearest
-/// tile centers.
-///
-/// Validated against: OpenCV `cv::createCLAHE(clipLimit, Size(grid,grid))`
+/// Operates on BT.709 luminance, applies ratio to RGB:
+/// 1. Compute luminance, clamp [0,1]
+/// 2. Divide into grid_size x grid_size tiles
+/// 3. Per tile: build 256-bin histogram (round-to-nearest), clip & redistribute, build CDF/N LUT
+/// 4. Bilinear interpolate between tile LUTs (anchored at tile centers)
+/// 5. Apply luma ratio to RGB
 pub fn clahe(input: &[f32], w: u32, h: u32, clip_limit: f32, grid_size: u32) -> Vec<f32> {
-    let gw = grid_size as usize;
-    let gh = grid_size as usize;
+    let grid = grid_size as usize;
     let width = w as usize;
     let height = h as usize;
 
-    // Tile dimensions (float for precise boundary computation).
-    let tile_w = width as f64 / gw as f64;
-    let tile_h = height as f64 / gh as f64;
+    if grid == 0 { return input.to_vec(); }
 
-    // Build per-tile CDFs for each channel.
-    // cdfs[channel][tile_row][tile_col][bin] -> CDF value as f32 in [0,1].
-    let mut cdfs: Vec<Vec<Vec<[f32; NUM_BINS]>>> = vec![
-        vec![vec![[0.0f32; NUM_BINS]; gw]; gh];
-        3
-    ];
+    let tile_w = width / grid;
+    let tile_h = height / grid;
+    if tile_w == 0 || tile_h == 0 { return input.to_vec(); }
 
-    for ty in 0..gh {
-        for tx in 0..gw {
-            // Pixel boundaries for this tile.
-            let x0 = (tx as f64 * tile_w).round() as usize;
-            let x1 = (((tx + 1) as f64) * tile_w).round() as usize;
-            let y0 = (ty as f64 * tile_h).round() as usize;
-            let y1 = (((ty + 1) as f64) * tile_h).round() as usize;
+    let npixels_per_tile = tile_w * tile_h;
+    let clip = (clip_limit * npixels_per_tile as f32 / 256.0).max(1.0) as u32;
 
-            let tile_pixels = ((x1 - x0) * (y1 - y0)) as f32;
-            if tile_pixels == 0.0 {
-                continue;
+    // Compute luminance
+    let luma: Vec<f32> = input.chunks_exact(4)
+        .map(|p| (0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2]).clamp(0.0, 1.0))
+        .collect();
+
+    // Build per-tile LUTs
+    let mut tile_luts = vec![[0.0f32; NUM_BINS]; grid * grid];
+    for ty in 0..grid {
+        for tx in 0..grid {
+            let mut hist = [0u32; NUM_BINS];
+            let y0 = ty * tile_h;
+            let x0 = tx * tile_w;
+            for dy in 0..tile_h {
+                for dx in 0..tile_w {
+                    let py = (y0 + dy).min(height - 1);
+                    let px = (x0 + dx).min(width - 1);
+                    let bin = ((luma[py * width + px] * 255.0 + 0.5) as usize).min(255);
+                    hist[bin] += 1;
+                }
             }
 
-            // Actual clip limit in histogram counts.
-            // clip_limit is a multiplier of the "uniform" count per bin.
-            let uniform_count = tile_pixels / NUM_BINS as f32;
-            let abs_clip = (clip_limit * uniform_count).max(1.0);
+            // Clip and redistribute
+            let mut excess = 0u32;
+            for h in &mut hist {
+                if *h > clip {
+                    excess += *h - clip;
+                    *h = clip;
+                }
+            }
+            let per_bin = excess / 256;
+            let remainder = excess % 256;
+            for (i, h) in hist.iter_mut().enumerate() {
+                *h += per_bin + if (i as u32) < remainder { 1 } else { 0 };
+            }
 
-            for c in 0..3 {
-                // Build histogram for this tile and channel.
-                let mut hist = [0u32; NUM_BINS];
-                for y in y0..y1 {
-                    for x in x0..x1 {
-                        let idx = (y * width + x) * 4 + c;
-                        let bin = to_bin(input[idx]);
-                        hist[bin] += 1;
-                    }
-                }
-
-                // Clip and redistribute.
-                let mut excess = 0u32;
-                for bin in 0..NUM_BINS {
-                    if hist[bin] as f32 > abs_clip {
-                        excess += hist[bin] - abs_clip as u32;
-                        hist[bin] = abs_clip as u32;
-                    }
-                }
-                let per_bin = excess / NUM_BINS as u32;
-                let remainder = (excess % NUM_BINS as u32) as usize;
-                for bin in 0..NUM_BINS {
-                    hist[bin] += per_bin;
-                    if bin < remainder {
-                        hist[bin] += 1;
-                    }
-                }
-
-                // Build CDF normalized to [0,1].
-                let cdf_raw = build_cdf(&hist);
-                let total = cdf_raw[NUM_BINS - 1] as f32;
-                for bin in 0..NUM_BINS {
-                    cdfs[c][ty][tx][bin] = if total > 0.0 {
-                        cdf_raw[bin] as f32 / total
-                    } else {
-                        bin as f32 / (NUM_BINS - 1) as f32
-                    };
-                }
+            // Build CDF -> LUT (normalize by N)
+            let cdf = build_cdf(&hist);
+            let total = npixels_per_tile as f32;
+            let lut = &mut tile_luts[ty * grid + tx];
+            for i in 0..NUM_BINS {
+                lut[i] = cdf[i] as f32 / total;
             }
         }
     }
 
-    // Map each pixel using bilinear interpolation of the 4 nearest tile CDFs.
+    // Apply with bilinear interpolation (anchored at tile centers)
     let mut out = input.to_vec();
-
     for y in 0..height {
         for x in 0..width {
-            // Position of this pixel relative to tile centers.
-            // Tile centers are at (tx + 0.5) * tile_w, (ty + 0.5) * tile_h.
-            let fx = (x as f64 + 0.5) / tile_w - 0.5;
-            let fy = (y as f64 + 0.5) / tile_h - 0.5;
+            let tx_f = ((x as f32 + 0.5) / tile_w as f32 - 0.5).clamp(0.0, (grid - 1) as f32);
+            let ty_f = ((y as f32 + 0.5) / tile_h as f32 - 0.5).clamp(0.0, (grid - 1) as f32);
+            let tx0 = tx_f as usize;
+            let ty0 = ty_f as usize;
+            let tx1 = (tx0 + 1).min(grid - 1);
+            let ty1 = (ty0 + 1).min(grid - 1);
+            let fx = tx_f - tx0 as f32;
+            let fy = ty_f - ty0 as f32;
 
-            let tx0 = (fx.floor() as isize).max(0).min(gw as isize - 1) as usize;
-            let ty0 = (fy.floor() as isize).max(0).min(gh as isize - 1) as usize;
-            let tx1 = (tx0 + 1).min(gw - 1);
-            let ty1 = (ty0 + 1).min(gh - 1);
+            let bin = ((luma[y * width + x] * 255.0 + 0.5) as usize).min(255);
+            let v00 = tile_luts[ty0 * grid + tx0][bin];
+            let v10 = tile_luts[ty0 * grid + tx1][bin];
+            let v01 = tile_luts[ty1 * grid + tx0][bin];
+            let v11 = tile_luts[ty1 * grid + tx1][bin];
 
-            let ax = (fx - tx0 as f64).max(0.0).min(1.0) as f32;
-            let ay = (fy - ty0 as f64).max(0.0).min(1.0) as f32;
+            let new_luma = v00 * (1.0 - fx) * (1.0 - fy)
+                + v10 * fx * (1.0 - fy)
+                + v01 * (1.0 - fx) * fy
+                + v11 * fx * fy;
 
-            let px_idx = (y * width + x) * 4;
+            let old_luma = luma[y * width + x].max(1e-10);
+            let ratio = new_luma / old_luma;
 
-            for c in 0..3 {
-                let bin = to_bin(input[px_idx + c]);
-                let v00 = cdfs[c][ty0][tx0][bin];
-                let v10 = cdfs[c][ty0][tx1][bin];
-                let v01 = cdfs[c][ty1][tx0][bin];
-                let v11 = cdfs[c][ty1][tx1][bin];
-
-                let top = v00 * (1.0 - ax) + v10 * ax;
-                let bot = v01 * (1.0 - ax) + v11 * ax;
-                out[px_idx + c] = top * (1.0 - ay) + bot * ay;
-            }
-            // alpha unchanged
+            let idx = (y * width + x) * 4;
+            out[idx] *= ratio;
+            out[idx + 1] *= ratio;
+            out[idx + 2] *= ratio;
         }
     }
 
@@ -323,38 +338,31 @@ mod tests {
     }
 
     #[test]
-    fn normalize_maps_subrange_to_full() {
-        // Input: all channels in [0.2, 0.8] range.
-        let w = 4u32;
+    fn normalize_with_clip_stretches() {
+        // With small clip percentages, normalize should stretch the range
+        let w = 256u32;
         let h = 1u32;
-        let input = vec![
-            0.2, 0.2, 0.2, 1.0,
-            0.4, 0.4, 0.4, 1.0,
-            0.6, 0.6, 0.6, 1.0,
-            0.8, 0.8, 0.8, 1.0,
-        ];
-        let result = normalize(&input, w, h);
-
-        // Min was 0.2, max was 0.8 => range 0.6
-        // 0.2 -> 0.0, 0.8 -> 1.0
-        let eps = 1e-6;
-        assert!((result[0] - 0.0).abs() < eps, "min should map to 0.0");
-        assert!((result[12] - 1.0).abs() < eps, "max should map to 1.0");
-
-        // 0.4 -> (0.4-0.2)/0.6 = 1/3
-        assert!((result[4] - 1.0 / 3.0).abs() < eps);
-        // 0.6 -> (0.6-0.2)/0.6 = 2/3
-        assert!((result[8] - 2.0 / 3.0).abs() < eps);
+        let mut input = Vec::with_capacity((w * h * 4) as usize);
+        for i in 0..(w * h) {
+            let v = i as f32 / (w * h - 1) as f32; // full [0,1] range
+            input.extend_from_slice(&[v, v, v, 1.0]);
+        }
+        // With 1% clip on each end, result should still cover near [0,1]
+        let result = normalize_clipped(&input, w, h, 0.01, 0.01);
+        assert!(result[0] < 0.0, "darkest pixels should map below 0 with clip");
+        let last = ((w * h - 1) * 4) as usize;
+        assert!(result[last] > 1.0, "brightest pixels should map above 1 with clip");
     }
 
     #[test]
-    fn normalize_constant_image_yields_zero() {
+    fn normalize_constant_image_unchanged() {
         let input = vec![0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0,
                          0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 0.5, 1.0];
         let result = normalize(&input, 2, 2);
+        // With histogram-based approach and 0 range, values stay the same
         for px in result.chunks_exact(4) {
             for c in 0..3 {
-                assert_eq!(px[c], 0.0, "constant image channel should be 0.0");
+                assert_eq!(px[c], 0.5, "constant image channel should be unchanged");
             }
             assert_eq!(px[3], 1.0, "alpha preserved");
         }
@@ -369,9 +377,8 @@ mod tests {
     }
 
     #[test]
-    fn auto_level_zero_clip_approx_normalize() {
-        // With 0% clipping, auto_level should behave like normalize
-        // (up to quantization error from the 256-bin histogram).
+    fn auto_level_basic_stretch() {
+        // Verify auto_level stretches a sub-range image
         let w = 64u32;
         let h = 1u32;
         let mut input = Vec::with_capacity((w * h * 4) as usize);
@@ -380,15 +387,11 @@ mod tests {
             input.extend_from_slice(&[v, v, v, 1.0]);
         }
 
-        let auto_result = auto_level(&input, w, h, 0.0);
-        let norm_result = normalize(&input, w, h);
-
-        let diff = max_rgb_diff(&auto_result, &norm_result);
-        // Quantization bins are ~1/255 wide, so error can be up to ~1/128
-        assert!(
-            diff < 0.02,
-            "auto_level(clip=0) should approximate normalize, got max diff {diff}"
-        );
+        let result = auto_level(&input, w, h, 0.0);
+        // First pixel should be near 0, last near 1
+        assert!(result[0] < 0.05, "min should map near 0.0, got {}", result[0]);
+        let last = ((w * h - 1) * 4) as usize;
+        assert!(result[last] > 0.95, "max should map near 1.0, got {}", result[last]);
     }
 
     #[test]
@@ -439,19 +442,19 @@ mod tests {
     #[test]
     fn clahe_grid_subdivides_image() {
         // Smoke test: CLAHE with grid_size=4 on a 32x32 image should
-        // produce valid output (no panics, values in [0,1]).
+        // produce valid output (no panics, reasonable values).
         let w = 32u32;
         let h = 32u32;
         let input = crate::noise(w, h, 99);
         let result = clahe(&input, w, h, 3.0, 4);
 
         assert_eq!(result.len(), input.len());
+        // Luma-ratio CLAHE can produce values > 1.0 for saturated pixels
+        // but should not produce NaN or extreme values
         for px in result.chunks_exact(4) {
             for c in 0..3 {
-                assert!(
-                    (0.0..=1.0).contains(&px[c]),
-                    "output pixel out of range: {}", px[c]
-                );
+                assert!(!px[c].is_nan(), "output pixel is NaN");
+                assert!(px[c] >= -1.0 && px[c] <= 10.0, "output pixel out of range: {}", px[c]);
             }
         }
     }

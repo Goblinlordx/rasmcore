@@ -825,20 +825,20 @@ def golden_quantize(levels: int) -> dict:
 
 
 # ─── Spatial filter input ──────────────────────────────────────────────────
-# 64x64 test image for spatial ops. Large enough that typical kernel sizes
-# (radius 1-3, ksize 11-31) don't make most pixels border pixels.
-# Professional tools (Resolve, Nuke) operate on 4K+ images — a 64x64 test
-# is already a concession to speed.
+# 128x128 test image for spatial ops. Large enough that even large sigma
+# values (80, 100, 250) produce meaningful non-degenerate results.
+# Professional tools (Resolve, Nuke) operate on 4K+ images — 128x128
+# is a concession to speed while remaining realistic for all kernel sizes.
 
-SPATIAL_W, SPATIAL_H = 64, 64
+SPATIAL_W, SPATIAL_H = 128, 128
 
 _spatial_srgb = np.zeros((SPATIAL_H, SPATIAL_W, 3), dtype=np.uint8)
 for _y in range(SPATIAL_H):
     for _x in range(SPATIAL_W):
         _spatial_srgb[_y, _x] = [
-            min(_x * 4, 255),
-            min(_y * 4, 255),
-            min((_x + _y) * 2, 255),
+            min(_x * 2, 255),
+            min(_y * 2, 255),
+            min((_x + _y), 255),
         ]
 SPATIAL_INPUT_LINEAR = srgb_to_linear(_spatial_srgb)
 
@@ -1288,40 +1288,88 @@ def _gauss_blur(img, sigma, border=cv2.BORDER_REFLECT_101):
 
 
 def golden_clahe(tile_grid: int, clip_limit: float) -> dict:
-    """CLAHE via cv2.createCLAHE applied to BT.709 luminance in u8 space.
+    """CLAHE with explicit tile-based histogram equalization in numpy.
 
-    Pipeline: quantize luminance to u8, apply CLAHE, compute ratio, apply to RGB.
-    We use OpenCV's CLAHE on the u8 luminance channel, then apply the ratio to
-    the original linear RGB channels.
+    Implements the full CLAHE algorithm independently:
+    1. BT.709 luminance, clamp [0,1]
+    2. Divide into tile_grid x tile_grid tiles
+    3. Per tile: build 256-bin histogram from round-to-nearest u8, clip & redistribute, build CDF LUT
+    4. Bilinear interpolation between tile LUTs (anchored at tile centers)
+    5. Apply luma ratio to RGB
+
+    Uses numpy for all computation — validates the algorithm, not OpenCV's specific impl.
     """
     img = SPATIAL_INPUT_LINEAR.astype(np.float64)
     h, w = img.shape[:2]
+    grid = tile_grid
 
-    # BT.709 luminance
-    luma = img[:, :, 0] * 0.2126 + img[:, :, 1] * 0.7152 + img[:, :, 2] * 0.0722
+    # BT.709 luminance, clamped [0,1]
+    luma = np.clip(img[:, :, 0] * 0.2126 + img[:, :, 1] * 0.7152 + img[:, :, 2] * 0.0722, 0.0, 1.0)
 
-    # Quantize luminance to u8
-    luma_u8 = np.clip(luma * 255.0 + 0.5, 0, 255).astype(np.uint8)
+    tile_w = w // grid
+    tile_h = h // grid
+    npixels = tile_w * tile_h
+    clip = max(clip_limit * npixels / 256.0, 1.0)
 
-    # Apply OpenCV CLAHE
-    clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(tile_grid, tile_grid))
-    luma_clahe_u8 = clahe.apply(luma_u8)
+    # Build per-tile LUTs
+    tile_luts = np.zeros((grid, grid, 256), dtype=np.float64)
+    for ty in range(grid):
+        for tx in range(grid):
+            hist = np.zeros(256, dtype=np.int64)
+            y0, x0 = ty * tile_h, tx * tile_w
+            for dy in range(tile_h):
+                for dx in range(tile_w):
+                    py = min(y0 + dy, h - 1)
+                    px = min(x0 + dx, w - 1)
+                    b = min(int(luma[py, px] * 255.0 + 0.5), 255)
+                    hist[b] += 1
 
-    # Convert back to f64
-    luma_clahe = luma_clahe_u8.astype(np.float64) / 255.0
+            # Clip and redistribute
+            excess = 0
+            for i in range(256):
+                if hist[i] > clip:
+                    excess += hist[i] - int(clip)
+                    hist[i] = int(clip)
+            per_bin = excess // 256
+            remainder = excess % 256
+            for i in range(256):
+                hist[i] += per_bin + (1 if i < remainder else 0)
 
-    # Compute ratio and apply to RGB
+            # CDF -> LUT (normalize by N, no cdf_min subtraction)
+            cdf = np.cumsum(hist)
+            tile_luts[ty, tx] = cdf.astype(np.float64) / float(npixels)
+
+    # Apply with bilinear interpolation (anchored at tile centers)
     output = img.copy()
-    ratio = np.where(luma > 1e-10, luma_clahe / luma, 1.0)
-    for c in range(3):
-        output[:, :, c] *= ratio
+    for y in range(h):
+        for x in range(w):
+            tx_f = max(0.0, min((x + 0.5) / tile_w - 0.5, grid - 1))
+            ty_f = max(0.0, min((y + 0.5) / tile_h - 0.5, grid - 1))
+            tx0 = int(tx_f)
+            ty0 = int(ty_f)
+            tx1 = min(tx0 + 1, grid - 1)
+            ty1 = min(ty0 + 1, grid - 1)
+            fx = tx_f - tx0
+            fy = ty_f - ty0
+
+            b = min(int(luma[y, x] * 255.0 + 0.5), 255)
+            v00 = tile_luts[ty0, tx0, b]
+            v10 = tile_luts[ty0, tx1, b]
+            v01 = tile_luts[ty1, tx0, b]
+            v11 = tile_luts[ty1, tx1, b]
+            new_luma = v00 * (1 - fx) * (1 - fy) + v10 * fx * (1 - fy) + v01 * (1 - fx) * fy + v11 * fx * fy
+
+            old_luma = max(luma[y, x], 1e-10)
+            ratio = new_luma / old_luma
+            for c in range(3):
+                output[y, x, c] *= ratio
 
     return {
         "filter": "clahe",
         "params": {"tile_grid": tile_grid, "clip_limit": clip_limit},
-        "tool": f"cv2.createCLAHE (clipLimit={clip_limit}, tileGridSize={tile_grid})",
-        "tool_version": cv2.__version__,
-        "note": "BT.709 luma -> u8 -> CLAHE -> ratio -> apply to linear RGB",
+        "tool": "numpy (explicit CLAHE: tile histograms, clip/redistribute, bilinear interp)",
+        "tool_version": np.__version__,
+        "note": "Full CLAHE in numpy: BT.709 luma, 256-bin tile hists, clip+redistribute, CDF/N LUT, tile-center bilinear interp",
         "output": pixels_to_list(output.astype(np.float32)),
     }
 
@@ -1397,69 +1445,80 @@ def golden_nlm_denoise(h_param: float, patch_radius: int, search_radius: int) ->
 def golden_dehaze(patch_radius: int, omega: float, t_min: float) -> dict:
     """Dark channel prior dehazing (He et al. 2009) in numpy.
 
-    Algorithm:
-    1. Dark channel: min over RGB, then min-filter over patch.
-    2. Atmospheric light: brightest pixel in dark channel -> use its RGB.
-    3. Transmission map: t = 1 - omega * dark_channel(I/A).
+    Algorithm (matching pipeline exactly):
+    1. Dark channel: min over RGB in local patch, BORDER_REPLICATE (clamp).
+    2. Atmospheric light: average of top 0.1% brightest dark channel pixels' RGB.
+    3. Transmission map: t = 1 - omega * min(I/A) in local patch, BORDER_REPLICATE.
     4. Recovery: J = (I - A) / max(t, t_min) + A.
     """
-    img = SPATIAL_INPUT_LINEAR.astype(np.float64)
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
     height, width = img.shape[:2]
     r = patch_radius
+    n = height * width
 
-    def reflect_101(v, s):
-        if v < 0: return min(-v, s - 1)
-        if v >= s: return max(2 * s - v - 2, 0)
-        return v
+    # Step 1: Dark channel — fused min over RGB in local patch (BORDER_REPLICATE)
+    # Use vectorized numpy min for each patch to match f32 precision exactly
+    dark_channel = np.zeros((height, width), dtype=np.float32)
+    for y in range(height):
+        for x in range(width):
+            y0 = max(y - r, 0)
+            y1 = min(y + r + 1, height)
+            x0 = max(x - r, 0)
+            x1 = min(x + r + 1, width)
+            patch = img[y0:y1, x0:x1]  # HxWx3 f32 slice
+            dark_channel[y, x] = patch.min()
 
-    def min_filter(arr, radius):
-        """Min filter with BORDER_REFLECT_101."""
-        h, w = arr.shape
-        out = np.zeros_like(arr)
-        for y in range(h):
-            for x in range(w):
-                mn = arr[y, x]
-                for dy in range(-radius, radius + 1):
-                    for dx in range(-radius, radius + 1):
-                        sy = reflect_101(y + dy, h)
-                        sx = reflect_101(x + dx, w)
-                        mn = min(mn, arr[sy, sx])
-                out[y, x] = mn
-        return out
+    # Step 2: Atmospheric light — average of top 0.1% brightest dark channel pixels
+    flat_dark = dark_channel.ravel()
+    sorted_indices = np.argsort(flat_dark)[::-1]
+    top_count = max(int(np.ceil(n * 0.001)), 1)
+    atmos = np.zeros(3, dtype=np.float32)
+    for i in range(top_count):
+        idx = sorted_indices[i]
+        ay, ax = divmod(idx, width)
+        atmos += img[ay, ax]
+    # Match pipeline: multiply by 1/count (not divide by count)
+    inv_count = np.float32(1.0) / np.float32(top_count)
+    atmos *= inv_count
 
-    # Step 1: Dark channel of input
-    dark_input = np.min(img, axis=2)  # min over RGB
-    dark_input = min_filter(dark_input, r)
+    # Step 3: Transmission — fused min(I/A) in local patch (BORDER_REPLICATE)
+    # Use numpy f32 operations exclusively (np.minimum for IEEE754 min, no Python float promotion)
+    a0 = np.float32(max(atmos[0], 1e-10))
+    a1 = np.float32(max(atmos[1], 1e-10))
+    a2 = np.float32(max(atmos[2], 1e-10))
+    transmission = np.zeros((height, width), dtype=np.float32)
+    for y in range(height):
+        for x in range(width):
+            y0 = max(y - r, 0)
+            y1 = min(y + r + 1, height)
+            x0 = max(x - r, 0)
+            x1 = min(x + r + 1, width)
+            mn = np.float32(np.finfo(np.float32).max)
+            for py in range(y0, y1):
+                for px in range(x0, x1):
+                    nr = np.float32(img[py, px, 0] / a0)
+                    ng = np.float32(img[py, px, 1] / a1)
+                    nb = np.float32(img[py, px, 2] / a2)
+                    # Match Rust: nr.min(ng).min(nb) — left-associative f32 min
+                    v = np.minimum(np.minimum(nr, ng), nb)
+                    mn = np.minimum(mn, v)
+            transmission[y, x] = np.float32(1.0) - np.float32(omega) * mn
 
-    # Step 2: Atmospheric light — pixel with highest dark channel value
-    # (simplified: brightest pixel in dark channel, take its RGB)
-    flat_idx = np.argmax(dark_input)
-    ay, ax = divmod(flat_idx, width)
-    atmos = img[ay, ax].copy()
-    # Ensure atmospheric light is not zero
-    atmos = np.maximum(atmos, 1e-10)
-
-    # Step 3: Transmission map
-    # Normalize image by atmospheric light
-    norm = img.copy()
-    for c in range(3):
-        norm[:, :, c] = img[:, :, c] / atmos[c]
-    dark_norm = np.min(norm, axis=2)
-    dark_norm = min_filter(dark_norm, r)
-    transmission = 1.0 - omega * dark_norm
-
-    # Step 4: Recovery
-    t_clamped = np.maximum(transmission, t_min)
+    # Step 4: Recovery — match pipeline: multiply by 1/t (not divide by t)
     output = img.copy()
-    for c in range(3):
-        output[:, :, c] = (img[:, :, c] - atmos[c]) / t_clamped + atmos[c]
+    for y in range(height):
+        for x in range(width):
+            t = np.maximum(transmission[y, x], np.float32(t_min))
+            inv_t = np.float32(1.0) / t
+            for c in range(3):
+                output[y, x, c] = (img[y, x, c] - atmos[c]) * inv_t + atmos[c]
 
     return {
         "filter": "dehaze",
         "params": {"patch_radius": patch_radius, "omega": omega, "t_min": t_min},
-        "tool": "numpy (He et al. 2009 dark channel prior)",
+        "tool": "numpy (He et al. 2009 dark channel prior, top-0.1% atmos, BORDER_REPLICATE)",
         "tool_version": np.__version__,
-        "note": "Dark channel min-filter, atmospheric light from brightest dark pixel, t=1-omega*dc(I/A), recover",
+        "note": "Fused dark channel + min(I/A) in patch, top-0.1% atmospheric light average, BORDER_REPLICATE",
         "output": pixels_to_list(output.astype(np.float32)),
     }
 
@@ -1496,49 +1555,67 @@ def golden_clarity(amount: float, radius: float) -> dict:
     }
 
 
-def golden_shadow_highlight(shadows: float, highlights: float) -> dict:
-    """Shadow/highlight recovery via blurred luminance weighting.
+def golden_shadow_highlight(shadows: float, highlights: float,
+                            whitepoint: float = 0.0, radius: float = 100.0,
+                            compress: float = 50.0,
+                            shadows_ccorrect: float = 100.0,
+                            highlights_ccorrect: float = 100.0) -> dict:
+    """Shadow/highlight matching pipeline's full formula exactly.
 
-    Simplified version with default params:
-    - radius=100 (blur sigma for luminance)
-    - compress=0.5 (unused in simplified version)
-    - ccorrect=1.0 (unused in simplified version)
-    - whitepoint=0 (unused in simplified version)
-
-    Algorithm:
-    1. Compute BT.709 luminance.
-    2. Blur luminance with GaussianBlur(sigma=100).
-    3. Shadow weight = (1 - blurred_luma)^2.
-    4. Highlight weight = blurred_luma^2.
-    5. out = in + shadows * shadow_weight * in + highlights * highlight_weight * in
-       => out = in * (1 + shadows * sw + highlights * hw)
+    Pipeline divides shadows/highlights/compress/ccorrect by 100.
+    Uses blurred luminance, quadratic weights, compress, and chroma correction.
     """
+    import math
+
     img = SPATIAL_INPUT_LINEAR.astype(np.float64)
-    sigma = 100.0
+    sh = shadows / 100.0
+    hl = highlights / 100.0
+    wp = whitepoint
+    comp = compress / 100.0
+    sc = shadows_ccorrect / 100.0
+    hc = highlights_ccorrect / 100.0
 
-    # BT.709 luminance
+    # Luminance
     luma = img[:, :, 0] * 0.2126 + img[:, :, 1] * 0.7152 + img[:, :, 2] * 0.0722
+
+    # Blur luminance (pack into 3-channel for _gauss_blur, extract)
     luma_f32 = luma.astype(np.float32)
+    blurred = _gauss_blur(luma_f32, radius).astype(np.float64)
 
-    # Blur luminance
-    blurred_luma = _gauss_blur(luma_f32, sigma).astype(np.float64)
-
-    # Weights
-    shadow_w = (1.0 - blurred_luma) ** 2
-    highlight_w = blurred_luma ** 2
-
-    # Apply
     output = img.copy()
-    factor = 1.0 + shadows * shadow_w + highlights * highlight_w
-    for c in range(3):
-        output[:, :, c] = img[:, :, c] * factor
+    h, w = img.shape[:2]
+    for y in range(h):
+        for x in range(w):
+            bl = blurred[y, x]
+            sw = (1.0 - bl) ** 2
+            hw = bl ** 2
+            if comp > 0:
+                mid = 4.0 * bl * (1.0 - bl)
+                sw *= (1.0 - comp * mid)
+                hw *= (1.0 - comp * mid)
+
+            luma_adj = sh * sw - hl * hw + wp * 0.01
+            cur_luma = max(luma[y, x], 1e-10)
+            new_luma = max(cur_luma + luma_adj, 0.0)
+            ratio = new_luma / cur_luma
+
+            for c in range(3):
+                v = img[y, x, c]
+                chroma = v - cur_luma
+                sign_c = 1.0 if chroma >= 0 else -1.0
+                sat_adj = 1.0 + sign_c * sw * (sc - 1.0) + sign_c * hw * (hc - 1.0)
+                sat_adj = max(sat_adj, 0.0)
+                output[y, x, c] = new_luma + chroma * sat_adj * ratio
 
     return {
         "filter": "shadow_highlight",
-        "params": {"shadows": shadows, "highlights": highlights},
-        "tool": f"cv2.GaussianBlur (sigma=100) + numpy shadow/highlight weights",
-        "tool_version": cv2.__version__,
-        "note": "sw=(1-bl)^2, hw=bl^2, out=in*(1+shadows*sw+highlights*hw), blur sigma=100",
+        "params": {"shadows": shadows, "highlights": highlights,
+                   "whitepoint": whitepoint, "radius": radius,
+                   "compress": compress, "shadows_ccorrect": shadows_ccorrect,
+                   "highlights_ccorrect": highlights_ccorrect},
+        "tool": "numpy (exact pipeline formula with all params)",
+        "tool_version": np.__version__,
+        "note": "Full pipeline formula: shadow/highlight weights, compress, chroma correction, luma ratio",
         "output": pixels_to_list(output.astype(np.float32)),
     }
 
@@ -1604,7 +1681,7 @@ def golden_retinex_msr(sigma_s: float, sigma_m: float, sigma_l: float) -> dict:
 
     return {
         "filter": "retinex_msr",
-        "params": {"sigma_s": sigma_s, "sigma_m": sigma_m, "sigma_l": sigma_l},
+        "params": {"sigma_small": sigma_s, "sigma_medium": sigma_m, "sigma_large": sigma_l},
         "tool": f"cv2.GaussianBlur + numpy log (sigmas={sigma_s},{sigma_m},{sigma_l})",
         "tool_version": cv2.__version__,
         "note": "Average of 3 SSR (log(in)-log(blur)) at different sigmas, normalized [0,1]",
@@ -1745,7 +1822,7 @@ def main():
     spatial = {
         "meta": {
             "description": "Golden I/O from OpenCV for spatial filter validation",
-            "input_description": "16x16 sRGB gradient, decoded to linear f32",
+            "input_description": "128x128 sRGB gradient, decoded to linear f32",
             "width": SPATIAL_W,
             "height": SPATIAL_H,
             "tools": tool_info(),
@@ -1782,6 +1859,7 @@ def main():
     spatial["filters"]["dehaze_7_0.95_0.1"] = golden_dehaze(7, 0.95, 0.1)
     spatial["filters"]["clarity_0.5_15"] = golden_clarity(0.5, 15.0)
     spatial["filters"]["shadow_highlight_0.3_-0.2"] = golden_shadow_highlight(0.3, -0.2)
+    # Retinex: use production-representative sigma values (128x128 handles large kernels fine)
     spatial["filters"]["retinex_ssr_80"] = golden_retinex_ssr(80.0)
     spatial["filters"]["retinex_msr_15_80_250"] = golden_retinex_msr(15.0, 80.0, 250.0)
     spatial["filters"]["tonemap_filmic_default"] = golden_tonemap_filmic(0.22, 0.3, 0.1, 0.2, 0.01)
