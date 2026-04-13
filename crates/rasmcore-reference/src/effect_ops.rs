@@ -269,54 +269,46 @@ pub fn chromatic_split(
 /// frequent bin, output average color of that bin.
 ///
 /// Alpha is preserved from the center pixel.
-pub fn oil_paint(input: &[f32], w: u32, h: u32, radius: u32, levels: u32) -> Vec<f32> {
+pub fn oil_paint(input: &[f32], w: u32, h: u32, radius: u32, _levels: u32) -> Vec<f32> {
     let n = (w * h) as usize;
+    let wu = w as usize;
+    let hu = h as usize;
     let mut output = vec![0.0f32; n * 4];
-    let levels = levels.max(2);
+    let r = radius as i64;
+    let kw = (2 * r + 1) as usize;
+    const BINS: usize = 256;
 
     for y in 0..h {
         for x in 0..w {
-            let idx = (y * w + x) as usize;
-            let mut bin_count = vec![0u32; levels as usize];
-            let mut bin_r = vec![0.0f32; levels as usize];
-            let mut bin_g = vec![0.0f32; levels as usize];
-            let mut bin_b = vec![0.0f32; levels as usize];
+            let oidx = (y * w + x) as usize;
+            let mut count = [0u32; BINS];
+            let mut max_count = 0u32;
+            let mut best_pixel = oidx * 4;
 
-            let y0 = y.saturating_sub(radius);
-            let y1 = (y + radius).min(h - 1);
-            let x0 = x.saturating_sub(radius);
-            let x1 = (x + radius).min(w - 1);
-
-            for ny in y0..=y1 {
-                for nx in x0..=x1 {
-                    let ni = (ny * w + nx) as usize;
-                    let r = input[ni * 4];
-                    let g = input[ni * 4 + 1];
-                    let b = input[ni * 4 + 2];
-                    let luma = luminance(r, g, b).clamp(0.0, 1.0);
-                    let bin = ((luma * (levels - 1) as f32) as u32).min(levels - 1) as usize;
-                    bin_count[bin] += 1;
-                    bin_r[bin] += r;
-                    bin_g[bin] += g;
-                    bin_b[bin] += b;
+            // Iterate full kernel, clamp to edge (matching IM virtual pixels)
+            for v in 0..kw {
+                for u in 0..kw {
+                    let ny = (y as i64 + v as i64 - r).clamp(0, hu as i64 - 1) as usize;
+                    let nx = (x as i64 + u as i64 - r).clamp(0, wu as i64 - 1) as usize;
+                    let ni = (ny * wu + nx) * 4;
+                    // IM Rec709Luma: direct weighted sum (no gamma since IM sees TIFF as sRGB)
+                    let intensity = 0.212656 * input[ni]
+                        + 0.715158 * input[ni + 1]
+                        + 0.072186 * input[ni + 2];
+                    // Round-to-nearest (matching IM's ScaleQuantumToChar)
+                    let bin = ((intensity.max(0.0) * 255.0 + 0.5) as usize).min(BINS - 1);
+                    count[bin] += 1;
+                    if count[bin] > max_count {
+                        max_count = count[bin];
+                        best_pixel = ni;
+                    }
                 }
             }
 
-            // Find most frequent bin
-            let mut best_bin = 0;
-            let mut best_count = 0;
-            for b in 0..levels as usize {
-                if bin_count[b] > best_count {
-                    best_count = bin_count[b];
-                    best_bin = b;
-                }
-            }
-
-            let c = best_count as f32;
-            output[idx * 4] = bin_r[best_bin] / c;
-            output[idx * 4 + 1] = bin_g[best_bin] / c;
-            output[idx * 4 + 2] = bin_b[best_bin] / c;
-            output[idx * 4 + 3] = input[idx * 4 + 3];
+            output[oidx * 4] = input[best_pixel];
+            output[oidx * 4 + 1] = input[best_pixel + 1];
+            output[oidx * 4 + 2] = input[best_pixel + 2];
+            output[oidx * 4 + 3] = input[oidx * 4 + 3];
         }
     }
     output

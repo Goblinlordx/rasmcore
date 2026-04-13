@@ -413,10 +413,8 @@ fn spatial_tolerance_for(filter_name: &str) -> f32 {
         "barrel" | "spherize" | "swirl" | "wave" | "ripple" | "polar" | "depolar" => 0.01,
         // Chromatic aberration: per-channel bilinear sampling
         "chromatic_aberration" => 0.01,
-        // Oil paint: neighborhood histogram mode — bin ties and f32 accumulation order
-        // cause different mode selections at bin boundaries. Reference matches golden
-        // exactly (both Python), pipeline has FP ordering diff in the 49-pixel accumulation.
-        "oil_paint" => 0.11,
+        // Oil paint: matches ImageMagick -paint (copy mode-bin pixel, no averaging)
+        "oil_paint" => 0.01,
         // Charcoal: Sobel + blur chain
         "charcoal" => 0.01,
         // Halftone: binary circle rendering — exact formula match
