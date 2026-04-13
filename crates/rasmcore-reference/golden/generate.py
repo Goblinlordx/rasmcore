@@ -16,6 +16,7 @@ import json
 import os
 import sys
 import subprocess
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -95,7 +96,6 @@ def im_process(img_rgb_f32: np.ndarray, args: list) -> np.ndarray:
     Handles BGR conversion for cv2.imwrite/imread, f32 TIFF I/O,
     and output size changes (e.g., -wave adds rows).
     """
-    import tempfile
     # Convert RGB to BGR for OpenCV TIFF write
     img_bgr = img_rgb_f32[:, :, ::-1].copy()
     h, w = img_rgb_f32.shape[:2]
@@ -2430,36 +2430,43 @@ def golden_morph_gradient(radius: int) -> dict:
 
 
 def golden_blend_self(mode_name: str, mode_id: int) -> dict:
-    """Self-blend: apply blend mode with input as both base and overlay (opacity=1).
+    """Self-blend via ImageMagick -compose (genuine external tool).
 
-    This is what the single-input Blend filter does in the pipeline.
-    W3C Compositing Level 1 formulas.
+    Uses IM's built-in blend mode implementation with the same image as
+    both base and overlay (self-composite). Validates W3C Compositing Level 1.
     """
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
-    output = img.copy()
+    im_mode = mode_name.capitalize()  # IM uses "Multiply", "Screen", etc.
 
-    for y in range(img.shape[0]):
-        for x in range(img.shape[1]):
-            for c in range(3):
-                b = float(img[y, x, c])
-                # Self-blend: base = overlay = pixel
-                if mode_name == "multiply":
-                    output[y, x, c] = b * b
-                elif mode_name == "screen":
-                    output[y, x, c] = 1.0 - (1.0 - b) * (1.0 - b)
-                elif mode_name == "overlay":
-                    output[y, x, c] = 2.0 * b * b if b < 0.5 else 1.0 - 2.0 * (1.0 - b) * (1.0 - b)
-                elif mode_name == "darken":
-                    output[y, x, c] = b  # min(b, b) = b
-                elif mode_name == "lighten":
-                    output[y, x, c] = b  # max(b, b) = b
+    # IM self-composite: magick base.tiff base.tiff -compose Mode -composite out.tiff
+    img_bgr = img[:, :, ::-1].copy()
+    with tempfile.NamedTemporaryFile(suffix='.tiff', delete=False) as f:
+        cv2.imwrite(f.name, img_bgr)
+        in_path = f.name
+    out_path = in_path.replace('.tiff', '_out.tiff')
+
+    r = subprocess.run([
+        'magick', in_path, in_path,
+        '-depth', '32', '-define', 'quantum:format=floating-point',
+        '-compose', im_mode, '-composite',
+        '-depth', '32', '-define', 'quantum:format=floating-point',
+        out_path
+    ], capture_output=True, text=True)
+
+    if r.returncode != 0:
+        raise RuntimeError(f'IM blend failed: {r.stderr}')
+
+    result_bgr = cv2.imread(out_path, cv2.IMREAD_UNCHANGED)
+    os.unlink(in_path)
+    os.unlink(out_path)
+    output = result_bgr[:, :, ::-1].copy().astype(np.float32)
 
     return {
         "filter": "blend",
         "params": {"mode": mode_id, "opacity": 1.0},
-        "tool": f"numpy (W3C {mode_name} self-blend: base=overlay=pixel)",
-        "tool_version": np.__version__,
-        "note": f"Self-blend mode={mode_name}({mode_id}), opacity=1.0",
+        "tool": f"magick -compose {im_mode} -composite (self-blend)",
+        "tool_version": tool_info()["imagemagick"],
+        "note": f"ImageMagick built-in {mode_name} blend, self-composite",
         "output": pixels_to_list(output),
     }
 
