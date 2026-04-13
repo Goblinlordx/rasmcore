@@ -360,6 +360,19 @@ fn run_spatial_reference(_filter_key: &str, entry: &GoldenEntry, input: &[f32], 
         "charcoal" => refimpl::effect_ops::charcoal(input, w, h, f("sigma") as u32),
         "halftone" => refimpl::effect_ops::halftone(input, w, h, u("dot_size")),
         "pixelate" => refimpl::grading_ops::pixelate(input, w, h, u("block_size")),
+        // Composite ops (self-blend: base=overlay=input)
+        "blend" => {
+            let mode_id = u("mode");
+            let opacity = f("opacity");
+            let mode_str = match mode_id {
+                0 => "normal", 1 => "multiply", 2 => "screen", 3 => "overlay",
+                4 => "soft_light", 5 => "hard_light", 6 => "color_dodge",
+                7 => "color_burn", 8 => "darken", 9 => "lighten",
+                10 => "difference", 11 => "exclusion",
+                _ => return None,
+            };
+            refimpl::composite_ops::blend(input, input, w, h, mode_str, opacity)
+        },
         // Edge ops
         "laplacian" => refimpl::edge_ops::laplacian(input, w, h),
         "threshold_binary" => refimpl::edge_ops::threshold(input, w, h, f("threshold")),

@@ -2429,6 +2429,41 @@ def golden_morph_gradient(radius: int) -> dict:
 # ─── Composite / alpha golden generators ────────────────────────────────────
 
 
+def golden_blend_self(mode_name: str, mode_id: int) -> dict:
+    """Self-blend: apply blend mode with input as both base and overlay (opacity=1).
+
+    This is what the single-input Blend filter does in the pipeline.
+    W3C Compositing Level 1 formulas.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    output = img.copy()
+
+    for y in range(img.shape[0]):
+        for x in range(img.shape[1]):
+            for c in range(3):
+                b = float(img[y, x, c])
+                # Self-blend: base = overlay = pixel
+                if mode_name == "multiply":
+                    output[y, x, c] = b * b
+                elif mode_name == "screen":
+                    output[y, x, c] = 1.0 - (1.0 - b) * (1.0 - b)
+                elif mode_name == "overlay":
+                    output[y, x, c] = 2.0 * b * b if b < 0.5 else 1.0 - 2.0 * (1.0 - b) * (1.0 - b)
+                elif mode_name == "darken":
+                    output[y, x, c] = b  # min(b, b) = b
+                elif mode_name == "lighten":
+                    output[y, x, c] = b  # max(b, b) = b
+
+    return {
+        "filter": "blend",
+        "params": {"mode": mode_id, "opacity": 1.0},
+        "tool": f"numpy (W3C {mode_name} self-blend: base=overlay=pixel)",
+        "tool_version": np.__version__,
+        "note": f"Self-blend mode={mode_name}({mode_id}), opacity=1.0",
+        "output": pixels_to_list(output),
+    }
+
+
 def golden_blend_multiply(opacity: float) -> dict:
     """Blend multiply: out = base * overlay. W3C Compositing Level 1 spec."""
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
@@ -2616,6 +2651,12 @@ def main():
     spatial["filters"]["charcoal_1_1"] = golden_charcoal(1.0, 1.0)
     spatial["filters"]["halftone_8"] = golden_halftone(8.0)
     spatial["filters"]["ripple_5_30"] = golden_ripple(5.0, 30.0)
+
+    # ── Blend self-blend tests (single-input, base=overlay=input) ──────
+    # Multiply self-blend: pixel² (W3C Compositing Level 1)
+    spatial["filters"]["blend_multiply_self"] = golden_blend_self("multiply", 1)
+    # Screen self-blend: 1-(1-pixel)² = 2*pixel - pixel²
+    spatial["filters"]["blend_screen_self"] = golden_blend_self("screen", 2)
 
     # ── Edge + morphology filters ────────────────────────────────────────
     spatial["filters"]["laplacian_1"] = golden_laplacian(1.0)
