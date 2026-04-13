@@ -3,6 +3,18 @@ use crate::ops::{Filter, GpuFilter};
 
 use crate::filters::helpers::luminance;
 
+/// Round-half-to-even (banker's rounding), matching OpenCV's cvRound.
+#[inline]
+fn round_even(x: f32) -> i32 {
+    let r = x.round();
+    // If exactly halfway, round to even
+    if (x - r.floor()).abs() == 0.5 && (r as i32) % 2 != 0 {
+        (x.floor()) as i32
+    } else {
+        r as i32
+    }
+}
+
 /// CLAHE — local adaptive histogram equalization on luminance.
 ///
 /// Operates on luminance channel with bilinear interpolation between tiles.
@@ -84,13 +96,13 @@ impl Filter for Clahe {
                     }
                 }
 
-                // Build CDF -> LUT as u8 (OpenCV: round(CDF * 255 / total))
+                // Build CDF -> LUT as u8 (OpenCV: saturate_cast via cvRound = banker's rounding)
                 let mut cdf_sum = 0u32;
                 let lut = &mut tile_luts[ty * grid + tx];
                 for i in 0..256 {
                     cdf_sum += hist[i];
-                    // saturate_cast<u8>(sum * lutScale) — round-to-nearest
-                    lut[i] = (cdf_sum as f32 * lut_scale + 0.5).min(255.0) as u8;
+                    let v = cdf_sum as f32 * lut_scale;
+                    lut[i] = round_even(v).clamp(0, 255) as u8;
                 }
             }
         }

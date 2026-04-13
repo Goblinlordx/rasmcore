@@ -6,6 +6,17 @@
 
 const NUM_BINS: usize = 256;
 
+/// Round-half-to-even (banker's rounding), matching OpenCV's cvRound.
+#[inline]
+fn round_even(x: f32) -> i32 {
+    let r = x.round();
+    if (x - r.floor()).abs() == 0.5 && (r as i32) % 2 != 0 {
+        (x.floor()) as i32
+    } else {
+        r as i32
+    }
+}
+
 /// Quantize an f32 value in [0,1] to a histogram bin index in [0,255].
 fn to_bin(v: f32) -> usize {
     (v.clamp(0.0, 1.0) * 255.0).round() as usize
@@ -248,12 +259,12 @@ pub fn clahe(input: &[f32], w: u32, h: u32, clip_limit: f32, grid_size: u32) -> 
                 }
             }
 
-            // CDF → u8 LUT: round(CDF * 255 / total)
+            // CDF → u8 LUT: cvRound(CDF * 255 / total) — banker's rounding
             let mut cdf_sum = 0u32;
             let lut = &mut tile_luts[ty * grid + tx];
             for i in 0..NUM_BINS {
                 cdf_sum += hist[i];
-                lut[i] = (cdf_sum as f32 * lut_scale + 0.5).min(255.0) as u8;
+                lut[i] = round_even(cdf_sum as f32 * lut_scale).clamp(0, 255) as u8;
             }
         }
     }
