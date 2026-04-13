@@ -1,0 +1,47 @@
+id: halftone-postscript-screening_20260414080000Z
+title: "Halftone: implement PostScript spot function screening"
+type: feature
+status: pending
+created: '2026-04-14'
+updated: '2026-04-14'
+spec:
+  summary: |
+    Replace sine-wave halftone with PostScript-standard Euclidean composite
+    dot screening. Validate against Ghostscript.
+  context: |
+    Current halftone uses sin(rx*freq)*sin(ry*freq) as threshold. Professional
+    CMYK screening uses PostScript spot functions (Type 1 halftone dictionaries).
+    The standard is the Euclidean composite dot: round at low tints, square at
+    50%, inverted round at high tints.
+  acceptance_criteria:
+    - Pipeline halftone uses Euclidean composite spot function
+    - Golden validated against Ghostscript rendering
+    - CMYK screen angles C=15 M=75 Y=0 K=45 (Adobe TN5602)
+    - Reference implementation updated to match
+  out_of_scope: |
+    FM/stochastic screening, hybrid screening, custom spot functions.
+  technical_notes: |
+    Euclidean spot: euclidean(x,y) = x^2+y^2-1 if |x|+|y|>1 else 1-(x^2+y^2)
+    Ghostscript validation: gs -dBATCH -dNOPAUSE -sDEVICE=pngalpha -r600 test.ps
+plan:
+  - phase: Implement PostScript spot function
+    tasks:
+      - text: Implement Euclidean composite spot function in pipeline halftone.rs
+        done: false
+      - text: Build cell-based threshold ordering from spot function
+        done: false
+      - text: Update CMYK screening to use cell threshold instead of sine wave
+        done: false
+  - phase: Ghostscript validation
+    tasks:
+      - text: Write PostScript test file with sethalftone + Euclidean dot
+        done: false
+      - text: Render via gs, compare pipeline output against Ghostscript
+        done: false
+  - phase: Cleanup
+    tasks:
+      - text: Update reference implementation and golden generator
+        done: false
+      - text: Update AUTHORITY.md
+        done: false
+extra: {}
