@@ -50,7 +50,7 @@ fn build_cdf(hist: &[u32; NUM_BINS]) -> [u32; NUM_BINS] {
 ///
 /// Standard histogram equalization formula matching numpy/OpenCV.
 pub fn equalize(input: &[f32], w: u32, h: u32) -> Vec<f32> {
-    let npixels = (w * h) as u32;
+    let npixels = w * h;
     let mut luts = [[0.0f32; NUM_BINS]; 3];
 
     // Use truncation binning (matching pipeline): floor(clamp(v,0,inf)*255)
@@ -157,8 +157,8 @@ pub fn auto_level(input: &[f32], w: u32, h: u32, clip_pct: f32) -> Vec<f32> {
         let cdf = build_cdf(&hist);
 
         // Find low clip point: first bin where CDF > clip_count
-        for i in 0..NUM_BINS {
-            if cdf[i] as f32 > clip_count {
+        for (i, &val) in cdf.iter().enumerate() {
+            if val as f32 > clip_count {
                 lo[c] = i;
                 break;
             }

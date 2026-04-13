@@ -59,12 +59,12 @@ fn gaussian_blur(input: &[f32], w: u32, h: u32, sigma: f32) -> Vec<f32> {
     for y in 0..h {
         for x in 0..w {
             let mut acc = [0.0f32; 3];
-            for ki in 0..kernel.len() {
+            for (ki, &weight) in kernel.iter().enumerate() {
                 let sx = reflect_101(x as i32 + ki as i32 - r, w as i32) as usize;
                 let idx = (y * w + sx) * 4;
-                acc[0] += input[idx] * kernel[ki];
-                acc[1] += input[idx + 1] * kernel[ki];
-                acc[2] += input[idx + 2] * kernel[ki];
+                acc[0] += input[idx] * weight;
+                acc[1] += input[idx + 1] * weight;
+                acc[2] += input[idx + 2] * weight;
             }
             let oidx = (y * w + x) * 4;
             temp[oidx] = acc[0];
@@ -79,12 +79,12 @@ fn gaussian_blur(input: &[f32], w: u32, h: u32, sigma: f32) -> Vec<f32> {
     for y in 0..h {
         for x in 0..w {
             let mut acc = [0.0f32; 3];
-            for ki in 0..kernel.len() {
+            for (ki, &weight) in kernel.iter().enumerate() {
                 let sy = reflect_101(y as i32 + ki as i32 - r, h as i32) as usize;
                 let idx = (sy * w + x) * 4;
-                acc[0] += temp[idx] * kernel[ki];
-                acc[1] += temp[idx + 1] * kernel[ki];
-                acc[2] += temp[idx + 2] * kernel[ki];
+                acc[0] += temp[idx] * weight;
+                acc[1] += temp[idx + 1] * weight;
+                acc[2] += temp[idx + 2] * weight;
             }
             let oidx = (y * w + x) * 4;
             out[oidx] = acc[0];
@@ -111,9 +111,9 @@ fn gaussian_blur_single(input: &[f32], w: usize, h: usize, sigma: f32) -> Vec<f3
     for y in 0..h {
         for x in 0..w {
             let mut acc = 0.0f32;
-            for ki in 0..kernel.len() {
+            for (ki, &weight) in kernel.iter().enumerate() {
                 let sx = reflect_101(x as i32 + ki as i32 - r, w as i32) as usize;
-                acc += input[y * w + sx] * kernel[ki];
+                acc += input[y * w + sx] * weight;
             }
             temp[y * w + x] = acc;
         }
@@ -124,9 +124,9 @@ fn gaussian_blur_single(input: &[f32], w: usize, h: usize, sigma: f32) -> Vec<f3
     for y in 0..h {
         for x in 0..w {
             let mut acc = 0.0f32;
-            for ki in 0..kernel.len() {
+            for (ki, &weight) in kernel.iter().enumerate() {
                 let sy = reflect_101(y as i32 + ki as i32 - r, h as i32) as usize;
-                acc += temp[sy * w + x] * kernel[ki];
+                acc += temp[sy * w + x] * weight;
             }
             out[y * w + x] = acc;
         }
