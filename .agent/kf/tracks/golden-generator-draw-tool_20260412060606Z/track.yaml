@@ -3,10 +3,10 @@ title: Golden validation — generator, draw, tool, transform, analysis (33 filt
 type: feature
 status: pending
 created: '2026-04-12'
-updated: '2026-04-12'
+updated: '2026-04-13'
 spec:
-  summary: Generate golden I/O from external tools (IM/OpenCV/vips), validate reference
-    implementations against golden data, validate pipeline against golden data.
+  summary: Generate golden I/O from external tools (IM/OpenCV/vips), validate reference implementations against golden data,
+    validate pipeline against golden data.
   context: ''
   codebase_analysis: ''
   acceptance_criteria: []
@@ -15,24 +15,22 @@ spec:
 plan:
 - phase: Golden generation — add to generate.py
   tasks:
-  - text: Add golden for solid_color, gradient_linear, gradient_radial, checkerboard
-      (numpy procedural)
-    done: false
-  - text: Add golden for perlin_noise, simplex_noise (external noise lib or reference
-      algorithm)
-    done: false
+  - text: Add golden for solid_color, gradient_linear, gradient_radial, checkerboard (numpy procedural)
+    done: true
+  - text: Add golden for perlin_noise, simplex_noise (external noise lib or reference algorithm)
+    done: true
   - text: Add golden for draw_line, draw_circle, draw_rect (Pillow ImageDraw as reference)
-    done: false
+    done: true
   - text: Add golden for flood_fill (OpenCV cv2.floodFill)
-    done: false
+    done: true
   - text: Add golden for perspective_correct, perspective_warp (OpenCV cv2.getPerspectiveTransform)
-    done: false
+    done: true
   - text: Document self-validating filters that need no external reference
-    done: false
+    done: true
 - phase: Validate and fix
   tasks:
   - text: Run golden tests — fix all mismatches
-    done: false
+    done: true
   - text: Update AUTHORITY.md
-    done: false
+    done: true
 extra: {}
