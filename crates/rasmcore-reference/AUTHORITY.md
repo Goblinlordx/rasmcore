@@ -242,35 +242,35 @@ the Adobe/PDF spec (ISO 32000-2) which is the superset.
 
 ## Effect (16 filters)
 
-| Filter | Authority | Command / Spec | Rationale |
-|--------|-----------|---------------|-----------|
-| `emboss` | ImageMagick | `magick -emboss {radius}` | Standard convolution kernel |
-| `pixelate` | ImageMagick | `magick -scale {1/n}x -scale {n}x` | Block averaging |
-| `gaussian_noise` | OpenCV | `cv2.randn()` on float32 | Standard Gaussian RNG |
-| `uniform_noise` | OpenCV | `cv2.randu()` on float32 | Standard uniform RNG |
-| `poisson_noise` | OpenCV | Poisson sampling | Standard distribution |
-| `salt_pepper_noise` | OpenCV | Bernoulli impulse noise | Standard definition |
-| `film_grain` | DaVinci Resolve | Film grain emulation | Professional tool |
+| Filter | Authority | Golden Tool | Rationale |
+|--------|-----------|-------------|-----------|
+| `emboss` | OpenCV | `cv2.filter2D` + 0.5 offset, BORDER_REFLECT_101 | Standard 3x3 emboss kernel, golden-validated |
+| `pixelate` | numpy | Block averaging (exact formula) | Deterministic, golden-validated |
+| `gaussian_noise` | Internal | Deterministic hash (Box-Muller) | Stochastic — same hash in pipeline/reference |
+| `uniform_noise` | Internal | Deterministic hash | Stochastic — same hash in pipeline/reference |
+| `poisson_noise` | Internal | Deterministic hash (Box-Muller, shot noise) | Stochastic — same hash in pipeline/reference |
+| `salt_pepper_noise` | Internal | Deterministic hash | Stochastic — same hash in pipeline/reference |
+| `film_grain` | Internal | Deterministic hash (midtone-weighted) | Stochastic — same hash in pipeline/reference |
 | `glitch` | N/A | Custom artistic effect | No standard reference |
 | `light_leak` | N/A | Custom artistic effect | No standard reference |
-| `halftone` | GIMP | Filters > Distorts > Newsprint | Standard halftone |
-| `oil_paint` | OpenCV | `cv2.xphoto.oilPainting()` | Standard Kuwahara variant |
-| `charcoal` | ImageMagick | `magick -charcoal {radius}` | IM canonical |
+| `halftone` | numpy | CMYK sine-wave screening (per-pixel) | Golden-validated against pipeline formula |
+| `oil_paint` | numpy | Neighborhood luminance histogram mode (256 bins) | Golden-validated, tolerance 0.11 for bin-tie sensitivity |
+| `charcoal` | OpenCV | `cv2.Sobel` + clip-to-1 + `cv2.GaussianBlur` + invert | Golden-validated |
 | `sponge` | GIMP | Artistic filter | GIMP reference |
-| `chromatic_aberration` | N/A | Geometric channel offset | Standard lens model |
+| `chromatic_aberration` | numpy | Nearest-neighbor radial R/B shift, BORDER_REFLECT_101 | Golden-validated |
 | `chromatic_split` | N/A | Artistic channel separation | No standard |
 | `mirror_kaleidoscope` | ImageMagick | Mirror + rotation | Geometric transform |
 
 ## Distortion (10 filters)
 
-| Filter | Authority | Command / Spec | Rationale |
-|--------|-----------|---------------|-----------|
-| `barrel` | OpenCV | `cv2.undistort()` Brown-Conrady model | Standard lens distortion |
-| `swirl` | ImageMagick | `magick -swirl {degrees}` | IM canonical |
-| `wave` | ImageMagick | `magick -wave {amplitude}x{wavelength}` | IM canonical |
-| `ripple` | ImageMagick | Sinusoidal displacement | Standard formula |
-| `polar` / `depolar` | OpenCV | `cv2.linearPolar()` / `cv2.logPolar()` | Standard coordinate transform |
-| `spherize` | GIMP | Filters > Distorts > Spherize | GIMP canonical |
+| Filter | Authority | Golden Tool | Rationale |
+|--------|-----------|-------------|-----------|
+| `barrel` | OpenCV | `cv2.remap` (r'=r*(1+k1*r²+k2*r⁴)) | Standard Brown-Conrady model, golden-validated |
+| `swirl` | OpenCV | `cv2.remap` (quadratic falloff t²) | Golden-validated |
+| `wave` | OpenCV | `cv2.remap` (sinusoidal displacement) | Golden-validated |
+| `ripple` | OpenCV | `cv2.remap` (radial sinusoidal) | Golden-validated |
+| `polar` / `depolar` | OpenCV | `cv2.remap` (custom coord transform) | Pipeline-specific formula, golden-validated |
+| `spherize` | OpenCV | `cv2.remap` (asin(r)/r, Photoshop-style) | Golden-validated |
 | `liquify` | DaVinci Resolve | Forward warp mesh | Professional tool |
 | `mesh_warp` | DaVinci Resolve | Free-form mesh deformation | Professional tool |
 
