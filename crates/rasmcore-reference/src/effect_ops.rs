@@ -180,14 +180,26 @@ pub fn film_grain(input: &[f32], w: u32, h: u32, amount: f32, seed: u32) -> Vec<
 
 /// Chromatic aberration: R shifts outward from center, B inward, G stays.
 ///
-/// shift = dist_from_center * strength / max_dist. Bilinear sampling.
+/// shift = dist * strength / max_dist. Nearest-neighbor (round) with BORDER_REFLECT_101.
 /// Alpha is taken from the original pixel.
 pub fn chromatic_aberration(input: &[f32], w: u32, h: u32, strength: f32) -> Vec<f32> {
     let n = (w * h) as usize;
     let mut output = vec![0.0f32; n * 4];
-    let cx = (w as f32 - 1.0) / 2.0;
-    let cy = (h as f32 - 1.0) / 2.0;
-    let max_dist = (cx * cx + cy * cy).sqrt().max(1e-10);
+    let cx = w as f32 / 2.0;
+    let cy = h as f32 / 2.0;
+    let max_dist = (cx * cx + cy * cy).sqrt().max(1.0);
+    let norm_strength = strength / max_dist;
+
+    // BORDER_REFLECT_101: e.g. index -1 → 1, index n → n-2
+    let reflect_101 = |v: i32, max: i32| -> usize {
+        let mut v = v;
+        let m = max - 1;
+        if m == 0 { return 0; }
+        let period = 2 * m;
+        v = v.rem_euclid(period);
+        if v > m { v = period - v; }
+        v as usize
+    };
 
     for y in 0..h {
         for x in 0..w {
@@ -195,27 +207,21 @@ pub fn chromatic_aberration(input: &[f32], w: u32, h: u32, strength: f32) -> Vec
             let dx = x as f32 - cx;
             let dy = y as f32 - cy;
             let dist = (dx * dx + dy * dy).sqrt();
-            let shift = dist * strength / max_dist;
+            let shift = dist * norm_strength;
+            let d = dist.max(1.0);
 
-            // Normalize direction
-            let (ndx, ndy) = if dist > 1e-10 {
-                (dx / dist, dy / dist)
-            } else {
-                (0.0, 0.0)
-            };
-
-            // R shifts outward
-            let rx = x as f32 + ndx * shift;
-            let ry = y as f32 + ndy * shift;
-            output[idx * 4] = bilinear_sample(input, w, h, rx, ry, 0);
+            // R shifts outward — nearest-neighbor, BORDER_REFLECT_101
+            let rx = reflect_101((x as f32 + dx * shift / d).round() as i32, w as i32);
+            let ry = reflect_101((y as f32 + dy * shift / d).round() as i32, h as i32);
+            output[idx * 4] = input[(ry * w as usize + rx) * 4];
 
             // G stays
             output[idx * 4 + 1] = input[idx * 4 + 1];
 
-            // B shifts inward
-            let bx = x as f32 - ndx * shift;
-            let by = y as f32 - ndy * shift;
-            output[idx * 4 + 2] = bilinear_sample(input, w, h, bx, by, 2);
+            // B shifts inward — nearest-neighbor, BORDER_REFLECT_101
+            let bx = reflect_101((x as f32 - dx * shift / d).round() as i32, w as i32);
+            let by = reflect_101((y as f32 - dy * shift / d).round() as i32, h as i32);
+            output[idx * 4 + 2] = input[(by * w as usize + bx) * 4 + 2];
 
             // Alpha preserved
             output[idx * 4 + 3] = input[idx * 4 + 3];
@@ -318,10 +324,16 @@ pub fn oil_paint(input: &[f32], w: u32, h: u32, radius: u32, levels: u32) -> Vec
 
 // ─── 9. Charcoal ───────────────────────────────────────────────────────────
 
-/// Charcoal effect: grayscale → Sobel edge detection → invert → Gaussian blur.
+/// Charcoal effect: grayscale → Sobel edge detection → clip(1.0) → expand RGB →
+/// Gaussian blur → invert.
 ///
+/// Pipeline order matches golden: Sobel→clip→expand RGB→blur(sigma)→invert.
+/// Kernel size: ksize = (round(sigma*10+1) | 1).max(3). BORDER_REFLECT_101.
 /// Alpha is preserved from the original image.
 pub fn charcoal(input: &[f32], w: u32, h: u32, radius: u32) -> Vec<f32> {
+    // radius param carries the sigma value (passed as u32 truncation of f32)
+    let sigma = radius as f32;
+    let sigma = if sigma < 0.5 { 0.5 } else { sigma };
     let n = (w * h) as usize;
 
     // Step 1: Grayscale
@@ -330,13 +342,23 @@ pub fn charcoal(input: &[f32], w: u32, h: u32, radius: u32) -> Vec<f32> {
         gray[i] = luminance(input[i * 4], input[i * 4 + 1], input[i * 4 + 2]);
     }
 
-    // Step 2: Sobel edge detection
+    // Step 2: Sobel edge detection with BORDER_REFLECT_101
+    let reflect_101 = |v: i32, max: i32| -> usize {
+        let mut v = v;
+        let m = max - 1;
+        if m == 0 { return 0; }
+        let period = 2 * m;
+        v = v.rem_euclid(period);
+        if v > m { v = period - v; }
+        v as usize
+    };
+
     let mut edges = vec![0.0f32; n];
     for y in 0..h {
         for x in 0..w {
             let g = |dx: i32, dy: i32| -> f32 {
-                let px = (x as i32 + dx).clamp(0, w as i32 - 1) as usize;
-                let py = (y as i32 + dy).clamp(0, h as i32 - 1) as usize;
+                let px = reflect_101(x as i32 + dx, w as i32);
+                let py = reflect_101(y as i32 + dy, h as i32);
                 gray[py * w as usize + px]
             };
             let gx = -g(-1, -1) + g(1, -1) - 2.0 * g(-1, 0) + 2.0 * g(1, 0) - g(-1, 1) + g(1, 1);
@@ -346,21 +368,17 @@ pub fn charcoal(input: &[f32], w: u32, h: u32, radius: u32) -> Vec<f32> {
         }
     }
 
-    // Step 3: Invert
-    for v in edges.iter_mut() {
-        *v = 1.0 - *v;
-    }
+    // Step 3: Gaussian blur on the edge magnitude — ksize matches golden formula
+    // ksize = int(round(sigma * 10.0 + 1.0)) | 1, min 3
+    let ksize_raw = (sigma * 10.0 + 1.0).round() as i32;
+    let ksize_odd = ksize_raw | 1;
+    let ksize = ksize_odd.max(3) as usize;
+    let r = (ksize as i32 - 1) / 2;
 
-    // Step 4: Gaussian blur on the inverted edges
-    let sigma = radius as f32 / 2.0;
-    let sigma = if sigma < 0.5 { 0.5 } else { sigma };
-    let r = radius as i32;
-
-    // Build 1D kernel
-    let kernel_size = (2 * r + 1) as usize;
-    let mut kernel = vec![0.0f32; kernel_size];
+    // Build 1D Gaussian kernel
+    let mut kernel = vec![0.0f32; ksize];
     let mut sum = 0.0f32;
-    for i in 0..kernel_size {
+    for i in 0..ksize {
         let d = (i as i32 - r) as f32;
         let v = (-d * d / (2.0 * sigma * sigma)).exp();
         kernel[i] = v;
@@ -370,36 +388,36 @@ pub fn charcoal(input: &[f32], w: u32, h: u32, radius: u32) -> Vec<f32> {
         *v /= sum;
     }
 
-    // Horizontal pass
+    // Horizontal pass (BORDER_REFLECT_101)
     let mut temp = vec![0.0f32; n];
     for y in 0..h as usize {
         for x in 0..w as usize {
             let mut acc = 0.0f32;
-            for k in 0..kernel_size {
-                let sx = (x as i32 + k as i32 - r).clamp(0, w as i32 - 1) as usize;
+            for k in 0..ksize {
+                let sx = reflect_101(x as i32 + k as i32 - r, w as i32);
                 acc += edges[y * w as usize + sx] * kernel[k];
             }
             temp[y * w as usize + x] = acc;
         }
     }
 
-    // Vertical pass
+    // Vertical pass (BORDER_REFLECT_101)
     let mut blurred = vec![0.0f32; n];
     for y in 0..h as usize {
         for x in 0..w as usize {
             let mut acc = 0.0f32;
-            for k in 0..kernel_size {
-                let sy = (y as i32 + k as i32 - r).clamp(0, h as i32 - 1) as usize;
+            for k in 0..ksize {
+                let sy = reflect_101(y as i32 + k as i32 - r, h as i32);
                 acc += temp[sy * w as usize + x] * kernel[k];
             }
             blurred[y * w as usize + x] = acc;
         }
     }
 
-    // Step 5: Write output — grayscale result with original alpha
+    // Step 4: Invert and write output — grayscale result with original alpha
     let mut output = vec![0.0f32; n * 4];
     for i in 0..n {
-        let v = blurred[i].clamp(0.0, 1.0);
+        let v = (1.0 - blurred[i]).clamp(0.0, 1.0);
         output[i * 4] = v;
         output[i * 4 + 1] = v;
         output[i * 4 + 2] = v;
@@ -410,51 +428,63 @@ pub fn charcoal(input: &[f32], w: u32, h: u32, radius: u32) -> Vec<f32> {
 
 // ─── 10. Halftone ──────────────────────────────────────────────────────────
 
-/// Halftone effect: divide image into blocks, compute block luminance,
-/// draw a circle of radius proportional to luminance. Output is binary (0/1).
+/// Halftone effect: CMYK sine-wave screening.
+///
+/// RGB → proper CMYK (with K channel); per-channel rotated sin*sin screen
+/// at angles C=15°, M=75°, Y=0°, K=45°; freq = π/dot_size;
+/// threshold binary; CMYK → RGB recombine.
 ///
 /// Alpha is preserved from the original image.
 pub fn halftone(input: &[f32], w: u32, h: u32, dot_size: u32) -> Vec<f32> {
     let n = (w * h) as usize;
     let mut output = vec![0.0f32; n * 4];
     let ds = dot_size.max(1) as f32;
+    let freq = PI / ds;
+
+    // Screen angles in radians: C=15°, M=75°, Y=0°, K=45°
+    let angles: [f32; 4] = [
+        15.0f32.to_radians(),
+        75.0f32.to_radians(),
+        0.0f32.to_radians(),
+        45.0f32.to_radians(),
+    ];
 
     for y in 0..h {
         for x in 0..w {
             let idx = (y * w + x) as usize;
+            let px_x = x as f32;
+            let px_y = y as f32;
 
-            // Block center
-            let bx = (x as f32 / ds).floor() * ds + ds / 2.0;
-            let by = (y as f32 / ds).floor() * ds + ds / 2.0;
+            let r = input[idx * 4];
+            let g = input[idx * 4 + 1];
+            let b = input[idx * 4 + 2];
 
-            // Average luminance of the block
-            let bx0 = ((bx - ds / 2.0) as u32).min(w - 1);
-            let by0 = ((by - ds / 2.0) as u32).min(h - 1);
-            let bx1 = ((bx + ds / 2.0) as u32).min(w);
-            let by1 = ((by + ds / 2.0) as u32).min(h);
+            // RGB → proper CMYK
+            let k = 1.0 - r.max(g).max(b);
+            let inv_k = if k < 1.0 { 1.0 / (1.0 - k) } else { 0.0 };
+            let cmyk = [
+                (1.0 - r - k) * inv_k,
+                (1.0 - g - k) * inv_k,
+                (1.0 - b - k) * inv_k,
+                k,
+            ];
 
-            let mut luma_sum = 0.0f32;
-            let mut count = 0u32;
-            for ny in by0..by1 {
-                for nx in bx0..bx1 {
-                    let ni = (ny * w + nx) as usize;
-                    luma_sum += luminance(input[ni * 4], input[ni * 4 + 1], input[ni * 4 + 2]);
-                    count += 1;
-                }
+            // Per-channel sin*sin screen
+            let mut screened = [0.0f32; 4];
+            for ch in 0..4 {
+                let cos_a = angles[ch].cos();
+                let sin_a = angles[ch].sin();
+                let u = px_x * cos_a + px_y * sin_a;
+                let v = -px_x * sin_a + px_y * cos_a;
+                let screen = ((u * freq).sin() * (v * freq).sin() + 1.0) * 0.5;
+                screened[ch] = if cmyk[ch] > screen { 1.0 } else { 0.0 };
             }
-            let avg_luma = if count > 0 { luma_sum / count as f32 } else { 0.0 };
 
-            // Darker areas → bigger dots (more ink). Radius proportional to (1 - luma).
-            let max_radius = ds / 2.0;
-            let dot_radius = max_radius * (1.0 - avg_luma).sqrt();
-
-            // Distance from pixel to block center
-            let dist = ((x as f32 - bx) * (x as f32 - bx) + (y as f32 - by) * (y as f32 - by)).sqrt();
-
-            let v = if dist <= dot_radius { 0.0 } else { 1.0 };
-            output[idx * 4] = v;
-            output[idx * 4 + 1] = v;
-            output[idx * 4 + 2] = v;
+            // CMYK → RGB
+            let inv_k2 = 1.0 - screened[3];
+            output[idx * 4] = ((1.0 - screened[0]) * inv_k2).clamp(0.0, 1.0);
+            output[idx * 4 + 1] = ((1.0 - screened[1]) * inv_k2).clamp(0.0, 1.0);
+            output[idx * 4 + 2] = ((1.0 - screened[2]) * inv_k2).clamp(0.0, 1.0);
             output[idx * 4 + 3] = input[idx * 4 + 3];
         }
     }

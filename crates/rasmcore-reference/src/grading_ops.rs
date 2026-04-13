@@ -92,9 +92,9 @@ pub fn lift_gamma_gain(
 /// ```
 ///
 /// Output is biased by +0.5 to center the result around mid-gray.
-/// Edge pixels use clamped (repeat-edge) sampling.
+/// Edge pixels use BORDER_REFLECT_101 (mirror, excluding edge pixel itself).
 ///
-/// Validated against: GIMP emboss filter with equivalent kernel.
+/// Validated against: pipeline emboss filter (BORDER_REFLECT_101).
 pub fn emboss(input: &[f32], w: u32, h: u32, strength: f32) -> Vec<f32> {
     let kernel: [[f32; 3]; 3] = [
         [-2.0, -1.0, 0.0],
@@ -106,6 +106,23 @@ pub fn emboss(input: &[f32], w: u32, h: u32, strength: f32) -> Vec<f32> {
     let h = h as usize;
     let mut out = vec![0.0f32; w * h * 4];
 
+    // BORDER_REFLECT_101: reflect around edge pixel (excluded), i.e.
+    // index -1 → 1, index -2 → 2; index n → n-2, index n+1 → n-3, etc.
+    let reflect_101 = |v: i32, max: i32| -> usize {
+        let mut v = v;
+        let m = max - 1;
+        if m == 0 {
+            return 0;
+        }
+        // Fold into [0, m]
+        let period = 2 * m;
+        v = v.rem_euclid(period);
+        if v > m {
+            v = period - v;
+        }
+        v as usize
+    };
+
     for y in 0..h {
         for x in 0..w {
             let dst = (y * w + x) * 4;
@@ -113,8 +130,8 @@ pub fn emboss(input: &[f32], w: u32, h: u32, strength: f32) -> Vec<f32> {
                 let mut sum = 0.0f32;
                 for ky in 0..3i32 {
                     for kx in 0..3i32 {
-                        let sy = (y as i32 + ky - 1).clamp(0, h as i32 - 1) as usize;
-                        let sx = (x as i32 + kx - 1).clamp(0, w as i32 - 1) as usize;
+                        let sy = reflect_101(y as i32 + ky - 1, h as i32);
+                        let sx = reflect_101(x as i32 + kx - 1, w as i32);
                         let src_idx = (sy * w + sx) * 4 + c;
                         sum += input[src_idx] * kernel[ky as usize][kx as usize];
                     }

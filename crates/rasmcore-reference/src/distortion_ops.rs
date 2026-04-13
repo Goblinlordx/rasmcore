@@ -51,8 +51,8 @@ fn bilinear_sample(input: &[f32], w: u32, h: u32, x: f32, y: f32) -> [f32; 4] {
 pub fn barrel(input: &[f32], w: u32, h: u32, k1: f32, k2: f32) -> Vec<f32> {
     let len = (w * h * 4) as usize;
     let mut output = vec![0.0f32; len];
-    let cx = (w as f32 - 1.0) / 2.0;
-    let cy = (h as f32 - 1.0) / 2.0;
+    let cx = w as f32 / 2.0;
+    let cy = h as f32 / 2.0;
     // Normalize so that corners map to sqrt(2) approximately
     let norm = cx.max(cy).max(1.0);
 
@@ -77,25 +77,24 @@ pub fn barrel(input: &[f32], w: u32, h: u32, k1: f32, k2: f32) -> Vec<f32> {
 
 /// Spherize distortion — maps through a sphere projection.
 ///
-/// Normalizes to [-1, 1], for pixels inside the unit circle applies
-/// new_r = r^(1/(1+amount)), scales (x,y) by new_r/r.
+/// Normalizes to [-1, 1] independently per axis (elliptical): nx=(x-cx)/cx.
+/// cx = w/2, cy = h/2. Inside the unit ellipse applies asin-based correction:
+///   theta = asin(r) / r; factor = 1 + amount * (theta - 1)
 pub fn spherize(input: &[f32], w: u32, h: u32, amount: f32) -> Vec<f32> {
     let len = (w * h * 4) as usize;
     let mut output = vec![0.0f32; len];
-    let cx = (w as f32 - 1.0) / 2.0;
-    let cy = (h as f32 - 1.0) / 2.0;
-    let norm = cx.max(cy).max(1.0);
+    let cx = w as f32 / 2.0;
+    let cy = h as f32 / 2.0;
 
     for y in 0..h {
         for x in 0..w {
-            let nx = (x as f32 - cx) / norm;
-            let ny = (y as f32 - cy) / norm;
+            let nx = if cx > 0.0 { (x as f32 - cx) / cx } else { 0.0 };
+            let ny = if cy > 0.0 { (y as f32 - cy) / cy } else { 0.0 };
             let r = (nx * nx + ny * ny).sqrt();
             let (sx, sy) = if r > 0.0 && r < 1.0 {
-                let exp = 1.0 / (1.0 + amount);
-                let new_r = r.powf(exp);
-                let scale = new_r / r;
-                (nx * scale * norm + cx, ny * scale * norm + cy)
+                let theta = r.asin() / r;
+                let factor = 1.0 + amount * (theta - 1.0);
+                (nx * factor * cx + cx, ny * factor * cy + cy)
             } else {
                 (x as f32, y as f32)
             };
@@ -111,8 +110,8 @@ pub fn spherize(input: &[f32], w: u32, h: u32, amount: f32) -> Vec<f32> {
 
 /// Swirl distortion — rotates pixels around center.
 ///
-/// Rotation angle decreases linearly with distance from center:
-/// theta = angle * (1 - dist/radius) for dist < radius.
+/// Rotation angle decreases quadratically with distance from center:
+/// t = 1 - dist/radius; theta = angle * t * t for dist < radius.
 pub fn swirl(input: &[f32], w: u32, h: u32, angle: f32, radius: f32) -> Vec<f32> {
     let len = (w * h * 4) as usize;
     let mut output = vec![0.0f32; len];
@@ -125,7 +124,8 @@ pub fn swirl(input: &[f32], w: u32, h: u32, angle: f32, radius: f32) -> Vec<f32>
             let dy = y as f32 - cy;
             let dist = (dx * dx + dy * dy).sqrt();
             let (sx, sy) = if dist < radius && radius > 0.0 {
-                let theta = angle * (1.0 - dist / radius);
+                let t = 1.0 - dist / radius;
+                let theta = angle * t * t;
                 let cos_t = theta.cos();
                 let sin_t = theta.sin();
                 (
@@ -187,8 +187,8 @@ pub fn wave(
 pub fn ripple(input: &[f32], w: u32, h: u32, amplitude: f32, wavelength: f32) -> Vec<f32> {
     let len = (w * h * 4) as usize;
     let mut output = vec![0.0f32; len];
-    let cx = (w as f32 - 1.0) / 2.0;
-    let cy = (h as f32 - 1.0) / 2.0;
+    let cx = w as f32 * 0.5;
+    let cy = h as f32 * 0.5;
     let two_pi = 2.0 * std::f32::consts::PI;
 
     for y in 0..h {
@@ -217,25 +217,26 @@ pub fn ripple(input: &[f32], w: u32, h: u32, amplitude: f32, wavelength: f32) ->
 /// Cartesian to polar coordinate transform.
 ///
 /// Output pixel (out_x, out_y) maps:
-/// - out_y corresponds to radius (0 = center, h-1 = max radius)
-/// - out_x corresponds to angle (0 = 0°, w-1 = 360°)
+/// - out_y corresponds to radius (0 = center, h = max radius)
+/// - out_x corresponds to angle (0 = 0°, w = 360°)
 ///
-/// For each output (out_x, out_y), compute the source cartesian coordinates.
+/// max_radius = min(cx, cy). Angle: (x+0.5-cx)/w*2PI.
+/// Radius: (y+0.5)/h * max_radius. Maps via sin(angle)->x, cos(angle)->y.
 pub fn polar(input: &[f32], w: u32, h: u32) -> Vec<f32> {
     let len = (w * h * 4) as usize;
     let mut output = vec![0.0f32; len];
-    let cx = (w as f32 - 1.0) / 2.0;
-    let cy = (h as f32 - 1.0) / 2.0;
-    let max_radius = (cx * cx + cy * cy).sqrt();
+    let cx = w as f32 / 2.0;
+    let cy = h as f32 / 2.0;
+    let max_radius = cx.min(cy);
     let two_pi = 2.0 * std::f32::consts::PI;
 
     for out_y in 0..h {
         for out_x in 0..w {
             // out_x -> angle, out_y -> radius
-            let angle = out_x as f32 / w as f32 * two_pi;
-            let radius = out_y as f32 / (h as f32 - 1.0).max(1.0) * max_radius;
-            let sx = cx + radius * angle.cos();
-            let sy = cy + radius * angle.sin();
+            let angle = (out_x as f32 + 0.5 - cx) / w as f32 * two_pi;
+            let radius = (out_y as f32 + 0.5) / h as f32 * max_radius;
+            let sx = cx + radius * angle.sin() - 0.5;
+            let sy = cy + radius * angle.cos() - 0.5;
             let px = bilinear_sample(input, w, h, sx, sy);
             let idx = (out_y * w + out_x) as usize * 4;
             output[idx..idx + 4].copy_from_slice(&px);
@@ -250,26 +251,30 @@ pub fn polar(input: &[f32], w: u32, h: u32) -> Vec<f32> {
 ///
 /// For each output (out_x, out_y) in cartesian space, compute the
 /// corresponding polar coordinates and sample the polar-space input.
+/// Uses atan2(dx, dy) (sin→x, cos→y convention) matching polar().
 pub fn depolar(input: &[f32], w: u32, h: u32) -> Vec<f32> {
     let len = (w * h * 4) as usize;
     let mut output = vec![0.0f32; len];
-    let cx = (w as f32 - 1.0) / 2.0;
-    let cy = (h as f32 - 1.0) / 2.0;
-    let max_radius = (cx * cx + cy * cy).sqrt();
+    let cx = w as f32 / 2.0;
+    let cy = h as f32 / 2.0;
+    let max_radius = cx.min(cy);
     let two_pi = 2.0 * std::f32::consts::PI;
 
     for out_y in 0..h {
         for out_x in 0..w {
-            let dx = out_x as f32 - cx;
-            let dy = out_y as f32 - cy;
+            let dx = out_x as f32 + 0.5 - cx;
+            let dy = out_y as f32 + 0.5 - cy;
             let radius = (dx * dx + dy * dy).sqrt();
-            let mut angle = dy.atan2(dx);
+            // atan2(dx, dy): angle from +Y axis going CW (matches sin→x, cos→y in polar)
+            let mut angle = dx.atan2(dy);
             if angle < 0.0 {
                 angle += two_pi;
             }
             // Map back to polar image coordinates
-            let sx = angle / two_pi * w as f32;
-            let sy = radius / max_radius * (h as f32 - 1.0).max(1.0);
+            let mut xx = angle / two_pi;
+            xx -= xx.round();
+            let sx = xx * w as f32 + cx - 0.5;
+            let sy = radius * (h as f32 / max_radius) - 0.5;
             let px = bilinear_sample(input, w, h, sx, sy);
             let idx = (out_y * w + out_x) as usize * 4;
             output[idx..idx + 4].copy_from_slice(&px);
