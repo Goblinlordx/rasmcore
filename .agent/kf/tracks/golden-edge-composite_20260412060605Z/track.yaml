@@ -3,10 +3,10 @@ title: Golden validation — edge, morphology, composite, alpha, mask (22 filter
 type: feature
 status: pending
 created: '2026-04-12'
-updated: '2026-04-12'
+updated: '2026-04-13'
 spec:
-  summary: Generate golden I/O from external tools (IM/OpenCV/vips), validate reference
-    implementations against golden data, validate pipeline against golden data.
+  summary: Generate golden I/O from external tools (IM/OpenCV/vips), validate reference implementations against golden data,
+    validate pipeline against golden data.
   context: ''
   codebase_analysis: ''
   acceptance_criteria: []
@@ -16,24 +16,23 @@ plan:
 - phase: Golden generation — add to generate.py
   tasks:
   - text: Add golden for sobel, laplacian, canny, scharr (OpenCV cv2.Sobel, cv2.Canny)
-    done: false
+    done: true
   - text: Add golden for threshold, otsu_threshold (OpenCV cv2.threshold)
-    done: false
+    done: true
   - text: Add golden for dilate, erode, morph_open, morph_close (OpenCV cv2.morphologyEx)
-    done: false
-  - text: Add golden for morph_tophat, morph_blackhat, morph_gradient, skeletonize
-      (OpenCV/skimage)
-    done: false
+    done: true
+  - text: Add golden for morph_tophat, morph_blackhat, morph_gradient, skeletonize (OpenCV/skimage)
+    done: true
   - text: Add golden for blend modes (Pillow ImageChops or W3C spec formulas via numpy)
-    done: false
+    done: true
   - text: Add golden for mask_apply, mask_combine, feather (numpy alpha ops)
-    done: false
+    done: true
   - text: Add golden for add_alpha, remove_alpha, flatten (numpy channel ops)
-    done: false
+    done: true
 - phase: Validate and fix
   tasks:
   - text: Run golden tests — fix all mismatches
-    done: false
+    done: true
   - text: Update AUTHORITY.md
-    done: false
+    done: true
 extra: {}
