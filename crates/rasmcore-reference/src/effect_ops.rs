@@ -417,12 +417,13 @@ pub fn charcoal(input: &[f32], w: u32, h: u32, radius: u32) -> Vec<f32> {
 ///
 /// Alpha is preserved from the original image.
 pub fn halftone(input: &[f32], w: u32, h: u32, dot_size: u32) -> Vec<f32> {
-    let n = (w * h) as usize;
+    let wu = w as usize;
+    let hu = h as usize;
+    let n = wu * hu;
     let mut output = vec![0.0f32; n * 4];
-    let ds = dot_size.max(1) as f32;
-    let freq = PI / ds;
+    let max_r = dot_size.max(1) as f32;
+    let cell = 2.0 * max_r;
 
-    // Screen angles in radians: C=15°, M=75°, Y=0°, K=45°
     let angles: [f32; 4] = [
         15.0f32.to_radians(),
         75.0f32.to_radians(),
@@ -430,42 +431,48 @@ pub fn halftone(input: &[f32], w: u32, h: u32, dot_size: u32) -> Vec<f32> {
         45.0f32.to_radians(),
     ];
 
-    for y in 0..h {
-        for x in 0..w {
-            let idx = (y * w + x) as usize;
-            let px_x = x as f32;
-            let px_y = y as f32;
+    let smooth = |edge0: f32, edge1: f32, x: f32| -> f32 {
+        if edge0 >= edge1 { return if x <= edge1 { 1.0 } else { 0.0 }; }
+        let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+        1.0 - t * t * (3.0 - 2.0 * t)
+    };
 
-            let r = input[idx * 4];
-            let g = input[idx * 4 + 1];
-            let b = input[idx * 4 + 2];
+    for y in 0..hu {
+        for x in 0..wu {
+            let idx = y * wu + x;
+            let mut ink = [0.0f32; 4];
 
-            // RGB → proper CMYK
-            let k = 1.0 - r.max(g).max(b);
-            let inv_k = if k < 1.0 { 1.0 / (1.0 - k) } else { 0.0 };
-            let cmyk = [
-                (1.0 - r - k) * inv_k,
-                (1.0 - g - k) * inv_k,
-                (1.0 - b - k) * inv_k,
-                k,
-            ];
+            for (ch, &angle) in angles.iter().enumerate() {
+                let (sin_a, cos_a) = angle.sin_cos();
+                let sx = x as f32 * cos_a + y as f32 * sin_a;
+                let sy = -(x as f32) * sin_a + y as f32 * cos_a;
+                let cx = (sx / cell).round() * cell;
+                let cy = (sy / cell).round() * cell;
 
-            // Per-channel sin*sin screen
-            let mut screened = [0.0f32; 4];
-            for ch in 0..4 {
-                let cos_a = angles[ch].cos();
-                let sin_a = angles[ch].sin();
-                let u = px_x * cos_a + px_y * sin_a;
-                let v = -px_x * sin_a + px_y * cos_a;
-                let screen = ((u * freq).sin() * (v * freq).sin() + 1.0) * 0.5;
-                screened[ch] = if cmyk[ch] > screen { 1.0 } else { 0.0 };
+                // Map cell center back to image space
+                let img_x = (cx * cos_a + cy * sin_a).clamp(0.0, (wu - 1) as f32) as usize;
+                let img_y = (-(cx * (-sin_a)) + cy * cos_a).clamp(0.0, (hu - 1) as f32) as usize;
+                let si = (img_y * wu + img_x) * 4;
+                let sr = input[si];
+                let sg = input[si + 1];
+                let sb = input[si + 2];
+                let sk = 1.0 - sr.max(sg).max(sb);
+                let s_inv_k = if sk < 1.0 { 1.0 / (1.0 - sk) } else { 0.0 };
+                let density = match ch {
+                    0 => (1.0 - sr - sk) * s_inv_k,
+                    1 => (1.0 - sg - sk) * s_inv_k,
+                    2 => (1.0 - sb - sk) * s_inv_k,
+                    _ => sk,
+                };
+
+                let dot_r = max_r * density.max(0.0).sqrt();
+                let dist = ((sx - cx) * (sx - cx) + (sy - cy) * (sy - cy)).sqrt();
+                ink[ch] = smooth(dot_r + 0.5, dot_r - 0.5, dist);
             }
 
-            // CMYK → RGB
-            let inv_k2 = 1.0 - screened[3];
-            output[idx * 4] = ((1.0 - screened[0]) * inv_k2).clamp(0.0, 1.0);
-            output[idx * 4 + 1] = ((1.0 - screened[1]) * inv_k2).clamp(0.0, 1.0);
-            output[idx * 4 + 2] = ((1.0 - screened[2]) * inv_k2).clamp(0.0, 1.0);
+            output[idx * 4] = (1.0 - ink[0]) * (1.0 - ink[3]);
+            output[idx * 4 + 1] = (1.0 - ink[1]) * (1.0 - ink[3]);
+            output[idx * 4 + 2] = (1.0 - ink[2]) * (1.0 - ink[3]);
             output[idx * 4 + 3] = input[idx * 4 + 3];
         }
     }

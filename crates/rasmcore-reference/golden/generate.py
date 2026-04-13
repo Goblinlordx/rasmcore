@@ -2162,64 +2162,76 @@ def golden_charcoal(radius: float, sigma: float) -> dict:
 
 
 def golden_halftone(dot_size: float, angle_offset: float = 0.0) -> dict:
-    """Halftone — CMYK sine-wave screening (formula validation only).
+    """Halftone — Photoshop-style CMYK circular dot screening.
 
-    NOTE: No standard external tool implements this exact CMYK sine-wave
-    algorithm. GIMP uses newsprint dots, IM uses ordered dither. This golden
-    validates the formula independently in Python but is NOT an external
-    tool reference. The CMYK→screen→threshold→RGB math is simple enough
-    to verify by inspection.
+    Matches Photoshop "Color Halftone" (Filter→Pixelate) algorithm:
+    1. RGB→CMYK decomposition
+    2. Per channel: rotate grid by screen angle, find cell center, sample
+       ink density, compute dot radius = max_r * sqrt(density)
+    3. Point-in-circle with smoothstep anti-aliasing
+    4. Subtractive CMYK→RGB composite
 
-    Pipeline: RGB→CMYK, per-channel rotated sine screen, threshold, CMYK→RGB.
-    Screen angles: C=15°, M=75°, Y=0°, K=45° (+ angle_offset).
+    Validated as formula (same algorithm as Photoshop Color Halftone).
     """
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
     h, w = img.shape[:2]
-    ds = max(dot_size, 1.0)
-    freq = np.pi / ds
+    max_r = max(dot_size, 1.0)
+    cell = 2.0 * max_r
 
     angles_deg = [15.0 + angle_offset, 75.0 + angle_offset,
                   0.0 + angle_offset, 45.0 + angle_offset]
     angles_rad = [np.radians(a) for a in angles_deg]
 
+    def smooth(edge0, edge1, x):
+        if edge0 >= edge1:
+            return 1.0 if x <= edge1 else 0.0
+        t = max(0.0, min(1.0, (x - edge0) / (edge1 - edge0)))
+        return 1.0 - t * t * (3.0 - 2.0 * t)
+
     output = np.zeros_like(img)
-    for y in range(h):
-        for x in range(w):
-            r, g, b = img[y, x, 0], img[y, x, 1], img[y, x, 2]
+    for y_px in range(h):
+        for x_px in range(w):
+            ink = [0.0] * 4
 
-            # RGB → CMYK
-            k = 1.0 - max(r, g, b)
-            inv_k = 1.0 / (1.0 - k) if k < 1.0 else 0.0
-            cmyk = [
-                (1.0 - r - k) * inv_k,
-                (1.0 - g - k) * inv_k,
-                (1.0 - b - k) * inv_k,
-                k,
-            ]
+            for ch in range(4):
+                cos_a = np.cos(angles_rad[ch])
+                sin_a = np.sin(angles_rad[ch])
 
-            # Screen each CMYK channel
-            screened = [0.0] * 4
-            for i in range(4):
-                cos_a = np.cos(angles_rad[i])
-                sin_a = np.sin(angles_rad[i])
-                rx = float(x) * cos_a + float(y) * sin_a
-                ry = -float(x) * sin_a + float(y) * cos_a
-                screen = np.sin(rx * freq) * np.sin(ry * freq)
-                threshold = (screen + 1.0) * 0.5
-                screened[i] = 1.0 if cmyk[i] > threshold else 0.0
+                # Rotate into screen space
+                sx = float(x_px) * cos_a + float(y_px) * sin_a
+                sy = -float(x_px) * sin_a + float(y_px) * cos_a
 
-            # CMYK → RGB
-            inv_k2 = 1.0 - screened[3]
-            output[y, x, 0] = (1.0 - screened[0]) * inv_k2
-            output[y, x, 1] = (1.0 - screened[1]) * inv_k2
-            output[y, x, 2] = (1.0 - screened[2]) * inv_k2
+                # Cell center in screen space
+                cx = round(sx / cell) * cell
+                cy = round(sy / cell) * cell
+
+                # Map back to image space
+                img_x = int(max(0, min(w - 1, cx * cos_a - cy * (-sin_a))))
+                img_y = int(max(0, min(h - 1, cx * sin_a + cy * cos_a)))
+
+                # Sample CMYK at cell center
+                sr, sg, sb = img[img_y, img_x, 0], img[img_y, img_x, 1], img[img_y, img_x, 2]
+                sk = 1.0 - max(sr, sg, sb)
+                s_inv_k = 1.0 / (1.0 - sk) if sk < 1.0 else 0.0
+                if ch == 0: density = (1.0 - sr - sk) * s_inv_k
+                elif ch == 1: density = (1.0 - sg - sk) * s_inv_k
+                elif ch == 2: density = (1.0 - sb - sk) * s_inv_k
+                else: density = sk
+
+                dot_r = max_r * max(density, 0.0) ** 0.5
+                dist = ((sx - cx) ** 2 + (sy - cy) ** 2) ** 0.5
+                ink[ch] = smooth(dot_r + 0.5, dot_r - 0.5, dist)
+
+            output[y_px, x_px, 0] = (1.0 - ink[0]) * (1.0 - ink[3])
+            output[y_px, x_px, 1] = (1.0 - ink[1]) * (1.0 - ink[3])
+            output[y_px, x_px, 2] = (1.0 - ink[2]) * (1.0 - ink[3])
 
     return {
         "filter": "halftone",
         "params": {"dot_size": dot_size, "angle_offset": angle_offset},
-        "tool": "numpy (CMYK sine-wave screening, per-pixel)",
+        "tool": "numpy (Photoshop-style circular dot CMYK screening)",
         "tool_version": np.__version__,
-        "note": f"dot_size={dot_size}, CMYK angles=[15,75,0,45]+{angle_offset}, freq=pi/ds, sin*sin screen",
+        "note": f"dot_size={dot_size}, circular dots, area-proportional radius, smoothstep AA",
         "output": pixels_to_list(output),
     }
 
