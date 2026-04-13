@@ -582,10 +582,28 @@ pub const CAT16_INV: [[f64; 3]; 3] = [
     ],
 ];
 
+/// sRGB to XYZ (D65) matrix — IEC 61966-2-1.
+const M_SRGB_TO_XYZ: [[f64; 3]; 3] = [
+    [0.4124564, 0.3575761, 0.1804375],
+    [0.2126729, 0.7151522, 0.0721750],
+    [0.0193339, 0.1191920, 0.9503041],
+];
+
+/// XYZ (D65) to sRGB matrix — IEC 61966-2-1 inverse.
+const M_XYZ_TO_SRGB: [[f64; 3]; 3] = [
+    [3.2404542, -1.5371385, -0.4985314],
+    [-0.9692660, 1.8760108, 0.0415560],
+    [0.0556434, -0.2040259, 1.0572252],
+];
+
 /// Compute the CAT16 chromatic adaptation matrix from source to target illuminant.
 ///
 /// Both source and target are specified as CIE xy chromaticity.
-/// Returns a row-major 3x3 matrix: `[r', g', b'] = M * [r, g, b]`.
+/// Returns a row-major 3x3 matrix that operates in **linear sRGB space**:
+/// `[r', g', b'] = M * [r, g, b]`.
+///
+/// Internally computes the XYZ-space Von Kries adaptation, then wraps with
+/// sRGB↔XYZ transforms: `M_srgb = M_XYZ_to_sRGB × M_cat16_xyz × M_sRGB_to_XYZ`.
 pub fn cat16_adaptation_matrix(source_xy: (f32, f32), target_xy: (f32, f32)) -> [f32; 9] {
     let src_xyz = xy_to_xyz(source_xy.0, source_xy.1);
     let tgt_xyz = xy_to_xyz(target_xy.0, target_xy.1);
@@ -608,7 +626,12 @@ pub fn cat16_adaptation_matrix(source_xy: (f32, f32), target_xy: (f32, f32)) -> 
         [d[2] * CAT16[2][0], d[2] * CAT16[2][1], d[2] * CAT16[2][2]],
     ];
 
-    let m = mat3x3_mul(&CAT16_INV, &d_cat);
+    // XYZ-space adaptation matrix
+    let m_xyz = mat3x3_mul(&CAT16_INV, &d_cat);
+
+    // Wrap with sRGB↔XYZ: M_srgb = M_XYZ_to_sRGB × M_xyz × M_sRGB_to_XYZ
+    let m_temp = mat3x3_mul(&m_xyz, &M_SRGB_TO_XYZ);
+    let m = mat3x3_mul(&M_XYZ_TO_SRGB, &m_temp);
 
     [
         m[0][0] as f32,

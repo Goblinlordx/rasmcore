@@ -73,17 +73,13 @@ pub trait ClutOp {
 
 // ─── Shared Color Space Helpers ────────────────────────────────────────────
 
-/// RGB [0,1] → CIE Lab (L in [0,100], a,b in ~[-128,127]).
-/// Assumes sRGB input → linearize → D65 XYZ → Lab.
+/// Linear RGB → CIE Lab (L in [0,100], a,b in ~[-128,127]).
+/// Input must be linear f32 (pipeline working space). D65 whitepoint.
 pub(crate) fn rgb_to_lab(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
-    // sRGB → linear
-    let rl = srgb_comp_to_linear(r);
-    let gl = srgb_comp_to_linear(g);
-    let bl = srgb_comp_to_linear(b);
-    // Linear RGB → XYZ (D65)
-    let x = 0.4124564 * rl + 0.3575761 * gl + 0.1804375 * bl;
-    let y = 0.2126729 * rl + 0.7151522 * gl + 0.0721750 * bl;
-    let z = 0.0193339 * rl + 0.119192 * gl + 0.9503041 * bl;
+    // Linear RGB → XYZ (D65, IEC 61966-2-1)
+    let x = 0.4124564 * r + 0.3575761 * g + 0.1804375 * b;
+    let y = 0.2126729 * r + 0.7151522 * g + 0.0721750 * b;
+    let z = 0.0193339 * r + 0.119192 * g + 0.9503041 * b;
     // XYZ → Lab (D65 white point)
     let xn = 0.95047;
     let yn = 1.0;
@@ -97,7 +93,7 @@ pub(crate) fn rgb_to_lab(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
     (l_star, a_star, b_star)
 }
 
-/// CIE Lab → RGB [0,1] (sRGB output).
+/// CIE Lab → linear RGB. Output is linear f32 (pipeline working space).
 pub(crate) fn lab_to_rgb(l: f32, a: f32, b: f32) -> (f32, f32, f32) {
     let fy = (l + 16.0) / 116.0;
     let fx = a / 500.0 + fy;
@@ -108,15 +104,11 @@ pub(crate) fn lab_to_rgb(l: f32, a: f32, b: f32) -> (f32, f32, f32) {
     let x = xn * lab_f_inv(fx);
     let y = yn * lab_f_inv(fy);
     let z = zn * lab_f_inv(fz);
-    // XYZ → linear RGB
+    // XYZ → linear RGB (IEC 61966-2-1 inverse)
     let rl = 3.2404542 * x - 1.5371385 * y - 0.4985314 * z;
     let gl = -0.969266 * x + 1.8760108 * y + 0.041556 * z;
     let bl = 0.0556434 * x - 0.2040259 * y + 1.0572252 * z;
-    (
-        linear_to_srgb_comp(rl),
-        linear_to_srgb_comp(gl),
-        linear_to_srgb_comp(bl),
-    )
+    (rl, gl, bl)
 }
 
 fn lab_f(t: f32) -> f32 {
@@ -137,22 +129,6 @@ fn lab_f_inv(t: f32) -> f32 {
     }
 }
 
-fn srgb_comp_to_linear(c: f32) -> f32 {
-    if c <= 0.04045 {
-        c / 12.92
-    } else {
-        ((c + 0.055) / 1.055).powf(2.4)
-    }
-}
-
-fn linear_to_srgb_comp(c: f32) -> f32 {
-    let c = c.max(0.0);
-    if c <= 0.0031308 {
-        c * 12.92
-    } else {
-        1.055 * c.powf(1.0 / 2.4) - 0.055
-    }
-}
 
 // ─── Palette Helpers ──────────────────────────────────────────────────────
 

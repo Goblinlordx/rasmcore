@@ -246,12 +246,34 @@ fn cat16_adaptation_matrix(temperature_k: f32, tint: f32) -> [f32; 9] {
         [d[2] * CAT16[2][0], d[2] * CAT16[2][1], d[2] * CAT16[2][2]],
     ];
 
+    // XYZ-space adaptation matrix
+    let mm = |a: &[[f64;3];3], b: &[[f64;3];3]| -> [[f64;3];3] {
+        let mut o = [[0.0f64;3];3];
+        for i in 0..3 { for j in 0..3 {
+            o[i][j] = a[i][0]*b[0][j] + a[i][1]*b[1][j] + a[i][2]*b[2][j];
+        }}
+        o
+    };
+    let m_xyz = mm(&CAT16_INV, &d_cat);
+
+    // Wrap with sRGB↔XYZ: M_srgb = M_XYZ_to_sRGB × M_xyz × M_sRGB_to_XYZ
+    const M_SRGB_TO_XYZ: [[f64;3];3] = [
+        [0.4124564, 0.3575761, 0.1804375],
+        [0.2126729, 0.7151522, 0.0721750],
+        [0.0193339, 0.1191920, 0.9503041],
+    ];
+    const M_XYZ_TO_SRGB: [[f64;3];3] = [
+        [ 3.2404542, -1.5371385, -0.4985314],
+        [-0.9692660,  1.8760108,  0.0415560],
+        [ 0.0556434, -0.2040259,  1.0572252],
+    ];
+    let m_temp = mm(&m_xyz, &M_SRGB_TO_XYZ);
+    let m = mm(&M_XYZ_TO_SRGB, &m_temp);
+
     let mut out = [0.0f32; 9];
     for i in 0..3 {
         for j in 0..3 {
-            out[i * 3 + j] = (CAT16_INV[i][0] * d_cat[0][j]
-                + CAT16_INV[i][1] * d_cat[1][j]
-                + CAT16_INV[i][2] * d_cat[2][j]) as f32;
+            out[i * 3 + j] = m[i][j] as f32;
         }
     }
     out

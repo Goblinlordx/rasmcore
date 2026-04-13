@@ -204,13 +204,12 @@ fn tolerance_for(filter_name: &str) -> f32 {
     match filter_name {
         // ACES log/exp transfer: f32 vs f64 precision in log2/pow operations
         "aces_cct_to_cg" | "aces_cg_to_cct" => 0.002,
-        // White balance: our pipeline pre-composes a single 3x3 matrix in
-        // linear sRGB; colour-science goes RGB→XYZ→CAT→XYZ→RGB in f64.
-        // Mathematically equivalent but different FP accumulation paths.
-        "white_balance_temperature" => 0.2,
-        // Lab: pipeline uses f32 sRGB→XYZ→Lab chain; colour-science uses f64.
-        // The cube root in Lab f() amplifies small XYZ precision differences.
-        "lab_adjust" => 0.25,
+        // White balance: pipeline and colour-science both do RGB→XYZ→CAT16→XYZ→RGB.
+        // Residual is f32 vs f64 matrix accumulation.
+        "white_balance_temperature" => 0.0001,
+        // Lab: pipeline uses f32 linear→XYZ→Lab→adjust→Lab→XYZ→linear.
+        // Residual is f32 cbrt precision vs colour-science f64.
+        "lab_adjust" => 0.0001,
         _ => TOLERANCE,
     }
 }
