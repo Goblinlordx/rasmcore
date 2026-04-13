@@ -190,17 +190,6 @@ pub fn chromatic_aberration(input: &[f32], w: u32, h: u32, strength: f32) -> Vec
     let max_dist = (cx * cx + cy * cy).sqrt().max(1.0);
     let norm_strength = strength / max_dist;
 
-    // BORDER_REFLECT_101: e.g. index -1 → 1, index n → n-2
-    let reflect_101 = |v: i32, max: i32| -> usize {
-        let mut v = v;
-        let m = max - 1;
-        if m == 0 { return 0; }
-        let period = 2 * m;
-        v = v.rem_euclid(period);
-        if v > m { v = period - v; }
-        v as usize
-    };
-
     for y in 0..h {
         for x in 0..w {
             let idx = (y * w + x) as usize;
@@ -209,19 +198,19 @@ pub fn chromatic_aberration(input: &[f32], w: u32, h: u32, strength: f32) -> Vec
             let dist = (dx * dx + dy * dy).sqrt();
             let shift = dist * norm_strength;
             let d = dist.max(1.0);
+            let nx = dx / d;
+            let ny = dy / d;
 
-            // R shifts outward — nearest-neighbor, BORDER_REFLECT_101
-            let rx = reflect_101((x as f32 + dx * shift / d).round() as i32, w as i32);
-            let ry = reflect_101((y as f32 + dy * shift / d).round() as i32, h as i32);
-            output[idx * 4] = input[(ry * w as usize + rx) * 4];
+            // R shifts outward — bilinear sub-pixel sampling
+            output[idx * 4] = bilinear_sample(input, w, h,
+                x as f32 + nx * shift, y as f32 + ny * shift, 0);
 
             // G stays
             output[idx * 4 + 1] = input[idx * 4 + 1];
 
-            // B shifts inward — nearest-neighbor, BORDER_REFLECT_101
-            let bx = reflect_101((x as f32 - dx * shift / d).round() as i32, w as i32);
-            let by = reflect_101((y as f32 - dy * shift / d).round() as i32, h as i32);
-            output[idx * 4 + 2] = input[(by * w as usize + bx) * 4 + 2];
+            // B shifts inward — bilinear sub-pixel sampling
+            output[idx * 4 + 2] = bilinear_sample(input, w, h,
+                x as f32 - nx * shift, y as f32 - ny * shift, 2);
 
             // Alpha preserved
             output[idx * 4 + 3] = input[idx * 4 + 3];

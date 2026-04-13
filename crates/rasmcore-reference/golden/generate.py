@@ -2059,12 +2059,11 @@ def golden_depolar() -> dict:
 
 
 def golden_chromatic_aberration(strength: float) -> dict:
-    """Chromatic aberration — radial R/B channel offset (formula validation only).
+    """Chromatic aberration — radial R/B channel offset via cv2.remap (bilinear).
 
-    NOTE: No standard external tool implements this exact algorithm (nearest-
-    neighbor radial R/B shift). The formula is trivial: shift = dist * strength /
-    max_dist, sample at round(x ± shift*dx/dist). This golden validates the
-    formula independently in Python but is NOT an external tool reference.
+    Uses OpenCV's bilinear interpolation for sub-pixel channel shifting,
+    matching professional tools (Lightroom, Photoshop, Nuke).
+    R shifts outward, B shifts inward, G unchanged.
     """
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
     h, w = img.shape[:2]
@@ -2072,7 +2071,12 @@ def golden_chromatic_aberration(strength: float) -> dict:
     max_dist = max(np.sqrt(cx * cx + cy * cy), 1.0)
     norm_strength = strength / max_dist
 
-    output = img.copy()
+    # Build per-channel remap coordinates
+    map_r_x = np.zeros((h, w), dtype=np.float32)
+    map_r_y = np.zeros((h, w), dtype=np.float32)
+    map_b_x = np.zeros((h, w), dtype=np.float32)
+    map_b_y = np.zeros((h, w), dtype=np.float32)
+
     for y in range(h):
         for x in range(w):
             dx = float(x) - cx
@@ -2080,22 +2084,25 @@ def golden_chromatic_aberration(strength: float) -> dict:
             dist = np.sqrt(dx * dx + dy * dy)
             shift = dist * norm_strength
             d = max(dist, 1.0)
-            # R shifts outward (nearest-neighbor, BORDER_REFLECT_101)
-            rx = _reflect_101(int(round(x + dx * shift / d)), w)
-            ry = _reflect_101(int(round(y + dy * shift / d)), h)
-            output[y, x, 0] = img[ry, rx, 0]
-            # B shifts inward
-            bx = _reflect_101(int(round(x - dx * shift / d)), w)
-            by = _reflect_101(int(round(y - dy * shift / d)), h)
-            output[y, x, 2] = img[by, bx, 2]
-            # G unchanged
+            nx, ny = dx / d, dy / d
+            map_r_x[y, x] = x + nx * shift
+            map_r_y[y, x] = y + ny * shift
+            map_b_x[y, x] = x - nx * shift
+            map_b_y[y, x] = y - ny * shift
+
+    # Use cv2.remap for bilinear interpolation (OpenCV C++ implementation)
+    output = img.copy()
+    output[:, :, 0] = cv2.remap(img[:, :, 0], map_r_x, map_r_y,
+                                 cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    output[:, :, 2] = cv2.remap(img[:, :, 2], map_b_x, map_b_y,
+                                 cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
 
     return {
         "filter": "chromatic_aberration",
         "params": {"strength": strength},
-        "tool": f"numpy (radial R/B shift, nearest-neighbor, BORDER_REFLECT_101)",
-        "tool_version": np.__version__,
-        "note": f"strength={strength}, nearest-neighbor sampling (round), reflect_101 border",
+        "tool": "cv2.remap (bilinear R/B channel shift, BORDER_REPLICATE)",
+        "tool_version": cv2.__version__,
+        "note": f"strength={strength}, sub-pixel bilinear via OpenCV remap",
         "output": pixels_to_list(output),
     }
 
