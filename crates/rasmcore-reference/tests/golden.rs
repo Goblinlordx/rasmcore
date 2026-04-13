@@ -354,6 +354,24 @@ fn run_spatial_reference(_filter_key: &str, entry: &GoldenEntry, input: &[f32], 
             }
             out
         },
+        // Effect ops
+        "emboss" => refimpl::grading_ops::emboss(input, w, h, 1.0),
+        "chromatic_aberration" => refimpl::effect_ops::chromatic_aberration(input, w, h, f("strength")),
+        "oil_paint" => refimpl::effect_ops::oil_paint(input, w, h, u("radius"), 256),
+        "charcoal" => refimpl::effect_ops::charcoal(input, w, h, f("sigma") as u32),
+        "halftone" => refimpl::effect_ops::halftone(input, w, h, u("dot_size")),
+        "pixelate" => refimpl::grading_ops::pixelate(input, w, h, u("block_size")),
+        // Distortion ops
+        "barrel" => refimpl::distortion_ops::barrel(input, w, h, f("k1"), f("k2")),
+        "spherize" => refimpl::distortion_ops::spherize(input, w, h, f("amount")),
+        "swirl" => refimpl::distortion_ops::swirl(input, w, h, f("angle"), f("radius")),
+        "wave" => {
+            let vertical = entry.params.get("vertical").and_then(|v| v.as_bool()).unwrap_or(false);
+            refimpl::distortion_ops::wave(input, w, h, f("amplitude"), f("wavelength"), !vertical)
+        },
+        "ripple" => refimpl::distortion_ops::ripple(input, w, h, f("amplitude"), f("wavelength")),
+        "polar" => refimpl::distortion_ops::polar(input, w, h),
+        "depolar" => refimpl::distortion_ops::depolar(input, w, h),
         _ => return None,
     })
 }
@@ -391,6 +409,16 @@ fn spatial_tolerance_for(filter_name: &str) -> f32 {
         "shadow_highlight" => 0.01,
         // Retinex: log domain + normalization amplifies small diffs
         "retinex_ssr" | "retinex_msr" => 0.01,
+        // Distortion: bilinear sampling precision (OpenCV remap vs reference)
+        "barrel" | "spherize" | "swirl" | "wave" | "ripple" | "polar" | "depolar" => 0.01,
+        // Chromatic aberration: per-channel bilinear sampling
+        "chromatic_aberration" => 0.01,
+        // Oil paint: neighborhood histogram — exact formula match
+        "oil_paint" => 0.001,
+        // Charcoal: Sobel + blur chain
+        "charcoal" => 0.01,
+        // Halftone: binary circle rendering — exact formula match
+        "halftone" => 0.001,
         // All other spatial ops
         _ => 0.001,
     }

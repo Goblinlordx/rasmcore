@@ -1694,6 +1694,530 @@ def golden_tonemap_drago(l_max: float, bias: float) -> dict:
 
 # ─── Main ────────────────────────────────────────────────────────────────────
 
+# ─── Effect + distortion golden generators ──────────────────────────────────
+
+
+def _bilinear_sample_f32(img, x, y):
+    """Bilinear sample from HxWx3 f32 image, clamping at edges."""
+    h, w = img.shape[:2]
+    x0 = int(np.floor(x))
+    y0 = int(np.floor(y))
+    x0c = max(0, min(x0, w - 1))
+    y0c = max(0, min(y0, h - 1))
+    x1c = max(0, min(x0 + 1, w - 1))
+    y1c = max(0, min(y0 + 1, h - 1))
+    fx = np.float32(max(0.0, min(x - x0, 1.0)))
+    fy = np.float32(max(0.0, min(y - y0, 1.0)))
+    v00 = img[y0c, x0c].astype(np.float32)
+    v10 = img[y0c, x1c].astype(np.float32)
+    v01 = img[y1c, x0c].astype(np.float32)
+    v11 = img[y1c, x1c].astype(np.float32)
+    return v00 * (1 - fx) * (1 - fy) + v10 * fx * (1 - fy) + v01 * (1 - fx) * fy + v11 * fx * fy
+
+
+def _reflect_101(v, size):
+    """BORDER_REFLECT_101."""
+    if size <= 1:
+        return 0
+    if v < 0:
+        v = -v
+    if v >= size:
+        v = 2 * size - v - 2
+    return max(0, min(v, size - 1))
+
+
+def golden_emboss() -> dict:
+    """Emboss via cv2.filter2D with standard emboss kernel + 0.5 offset.
+
+    Kernel: [[-2,-1,0],[-1,1,1],[0,1,2]], BORDER_REFLECT_101, then +0.5.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    kernel = np.array([[-2, -1, 0], [-1, 1, 1], [0, 1, 2]], dtype=np.float32)
+    output = img.copy()
+    for c in range(3):
+        output[:, :, c] = cv2.filter2D(img[:, :, c], -1, kernel,
+                                         borderType=cv2.BORDER_REFLECT_101) + 0.5
+
+    return {
+        "filter": "emboss",
+        "params": {},
+        "tool": "cv2.filter2D (emboss kernel + 0.5 offset, BORDER_REFLECT_101)",
+        "tool_version": cv2.__version__,
+        "note": "Standard emboss: kernel [[-2,-1,0],[-1,1,1],[0,1,2]] + 0.5 gray offset",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_pixelate(block_size: int) -> dict:
+    """Pixelate via cv2.resize down then up — matches pipeline block averaging.
+
+    Pipeline: average each block, fill block with average.
+    OpenCV resize INTER_AREA (down) + INTER_NEAREST (up) approximates this.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+
+    # Compute block averages and fill — exact pipeline formula
+    output = img.copy()
+    for by in range(0, h, block_size):
+        for bx in range(0, w, block_size):
+            ye = min(by + block_size, h)
+            xe = min(bx + block_size, w)
+            block = img[by:ye, bx:xe]
+            avg = block.mean(axis=(0, 1))
+            output[by:ye, bx:xe] = avg
+
+    return {
+        "filter": "pixelate",
+        "params": {"block_size": block_size},
+        "tool": "numpy (block averaging)",
+        "tool_version": np.__version__,
+        "note": "Block average then fill — exact pipeline formula",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_barrel(k1: float, k2: float) -> dict:
+    """Barrel distortion via OpenCV cv2.remap with computed coordinate map.
+
+    r' = r * (1 + k1*r² + k2*r⁴), coordinates normalized to [-1,1].
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+    cx, cy = w / 2.0, h / 2.0
+    norm = max(cx, cy)
+
+    map_x = np.zeros((h, w), dtype=np.float32)
+    map_y = np.zeros((h, w), dtype=np.float32)
+    for y in range(h):
+        for x in range(w):
+            nx = (x - cx) / norm
+            ny = (y - cy) / norm
+            r2 = nx * nx + ny * ny
+            scale = 1.0 + k1 * r2 + k2 * r2 * r2
+            map_x[y, x] = nx * scale * norm + cx
+            map_y[y, x] = ny * scale * norm + cy
+
+    output = np.zeros_like(img)
+    for c in range(3):
+        output[:, :, c] = cv2.remap(img[:, :, c], map_x, map_y,
+                                     cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+
+    return {
+        "filter": "barrel",
+        "params": {"k1": k1, "k2": k2},
+        "tool": f"cv2.remap (barrel: r'=r*(1+k1*r²+k2*r⁴), k1={k1}, k2={k2})",
+        "tool_version": cv2.__version__,
+        "note": "Coordinates normalized to [-1,1], bilinear interpolation, border replicate",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_spherize(amount: float) -> dict:
+    """Spherize via cv2.remap — power-law radial distortion.
+
+    For r in (0,1): new_r = r^(1/(1+amount)); scale = new_r/r.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+    cx, cy = w / 2.0, h / 2.0
+    norm = max(cx, cy)
+
+    map_x = np.zeros((h, w), dtype=np.float32)
+    map_y = np.zeros((h, w), dtype=np.float32)
+    for y in range(h):
+        for x in range(w):
+            nx = (x - cx) / norm
+            ny = (y - cy) / norm
+            r = np.sqrt(nx * nx + ny * ny)
+            if 0 < r < 1:
+                new_r = r ** (1.0 / (1.0 + amount))
+                scale = new_r / r
+            elif r >= 1:
+                scale = 1.0
+            else:
+                scale = 1.0
+            map_x[y, x] = nx * scale * norm + cx
+            map_y[y, x] = ny * scale * norm + cy
+
+    output = np.zeros_like(img)
+    for c in range(3):
+        output[:, :, c] = cv2.remap(img[:, :, c], map_x, map_y,
+                                     cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+
+    return {
+        "filter": "spherize",
+        "params": {"amount": amount},
+        "tool": f"cv2.remap (spherize: new_r=r^(1/(1+{amount})))",
+        "tool_version": cv2.__version__,
+        "note": "Power-law radial distortion, bilinear, border replicate",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_swirl(angle: float, radius: float) -> dict:
+    """Swirl distortion via cv2.remap.
+
+    theta = angle * (1 - dist/radius) for dist < radius.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+    cx, cy = w / 2.0, h / 2.0
+
+    map_x = np.zeros((h, w), dtype=np.float32)
+    map_y = np.zeros((h, w), dtype=np.float32)
+    for y in range(h):
+        for x in range(w):
+            dx = x - cx
+            dy = y - cy
+            dist = np.sqrt(dx * dx + dy * dy)
+            if dist < radius and dist > 0:
+                theta = angle * (1.0 - dist / radius)
+                cos_t, sin_t = np.cos(theta), np.sin(theta)
+                map_x[y, x] = cx + dx * cos_t - dy * sin_t
+                map_y[y, x] = cy + dx * sin_t + dy * cos_t
+            else:
+                map_x[y, x] = x
+                map_y[y, x] = y
+
+    output = np.zeros_like(img)
+    for c in range(3):
+        output[:, :, c] = cv2.remap(img[:, :, c], map_x, map_y,
+                                     cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+
+    return {
+        "filter": "swirl",
+        "params": {"angle": angle, "radius": radius},
+        "tool": f"cv2.remap (swirl: angle={angle}, radius={radius})",
+        "tool_version": cv2.__version__,
+        "note": "Rotational distortion: theta=angle*(1-dist/radius) for dist<radius",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_wave(amplitude: float, wavelength: float, horizontal: bool) -> dict:
+    """Wave distortion via cv2.remap.
+
+    horizontal=True: sy = y + A*sin(2*pi*x/wavelength)
+    horizontal=False: sx = x + A*sin(2*pi*y/wavelength)
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+
+    map_x = np.zeros((h, w), dtype=np.float32)
+    map_y = np.zeros((h, w), dtype=np.float32)
+    for y in range(h):
+        for x in range(w):
+            if horizontal:
+                map_x[y, x] = x
+                map_y[y, x] = y + amplitude * np.sin(2 * np.pi * x / wavelength)
+            else:
+                map_x[y, x] = x + amplitude * np.sin(2 * np.pi * y / wavelength)
+                map_y[y, x] = y
+
+    output = np.zeros_like(img)
+    for c in range(3):
+        output[:, :, c] = cv2.remap(img[:, :, c], map_x, map_y,
+                                     cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+
+    return {
+        "filter": "wave",
+        "params": {"amplitude": amplitude, "wavelength": wavelength, "vertical": not horizontal},
+        "tool": f"cv2.remap (wave: A={amplitude}, λ={wavelength}, {'horizontal' if horizontal else 'vertical'})",
+        "tool_version": cv2.__version__,
+        "note": "Sinusoidal displacement, bilinear, border replicate",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_polar() -> dict:
+    """Cartesian-to-polar via cv2.remap.
+
+    out_x maps to angle [0, 2*pi], out_y maps to radius [0, max_radius].
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+    cx, cy = w / 2.0, h / 2.0
+    max_radius = np.sqrt(cx * cx + cy * cy)
+
+    map_x = np.zeros((h, w), dtype=np.float32)
+    map_y = np.zeros((h, w), dtype=np.float32)
+    for y in range(h):
+        for x in range(w):
+            angle = x / w * 2 * np.pi
+            radius = y / (h - 1) * max_radius if h > 1 else 0
+            map_x[y, x] = cx + radius * np.cos(angle)
+            map_y[y, x] = cy + radius * np.sin(angle)
+
+    output = np.zeros_like(img)
+    for c in range(3):
+        output[:, :, c] = cv2.remap(img[:, :, c], map_x, map_y,
+                                     cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+
+    return {
+        "filter": "polar",
+        "params": {},
+        "tool": "cv2.remap (cartesian-to-polar coordinate transform)",
+        "tool_version": cv2.__version__,
+        "note": "x->angle [0,2pi], y->radius [0,max_radius], bilinear, border replicate",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_depolar() -> dict:
+    """Polar-to-cartesian via cv2.remap.
+
+    For each output pixel: radius=sqrt(dx²+dy²), angle=atan2(dy,dx).
+    sx=angle/(2pi)*w, sy=radius/max_radius*(h-1).
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+    cx, cy = w / 2.0, h / 2.0
+    max_radius = np.sqrt(cx * cx + cy * cy)
+
+    map_x = np.zeros((h, w), dtype=np.float32)
+    map_y = np.zeros((h, w), dtype=np.float32)
+    for y in range(h):
+        for x in range(w):
+            dx = x - cx
+            dy = y - cy
+            radius = np.sqrt(dx * dx + dy * dy)
+            angle = np.arctan2(dy, dx)
+            if angle < 0:
+                angle += 2 * np.pi
+            map_x[y, x] = angle / (2 * np.pi) * w
+            map_y[y, x] = radius / max_radius * (h - 1) if max_radius > 0 else 0
+
+    output = np.zeros_like(img)
+    for c in range(3):
+        output[:, :, c] = cv2.remap(img[:, :, c], map_x, map_y,
+                                     cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+
+    return {
+        "filter": "depolar",
+        "params": {},
+        "tool": "cv2.remap (polar-to-cartesian coordinate transform)",
+        "tool_version": cv2.__version__,
+        "note": "radius=sqrt(dx²+dy²), angle=atan2(dy,dx), bilinear, border replicate",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_chromatic_aberration(strength: float) -> dict:
+    """Chromatic aberration — radial shift of R/B channels.
+
+    R shifted outward by strength * dist/max_dist, B shifted inward.
+    Green unchanged. Uses bilinear sampling.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+    cx, cy = w / 2.0, h / 2.0
+    max_dist = np.sqrt(cx * cx + cy * cy)
+    if max_dist < 1e-10:
+        return {
+            "filter": "chromatic_aberration", "params": {"strength": strength},
+            "tool": "numpy", "tool_version": np.__version__, "note": "degenerate",
+            "output": pixels_to_list(img),
+        }
+
+    output = img.copy()
+    for y in range(h):
+        for x in range(w):
+            dx = x - cx
+            dy = y - cy
+            dist = np.sqrt(dx * dx + dy * dy)
+            shift = dist * strength / max_dist
+            if dist > 1e-10:
+                nx, ny = dx / dist, dy / dist
+            else:
+                nx, ny = 0.0, 0.0
+            # R shifts outward
+            output[y, x, 0] = _bilinear_sample_f32(img[:, :, 0:1].reshape(h, w, 1),
+                                                     x + shift * nx, y + shift * ny)[0]
+            # B shifts inward
+            output[y, x, 2] = _bilinear_sample_f32(img[:, :, 2:3].reshape(h, w, 1),
+                                                     x - shift * nx, y - shift * ny)[0]
+            # G unchanged
+
+    return {
+        "filter": "chromatic_aberration",
+        "params": {"strength": strength},
+        "tool": f"numpy (radial R/B shift, strength={strength})",
+        "tool_version": np.__version__,
+        "note": "R outward, B inward by strength*dist/max_dist, bilinear, G unchanged",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_oil_paint(radius: int) -> dict:
+    """Oil paint effect — neighborhood histogram mode.
+
+    For each pixel, find the most common luminance bin in the neighborhood,
+    output the mean color of pixels in that bin.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+    levels = 256  # pipeline uses 256 bins
+    output = np.zeros_like(img)
+
+    for y in range(h):
+        for x in range(w):
+            y0 = max(0, y - radius)
+            y1 = min(h, y + radius + 1)
+            x0 = max(0, x - radius)
+            x1 = min(w, x + radius + 1)
+
+            # Build luminance histogram
+            bins = [[] for _ in range(levels)]
+            for py in range(y0, y1):
+                for px in range(x0, x1):
+                    luma = 0.2126 * img[py, px, 0] + 0.7152 * img[py, px, 1] + 0.0722 * img[py, px, 2]
+                    b = min(int(luma * levels), levels - 1)
+                    bins[b].append((img[py, px, 0], img[py, px, 1], img[py, px, 2]))
+
+            # Find mode bin
+            best_bin = max(range(levels), key=lambda b: len(bins[b]))
+            if bins[best_bin]:
+                avg = np.mean(bins[best_bin], axis=0)
+                output[y, x] = avg
+            else:
+                output[y, x] = img[y, x]
+
+    return {
+        "filter": "oil_paint",
+        "params": {"radius": radius},
+        "tool": "numpy (neighborhood luminance histogram mode)",
+        "tool_version": np.__version__,
+        "note": f"radius={radius}, levels={levels}, mode bin → mean color",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_charcoal(radius: float, sigma: float) -> dict:
+    """Charcoal effect — grayscale → Sobel edge → invert → Gaussian blur.
+
+    Uses OpenCV Sobel (ksize=3) + GaussianBlur.
+    Pipeline: `radius` is the Sobel param (unused in ksize=3 Sobel), `sigma` is blur radius.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+
+    # Grayscale (BT.709)
+    gray = img[:, :, 0] * 0.2126 + img[:, :, 1] * 0.7152 + img[:, :, 2] * 0.0722
+
+    # Sobel edge magnitude
+    sx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3, borderType=cv2.BORDER_REFLECT_101)
+    sy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3, borderType=cv2.BORDER_REFLECT_101)
+    mag = np.sqrt(sx * sx + sy * sy)
+
+    # Normalize to [0,1]
+    mag_max = mag.max()
+    if mag_max > 1e-10:
+        mag /= mag_max
+
+    # Invert
+    inv = 1.0 - mag
+
+    # Gaussian blur with sigma = blur radius param
+    ksize = int(round(sigma * 10.0 + 1.0)) | 1
+    ksize = max(ksize, 3)
+    blurred = cv2.GaussianBlur(inv, (ksize, ksize), sigma, borderType=cv2.BORDER_REFLECT_101)
+
+    # Expand back to 3 channels
+    output = np.zeros_like(img)
+    for c in range(3):
+        output[:, :, c] = blurred
+
+    return {
+        "filter": "charcoal",
+        "params": {"radius": radius, "sigma": sigma},
+        "tool": f"cv2.Sobel + cv2.GaussianBlur (charcoal, radius={radius}, sigma={sigma})",
+        "tool_version": cv2.__version__,
+        "note": "Grayscale→Sobel→normalize→invert→GaussianBlur(sigma=blur_radius)",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_halftone(dot_size: float) -> dict:
+    """Halftone — block-averaged luminance → circular dot pattern.
+
+    For each block: compute mean luminance, render circle with radius
+    proportional to sqrt(1-luma). Binary: pixel is 1 if inside circle, 0 outside.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+    bs = int(dot_size)
+    if bs < 1:
+        bs = 1
+    max_radius = bs / 2.0
+    output = np.zeros_like(img)
+
+    for by in range(0, h, bs):
+        for bx in range(0, w, bs):
+            ye = min(by + bs, h)
+            xe = min(bx + bs, w)
+            block = img[by:ye, bx:xe]
+            luma = (block[:, :, 0] * 0.2126 + block[:, :, 1] * 0.7152 + block[:, :, 2] * 0.0722).mean()
+            dot_radius = max_radius * np.sqrt(max(1.0 - luma, 0.0))
+            center_x = (bx + xe) / 2.0
+            center_y = (by + ye) / 2.0
+            for py in range(by, ye):
+                for px in range(bx, xe):
+                    dx = px - center_x + 0.5
+                    dy = py - center_y + 0.5
+                    dist = np.sqrt(dx * dx + dy * dy)
+                    val = 1.0 if dist <= dot_radius else 0.0
+                    output[py, px] = [val, val, val]
+
+    return {
+        "filter": "halftone",
+        "params": {"dot_size": dot_size},
+        "tool": "numpy (block luminance → circular dot pattern)",
+        "tool_version": np.__version__,
+        "note": f"dot_size={dot_size}, radius=max_r*sqrt(1-luma), binary circle",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_ripple(amplitude: float, wavelength: float) -> dict:
+    """Ripple distortion via cv2.remap — radial sinusoidal displacement.
+
+    offset = amplitude * sin(2*pi*dist/wavelength), displace along radial direction.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+    cx, cy = w / 2.0, h / 2.0
+
+    map_x = np.zeros((h, w), dtype=np.float32)
+    map_y = np.zeros((h, w), dtype=np.float32)
+    for y in range(h):
+        for x in range(w):
+            dx = x - cx
+            dy = y - cy
+            dist = np.sqrt(dx * dx + dy * dy)
+            if dist > 1e-10:
+                offset = amplitude * np.sin(2 * np.pi * dist / wavelength)
+                nx, ny = dx / dist, dy / dist
+                map_x[y, x] = x + nx * offset
+                map_y[y, x] = y + ny * offset
+            else:
+                map_x[y, x] = x
+                map_y[y, x] = y
+
+    output = np.zeros_like(img)
+    for c in range(3):
+        output[:, :, c] = cv2.remap(img[:, :, c], map_x, map_y,
+                                     cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+
+    return {
+        "filter": "ripple",
+        "params": {"amplitude": amplitude, "wavelength": wavelength},
+        "tool": f"cv2.remap (ripple: A={amplitude}, λ={wavelength})",
+        "tool_version": cv2.__version__,
+        "note": "Radial sinusoidal displacement, bilinear, border replicate",
+        "output": pixels_to_list(output),
+    }
+
+
 def main():
     out_dir = Path(__file__).parent / "golden_data"
     out_dir.mkdir(exist_ok=True)
@@ -1815,6 +2339,22 @@ def main():
     spatial["filters"]["retinex_msr_15_80_250"] = golden_retinex_msr(15.0, 80.0, 250.0)
     spatial["filters"]["tonemap_filmic_default"] = golden_tonemap_filmic(0.22, 0.3, 0.1, 0.2, 0.01)
     spatial["filters"]["tonemap_drago_100_0.85"] = golden_tonemap_drago(100.0, 0.85)
+
+    # ── Effect + distortion filters ──────────────────────────────────────
+    spatial["filters"]["emboss"] = golden_emboss()
+    spatial["filters"]["pixelate_8"] = golden_pixelate(8)
+    spatial["filters"]["barrel_0.3_0"] = golden_barrel(0.3, 0.0)
+    spatial["filters"]["spherize_0.5"] = golden_spherize(0.5)
+    spatial["filters"]["swirl_2_60"] = golden_swirl(2.0, 60.0)
+    spatial["filters"]["wave_5_30_h"] = golden_wave(5.0, 30.0, True)
+    spatial["filters"]["wave_5_30_v"] = golden_wave(5.0, 30.0, False)
+    spatial["filters"]["polar"] = golden_polar()
+    spatial["filters"]["depolar"] = golden_depolar()
+    spatial["filters"]["chromatic_aberration_5"] = golden_chromatic_aberration(5.0)
+    spatial["filters"]["oil_paint_3"] = golden_oil_paint(3)
+    spatial["filters"]["charcoal_1_1"] = golden_charcoal(1.0, 1.0)
+    spatial["filters"]["halftone_8"] = golden_halftone(8.0)
+    spatial["filters"]["ripple_5_30"] = golden_ripple(5.0, 30.0)
 
     # Write spatial output
     spatial_file = out_dir / "spatial.json"
