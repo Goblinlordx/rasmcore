@@ -372,8 +372,14 @@ fn spatial_tolerance_for(filter_name: &str) -> f32 {
         "frequency_high" | "frequency_low" => 0.001,
         // Tonemap: simple formula, tight
         "tonemap_reinhard" | "tonemap_filmic" | "tonemap_drago" => 0.001,
-        // CLAHE: u8 quantization in histogram causes small diff
-        "clahe" => 0.02,
+        // CLAHE: OpenCV operates entirely in u8 (LUT and output are u8), our f32
+        // pipeline keeps continuous interpolation. Algorithm matches OpenCV exactly
+        // (verified against opencv/modules/imgproc/src/clahe.cpp); the diff is the
+        // inherent precision gap between u8-quantized output and f32 continuous output.
+        // No f32-native CLAHE reference exists — all implementations (OpenCV, skimage,
+        // MATLAB) discretize to integer bins. 0.01 = ~2.5 u8 levels worst case on
+        // dark pixels where the luma ratio amplifies the 1/255 quantization step.
+        "clahe" => 0.01,
         // NLM: f32 vs f64 accumulation in patch SSD
         "nlm_denoise" => 0.01,
         // Dehaze: multi-stage (dark channel min, top-0.1% atmos average, transmission, recovery)
