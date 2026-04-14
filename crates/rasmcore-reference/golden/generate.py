@@ -2456,7 +2456,15 @@ def golden_blend_self(mode_name: str, mode_id: int) -> dict:
     both base and overlay (self-composite). Validates W3C Compositing Level 1.
     """
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
-    im_mode = mode_name.capitalize()  # IM uses "Multiply", "Screen", etc.
+    # Map our mode names to IM's compose operator names
+    im_mode_map = {
+        "multiply": "Multiply", "screen": "Screen", "overlay": "Overlay",
+        "soft_light": "SoftLight", "hard_light": "HardLight",
+        "color_dodge": "ColorDodge", "color_burn": "ColorBurn",
+        "darken": "Darken", "lighten": "Lighten",
+        "difference": "Difference", "exclusion": "Exclusion",
+    }
+    im_mode = im_mode_map.get(mode_name, mode_name.capitalize())
 
     # IM self-composite: magick base.tiff base.tiff -compose Mode -composite out.tiff
     img_bgr = img[:, :, ::-1].copy()
@@ -2693,6 +2701,20 @@ def golden_unpremultiply() -> dict:
         "note": "out.rgb = in.rgb / in.a where a > 0. Input is premultiplied.",
         "output": pixels_to_list(output_rgba),
         "custom_input": pixels_to_list(rgba),
+    }
+
+
+def golden_sigmoidal_contrast(contrast: float, midpoint: float) -> dict:
+    """Sigmoidal contrast via ImageMagick -sigmoidal-contrast (built-in)."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    output = im_process(img, ['-sigmoidal-contrast', f'{contrast}x{midpoint * 100}%'])
+    return {
+        "filter": "sigmoidal_contrast",
+        "params": {"contrast": contrast, "midpoint": midpoint},
+        "tool": f"magick -sigmoidal-contrast {contrast}x{midpoint*100}%",
+        "tool_version": tool_info()["imagemagick"],
+        "note": "ImageMagick built-in sigmoidal contrast",
+        "output": pixels_to_list(output),
     }
 
 
@@ -3013,6 +3035,9 @@ def main():
     spatial["filters"]["blend_darken_self"] = golden_blend_self("darken", 8)
     spatial["filters"]["blend_lighten_self"] = golden_blend_self("lighten", 9)
     spatial["filters"]["blend_difference_self"] = golden_blend_self("difference", 10)
+
+    # ── More blend modes (IM validated) ────────────────────────────────
+    spatial["filters"]["blend_exclusion_self"] = golden_blend_self("exclusion", 11)
 
     # ── Generator + draw + tool filters ────────────────────────────────
     spatial["filters"]["checkerboard_8"] = golden_checkerboard(8)
