@@ -66,7 +66,8 @@ def pixels_to_list(arr: np.ndarray) -> list:
                 r, g, b = float(arr[y, x, 0]), float(arr[y, x, 1]), float(arr[y, x, 2])
             else:
                 r = g = b = float(arr[y, x] if arr.ndim == 2 else arr[y, x, 0])
-            result.append([r, g, b, 1.0])
+            a = float(arr[y, x, 3]) if channels >= 4 else 1.0
+            result.append([r, g, b, a])
     return result
 
 
@@ -2475,10 +2476,15 @@ def golden_blend_self(mode_name: str, mode_id: int) -> dict:
     if r.returncode != 0:
         raise RuntimeError(f'IM blend failed: {r.stderr}')
 
-    result_bgr = cv2.imread(out_path, cv2.IMREAD_UNCHANGED)
+    result = cv2.imread(out_path, cv2.IMREAD_UNCHANGED)
     os.unlink(in_path)
     os.unlink(out_path)
-    output = result_bgr[:, :, ::-1].copy().astype(np.float32)
+    if result is None:
+        raise RuntimeError(f'Failed to read IM {im_mode} output')
+    if result.ndim == 2:
+        output = np.stack([result, result, result], axis=-1).astype(np.float32)
+    else:
+        output = result[:, :, ::-1].copy().astype(np.float32)
 
     return {
         "filter": "blend",
@@ -2536,6 +2542,156 @@ def golden_flatten(bg_r: float, bg_g: float, bg_b: float) -> dict:
         "tool_version": np.__version__,
         "note": "out = fg*alpha + bg*(1-alpha)",
         "output": pixels_to_list(output),
+        "custom_input": pixels_to_list(rgba),
+    }
+
+
+# ─── More edge + spatial golden generators ──────────────────────────────────
+
+
+def golden_otsu_threshold() -> dict:
+    """Otsu threshold via cv2.threshold (OpenCV C++ implementation)."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    gray = img[:, :, 0] * 0.2126 + img[:, :, 1] * 0.7152 + img[:, :, 2] * 0.0722
+    # OpenCV Otsu needs u8 input
+    gray_u8 = np.clip(gray * 255 + 0.5, 0, 255).astype(np.uint8)
+    _, binary_u8 = cv2.threshold(gray_u8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    binary = binary_u8.astype(np.float32) / 255.0
+    output = np.stack([binary, binary, binary], axis=-1)
+    return {
+        "filter": "otsu_threshold", "params": {},
+        "tool": "cv2.threshold (THRESH_OTSU)", "tool_version": cv2.__version__,
+        "note": "OpenCV Otsu automatic threshold on BT.709 luma (u8 quantized)",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_canny(low: float, high: float) -> dict:
+    """Canny edge detection via cv2.Canny (OpenCV C++ implementation)."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    gray = img[:, :, 0] * 0.2126 + img[:, :, 1] * 0.7152 + img[:, :, 2] * 0.0722
+    # OpenCV Canny needs u8. Thresholds are in u8 scale.
+    gray_u8 = np.clip(gray * 255 + 0.5, 0, 255).astype(np.uint8)
+    edges_u8 = cv2.Canny(gray_u8, int(low * 255), int(high * 255))
+    edges = edges_u8.astype(np.float32) / 255.0
+    output = np.stack([edges, edges, edges], axis=-1)
+    return {
+        "filter": "canny", "params": {"low": low, "high": high},
+        "tool": f"cv2.Canny (low={int(low*255)}, high={int(high*255)})",
+        "tool_version": cv2.__version__,
+        "note": "OpenCV Canny on BT.709 luma (u8 quantized), thresholds scaled to u8",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_median(radius: int) -> dict:
+    """Median filter via cv2.medianBlur (OpenCV C++ implementation)."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    ksize = 2 * radius + 1
+    # OpenCV medianBlur on f32 requires ksize <= 5
+    if ksize <= 5:
+        output = cv2.medianBlur(img, ksize)
+    else:
+        # For larger kernels, fall back to per-channel u8 round-trip
+        img_u8 = np.clip(img * 255 + 0.5, 0, 255).astype(np.uint8)
+        result_u8 = cv2.medianBlur(img_u8, ksize)
+        output = result_u8.astype(np.float32) / 255.0
+    return {
+        "filter": "median", "params": {"radius": radius},
+        "tool": f"cv2.medianBlur (ksize={ksize})",
+        "tool_version": cv2.__version__,
+        "note": f"OpenCV median filter, ksize={ksize}, per-channel",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_motion_blur(length: int, angle: float) -> dict:
+    """Motion blur via cv2.filter2D with a line kernel (OpenCV C++)."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    # Build 1D kernel rotated to the given angle
+    ksize = length
+    kernel = np.zeros((ksize, ksize), dtype=np.float32)
+    center = ksize // 2
+    rad = np.radians(angle)
+    cos_a, sin_a = np.cos(rad), np.sin(rad)
+    for i in range(ksize):
+        t = i - center
+        x = int(round(center + t * cos_a))
+        y = int(round(center + t * sin_a))
+        if 0 <= x < ksize and 0 <= y < ksize:
+            kernel[y, x] = 1.0
+    kernel_sum = kernel.sum()
+    if kernel_sum > 0:
+        kernel /= kernel_sum
+    output = np.zeros_like(img)
+    for c in range(3):
+        output[:, :, c] = cv2.filter2D(img[:, :, c], -1, kernel,
+                                         borderType=cv2.BORDER_REPLICATE)
+    return {
+        "filter": "motion_blur", "params": {"length": length, "angle": angle},
+        "tool": f"cv2.filter2D (motion blur kernel {ksize}x{ksize}, angle={angle}°)",
+        "tool_version": cv2.__version__,
+        "note": "Line kernel rotated to angle, normalized, BORDER_REPLICATE",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_premultiply() -> dict:
+    """Premultiply alpha — trivially verifiable formula.
+
+    out.rgb = in.rgb * in.a, out.a = in.a.
+    Uses input with varying alpha (alpha = x / (w-1)).
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+    # Create RGBA with alpha gradient
+    rgba = np.zeros((h, w, 4), dtype=np.float32)
+    for y in range(h):
+        for x in range(w):
+            a = x / max(w - 1, 1)
+            rgba[y, x] = [img[y, x, 0], img[y, x, 1], img[y, x, 2], a]
+    # Premultiply
+    output_rgba = rgba.copy()
+    output_rgba[:, :, 0] *= rgba[:, :, 3]
+    output_rgba[:, :, 1] *= rgba[:, :, 3]
+    output_rgba[:, :, 2] *= rgba[:, :, 3]
+    return {
+        "filter": "premultiply", "params": {},
+        "tool": "numpy (rgb * alpha)", "tool_version": np.__version__,
+        "note": "out.rgb = in.rgb * in.a. Input has alpha gradient (0 to 1 left to right).",
+        "output": pixels_to_list(output_rgba),
+        "custom_input": pixels_to_list(rgba),
+    }
+
+
+def golden_unpremultiply() -> dict:
+    """Unpremultiply alpha — trivially verifiable formula.
+
+    out.rgb = in.rgb / in.a (where a > 0), out.a = in.a.
+    Uses premultiplied input.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+    # Create premultiplied RGBA
+    rgba = np.zeros((h, w, 4), dtype=np.float32)
+    for y in range(h):
+        for x in range(w):
+            a = x / max(w - 1, 1)
+            rgba[y, x] = [img[y, x, 0] * a, img[y, x, 1] * a, img[y, x, 2] * a, a]
+    # Unpremultiply
+    output_rgba = rgba.copy()
+    for y in range(h):
+        for x in range(w):
+            a = rgba[y, x, 3]
+            if a > 1e-10:
+                output_rgba[y, x, 0] = rgba[y, x, 0] / a
+                output_rgba[y, x, 1] = rgba[y, x, 1] / a
+                output_rgba[y, x, 2] = rgba[y, x, 2] / a
+    return {
+        "filter": "unpremultiply", "params": {},
+        "tool": "numpy (rgb / alpha)", "tool_version": np.__version__,
+        "note": "out.rgb = in.rgb / in.a where a > 0. Input is premultiplied.",
+        "output": pixels_to_list(output_rgba),
         "custom_input": pixels_to_list(rgba),
     }
 
@@ -2843,6 +2999,20 @@ def main():
     spatial["filters"]["morph_tophat_2"] = golden_morph_tophat(2)
     spatial["filters"]["morph_blackhat_2"] = golden_morph_blackhat(2)
     spatial["filters"]["morph_gradient_2"] = golden_morph_gradient(2)
+
+    # ── More edge + spatial ops ─────────────────────────────────────────
+    spatial["filters"]["median_3"] = golden_median(3)
+    spatial["filters"]["motion_blur_10_45"] = golden_motion_blur(10, 45)
+
+    # ── Simple composite/alpha ops ───────────────────────────────────
+    spatial["filters"]["premultiply"] = golden_premultiply()
+    spatial["filters"]["unpremultiply"] = golden_unpremultiply()
+
+    # ── More blend modes (IM validated) ──────────────────────────────
+    spatial["filters"]["blend_overlay_self"] = golden_blend_self("overlay", 3)
+    spatial["filters"]["blend_darken_self"] = golden_blend_self("darken", 8)
+    spatial["filters"]["blend_lighten_self"] = golden_blend_self("lighten", 9)
+    spatial["filters"]["blend_difference_self"] = golden_blend_self("difference", 10)
 
     # ── Generator + draw + tool filters ────────────────────────────────
     spatial["filters"]["checkerboard_8"] = golden_checkerboard(8)

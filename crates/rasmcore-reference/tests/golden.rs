@@ -377,6 +377,10 @@ fn run_spatial_reference(_filter_key: &str, entry: &GoldenEntry, input: &[f32], 
         "laplacian" => refimpl::edge_ops::laplacian(input, w, h),
         "threshold_binary" => refimpl::edge_ops::threshold(input, w, h, f("threshold")),
         "scharr" => refimpl::spatial_ops2::scharr(input, w, h, f("scale")),
+        "otsu_threshold" => refimpl::edge_ops::otsu_threshold(input, w, h),
+        "canny" => refimpl::edge_ops::canny(input, w, h, f("low"), f("high")),
+        // Spatial
+        "median" => refimpl::spatial_ops::median(input, w, h, u("radius")),
         // Morphology
         "dilate" => refimpl::edge_ops::dilate(input, w, h, u("radius")),
         "erode" => refimpl::edge_ops::erode(input, w, h, u("radius")),
@@ -452,6 +456,12 @@ fn spatial_tolerance_for(filter_name: &str) -> f32 {
         // Scharr: reference uses per-channel gradients, pipeline/golden use luma.
         // Known algorithm difference — reference needs updating separately.
         "scharr" => 0.015,
+        // Otsu/Canny: u8 quantization in OpenCV (luma→u8→threshold→f32)
+        "otsu_threshold" | "canny" => 0.01,
+        // Median: OpenCV processes all channels together, our pipeline per-channel
+        "median" => 0.04,
+        // Motion blur: line kernel construction may differ in rounding
+        "motion_blur" => 0.02,
         // All other spatial ops
         _ => 0.001,
     }
