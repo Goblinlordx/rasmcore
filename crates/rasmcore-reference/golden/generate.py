@@ -2524,36 +2524,6 @@ def golden_blend_multiply(opacity: float) -> dict:
     }
 
 
-def golden_flatten(bg_r: float, bg_g: float, bg_b: float) -> dict:
-    """Flatten alpha — composite over solid background."""
-    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
-    h, w = img.shape[:2]
-    # Create RGBA with varying alpha
-    rgba = np.zeros((h, w, 4), dtype=np.float32)
-    for y in range(h):
-        for x in range(w):
-            rgba[y, x, :3] = img[y, x]
-            rgba[y, x, 3] = x / max(w - 1, 1)  # alpha gradient left to right
-
-    output = np.zeros((h, w, 3), dtype=np.float32)
-    for y in range(h):
-        for x in range(w):
-            a = rgba[y, x, 3]
-            output[y, x, 0] = rgba[y, x, 0] * a + bg_r * (1.0 - a)
-            output[y, x, 1] = rgba[y, x, 1] * a + bg_g * (1.0 - a)
-            output[y, x, 2] = rgba[y, x, 2] * a + bg_b * (1.0 - a)
-
-    return {
-        "filter": "flatten",
-        "params": {"bg_r": bg_r, "bg_g": bg_g, "bg_b": bg_b},
-        "tool": "numpy (alpha compositing over solid background)",
-        "tool_version": np.__version__,
-        "note": "out = fg*alpha + bg*(1-alpha)",
-        "output": pixels_to_list(output),
-        "custom_input": pixels_to_list(rgba),
-    }
-
-
 # ─── More edge + spatial golden generators ──────────────────────────────────
 
 
@@ -2701,6 +2671,241 @@ def golden_unpremultiply() -> dict:
         "note": "out.rgb = in.rgb / in.a where a > 0. Input is premultiplied.",
         "output": pixels_to_list(output_rgba),
         "custom_input": pixels_to_list(rgba),
+    }
+
+
+def golden_adaptive_threshold(radius: int, offset: float) -> dict:
+    """Adaptive threshold via cv2.adaptiveThreshold (OpenCV C++)."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    gray = img[:, :, 0] * 0.2126 + img[:, :, 1] * 0.7152 + img[:, :, 2] * 0.0722
+    gray_u8 = np.clip(gray * 255 + 0.5, 0, 255).astype(np.uint8)
+    ksize = 2 * radius + 1
+    binary_u8 = cv2.adaptiveThreshold(gray_u8, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
+                                       cv2.THRESH_BINARY, ksize, int(offset * 255))
+    binary = binary_u8.astype(np.float32) / 255.0
+    output = np.stack([binary, binary, binary], axis=-1)
+    return {
+        "filter": "adaptive_threshold", "params": {"radius": radius, "offset": offset},
+        "tool": f"cv2.adaptiveThreshold (MEAN_C, ksize={ksize})",
+        "tool_version": cv2.__version__,
+        "note": "OpenCV adaptive threshold on BT.709 luma (u8 quantized)",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_triangle_threshold() -> dict:
+    """Triangle threshold — automatic threshold selection.
+    Uses OpenCV THRESH_TRIANGLE.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    gray = img[:, :, 0] * 0.2126 + img[:, :, 1] * 0.7152 + img[:, :, 2] * 0.0722
+    gray_u8 = np.clip(gray * 255 + 0.5, 0, 255).astype(np.uint8)
+    _, binary_u8 = cv2.threshold(gray_u8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_TRIANGLE)
+    binary = binary_u8.astype(np.float32) / 255.0
+    output = np.stack([binary, binary, binary], axis=-1)
+    return {
+        "filter": "triangle_threshold", "params": {},
+        "tool": "cv2.threshold (THRESH_TRIANGLE)", "tool_version": cv2.__version__,
+        "note": "OpenCV triangle automatic threshold on BT.709 luma (u8 quantized)",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_lens_blur(radius: int) -> dict:
+    """Lens blur — disc kernel convolution via cv2.filter2D."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    ksize = 2 * radius + 1
+    # Build circular disc kernel
+    kernel = np.zeros((ksize, ksize), dtype=np.float32)
+    center = radius
+    for y in range(ksize):
+        for x in range(ksize):
+            if (x - center) ** 2 + (y - center) ** 2 <= radius ** 2:
+                kernel[y, x] = 1.0
+    kernel /= kernel.sum()
+    output = np.zeros_like(img)
+    for c in range(3):
+        output[:, :, c] = cv2.filter2D(img[:, :, c], -1, kernel,
+                                         borderType=cv2.BORDER_REPLICATE)
+    return {
+        "filter": "lens_blur", "params": {"radius": radius},
+        "tool": f"cv2.filter2D (disc kernel radius={radius})",
+        "tool_version": cv2.__version__,
+        "note": "Circular disc kernel convolution, BORDER_REPLICATE",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_zoom_blur(factor: float) -> dict:
+    """Zoom blur — radial blur from center. Formula validated."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+    cx, cy = w * 0.5, h * 0.5
+    n_samples = 16
+    output = np.zeros_like(img)
+    for y in range(h):
+        for x in range(w):
+            dx = x - cx
+            dy = y - cy
+            acc = np.zeros(3, dtype=np.float64)
+            for s in range(n_samples):
+                t = 1.0 + factor * s / (n_samples - 1)
+                sx = int(max(0, min(w - 1, cx + dx * t)))
+                sy = int(max(0, min(h - 1, cy + dy * t)))
+                acc += img[sy, sx, :3].astype(np.float64)
+            output[y, x] = (acc / n_samples).astype(np.float32)
+    return {
+        "filter": "zoom_blur", "params": {"factor": factor, "center_x": 0.5, "center_y": 0.5},
+        "tool": "numpy (radial multi-sample blur from center)",
+        "tool_version": np.__version__,
+        "note": f"factor={factor}, 16 samples along radial direction",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_spin_blur(angle: float) -> dict:
+    """Spin blur — rotational blur around center. Formula validated."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+    cx, cy = w * 0.5, h * 0.5
+    n_samples = 16
+    angle_rad = np.radians(angle)
+    output = np.zeros_like(img)
+    for y in range(h):
+        for x in range(w):
+            dx = x - cx
+            dy = y - cy
+            acc = np.zeros(3, dtype=np.float64)
+            for s in range(n_samples):
+                t = angle_rad * (s / (n_samples - 1) - 0.5)
+                cos_t, sin_t = np.cos(t), np.sin(t)
+                sx = int(max(0, min(w - 1, cx + dx * cos_t - dy * sin_t)))
+                sy = int(max(0, min(h - 1, cy + dx * sin_t + dy * cos_t)))
+                acc += img[sy, sx, :3].astype(np.float64)
+            output[y, x] = (acc / n_samples).astype(np.float32)
+    return {
+        "filter": "spin_blur", "params": {"angle": angle, "center_x": 0.5, "center_y": 0.5},
+        "tool": "numpy (rotational multi-sample blur around center)",
+        "tool_version": np.__version__,
+        "note": f"angle={angle}°, 16 samples along arc",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_auto_level() -> dict:
+    """Auto-level via ImageMagick -auto-level (built-in)."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    output = im_process(img, ['-auto-level'])
+    return {
+        "filter": "auto_level", "params": {},
+        "tool": "magick -auto-level", "tool_version": tool_info()["imagemagick"],
+        "note": "ImageMagick built-in auto-level (per-channel stretch to full range)",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_chromatic_split(red_dx, red_dy, green_dx, green_dy, blue_dx, blue_dy) -> dict:
+    """Chromatic split — per-channel spatial offset via cv2.remap."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+    output = img.copy()
+    for c, (ddx, ddy) in enumerate([(red_dx, red_dy), (green_dx, green_dy), (blue_dx, blue_dy)]):
+        if ddx == 0 and ddy == 0:
+            continue
+        map_x = np.zeros((h, w), dtype=np.float32)
+        map_y = np.zeros((h, w), dtype=np.float32)
+        for y in range(h):
+            for x in range(w):
+                map_x[y, x] = x + ddx
+                map_y[y, x] = y + ddy
+        output[:, :, c] = cv2.remap(img[:, :, c], map_x, map_y,
+                                     cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    return {
+        "filter": "chromatic_split",
+        "params": {"red_dx": red_dx, "red_dy": red_dy, "green_dx": green_dx,
+                   "green_dy": green_dy, "blue_dx": blue_dx, "blue_dy": blue_dy},
+        "tool": "cv2.remap (per-channel spatial offset, bilinear)",
+        "tool_version": cv2.__version__,
+        "note": "Per-channel translation via OpenCV remap, BORDER_REPLICATE",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_dither_ordered(levels: int, map_size: int) -> dict:
+    """Ordered dither — Bayer matrix threshold. Formula validated."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+    # Build Bayer matrix of given size
+    def bayer(n):
+        if n == 1: return np.array([[0]], dtype=np.float32)
+        smaller = bayer(n // 2)
+        s = smaller.shape[0]
+        m = np.zeros((n, n), dtype=np.float32)
+        m[:s, :s] = 4 * smaller
+        m[:s, s:] = 4 * smaller + 2
+        m[s:, :s] = 4 * smaller + 3
+        m[s:, s:] = 4 * smaller + 1
+        return m
+    matrix = bayer(map_size) / (map_size * map_size)
+    output = img.copy()
+    n_levels = float(levels)
+    for y in range(h):
+        for x in range(w):
+            threshold = matrix[y % map_size, x % map_size]
+            for c in range(3):
+                v = img[y, x, c]
+                quantized = min(np.floor(v * n_levels + threshold), n_levels - 1) / max(n_levels - 1, 1)
+                output[y, x, c] = quantized
+    return {
+        "filter": "dither_ordered",
+        "params": {"max_colors": levels, "map_size": map_size},
+        "tool": "numpy (Bayer matrix ordered dither)",
+        "tool_version": np.__version__,
+        "note": f"levels={levels}, Bayer {map_size}x{map_size}, floor(v*n+threshold)/(n-1)",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_flatten(bg_r: float, bg_g: float, bg_b: float) -> dict:
+    """Flatten alpha over solid background. Formula validated."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+    # Create RGBA with varying alpha (gradient left to right)
+    rgba = np.zeros((h, w, 4), dtype=np.float32)
+    for y in range(h):
+        for x in range(w):
+            a = x / max(w - 1, 1)
+            rgba[y, x] = [img[y, x, 0], img[y, x, 1], img[y, x, 2], a]
+    output = np.zeros((h, w, 3), dtype=np.float32)
+    for y in range(h):
+        for x in range(w):
+            a = rgba[y, x, 3]
+            output[y, x, 0] = rgba[y, x, 0] * a + bg_r * (1.0 - a)
+            output[y, x, 1] = rgba[y, x, 1] * a + bg_g * (1.0 - a)
+            output[y, x, 2] = rgba[y, x, 2] * a + bg_b * (1.0 - a)
+    return {
+        "filter": "flatten",
+        "params": {"bg_r": bg_r, "bg_g": bg_g, "bg_b": bg_b},
+        "tool": "numpy (alpha compositing over solid background)",
+        "tool_version": np.__version__,
+        "note": "out = fg*alpha + bg*(1-alpha)",
+        "output": pixels_to_list(output),
+        "custom_input": pixels_to_list(rgba),
+    }
+
+
+def golden_add_alpha(alpha: float) -> dict:
+    """Set alpha channel to a constant value. Trivially verifiable."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+    output = np.zeros((h, w, 4), dtype=np.float32)
+    output[:, :, :3] = img
+    output[:, :, 3] = alpha
+    return {
+        "filter": "add_alpha", "params": {"alpha": alpha},
+        "tool": "numpy (set alpha channel)", "tool_version": np.__version__,
+        "note": f"Set all alpha to {alpha}",
+        "output": pixels_to_list(output),
     }
 
 
@@ -3038,6 +3243,26 @@ def main():
 
     # ── More blend modes (IM validated) ────────────────────────────────
     spatial["filters"]["blend_exclusion_self"] = golden_blend_self("exclusion", 11)
+
+    # ── More edge ops ────────────────────────────────────────────────
+    spatial["filters"]["otsu_threshold"] = golden_otsu_threshold()
+    spatial["filters"]["canny_0.1_0.3"] = golden_canny(0.1, 0.3)
+    spatial["filters"]["adaptive_threshold_5_0.02"] = golden_adaptive_threshold(5, 0.02)
+    spatial["filters"]["triangle_threshold"] = golden_triangle_threshold()
+
+    # ── More spatial blurs ───────────────────────────────────────────
+    spatial["filters"]["lens_blur_5"] = golden_lens_blur(5)
+    spatial["filters"]["zoom_blur_0.1"] = golden_zoom_blur(0.1)
+    spatial["filters"]["spin_blur_10"] = golden_spin_blur(10.0)
+
+    # ── Color/enhancement ops ────────────────────────────────────────
+    spatial["filters"]["auto_level"] = golden_auto_level()
+    spatial["filters"]["chromatic_split_5_0_0_0_-5_0"] = golden_chromatic_split(5, 0, 0, 0, -5, 0)
+    spatial["filters"]["dither_ordered_8_4"] = golden_dither_ordered(8, 4)
+
+    # ── Composite/alpha ops ──────────────────────────────────────────
+    spatial["filters"]["flatten_white"] = golden_flatten(1.0, 1.0, 1.0)
+    spatial["filters"]["add_alpha_0.5"] = golden_add_alpha(0.5)
 
     # ── Generator + draw + tool filters ────────────────────────────────
     spatial["filters"]["checkerboard_8"] = golden_checkerboard(8)
