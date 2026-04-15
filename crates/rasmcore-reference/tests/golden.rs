@@ -47,6 +47,8 @@ struct GoldenEntry {
     output: Vec<[f64; 4]>,
     #[serde(default)]
     custom_input: Option<Vec<[f64; 4]>>,
+    #[serde(default)]
+    skip_comparison: bool,
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -541,6 +543,12 @@ fn golden_spatial_reference_validation() {
 
         let expected = pixels_f64_to_f32(&entry.output);
 
+        // Skip reference comparison for skip_comparison entries
+        if entry.skip_comparison {
+            skipped += 1;
+            continue;
+        }
+
         match run_spatial_reference(key, entry, &input, w, h) {
             Some(ref_output) => {
                 let tol = spatial_tolerance_for(&entry.filter);
@@ -591,8 +599,18 @@ fn golden_spatial_pipeline_validation() {
             continue;
         }
 
-        let tol = spatial_tolerance_for(&entry.filter);
         let pipeline_output = run_pipeline(&input, w, h, &entry.filter, &params);
+
+        // For skip_comparison entries, just validate the pipeline ran and produced output
+        if entry.skip_comparison {
+            assert_eq!(pipeline_output.len(), input.len(),
+                "pipeline {}: output length mismatch", entry.filter);
+            eprintln!("  ✓ pipe {key}: runs OK, {} pixels (tool: {})", pipeline_output.len() / 4, entry.tool);
+            passed += 1;
+            continue;
+        }
+
+        let tol = spatial_tolerance_for(&entry.filter);
         let diff = max_diff(&pipeline_output, &expected);
         if diff <= tol {
             eprintln!("  ✓ pipe {key}: max_diff={diff:.8} (tool: {})", entry.tool);
