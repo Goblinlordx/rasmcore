@@ -3064,6 +3064,30 @@ def golden_match_color() -> dict:
     }
 
 
+def golden_mirror_kaleidoscope_h(segments: int) -> dict:
+    """Mirror kaleidoscope mode 0 (horizontal) — divide width into segments, mirror alternates."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+    seg_w = w / segments
+    output = np.zeros_like(img)
+    for y in range(h):
+        for x in range(w):
+            seg_idx = int(x / seg_w)
+            local_x = x - seg_idx * seg_w
+            if seg_idx % 2 == 1:
+                local_x = seg_w - 1 - local_x
+            src_x = int(max(0, min(w - 1, local_x)))
+            output[y, x] = img[y, src_x]
+    return {
+        "filter": "mirror_kaleidoscope",
+        "params": {"segments": segments, "angle": 0.0, "mode": 0},
+        "tool": "numpy (horizontal segment mirroring)",
+        "tool_version": np.__version__,
+        "note": f"Mode 0 (horizontal), segments={segments}, mirror alternate segments",
+        "output": pixels_to_list(output),
+    }
+
+
 def golden_sigmoidal_contrast(contrast: float, midpoint: float) -> dict:
     """Sigmoidal contrast via ImageMagick -sigmoidal-contrast (built-in)."""
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
@@ -3426,6 +3450,9 @@ def main():
 
     # ── More generators ────────────────────────────────────────────────
     spatial["filters"]["gradient_radial"] = golden_gradient_radial()
+
+    # ── More effect ops ───────────────────────────────────────────────
+    spatial["filters"]["mirror_kaleidoscope_4_h"] = golden_mirror_kaleidoscope_h(4)
 
     # ── Color ops ────────────────────────────────────────────────────
     spatial["filters"]["sigmoidal_contrast_3_0.5"] = golden_sigmoidal_contrast(3.0, 0.5)
