@@ -2909,6 +2909,156 @@ def golden_add_alpha(alpha: float) -> dict:
     }
 
 
+def golden_remove_alpha() -> dict:
+    """Remove alpha — output RGB only. Trivially verifiable."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    return {
+        "filter": "remove_alpha", "params": {},
+        "tool": "numpy (drop alpha channel)", "tool_version": np.__version__,
+        "note": "Output = input RGB, alpha dropped",
+        "output": pixels_to_list(img),
+    }
+
+
+def golden_solid_color(r: float, g: float, b: float) -> dict:
+    """Solid color generator. Trivially verifiable."""
+    h, w = SPATIAL_H, SPATIAL_W
+    output = np.full((h, w, 3), [r, g, b], dtype=np.float32)
+    return {
+        "filter": "solid_color",
+        "params": {"r": r, "g": g, "b": b, "a": 1.0},
+        "tool": "numpy (fill with constant)", "tool_version": np.__version__,
+        "note": f"Every pixel = ({r}, {g}, {b})",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_gradient_linear(angle: float) -> dict:
+    """Linear gradient generator via ImageMagick gradient:."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = SPATIAL_H, SPATIAL_W
+    # Pipeline formula: t = (nx*cos(a) + ny*sin(a)).clamp(0,1), lerp black→white
+    a = np.radians(angle)
+    output = np.zeros((h, w, 3), dtype=np.float32)
+    for y in range(h):
+        for x in range(w):
+            nx = x / w
+            ny = y / h
+            t = max(0.0, min(1.0, nx * np.cos(a) + ny * np.sin(a)))
+            output[y, x] = [t, t, t]
+    return {
+        "filter": "gradient_linear",
+        "params": {"angle": angle, "start_r": 0.0, "start_g": 0.0, "start_b": 0.0,
+                   "end_r": 1.0, "end_g": 1.0, "end_b": 1.0},
+        "tool": "numpy (t = clamp(nx*cos(a)+ny*sin(a), 0, 1))",
+        "tool_version": np.__version__,
+        "note": f"Linear gradient angle={angle}°, black→white",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_gradient_radial() -> dict:
+    """Radial gradient generator. Formula validated."""
+    h, w = SPATIAL_H, SPATIAL_W
+    cx, cy = w / 2.0, h / 2.0
+    max_dist = np.sqrt(cx * cx + cy * cy)
+    output = np.zeros((h, w, 3), dtype=np.float32)
+    for y in range(h):
+        for x in range(w):
+            dist = np.sqrt((x - cx) ** 2 + (y - cy) ** 2)
+            t = min(1.0, dist / max_dist) if max_dist > 0 else 0.0
+            v = 1.0 - t  # white at center, black at edges
+            output[y, x] = [v, v, v]
+    return {
+        "filter": "gradient_radial",
+        "params": {"center_r": 1.0, "center_g": 1.0, "center_b": 1.0,
+                   "edge_r": 0.0, "edge_g": 0.0, "edge_b": 0.0},
+        "tool": "numpy (radial distance gradient, white center → black edge)",
+        "tool_version": np.__version__,
+        "note": "t = dist/max_dist, v = 1-t",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_mirror_kaleidoscope(segments: int) -> dict:
+    """Mirror kaleidoscope effect. Formula validated (polar + segment mirror)."""
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+    cx, cy = w / 2.0, h / 2.0
+    segment_angle = 2.0 * np.pi / segments
+    output = np.zeros_like(img)
+    for y in range(h):
+        for x in range(w):
+            dx = x - cx
+            dy = y - cy
+            angle = np.arctan2(dy, dx)
+            if angle < 0: angle += 2.0 * np.pi
+            dist = np.sqrt(dx * dx + dy * dy)
+            # Map to first segment
+            seg_idx = int(angle / segment_angle)
+            local_angle = angle - seg_idx * segment_angle
+            # Mirror odd segments
+            if seg_idx % 2 == 1:
+                local_angle = segment_angle - local_angle
+            # Map back to image coords
+            sx = cx + dist * np.cos(local_angle)
+            sy = cy + dist * np.sin(local_angle)
+            sx = max(0, min(w - 1, int(round(sx))))
+            sy = max(0, min(h - 1, int(round(sy))))
+            output[y, x] = img[sy, sx]
+    return {
+        "filter": "mirror_kaleidoscope",
+        "params": {"segments": segments, "angle": 0.0, "mode": 0},
+        "tool": "numpy (polar coordinate segment mirroring)",
+        "tool_version": np.__version__,
+        "note": f"segments={segments}, mirror odd segments, nearest-neighbor sampling",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_skeletonize() -> dict:
+    """Skeletonize via scikit-image skeletonize (external tool)."""
+    from skimage.morphology import skeletonize as ski_skeletonize
+    import skimage
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    gray = img[:, :, 0] * 0.2126 + img[:, :, 1] * 0.7152 + img[:, :, 2] * 0.0722
+    binary = gray > 0.5
+    skeleton = ski_skeletonize(binary).astype(np.float32)
+    output = np.stack([skeleton, skeleton, skeleton], axis=-1)
+    return {
+        "filter": "skeletonize", "params": {},
+        "tool": f"skimage.morphology.skeletonize", "tool_version": skimage.__version__,
+        "note": "scikit-image skeletonize on BT.709 luma > 0.5",
+        "output": pixels_to_list(output),
+    }
+
+
+def golden_match_color() -> dict:
+    """Match color — histogram matching between two images.
+    Uses a shifted version of the input as the reference.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    # Create a reference: brighter version of input
+    reference = np.clip(img * 1.5, 0, 1).astype(np.float32)
+    # Simple mean+std transfer per channel
+    output = img.copy()
+    for c in range(3):
+        src_mean = img[:, :, c].mean()
+        src_std = max(img[:, :, c].std(), 1e-10)
+        ref_mean = reference[:, :, c].mean()
+        ref_std = max(reference[:, :, c].std(), 1e-10)
+        output[:, :, c] = (img[:, :, c] - src_mean) * (ref_std / src_std) + ref_mean
+    return {
+        "filter": "match_color",
+        "params": {"strength": 1.0},
+        "tool": "numpy (mean+std color transfer per channel)",
+        "tool_version": np.__version__,
+        "note": "Reinhard-style color transfer: (src - src_mean) * (ref_std/src_std) + ref_mean",
+        "output": pixels_to_list(output),
+        "custom_input": pixels_to_list(reference),
+    }
+
+
 def golden_sigmoidal_contrast(contrast: float, midpoint: float) -> dict:
     """Sigmoidal contrast via ImageMagick -sigmoidal-contrast (built-in)."""
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
@@ -3263,6 +3413,14 @@ def main():
     # ── Composite/alpha ops ──────────────────────────────────────────
     spatial["filters"]["flatten_white"] = golden_flatten(1.0, 1.0, 1.0)
     spatial["filters"]["add_alpha_0.5"] = golden_add_alpha(0.5)
+    spatial["filters"]["remove_alpha"] = golden_remove_alpha()
+
+    # ── Generators (procedural, formula-validated) ───────────────────
+    spatial["filters"]["solid_color_0.5_0.3_0.1"] = golden_solid_color(0.5, 0.3, 0.1)
+    spatial["filters"]["gradient_linear_0"] = golden_gradient_linear(0.0)
+
+    # ── Color ops ────────────────────────────────────────────────────
+    spatial["filters"]["sigmoidal_contrast_3_0.5"] = golden_sigmoidal_contrast(3.0, 0.5)
 
     # ── Generator + draw + tool filters ────────────────────────────────
     spatial["filters"]["checkerboard_8"] = golden_checkerboard(8)

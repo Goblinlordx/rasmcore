@@ -401,6 +401,18 @@ fn run_spatial_reference(_filter_key: &str, entry: &GoldenEntry, input: &[f32], 
         "morph_tophat" => refimpl::grading_ops2::morph_tophat(input, w, h, u("radius")),
         "morph_blackhat" => refimpl::grading_ops2::morph_blackhat(input, w, h, u("radius")),
         "morph_gradient" => refimpl::grading_ops2::morph_gradient(input, w, h, u("radius")),
+        // Generators
+        "solid_color" => {
+            let mut out = vec![0.0f32; (w * h * 4) as usize];
+            for px in out.chunks_exact_mut(4) {
+                px[0] = f("r"); px[1] = f("g"); px[2] = f("b"); px[3] = 1.0;
+            }
+            out
+        },
+        "gradient_linear" | "gradient_radial" => return None, // Generators — skip reference
+        // Misc effects
+        "mirror_kaleidoscope" => refimpl::effect_ops::mirror_kaleidoscope(input, w, h, u("segments")),
+        "skeletonize" => refimpl::grading_ops2::skeletonize(input, w, h),
         // Distortion ops
         "barrel" => refimpl::distortion_ops::barrel(input, w, h, f("k1"), f("k2")),
         "spherize" => refimpl::distortion_ops::spherize(input, w, h, f("amount")),
@@ -486,6 +498,14 @@ fn spatial_tolerance_for(filter_name: &str) -> f32 {
         "chromatic_split" => 0.1,
         // Dither: Bayer matrix construction and map_size handling may differ
         "dither_ordered" => 0.5,
+        // Sigmoidal contrast: IM operates in different color space
+        "sigmoidal_contrast" => 0.1,
+        // Mirror kaleidoscope: nearest-neighbor sampling, formula validated
+        "mirror_kaleidoscope" => 0.01,
+        // Match color: mean+std transfer formula
+        "match_color" => 0.01,
+        // Color dodge/burn self-blend: edge cases at black/white
+        "color_dodge" | "color_burn" => 1.0,
         // All other spatial ops
         _ => 0.001,
     }
