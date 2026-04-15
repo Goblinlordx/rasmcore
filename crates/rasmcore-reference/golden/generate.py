@@ -3637,6 +3637,59 @@ def main():
     # Composite that operates on input
     spatial["filters"]["feather_3"] = golden_spatial_ref("feather", {"radius": 3})
 
+    # ── Remaining coverage — all untested filters ──────────────────────
+    # Interactive tools (need specific input, validate pipeline runs)
+    spatial["filters"]["flood_fill_test"] = golden_spatial_ref("flood_fill", {"seed_x": 64, "seed_y": 64, "fill_r": 1.0, "fill_g": 0.0, "fill_b": 0.0, "tolerance": 0.1})
+    spatial["filters"]["clone_stamp_test"] = golden_spatial_ref("clone_stamp", {"src_x": 20.0, "src_y": 20.0, "dst_x": 80.0, "dst_y": 80.0, "radius": 10.0, "hardness": 1.0})
+    spatial["filters"]["healing_brush_test"] = golden_spatial_ref("healing_brush", {"src_x": 20.0, "src_y": 20.0, "dst_x": 80.0, "dst_y": 80.0, "radius": 10.0})
+    spatial["filters"]["smudge_test"] = golden_spatial_ref("smudge", {"x": 64.0, "y": 64.0, "dx": 10.0, "dy": 5.0, "radius": 8.0, "strength": 0.5})
+    spatial["filters"]["sponge_test"] = golden_spatial_ref("sponge", {"x": 64.0, "y": 64.0, "radius": 10.0, "strength": 0.5, "mode": 0})
+    spatial["filters"]["red_eye_remove_test"] = golden_spatial_ref("red_eye_remove", {"center_x": 64.0, "center_y": 64.0, "radius": 10.0})
+    spatial["filters"]["ca_remove_test"] = golden_spatial_ref("ca_remove", {})
+
+    # Composite (dual-input or special input)
+    spatial["filters"]["blend_if_test"] = golden_spatial_ref("blend_if", {"shadow_threshold": 0.2, "shadow_feather": 0.1, "highlight_threshold": 0.8, "highlight_feather": 0.1})
+    # dodge/burn: competing formulas between IM/W3C/PS — skip for now
+    spatial["filters"]["mask_apply_test"] = golden_spatial_ref("mask_apply", {})
+    spatial["filters"]["gradient_mask_test"] = golden_spatial_ref("gradient_mask", {"x1": 0.0, "y1": 0.0, "x2": 1.0, "y2": 1.0})
+    spatial["filters"]["luminance_range_test"] = golden_spatial_ref("luminance_range", {"low": 0.2, "high": 0.8, "feather": 0.05})
+    spatial["filters"]["color_range_test"] = golden_spatial_ref("color_range", {"hue": 0.5, "saturation": 0.5, "lightness": 0.5, "range": 0.2, "feather": 0.1})
+
+    # More generators
+    spatial["filters"]["cloud_noise_test"] = golden_generator_ref("cloud_noise", {"seed": 42, "scale": 5.0})
+    spatial["filters"]["fractal_noise_test"] = golden_generator_ref("fractal_noise", {"seed": 42, "scale": 10.0, "octaves": 4})
+    spatial["filters"]["pattern_fill_test"] = golden_generator_ref("pattern_fill", {"pattern": 0, "size": 16.0})
+    spatial["filters"]["solid_fill_test"] = golden_generator_ref("solid_fill", {"r": 0.5, "g": 0.3, "b": 0.1, "a": 1.0})
+
+    # More draw ops
+    spatial["filters"]["draw_arc_test"] = golden_draw_ref("draw_arc", {"cx": 64.0, "cy": 64.0, "radius": 30.0, "start_angle": 0.0, "end_angle": 180.0, "color_r": 1.0, "color_g": 1.0, "color_b": 0.0, "color_a": 1.0, "stroke_width": 2.0})
+    spatial["filters"]["draw_ellipse_test"] = golden_draw_ref("draw_ellipse", {"cx": 64.0, "cy": 64.0, "rx": 40.0, "ry": 20.0, "color_r": 0.0, "color_g": 0.0, "color_b": 1.0, "color_a": 1.0, "stroke_width": 0.0})
+    spatial["filters"]["draw_polygon_test"] = golden_draw_ref("draw_polygon", {"color_r": 1.0, "color_g": 0.5, "color_b": 0.0, "color_a": 1.0, "stroke_width": 0.0})
+
+    # More noise
+    spatial["filters"]["poisson_noise_test"] = golden_noise_ref("poisson_noise", {"scale": 100.0, "seed": 42})
+    spatial["filters"]["light_leak_test"] = golden_noise_ref("light_leak", {"intensity": 0.5, "position_x": 0.5, "position_y": 0.5, "radius": 0.5, "warmth": 0.8})
+    spatial["filters"]["film_grain_grading_test"] = golden_noise_ref("film_grain_grading", {"amount": 0.1, "seed": 42})
+
+    # Distortions needing secondary input
+    spatial["filters"]["displacement_map_test"] = golden_spatial_ref("displacement_map", {"scale": 10.0})
+    spatial["filters"]["mesh_warp_test"] = golden_spatial_ref("mesh_warp", {"strength": 10.0, "frequency": 40.0})
+
+    # Analysis
+    spatial["filters"]["connected_components_test"] = golden_spatial_ref("connected_components", {})
+    spatial["filters"]["harris_corners_test"] = golden_spatial_ref("harris_corners", {"threshold": 0.01, "k": 0.04})
+    spatial["filters"]["hough_lines_test"] = golden_spatial_ref("hough_lines", {"threshold": 50})
+    spatial["filters"]["template_match_test"] = golden_spatial_ref("template_match", {})
+    spatial["filters"]["smart_crop_test"] = golden_spatial_ref("smart_crop", {})
+    spatial["filters"]["seam_carve_w_test"] = golden_spatial_ref("seam_carve_width", {"target_width": 100})
+    spatial["filters"]["seam_carve_h_test"] = golden_spatial_ref("seam_carve_height", {"target_height": 100})
+    spatial["filters"]["perspective_correct_test"] = golden_spatial_ref("perspective_correct", {})
+    spatial["filters"]["perspective_warp_test"] = golden_spatial_ref("perspective_warp", {})
+    spatial["filters"]["sparse_color_test"] = golden_spatial_ref("sparse_color", {})
+
+    # Color
+    spatial["filters"]["matched_color_test"] = golden_color_ref("match_color", {"strength": 1.0})
+
     # ── Generator + draw + tool filters ────────────────────────────────
     spatial["filters"]["checkerboard_8"] = golden_checkerboard(8)
     # Draw ops (circle, rect, line) use SDF anti-aliased rendering — no external
