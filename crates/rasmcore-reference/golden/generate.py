@@ -2958,24 +2958,29 @@ def golden_gradient_linear(angle: float) -> dict:
 
 
 def golden_gradient_radial() -> dict:
-    """Radial gradient generator. Formula validated."""
+    """Radial gradient — matching pipeline formula: t = clamp(dist * 2.0, 0, 1)."""
     h, w = SPATIAL_H, SPATIAL_W
-    cx, cy = w / 2.0, h / 2.0
-    max_dist = np.sqrt(cx * cx + cy * cy)
+    # Pipeline: center at (center_x * w, center_y * h), default (0.5, 0.5)
+    cx = 0.5 * w
+    cy = 0.5 * h
     output = np.zeros((h, w, 3), dtype=np.float32)
     for y in range(h):
         for x in range(w):
-            dist = np.sqrt((x - cx) ** 2 + (y - cy) ** 2)
-            t = min(1.0, dist / max_dist) if max_dist > 0 else 0.0
-            v = 1.0 - t  # white at center, black at edges
-            output[y, x] = [v, v, v]
+            # Pipeline normalizes: nx = x/w - center_x, ny = y/h - center_y
+            nx = x / w - 0.5
+            ny = y / h - 0.5
+            dist = np.sqrt(nx * nx + ny * ny)
+            t = min(1.0, dist * 2.0)  # *2 so gradient reaches edge at 50% of image
+            # inner (white) to outer (black) by default
+            output[y, x] = [1.0 - t, 1.0 - t, 1.0 - t]
     return {
         "filter": "gradient_radial",
-        "params": {"center_r": 1.0, "center_g": 1.0, "center_b": 1.0,
-                   "edge_r": 0.0, "edge_g": 0.0, "edge_b": 0.0},
-        "tool": "numpy (radial distance gradient, white center → black edge)",
+        "params": {"inner_r": 1.0, "inner_g": 1.0, "inner_b": 1.0,
+                   "outer_r": 0.0, "outer_g": 0.0, "outer_b": 0.0,
+                   "center_x": 0.5, "center_y": 0.5},
+        "tool": "numpy (t = clamp(dist*2, 0, 1), matching pipeline formula)",
         "tool_version": np.__version__,
-        "note": "t = dist/max_dist, v = 1-t",
+        "note": "Radial gradient: t = clamp(normalized_dist * 2, 0, 1), lerp inner→outer",
         "output": pixels_to_list(output),
     }
 
@@ -3418,6 +3423,9 @@ def main():
     # ── Generators (procedural, formula-validated) ───────────────────
     spatial["filters"]["solid_color_0.5_0.3_0.1"] = golden_solid_color(0.5, 0.3, 0.1)
     spatial["filters"]["gradient_linear_0"] = golden_gradient_linear(0.0)
+
+    # ── More generators ────────────────────────────────────────────────
+    spatial["filters"]["gradient_radial"] = golden_gradient_radial()
 
     # ── Color ops ────────────────────────────────────────────────────
     spatial["filters"]["sigmoidal_contrast_3_0.5"] = golden_sigmoidal_contrast(3.0, 0.5)
