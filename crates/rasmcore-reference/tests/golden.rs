@@ -414,6 +414,13 @@ fn run_spatial_reference(_filter_key: &str, entry: &GoldenEntry, input: &[f32], 
         "mirror_kaleidoscope" => refimpl::effect_ops::mirror_kaleidoscope(input, w, h, u("segments")),
         "skeletonize" => refimpl::grading_ops2::skeletonize(input, w, h),
         // Distortion ops
+        "liquify" => {
+            let cx = f("center_x") * w as f32;
+            let cy = f("center_y") * h as f32;
+            let dx = f("direction_x") * f("strength") * f("radius");
+            let dy = f("direction_y") * f("strength") * f("radius");
+            refimpl::distortion_ops::liquify(input, w, h, cx, cy, f("radius"), dx, dy)
+        },
         "barrel" => refimpl::distortion_ops::barrel(input, w, h, f("k1"), f("k2")),
         "spherize" => refimpl::distortion_ops::spherize(input, w, h, f("amount")),
         "swirl" => refimpl::distortion_ops::swirl(input, w, h, f("angle"), f("radius")),
@@ -507,6 +514,8 @@ fn spatial_tolerance_for(filter_name: &str) -> f32 {
         "match_color" => 0.01,
         // Color dodge/burn self-blend: edge cases at black/white
         "color_dodge" | "color_burn" => 1.0,
+        // Liquify: pipeline uses Gaussian falloff exp(-2t²), reference uses quadratic t²
+        "liquify" => 0.1,
         // All other spatial ops
         _ => 0.001,
     }

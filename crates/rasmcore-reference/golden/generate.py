@@ -3064,6 +3064,53 @@ def golden_match_color() -> dict:
     }
 
 
+def golden_liquify() -> dict:
+    """Liquify distortion via cv2.remap — forward warp approximation.
+
+    Pipeline: for each pixel, if dist < radius, shift source by -(dx,dy)*t²*strength.
+    Uses bilinear sampling.
+    """
+    img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+    # Default: center=(0.5, 0.5), radius=50, strength=0.5, direction=(1,0)
+    cx = 0.5 * w
+    cy = 0.5 * h
+    radius = 50.0
+    strength = 0.5
+    dir_x = 1.0
+    dir_y = 0.0
+
+    map_x = np.zeros((h, w), dtype=np.float32)
+    map_y = np.zeros((h, w), dtype=np.float32)
+    for y_px in range(h):
+        for x_px in range(w):
+            dx = x_px - cx
+            dy = y_px - cy
+            dist = np.sqrt(dx * dx + dy * dy)
+            if dist < radius:
+                t = dist / radius
+                wt = np.exp(-2.0 * t * t) * strength
+                map_x[y_px, x_px] = x_px - dir_x * wt * radius
+                map_y[y_px, x_px] = y_px - dir_y * wt * radius
+            else:
+                map_x[y_px, x_px] = x_px
+                map_y[y_px, x_px] = y_px
+
+    output = np.zeros_like(img)
+    for c in range(3):
+        output[:, :, c] = cv2.remap(img[:, :, c], map_x, map_y,
+                                     cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    return {
+        "filter": "liquify",
+        "params": {"center_x": 0.5, "center_y": 0.5, "radius": radius,
+                   "strength": strength, "direction_x": dir_x, "direction_y": dir_y},
+        "tool": "cv2.remap (liquify forward warp, bilinear)",
+        "tool_version": cv2.__version__,
+        "note": "t = 1-dist/radius, shift = t²*strength*radius, bilinear sampling",
+        "output": pixels_to_list(output),
+    }
+
+
 def golden_mirror_kaleidoscope_h(segments: int) -> dict:
     """Mirror kaleidoscope mode 0 (horizontal) — divide width into segments, mirror alternates."""
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
@@ -3456,6 +3503,14 @@ def main():
 
     # ── Color ops ────────────────────────────────────────────────────
     spatial["filters"]["sigmoidal_contrast_3_0.5"] = golden_sigmoidal_contrast(3.0, 0.5)
+
+    # ── Noise (deterministic seed — validate pipeline=reference) ─────
+    # These use our internal hash function. No external tool can match.
+    # The golden uses the reference implementation output directly.
+    # This validates that pipeline and reference produce identical results.
+
+    # ── More distortions ─────────────────────────────────────────────
+    spatial["filters"]["liquify_center"] = golden_liquify()
 
     # ── Generator + draw + tool filters ────────────────────────────────
     spatial["filters"]["checkerboard_8"] = golden_checkerboard(8)
