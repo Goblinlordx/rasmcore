@@ -491,14 +491,11 @@ fn spatial_tolerance_for(filter_name: &str) -> f32 {
         "scharr" => 0.015,
         // Otsu: pipeline matches OpenCV exactly (0.000 diff)
         "otsu_threshold" => 0.001,
-        // Triangle: pipeline and OpenCV differ by 1 bin in threshold selection
-        // (91 vs 92). Binary threshold → pixels near boundary flip.
-        // Need to investigate OpenCV's exact triangle implementation to match.
-        "triangle_threshold" => 1.0,
-        // Canny: pipeline uses simplified single-pass (no Gaussian, no NMS, no hysteresis).
-        // Golden uses OpenCV's full Canny (Gaussian + Sobel + NMS + hysteresis).
-        // Pipeline should be upgraded to match — tracked separately.
-        "canny" => 0.5,
+        // Triangle: matches OpenCV exactly (histogram flip + thresh-1 + bounds extend)
+        "triangle_threshold" => 0.001,
+        // Canny: proper implementation (Gaussian + Sobel + NMS + hysteresis).
+        // Matches OpenCV cv2.Canny exactly.
+        "canny" => 0.001,
         // Adaptive threshold: OpenCV validated, pipeline matches
         "adaptive_threshold" => 0.01,
         // Median: OpenCV processes all channels together, our pipeline per-channel

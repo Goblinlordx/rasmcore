@@ -37,46 +37,67 @@ impl Filter for TriangleThreshold {
     }
 
     fn compute(&self, input: &[f32], _w: u32, _h: u32) -> Result<Vec<f32>, PipelineError> {
-        let mut hist = [0u32; 256];
+        let mut hist = [0i32; 256];
         for px in input.chunks_exact(4) {
             let l = luminance(px[0], px[1], px[2]);
             let bin = ((l * 255.0).round().max(0.0) as usize).min(255);
             hist[bin] += 1;
         }
-        // Find peak
-        let peak_idx = hist
-            .iter()
-            .enumerate()
-            .max_by_key(|&(_, &v)| v)
-            .map(|(i, _)| i)
-            .unwrap_or(0);
-        // Find farthest non-zero bin from peak
-        let far_idx = if peak_idx < 128 {
-            hist.iter().rposition(|&h| h > 0).unwrap_or(255)
-        } else {
-            hist.iter().position(|&h| h > 0).unwrap_or(0)
-        };
-        // Line from (peak_idx, hist[peak]) to (far_idx, hist[far_idx])
-        let (x1, y1) = (peak_idx as f64, hist[peak_idx] as f64);
-        let (x2, y2) = (far_idx as f64, hist[far_idx] as f64);
-        let len = ((x2 - x1).powi(2) + (y2 - y1).powi(2)).sqrt().max(1e-6);
-        // Find bin with max distance from line
-        let mut best_t = peak_idx;
-        let mut max_dist = 0.0f64;
-        let (lo, hi) = if peak_idx < far_idx {
-            (peak_idx, far_idx)
-        } else {
-            (far_idx, peak_idx)
-        };
-        for t in lo..=hi {
-            let d =
-                ((y2 - y1) * t as f64 - (x2 - x1) * hist[t] as f64 + x2 * y1 - y2 * x1).abs() / len;
-            if d > max_dist {
-                max_dist = d;
-                best_t = t;
+
+        // Matching OpenCV's getThreshVal_Triangle_8u exactly:
+
+        // Find left/right bounds (extend by 1 bin)
+        let mut left_bound = 0i32;
+        for i in 0..256 {
+            if hist[i] > 0 { left_bound = i as i32; break; }
+        }
+        if left_bound > 0 { left_bound -= 1; }
+
+        let mut right_bound = 0i32;
+        for i in (0..256).rev() {
+            if hist[i] > 0 { right_bound = i as i32; break; }
+        }
+        if right_bound < 255 { right_bound += 1; }
+
+        // Find peak (strict >, first max wins)
+        let mut max_ind = 0i32;
+        let mut max_val = 0i32;
+        for i in 0..256 {
+            if hist[i] > max_val {
+                max_val = hist[i];
+                max_ind = i as i32;
             }
         }
-        let threshold = (best_t as f32 + 0.5) / 255.0;
+
+        // Flip if peak is closer to left
+        let mut isflipped = false;
+        if max_ind - left_bound < right_bound - max_ind {
+            isflipped = true;
+            hist.reverse();
+            left_bound = 255 - right_bound;
+            max_ind = 255 - max_ind;
+        }
+
+        // Simplified distance: a*i + b*h[i] (no normalization needed)
+        let a = max_val as f64;
+        let b = (left_bound - max_ind) as f64;
+        let mut thresh = left_bound;
+        let mut dist = 0.0f64;
+        for i in (left_bound + 1)..=max_ind {
+            let tempdist = a * i as f64 + b * hist[i as usize] as f64;
+            if tempdist > dist {
+                dist = tempdist;
+                thresh = i;
+            }
+        }
+        thresh -= 1; // OpenCV decrements by 1
+
+        if isflipped {
+            thresh = 255 - thresh;
+        }
+
+        // Apply threshold with +0.5 between-bin placement
+        let threshold = (thresh as f32 + 0.5) / 255.0;
         let mut out = input.to_vec();
         for px in out.chunks_exact_mut(4) {
             let l = luminance(px[0], px[1], px[2]);
