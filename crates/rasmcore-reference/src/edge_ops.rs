@@ -379,8 +379,8 @@ pub fn otsu_threshold(input: &[f32], w: u32, h: u32) -> Vec<f32> {
         }
     }
 
-    // Pipeline: threshold = best_t / 255.0 (no +0.5 offset)
-    let level = best_threshold as f32 / 255.0;
+    // Place threshold between bins (matching OpenCV behavior)
+    let level = (best_threshold as f32 + 0.5) / 255.0;
     threshold(input, w, h, level)
 }
 
@@ -625,11 +625,13 @@ mod tests {
         }
         let result = otsu_threshold(&img, 4, 4);
 
-        // The Otsu algorithm should separate black (bin 0) from white (bin 255).
-        // With threshold = best_t / 255.0: for a perfect bimodal, the threshold
-        // lands between the two clusters. Verify output is binary (all 0 or all 1).
-        let vals: Vec<f32> = (0..16).map(|i| result[i * 4]).collect();
-        let unique: std::collections::HashSet<u32> = vals.iter().map(|v| v.to_bits()).collect();
-        assert!(unique.len() <= 2, "output should be binary, got {unique:?}");
+        // Dark pixels should be 0
+        for i in 0..8 {
+            assert_eq!(result[i * 4], 0.0, "dark pixel {i} should be 0");
+        }
+        // Bright pixels should be 1
+        for i in 8..16 {
+            assert_eq!(result[i * 4], 1.0, "bright pixel {i} should be 1");
+        }
     }
 }

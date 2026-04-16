@@ -76,7 +76,7 @@ impl Filter for TriangleThreshold {
                 best_t = t;
             }
         }
-        let threshold = best_t as f32 / 255.0;
+        let threshold = (best_t as f32 + 0.5) / 255.0;
         let mut out = input.to_vec();
         for px in out.chunks_exact_mut(4) {
             let l = luminance(px[0], px[1], px[2]);
@@ -142,7 +142,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let d = abs((y2-y1)*f32(t) - (x2-x1)*f32(histogram[t]) + x2*y1 - y2*x1) / line_len;
         if (d > max_dist) { max_dist = d; best_t = t; }
     }
-    let threshold = f32(best_t) / 255.0;
+    let threshold = (f32(best_t) + 0.5) / 255.0;
 
     let pixel = input[idx];
     let l = 0.2126 * pixel.x + 0.7152 * pixel.y + 0.0722 * pixel.z;

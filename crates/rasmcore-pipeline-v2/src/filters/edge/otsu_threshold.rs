@@ -72,7 +72,9 @@ impl Filter for OtsuThreshold {
                 best_t = t;
             }
         }
-        let threshold = best_t as f32 / 255.0;
+        // Place threshold between bins (matching OpenCV: pixel > thresh_u8
+        // is equivalent to luma_f32 >= (best_t + 0.5) / 255.0)
+        let threshold = (best_t as f32 + 0.5) / 255.0;
         // Apply
         let mut out = input.to_vec();
         for px in out.chunks_exact_mut(4) {
@@ -133,7 +135,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let v = w_bg * w_fg * (mean_bg - mean_fg) * (mean_bg - mean_fg);
         if (v > max_var) { max_var = v; best_t = t; }
     }
-    let threshold = f32(best_t) / 255.0;
+    let threshold = (f32(best_t) + 0.5) / 255.0;
 
     let pixel = input[idx];
     let l = 0.2126 * pixel.x + 0.7152 * pixel.y + 0.0722 * pixel.z;
