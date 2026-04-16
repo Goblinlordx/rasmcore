@@ -489,9 +489,12 @@ fn spatial_tolerance_for(filter_name: &str) -> f32 {
         // Scharr: reference uses per-channel gradients, pipeline/golden use luma.
         // Known algorithm difference — reference needs updating separately.
         "scharr" => 0.015,
-        // Otsu/Canny/Triangle: pipeline processes f32 directly, OpenCV golden
-        // uses u8 quantization. Different threshold values from quantization.
-        "otsu_threshold" | "canny" | "triangle_threshold" => 1.0,
+        // Otsu/Triangle: golden now matches pipeline's exact 256-bin algorithm
+        "otsu_threshold" | "triangle_threshold" => 0.001,
+        // Canny: pipeline uses simplified single-pass (no NMS, no Gaussian pre-blur),
+        // reference uses full Canny (Gaussian blur + Sobel + NMS + hysteresis).
+        // Different algorithms — reference is more sophisticated.
+        "canny" => 0.5,
         // Adaptive threshold: OpenCV validated, pipeline matches
         "adaptive_threshold" => 0.01,
         // Median: OpenCV processes all channels together, our pipeline per-channel
@@ -505,7 +508,8 @@ fn spatial_tolerance_for(filter_name: &str) -> f32 {
         "zoom_blur" => 0.15,
         // Chromatic split: bilinear sampling precision (OpenCV vs pipeline)
         "chromatic_split" => 0.1,
-        // Dither: Bayer matrix construction and map_size handling may differ
+        // Dither: pipeline uses median-cut palette + nearest color search,
+        // golden uses simple floor-quantize. Fundamentally different algorithms.
         "dither_ordered" => 0.5,
         // Sigmoidal contrast: IM operates in different color space
         "sigmoidal_contrast" => 0.1,

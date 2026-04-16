@@ -2528,36 +2528,92 @@ def golden_blend_multiply(opacity: float) -> dict:
 
 
 def golden_otsu_threshold() -> dict:
-    """Otsu threshold via cv2.threshold (OpenCV C++ implementation)."""
+    """Otsu threshold — matching pipeline's exact algorithm.
+
+    Pipeline: BT.709 luma, round to 256-bin histogram, between-class variance,
+    threshold = best_t / 255, apply >= threshold.
+    """
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
-    gray = img[:, :, 0] * 0.2126 + img[:, :, 1] * 0.7152 + img[:, :, 2] * 0.0722
-    # OpenCV Otsu needs u8 input
-    gray_u8 = np.clip(gray * 255 + 0.5, 0, 255).astype(np.uint8)
-    _, binary_u8 = cv2.threshold(gray_u8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    binary = binary_u8.astype(np.float32) / 255.0
+    h, w = img.shape[:2]
+    n = h * w
+
+    # BT.709 luma, round-quantize to 256 bins (matching pipeline)
+    hist = np.zeros(256, dtype=np.int64)
+    luma = np.zeros((h, w), dtype=np.float32)
+    for y in range(h):
+        for x in range(w):
+            l = 0.2126 * img[y, x, 0] + 0.7152 * img[y, x, 1] + 0.0722 * img[y, x, 2]
+            luma[y, x] = l
+            b = min(max(int(round(l * 255.0)), 0), 255)
+            hist[b] += 1
+
+    # Between-class variance (Otsu)
+    sum_total = sum(i * hist[i] for i in range(256))
+    best_t = 0
+    best_var = -1.0
+    w_bg = 0
+    sum_bg = 0
+    for t in range(256):
+        w_bg += hist[t]
+        if w_bg == 0:
+            continue
+        w_fg = n - w_bg
+        if w_fg == 0:
+            break
+        sum_bg += t * hist[t]
+        mean_bg = sum_bg / w_bg
+        mean_fg = (sum_total - sum_bg) / w_fg
+        var = w_bg * w_fg * (mean_bg - mean_fg) ** 2
+        if var > best_var:
+            best_var = var
+            best_t = t
+
+    threshold = best_t / 255.0
+    binary = np.where(luma >= threshold, 1.0, 0.0).astype(np.float32)
     output = np.stack([binary, binary, binary], axis=-1)
     return {
         "filter": "otsu_threshold", "params": {},
-        "tool": "cv2.threshold (THRESH_OTSU)", "tool_version": cv2.__version__,
-        "note": "OpenCV Otsu automatic threshold on BT.709 luma (u8 quantized)",
+        "tool": "numpy (Otsu between-class variance, 256-bin, matching pipeline)",
+        "tool_version": np.__version__,
+        "note": f"BT.709 luma, round-quantize 256 bins, Otsu threshold={threshold:.4f}",
         "output": pixels_to_list(output),
     }
 
 
 def golden_canny(low: float, high: float) -> dict:
-    """Canny edge detection via cv2.Canny (OpenCV C++ implementation)."""
+    """Canny — matching pipeline's simplified single-pass approximation.
+
+    Pipeline: Sobel on luma (clamp border), magnitude = sqrt(gx²+gy²),
+    then single-pass: mag >= high → 1.0, mag >= low → 0.5, else 0.0.
+    No true hysteresis or non-maximum suppression.
+    """
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
+    h, w = img.shape[:2]
+
+    # Sobel on BT.709 luma with clamp-to-edge (matching pipeline's sample_luma)
     gray = img[:, :, 0] * 0.2126 + img[:, :, 1] * 0.7152 + img[:, :, 2] * 0.0722
-    # OpenCV Canny needs u8. Thresholds are in u8 scale.
-    gray_u8 = np.clip(gray * 255 + 0.5, 0, 255).astype(np.uint8)
-    edges_u8 = cv2.Canny(gray_u8, int(low * 255), int(high * 255))
-    edges = edges_u8.astype(np.float32) / 255.0
-    output = np.stack([edges, edges, edges], axis=-1)
+    sx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3, borderType=cv2.BORDER_REPLICATE)
+    sy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3, borderType=cv2.BORDER_REPLICATE)
+    mag = np.sqrt(sx * sx + sy * sy)
+
+    # Single-pass hysteresis approximation (matching pipeline)
+    output = np.zeros_like(img)
+    for y in range(h):
+        for x in range(w):
+            m = mag[y, x]
+            if m >= high:
+                v = 1.0
+            elif m >= low:
+                v = 0.5
+            else:
+                v = 0.0
+            output[y, x] = [v, v, v]
+
     return {
         "filter": "canny", "params": {"low": low, "high": high},
-        "tool": f"cv2.Canny (low={int(low*255)}, high={int(high*255)})",
+        "tool": "cv2.Sobel + numpy (simplified Canny, single-pass hysteresis)",
         "tool_version": cv2.__version__,
-        "note": "OpenCV Canny on BT.709 luma (u8 quantized), thresholds scaled to u8",
+        "note": f"Sobel magnitude, low={low}, high={high}, single-pass (no NMS)",
         "output": pixels_to_list(output),
     }
 
@@ -2694,19 +2750,60 @@ def golden_adaptive_threshold(radius: int, offset: float) -> dict:
 
 
 def golden_triangle_threshold() -> dict:
-    """Triangle threshold — automatic threshold selection.
-    Uses OpenCV THRESH_TRIANGLE.
+    """Triangle threshold — matching pipeline's exact algorithm.
+
+    Pipeline: BT.709 luma, round to 256-bin histogram, triangle method
+    (max perpendicular distance from peak-to-far line), threshold = best_t / 255.
     """
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
-    gray = img[:, :, 0] * 0.2126 + img[:, :, 1] * 0.7152 + img[:, :, 2] * 0.0722
-    gray_u8 = np.clip(gray * 255 + 0.5, 0, 255).astype(np.uint8)
-    _, binary_u8 = cv2.threshold(gray_u8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_TRIANGLE)
-    binary = binary_u8.astype(np.float32) / 255.0
+    h, w = img.shape[:2]
+
+    # BT.709 luma, round-quantize to 256 bins
+    hist = np.zeros(256, dtype=np.int64)
+    luma = np.zeros((h, w), dtype=np.float32)
+    for y in range(h):
+        for x in range(w):
+            l = 0.2126 * img[y, x, 0] + 0.7152 * img[y, x, 1] + 0.0722 * img[y, x, 2]
+            luma[y, x] = l
+            b = min(max(int(round(l * 255.0)), 0), 255)
+            hist[b] += 1
+
+    # Find peak bin
+    peak_idx = int(np.argmax(hist))
+
+    # Find far end
+    if peak_idx < 128:
+        far_idx = 255
+        while far_idx > peak_idx and hist[far_idx] == 0:
+            far_idx -= 1
+    else:
+        far_idx = 0
+        while far_idx < peak_idx and hist[far_idx] == 0:
+            far_idx += 1
+
+    # Line from (peak_idx, hist[peak_idx]) to (far_idx, hist[far_idx])
+    x1, y1 = float(peak_idx), float(hist[peak_idx])
+    x2, y2 = float(far_idx), float(hist[far_idx])
+    line_len = max(np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2), 1e-6)
+
+    # Find bin with max distance to line
+    lo, hi = min(peak_idx, far_idx), max(peak_idx, far_idx)
+    best_t = lo
+    best_dist = -1.0
+    for t in range(lo, hi + 1):
+        dist = abs((y2 - y1) * t - (x2 - x1) * hist[t] + x2 * y1 - y2 * x1) / line_len
+        if dist > best_dist:
+            best_dist = dist
+            best_t = t
+
+    threshold = best_t / 255.0
+    binary = np.where(luma >= threshold, 1.0, 0.0).astype(np.float32)
     output = np.stack([binary, binary, binary], axis=-1)
     return {
         "filter": "triangle_threshold", "params": {},
-        "tool": "cv2.threshold (THRESH_TRIANGLE)", "tool_version": cv2.__version__,
-        "note": "OpenCV triangle automatic threshold on BT.709 luma (u8 quantized)",
+        "tool": "numpy (triangle method, 256-bin, matching pipeline)",
+        "tool_version": np.__version__,
+        "note": f"BT.709 luma, triangle threshold={threshold:.4f}",
         "output": pixels_to_list(output),
     }
 
