@@ -542,48 +542,31 @@ pub fn adaptive_threshold(input: &[f32], w: u32, h: u32, radius: u32, offset: f3
 pub fn scharr(input: &[f32], w: u32, h: u32, scale: f32) -> Vec<f32> {
     let wi = w as i32;
     let hi = h as i32;
+    let wu = w as usize;
     let mut out = input.to_vec();
 
-    #[rustfmt::skip]
-    let gx_kernel: [[f32; 3]; 3] = [
-        [-3.0,  0.0,  3.0],
-        [-10.0, 0.0, 10.0],
-        [-3.0,  0.0,  3.0],
-    ];
-    #[rustfmt::skip]
-    let gy_kernel: [[f32; 3]; 3] = [
-        [-3.0, -10.0, -3.0],
-        [ 0.0,   0.0,  0.0],
-        [ 3.0,  10.0,  3.0],
-    ];
+    // Scharr on luminance (matching pipeline's convolve3x3 on sample_luma)
+    let luma = |x: i32, y: i32| -> f32 {
+        let sx = x.clamp(0, wi - 1) as usize;
+        let sy = y.clamp(0, hi - 1) as usize;
+        let i = (sy * wu + sx) * 4;
+        0.2126 * input[i] + 0.7152 * input[i + 1] + 0.0722 * input[i + 2]
+    };
 
     for y in 0..hi {
         for x in 0..wi {
-            let mut mag = [0.0f32; 3];
-
-            for c in 0..3 {
-                let mut gx = 0.0f32;
-                let mut gy = 0.0f32;
-
-                for ky in 0..3i32 {
-                    for kx in 0..3i32 {
-                        let sx = (x + kx - 1).clamp(0, wi - 1);
-                        let sy = (y + ky - 1).clamp(0, hi - 1);
-                        let si = (sy * wi + sx) as usize * 4 + c;
-                        let val = input[si];
-                        gx += val * gx_kernel[ky as usize][kx as usize];
-                        gy += val * gy_kernel[ky as usize][kx as usize];
-                    }
-                }
-
-                mag[c] = (gx * gx + gy * gy).sqrt() * scale / 32.0;
-            }
+            // Scharr kernels on luma
+            let gx = -3.0 * luma(x-1, y-1) + 3.0 * luma(x+1, y-1)
+                   - 10.0 * luma(x-1, y)   + 10.0 * luma(x+1, y)
+                   - 3.0 * luma(x-1, y+1) + 3.0 * luma(x+1, y+1);
+            let gy = -3.0 * luma(x-1, y-1) - 10.0 * luma(x, y-1) - 3.0 * luma(x+1, y-1)
+                   + 3.0 * luma(x-1, y+1) + 10.0 * luma(x, y+1) + 3.0 * luma(x+1, y+1);
+            let v = (gx * gx + gy * gy).sqrt() * scale / 32.0;
 
             let di = (y * wi + x) as usize * 4;
-            out[di] = mag[0];
-            out[di + 1] = mag[1];
-            out[di + 2] = mag[2];
-            // alpha unchanged
+            out[di] = v;
+            out[di + 1] = v;
+            out[di + 2] = v;
         }
     }
     out

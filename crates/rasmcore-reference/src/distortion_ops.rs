@@ -342,9 +342,9 @@ pub fn liquify(
             let ddy = px_y - cy;
             let dist = (ddx * ddx + ddy * ddy).sqrt();
             let (sx, sy) = if dist < radius && radius > 0.0 {
-                let t = 1.0 - dist / radius;
-                let strength = t * t;
-                (px_x - dx * strength, px_y - dy * strength)
+                let t = dist / radius;
+                let w = (-2.0 * t * t).exp();
+                (px_x - dx * w, px_y - dy * w)
             } else {
                 (px_x, px_y)
             };

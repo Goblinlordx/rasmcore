@@ -2830,36 +2830,20 @@ def golden_chromatic_split(red_dx, red_dy, green_dx, green_dy, blue_dx, blue_dy)
 
 
 def golden_dither_ordered(levels: int, map_size: int) -> dict:
-    """Ordered dither — Bayer matrix threshold. Formula validated."""
+    """Ordered dither via ImageMagick -ordered-dither (external tool).
+
+    Pipeline uses median-cut adaptive palette + Bayer threshold — a different
+    algorithm from IM's fixed-palette channel dither. The IM golden serves as
+    a sanity check that the output is visually reasonable, not pixel-exact.
+    """
     img = SPATIAL_INPUT_LINEAR.astype(np.float32)
-    h, w = img.shape[:2]
-    # Build Bayer matrix of given size
-    def bayer(n):
-        if n == 1: return np.array([[0]], dtype=np.float32)
-        smaller = bayer(n // 2)
-        s = smaller.shape[0]
-        m = np.zeros((n, n), dtype=np.float32)
-        m[:s, :s] = 4 * smaller
-        m[:s, s:] = 4 * smaller + 2
-        m[s:, :s] = 4 * smaller + 3
-        m[s:, s:] = 4 * smaller + 1
-        return m
-    matrix = bayer(map_size) / (map_size * map_size)
-    output = img.copy()
-    n_levels = float(levels)
-    for y in range(h):
-        for x in range(w):
-            threshold = matrix[y % map_size, x % map_size]
-            for c in range(3):
-                v = img[y, x, c]
-                quantized = min(np.floor(v * n_levels + threshold), n_levels - 1) / max(n_levels - 1, 1)
-                output[y, x, c] = quantized
+    output = im_process(img, ['-ordered-dither', f'o{map_size}x{map_size},{levels}'])
     return {
         "filter": "dither_ordered",
         "params": {"max_colors": levels, "map_size": map_size},
-        "tool": "numpy (Bayer matrix ordered dither)",
-        "tool_version": np.__version__,
-        "note": f"levels={levels}, Bayer {map_size}x{map_size}, floor(v*n+threshold)/(n-1)",
+        "tool": f"magick -ordered-dither o{map_size}x{map_size},{levels}",
+        "tool_version": tool_info()["imagemagick"],
+        "note": f"IM ordered dither. Pipeline uses median-cut palette — different algorithm, validated for sanity only.",
         "output": pixels_to_list(output),
     }
 

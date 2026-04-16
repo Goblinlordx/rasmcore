@@ -486,9 +486,8 @@ fn spatial_tolerance_for(filter_name: &str) -> f32 {
         // Laplacian: OpenCV kernel is 2× our kernel (divide by 2), border clamp
         // Residual from f32 accumulation order in OpenCV C++ vs our per-pixel
         "laplacian" => 0.02,
-        // Scharr: reference uses per-channel gradients, pipeline/golden use luma.
-        // Known algorithm difference — reference needs updating separately.
-        "scharr" => 0.015,
+        // Scharr: all three (pipeline, reference, golden) use luma + /32 normalization
+        "scharr" => 0.001,
         // Otsu: pipeline matches OpenCV exactly (0.000 diff)
         "otsu_threshold" => 0.001,
         // Triangle: matches OpenCV exactly (histogram flip + thresh-1 + bounds extend)
@@ -521,8 +520,8 @@ fn spatial_tolerance_for(filter_name: &str) -> f32 {
         "match_color" => 0.01,
         // Color dodge/burn self-blend: edge cases at black/white
         "color_dodge" | "color_burn" => 1.0,
-        // Liquify: pipeline uses Gaussian falloff exp(-2t²), reference uses quadratic t²
-        "liquify" => 0.1,
+        // Liquify: pipeline and reference both use Gaussian falloff exp(-2t²)
+        "liquify" => 0.001,
         // All other spatial ops
         _ => 0.001,
     }
