@@ -1,6 +1,10 @@
 # Rust build artifacts
 /target/
+**/target/
 **/*.rs.bk
+
+# Release distribution artifacts — built by packaging scripts, never committed
+/dist/
 
 # Cargo lock for library crates (we're a workspace of components)
 # Keep Cargo.lock committed for reproducible builds
